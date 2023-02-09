@@ -1,0 +1,426 @@
+use std::{cell::RefCell, ops::Range, path::Path, rc::Rc, sync::Arc};
+
+use eframe::{
+    egui::{
+        self,
+        text_edit::{CCursorRange, TextEditState},
+        Id, TextFormat,
+    },
+    epaint::{
+        pos2,
+        text::{layout, LayoutJob},
+        vec2, Color32, FontId, Rect, Stroke, TextureHandle, TextureId, Vec2,
+    },
+};
+use pulldown_cmark::HeadingLevel;
+
+struct Theme {
+    h1: FontId,
+    h2: FontId,
+    h3: FontId,
+    h4: FontId,
+    body: FontId,
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Self {
+            h1: FontId::proportional(24.),
+            h2: FontId::proportional(20.),
+            h3: FontId::proportional(18.),
+            h4: FontId::proportional(16.),
+            body: FontId::proportional(14.),
+        }
+    }
+}
+
+pub struct State {
+    name: String,
+    age: u32,
+    markdown: String,
+    saved: String,
+    theme: Theme,
+    img: Option<(Vec2, TextureHandle)>,
+}
+
+const IMAGE_MARKER: char = 'Ꭿ';
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            name: "Robert".to_owned(),
+            age: 36,
+            markdown: "some text\nᎯ\n".to_string(),
+            saved: "".to_string(),
+            theme: Default::default(),
+            img: None,
+        }
+    }
+}
+
+struct MarkdownState {
+    nesting: i32,
+    bold: i32,
+    strike: i32,
+    emphasis: i32,
+    image: Option<f32>,
+    heading: [i32; 6],
+}
+
+fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, image::ImageError> {
+    let image = image::io::Reader::open(path)?.decode()?;
+    let size = [image.width() as _, image.height() as _];
+    let image_buffer = image.to_rgba8();
+    let pixels = image_buffer.as_flat_samples();
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        size,
+        pixels.as_slice(),
+    ))
+}
+
+impl MarkdownState {
+    fn to_text_format(&self, theme: &Theme) -> TextFormat {
+        if let Some(img_h) = self.image {
+            return TextFormat {
+                font_id: FontId {
+                    size: img_h,
+                    family: eframe::epaint::FontFamily::Proportional,
+                },
+                ..Default::default()
+            };
+        }
+
+        let font_id = match self.heading {
+            [h1, ..] if h1 > 0 => &theme.h1,
+            [_, h2, ..] if h2 > 0 => &theme.h2,
+            [_, _, h3, ..] if h3 > 0 => &theme.h3,
+            [_, _, _, h4, ..] if h4 > 0 => &theme.h4,
+            [_, _, _, _, h5, ..] if h5 > 0 => &theme.h4,
+            [_, _, _, _, _, h6] if h6 > 0 => &theme.h4,
+            _ => &theme.body,
+        };
+
+        let mut res = TextFormat {
+            font_id: font_id.clone(),
+            ..Default::default()
+        };
+        if self.bold > 0 {
+            // todo add a different font
+            res.underline = Stroke::new(0.1, Color32::LIGHT_GRAY);
+        }
+
+        if self.strike > 0 || self.emphasis > 0 {
+            // todo add a different font
+            res.strikethrough = Stroke::new(0.2, Color32::LIGHT_GRAY);
+        }
+
+        res
+    }
+
+    // fn has_opened_decor(&self) -> bool {
+    //     self.bold > 0 || self.emphasis > 0 || self.strike > 0
+    // }
+}
+
+impl MarkdownState {
+    fn new() -> Self {
+        Self {
+            nesting: 0,
+            bold: 0,
+            strike: 0,
+            emphasis: 0,
+            heading: Default::default(),
+            image: None,
+        }
+    }
+}
+
+enum PointKind {
+    Start,
+    End,
+}
+
+struct AnnotationPoint {
+    offset: usize,
+    kind: PointKind, // 1 or -1 (start and end respectively)
+    annotation: Annotation,
+}
+
+struct MdLayout {
+    points: Vec<AnnotationPoint>,
+    list_items: Vec<Range<usize>>, // range and depth
+}
+
+#[derive(Debug, Copy, Clone)]
+enum Annotation {
+    Strike,
+    Bold,
+    Emphasis,
+    Heading(HeadingLevel),
+    Image(f32), // height
+}
+
+enum Ev {
+    Annotation(Annotation),
+    ListItem,
+    TaskMarker(bool),
+    Heading(HeadingLevel),
+}
+
+impl MdLayout {
+    fn new() -> Self {
+        Self {
+            points: Default::default(),
+            list_items: Default::default(),
+        }
+    }
+
+    fn annotate(&mut self, annotation: Annotation, range: Range<usize>) {
+        self.event(Ev::Annotation(annotation), range);
+    }
+
+    fn event(&mut self, ev: Ev, range: Range<usize>) {
+        match ev {
+            Ev::Annotation(annotation) => {
+                self.points.push(AnnotationPoint {
+                    offset: range.start,
+                    kind: PointKind::Start,
+                    annotation,
+                });
+
+                self.points.push(AnnotationPoint {
+                    offset: range.end,
+                    kind: PointKind::End,
+                    annotation,
+                });
+            }
+            Ev::ListItem => self.list_items.push(range),
+            Ev::TaskMarker(checked) => {
+                // the last one to add would be the most nested, thus the one we need
+                let item = self
+                    .list_items
+                    .iter()
+                    .rev()
+                    .find(|r| r.contains(&range.start) && r.contains(&range.end));
+
+                if let (Some(r), true) = (item, checked) {
+                    self.annotate(Annotation::Strike, r.clone());
+                }
+            }
+            // TODO use that for shortcuts maybe
+            Ev::Heading(level) => self.annotate(Annotation::Heading(level), range),
+        }
+    }
+
+    fn layout(&mut self, text: &str, theme: &Theme) -> LayoutJob {
+        let MdLayout { points, .. } = self;
+        points.sort_by_key(|p| p.offset);
+
+        let mut pos: usize = 0;
+        let mut job = LayoutJob::default();
+
+        let mut state = MarkdownState::new();
+
+        for point in points {
+            job.append(
+                text.get(pos..point.offset).unwrap_or(""),
+                0.0,
+                state.to_text_format(theme),
+            );
+
+            let delta = match point.kind {
+                PointKind::Start => 1,
+                PointKind::End => -1,
+            };
+
+            match point.annotation {
+                Annotation::Strike => state.strike += delta,
+                Annotation::Bold => state.bold += delta,
+                Annotation::Emphasis => state.emphasis += delta,
+                Annotation::Heading(level) => state.heading[level as usize] += delta,
+                Annotation::Image(size) => match point.kind {
+                    PointKind::Start => state.image = Some(size),
+                    PointKind::End => state.image = None,
+                },
+            }
+            pos = point.offset;
+        }
+
+        // the last piece of text
+        job.append(
+            text.get(pos..).unwrap_or(""),
+            0.0,
+            state.to_text_format(theme),
+        );
+
+        job
+    }
+}
+
+#[no_mangle]
+pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    if state.img.is_none() {
+        state.img = Some(
+            load_image_from_path(&Path::new("./assets/shot.png"))
+                .ok()
+                .map(|img| {
+                    let size = Vec2::new(img.size[0] as f32, img.size[1] as f32);
+                    (size, ctx.load_texture("shot.png", img, Default::default()))
+                })
+                .unwrap(),
+        );
+    }
+
+    let img_h = 150.;
+    let img_rect = Rc::new(RefCell::new(Rect::NOTHING));
+    egui::CentralPanel::default().show(ctx, |ui| {
+        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+            let options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
+                | pulldown_cmark::Options::ENABLE_TASKLISTS
+                | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION;
+
+            if state.saved != text {
+                let parser = pulldown_cmark::Parser::new_ext(text, options);
+                println!("-----parser-----");
+                println!("{:?}", text);
+                println!("-----text-end-----");
+                for (ev, range) in parser.into_offset_iter() {
+                    println!("{:?} -> {:?}", ev, &text[range.start..range.end]);
+                }
+                println!("---parser-end---");
+                state.saved = text.to_string();
+            }
+
+            let parser = pulldown_cmark::Parser::new_ext(text, options);
+
+            // let mut md = MarkdownState::new();
+
+            let mut md = MdLayout::new();
+
+            if let Some(start) = text.find(IMAGE_MARKER) {
+                md.annotate(
+                    Annotation::Image(img_h),
+                    start..start + IMAGE_MARKER.len_utf8(),
+                )
+            }
+
+            for (ev, range) in parser.into_offset_iter() {
+                use pulldown_cmark::Event::*;
+                use pulldown_cmark::Tag::*;
+                match ev {
+                    Start(tag) => match tag {
+                        Strong => md.annotate(Annotation::Bold, range),
+                        Emphasis => md.annotate(Annotation::Emphasis, range),
+                        Strikethrough => md.annotate(Annotation::Strike, range),
+                        Item => md.event(Ev::ListItem, range),
+                        Heading(level, _, _) => md.event(Ev::Heading(level), range),
+                        _ => (),
+                    },
+
+                    TaskListMarker(checked) => md.event(Ev::TaskMarker(checked), range),
+                    _ => (),
+                }
+            }
+
+            let mut job = md.layout(text, &state.theme);
+            job.wrap.max_width = wrap_width;
+
+            let mut galley = layout(&mut ui.ctx().fonts().lock().fonts, job.into());
+            // let mut galley = ui.fonts().layout_job(job);
+
+            // if let Some(g) = Arc::get_mut(&mut galley) {
+            //     println!("\n\n galley: {:?}", g.rows);
+            // }
+
+            // Arc::make_mut(this)
+            if let Some((row, glyph_index)) = galley.rows.iter_mut().find_map(|r| {
+                r.glyphs
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, g)| if g.chr == IMAGE_MARKER { Some(i) } else { None })
+                    .map(|i| (r, i))
+            }) {
+                println!("found: {:?}", row);
+                let glyph = &mut row.glyphs[glyph_index];
+                glyph.size.x = wrap_width - glyph.pos.x;
+                row.rect.extend_with_x(glyph.size.x + glyph.pos.x);
+                *img_rect.borrow_mut() = Rect::from_min_size(glyph.pos, glyph.size);
+                // glyph.size.y = glyph.size.y / 2.0;
+                // println!("modified: {:?}", glyph.size);
+            }
+
+            // println!("galley: {:?}", galley);
+
+            Arc::new(galley)
+        };
+
+        let texture_id = state.img.as_ref().unwrap().1.id();
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+
+            let id = Id::new("text_edit");
+
+            let output = egui::TextEdit::multiline(&mut state.markdown)
+                .font(egui::TextStyle::Monospace) // for cursor height
+                .code_editor()
+                .id(id)
+                // .desired_rows(1000)
+                .lock_focus(true)
+                .desired_width(f32::INFINITY)
+                .frame(false)
+                .layouter(&mut layouter)
+                .show(ui);
+
+            ui.painter().image(
+                texture_id,
+                img_rect.clone().as_ref().borrow().clone(),
+                Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+                Color32::WHITE,
+            );
+
+            let text = &mut state.markdown;
+            if ui
+                .input_mut()
+                .consume_key(egui::Modifiers::COMMAND, egui::Key::B)
+            {
+                if let (Some(text_cursor_range), Some(mut edit_state)) =
+                    (output.cursor_range, TextEditState::load(ui.ctx(), id))
+                {
+                    use egui::TextBuffer as _;
+                    let selected_chars = text_cursor_range.as_sorted_char_range();
+                    let selected_text = text.char_range(selected_chars.clone());
+
+                    let is_already_bold = selected_text.starts_with("**")
+                        && selected_text.ends_with("**")
+                        && selected_text.len() >= 4;
+
+                    if is_already_bold {
+                        text.delete_char_range(Range {
+                            start: selected_chars.start,
+                            end: selected_chars.start + 2,
+                        });
+                        text.delete_char_range(Range {
+                            start: selected_chars.end - 4,
+                            end: selected_chars.end - 2,
+                        });
+                    } else {
+                        text.insert_text("**", selected_chars.start);
+                        text.insert_text("**", selected_chars.end + 2);
+                    };
+
+                    let [min, max] = text_cursor_range.as_ccursor_range().sorted();
+
+                    println!("prev cursor: {:#?}", edit_state.ccursor_range());
+                    edit_state.set_ccursor_range(Some(CCursorRange::two(
+                        min,
+                        if is_already_bold { max - 4 } else { max + 4 },
+                    )));
+
+                    println!("next cursor: {:#?}", edit_state.ccursor_range());
+
+                    edit_state.store(ui.ctx(), id);
+                }
+            }
+        });
+    });
+}
