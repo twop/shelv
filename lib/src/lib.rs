@@ -35,25 +35,17 @@ impl Default for Theme {
 }
 
 pub struct State {
-    name: String,
-    age: u32,
     markdown: String,
     saved: String,
     theme: Theme,
-    img: Option<(Vec2, TextureHandle)>,
 }
-
-const IMAGE_MARKER: char = 'Ꭿ';
 
 impl Default for State {
     fn default() -> Self {
         Self {
-            name: "Robert".to_owned(),
-            age: 36,
             markdown: "some text\nᎯ\n".to_string(),
             saved: "".to_string(),
             theme: Default::default(),
-            img: None,
         }
     }
 }
@@ -63,7 +55,6 @@ struct MarkdownState {
     bold: i32,
     strike: i32,
     emphasis: i32,
-    image: Option<f32>,
     heading: [i32; 6],
 }
 
@@ -80,16 +71,6 @@ fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, imag
 
 impl MarkdownState {
     fn to_text_format(&self, theme: &Theme) -> TextFormat {
-        if let Some(img_h) = self.image {
-            return TextFormat {
-                font_id: FontId {
-                    size: img_h,
-                    family: eframe::epaint::FontFamily::Proportional,
-                },
-                ..Default::default()
-            };
-        }
-
         let font_id = match self.heading {
             [h1, ..] if h1 > 0 => &theme.h1,
             [_, h2, ..] if h2 > 0 => &theme.h2,
@@ -130,7 +111,6 @@ impl MarkdownState {
             strike: 0,
             emphasis: 0,
             heading: Default::default(),
-            image: None,
         }
     }
 }
@@ -157,7 +137,6 @@ enum Annotation {
     Bold,
     Emphasis,
     Heading(HeadingLevel),
-    Image(f32), // height
 }
 
 enum Ev {
@@ -238,10 +217,6 @@ impl MdLayout {
                 Annotation::Bold => state.bold += delta,
                 Annotation::Emphasis => state.emphasis += delta,
                 Annotation::Heading(level) => state.heading[level as usize] += delta,
-                Annotation::Image(size) => match point.kind {
-                    PointKind::Start => state.image = Some(size),
-                    PointKind::End => state.image = None,
-                },
             }
             pos = point.offset;
         }
@@ -259,20 +234,6 @@ impl MdLayout {
 
 #[no_mangle]
 pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-    if state.img.is_none() {
-        state.img = Some(
-            load_image_from_path(&Path::new("./assets/shot.png"))
-                .ok()
-                .map(|img| {
-                    let size = Vec2::new(img.size[0] as f32, img.size[1] as f32);
-                    (size, ctx.load_texture("shot.png", img, Default::default()))
-                })
-                .unwrap(),
-        );
-    }
-
-    let img_h = 150.;
-    let img_rect = Rc::new(RefCell::new(Rect::NOTHING));
     egui::CentralPanel::default().show(ctx, |ui| {
         let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
             let options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
@@ -297,13 +258,6 @@ pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame
 
             let mut md = MdLayout::new();
 
-            if let Some(start) = text.find(IMAGE_MARKER) {
-                md.annotate(
-                    Annotation::Image(img_h),
-                    start..start + IMAGE_MARKER.len_utf8(),
-                )
-            }
-
             for (ev, range) in parser.into_offset_iter() {
                 use pulldown_cmark::Event::*;
                 use pulldown_cmark::Tag::*;
@@ -325,36 +279,13 @@ pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame
             let mut job = md.layout(text, &state.theme);
             job.wrap.max_width = wrap_width;
 
-            let mut galley = layout(&mut ui.ctx().fonts().lock().fonts, job.into());
-            // let mut galley = ui.fonts().layout_job(job);
+            // let mut galley = layout(&mut ui.ctx().fonts().lock().fonts, job.into());
+            // Arc::new(galley)
+            let galley = ui.fonts().layout_job(job);
 
-            // if let Some(g) = Arc::get_mut(&mut galley) {
-            //     println!("\n\n galley: {:?}", g.rows);
-            // }
-
-            // Arc::make_mut(this)
-            if let Some((row, glyph_index)) = galley.rows.iter_mut().find_map(|r| {
-                r.glyphs
-                    .iter()
-                    .enumerate()
-                    .find_map(|(i, g)| if g.chr == IMAGE_MARKER { Some(i) } else { None })
-                    .map(|i| (r, i))
-            }) {
-                println!("found: {:?}", row);
-                let glyph = &mut row.glyphs[glyph_index];
-                glyph.size.x = wrap_width - glyph.pos.x;
-                row.rect.extend_with_x(glyph.size.x + glyph.pos.x);
-                *img_rect.borrow_mut() = Rect::from_min_size(glyph.pos, glyph.size);
-                // glyph.size.y = glyph.size.y / 2.0;
-                // println!("modified: {:?}", glyph.size);
-            }
-
-            // println!("galley: {:?}", galley);
-
-            Arc::new(galley)
+            galley
         };
 
-        let texture_id = state.img.as_ref().unwrap().1.id();
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
@@ -370,13 +301,6 @@ pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame
                 .frame(false)
                 .layouter(&mut layouter)
                 .show(ui);
-
-            ui.painter().image(
-                texture_id,
-                img_rect.clone().as_ref().borrow().clone(),
-                Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-                Color32::WHITE,
-            );
 
             let text = &mut state.markdown;
             if ui
