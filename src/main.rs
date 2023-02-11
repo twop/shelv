@@ -36,11 +36,11 @@ fn main() {
         default_theme: eframe::Theme::Dark,
         min_window_size: Some(vec2(350.0, 450.0)),
         max_window_size: Some(vec2(350.0, 450.0)),
-        resizable: false,
+        resizable: true,
         ..Default::default()
     };
     eframe::run_native(
-        "My egui App",
+        "Memento",
         options,
         Box::new(|cc| {
             // When hot reload is enabled, repaint after every lib change
@@ -54,5 +54,6 @@ fn main() {
             }
             Box::new(MyApp::default())
         }),
-    );
+    )
+    .unwrap();
 }

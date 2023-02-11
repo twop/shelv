@@ -1,4 +1,10 @@
-use std::{cell::RefCell, ops::Range, path::Path, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    ops::{Range, RangeBounds},
+    path::Path,
+    rc::Rc,
+    sync::Arc,
+};
 
 use eframe::{
     egui::{
@@ -13,6 +19,7 @@ use eframe::{
     },
 };
 use pulldown_cmark::HeadingLevel;
+use smallvec::SmallVec;
 
 struct Theme {
     h1: FontId,
@@ -38,14 +45,16 @@ pub struct State {
     markdown: String,
     saved: String,
     theme: Theme,
+    prev_md_layout: MdLayout,
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
-            markdown: "some text\nᎯ\n".to_string(),
+            markdown: "## title\n- item1".to_string(),
             saved: "".to_string(),
             theme: Default::default(),
+            prev_md_layout: MdLayout::new(),
         }
     }
 }
@@ -126,9 +135,23 @@ struct AnnotationPoint {
     annotation: Annotation,
 }
 
+#[derive(Debug, Clone)]
+struct ListItem {
+    index: u32,
+    byte_range: Range<usize>,
+    depth: i32,
+    starting_index: Option<u64>,
+}
+
+struct ListDesc {
+    starting_index: Option<u64>,
+    items_count: u32,
+}
+
 struct MdLayout {
+    list_stack: SmallVec<[ListDesc; 4]>,
     points: Vec<AnnotationPoint>,
-    list_items: Vec<Range<usize>>, // range and depth
+    list_items: Vec<ListItem>, // range and depth
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -144,6 +167,8 @@ enum Ev {
     ListItem,
     TaskMarker(bool),
     Heading(HeadingLevel),
+    ListStart(Option<u64>),
+    ListEnd,
 }
 
 impl MdLayout {
@@ -151,11 +176,8 @@ impl MdLayout {
         Self {
             points: Default::default(),
             list_items: Default::default(),
+            list_stack: Default::default(),
         }
-    }
-
-    fn annotate(&mut self, annotation: Annotation, range: Range<usize>) {
-        self.event(Ev::Annotation(annotation), range);
     }
 
     fn event(&mut self, ev: Ev, range: Range<usize>) {
@@ -173,21 +195,44 @@ impl MdLayout {
                     annotation,
                 });
             }
-            Ev::ListItem => self.list_items.push(range),
+            Ev::ListItem => {
+                // depth starts with zero for top level list
+                let depth = self.list_stack.len() as i32 - 1;
+                if let Some(list_desc) = self.list_stack.last_mut() {
+                    self.list_items.push(ListItem {
+                        index: list_desc.items_count,
+                        byte_range: range,
+                        depth,
+                        starting_index: list_desc.starting_index.clone(),
+                    });
+
+                    list_desc.items_count += 1;
+                }
+            }
+
             Ev::TaskMarker(checked) => {
                 // the last one to add would be the most nested, thus the one we need
-                let item = self
-                    .list_items
-                    .iter()
-                    .rev()
-                    .find(|r| r.contains(&range.start) && r.contains(&range.end));
+                let item =
+                    self.list_items.iter().rev().find(|r| {
+                        r.byte_range.start <= range.start && r.byte_range.end >= range.end
+                    });
 
                 if let (Some(r), true) = (item, checked) {
-                    self.annotate(Annotation::Strike, r.clone());
+                    self.event(Ev::Annotation(Annotation::Strike), r.byte_range.clone());
                 }
             }
             // TODO use that for shortcuts maybe
-            Ev::Heading(level) => self.annotate(Annotation::Heading(level), range),
+            Ev::Heading(level) => {
+                self.event(Ev::Annotation(Annotation::Heading(level)), range);
+            }
+            Ev::ListStart(starting_index) => self.list_stack.push(ListDesc {
+                starting_index,
+                items_count: 0,
+            }),
+
+            Ev::ListEnd => {
+                self.list_stack.pop();
+            }
         }
     }
 
@@ -235,81 +280,154 @@ impl MdLayout {
 #[no_mangle]
 pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame) {
     egui::CentralPanel::default().show(ctx, |ui| {
-        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-            let options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
-                | pulldown_cmark::Options::ENABLE_TASKLISTS
-                | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION;
-
-            if state.saved != text {
-                let parser = pulldown_cmark::Parser::new_ext(text, options);
-                println!("-----parser-----");
-                println!("{:?}", text);
-                println!("-----text-end-----");
-                for (ev, range) in parser.into_offset_iter() {
-                    println!("{:?} -> {:?}", ev, &text[range.start..range.end]);
-                }
-                println!("---parser-end---");
-                state.saved = text.to_string();
-            }
-
-            let parser = pulldown_cmark::Parser::new_ext(text, options);
-
-            // let mut md = MarkdownState::new();
-
-            let mut md = MdLayout::new();
-
-            for (ev, range) in parser.into_offset_iter() {
-                use pulldown_cmark::Event::*;
-                use pulldown_cmark::Tag::*;
-                match ev {
-                    Start(tag) => match tag {
-                        Strong => md.annotate(Annotation::Bold, range),
-                        Emphasis => md.annotate(Annotation::Emphasis, range),
-                        Strikethrough => md.annotate(Annotation::Strike, range),
-                        Item => md.event(Ev::ListItem, range),
-                        Heading(level, _, _) => md.event(Ev::Heading(level), range),
-                        _ => (),
-                    },
-
-                    TaskListMarker(checked) => md.event(Ev::TaskMarker(checked), range),
-                    _ => (),
-                }
-            }
-
-            let mut job = md.layout(text, &state.theme);
-            job.wrap.max_width = wrap_width;
-
-            // let mut galley = layout(&mut ui.ctx().fonts().lock().fonts, job.into());
-            // Arc::new(galley)
-            let galley = ui.fonts().layout_job(job);
-
-            galley
-        };
-
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
+            let mut md = MdLayout::new();
+
+            let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                let options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
+                    | pulldown_cmark::Options::ENABLE_TASKLISTS
+                    | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION;
+
+                if state.saved != text {
+                    let parser = pulldown_cmark::Parser::new_ext(text, options);
+                    println!("-----parser-----");
+                    println!("{:?}", text);
+                    println!("-----text-end-----");
+                    for (ev, range) in parser.into_offset_iter() {
+                        println!("{:?} -> {:?}", ev, &text[range.start..range.end]);
+                    }
+                    println!("---parser-end---");
+                    state.saved = text.to_string();
+                }
+
+                let parser = pulldown_cmark::Parser::new_ext(text, options);
+
+                for (ev, range) in parser.into_offset_iter() {
+                    use pulldown_cmark::Event::*;
+                    use pulldown_cmark::Tag::*;
+                    match ev {
+                        Start(tag) => match tag {
+                            Strong => {
+                                md.event(Ev::Annotation(Annotation::Bold), range);
+                            }
+                            Emphasis => {
+                                md.event(Ev::Annotation(Annotation::Emphasis), range);
+                            }
+                            Strikethrough => {
+                                md.event(Ev::Annotation(Annotation::Strike), range);
+                            }
+                            Item => md.event(Ev::ListItem, range),
+                            Heading(level, _, _) => md.event(Ev::Heading(level), range),
+                            List(starting_index) => md.event(Ev::ListStart(starting_index), range),
+                            _ => (),
+                        },
+
+                        End(List(_)) => md.event(Ev::ListEnd, range),
+
+                        TaskListMarker(checked) => md.event(Ev::TaskMarker(checked), range),
+                        _ => (),
+                    }
+                }
+
+                let mut job = md.layout(text, &state.theme);
+                job.wrap.max_width = wrap_width;
+
+                // let mut galley = layout(&mut ui.ctx().fonts().lock().fonts, job.into());
+                // Arc::new(galley)
+                let galley = ui.fonts(|f| f.layout_job(job));
+
+                galley
+            };
+
             let id = Id::new("text_edit");
 
-            let output = egui::TextEdit::multiline(&mut state.markdown)
-                .font(egui::TextStyle::Monospace) // for cursor height
-                .code_editor()
-                .id(id)
-                // .desired_rows(1000)
-                .lock_focus(true)
-                .desired_width(f32::INFINITY)
-                .frame(false)
-                .layouter(&mut layouter)
-                .show(ui);
+            let inside_item = TextEditState::load(ui.ctx(), id)
+                .and_then(|edit_state| edit_state.ccursor_range())
+                .and_then(|cursor_range| {
+                    let text = &mut state.markdown;
+                    use egui::TextBuffer as _;
 
-            let text = &mut state.markdown;
-            if ui
-                .input_mut()
-                .consume_key(egui::Modifiers::COMMAND, egui::Key::B)
-            {
+                    let [start, end] = cursor_range.sorted();
+
+                    let byte_start = text.byte_index_from_char_index(start.index);
+                    let byte_end = text.byte_index_from_char_index(end.index);
+
+                    let inside_item = state
+                        .prev_md_layout
+                        .list_items
+                        .iter()
+                        .rev()
+                        .find(|item| {
+                            item.byte_range.start <= byte_start && item.byte_range.end >= byte_end
+                        })
+                        .map(|r| r.clone());
+
+                    inside_item
+                });
+
+            let output = {
+                let before = state.markdown.clone();
+
+                let res = egui::TextEdit::multiline(&mut state.markdown)
+                    .font(egui::TextStyle::Monospace) // for cursor height
+                    .code_editor()
+                    .id(id)
+                    // .desired_rows(1000)
+                    .lock_focus(true)
+                    .desired_width(f32::INFINITY)
+                    .frame(false)
+                    .layouter(&mut layouter)
+                    .show(ui);
+
+                if before != state.markdown {
+                    println!("before: {}\nafter:{}\n", before, state.markdown);
+                }
+
+                res
+            };
+
+            if ui.input_mut(|input| input.key_pressed(egui::Key::Enter)) {
+                if let (Some(inside_item), Some(text_cursor_range), Some(mut edit_state)) = (
+                    inside_item,
+                    output.cursor_range,
+                    TextEditState::load(ui.ctx(), id),
+                ) {
+                    let text = &mut state.markdown;
+                    use egui::TextBuffer as _;
+                    let selected_chars = text_cursor_range.as_sorted_char_range();
+                    let text_to_insert = match inside_item.starting_index {
+                        Some(starting_index) => format!(
+                            "{}{}. ",
+                            "\t".repeat(inside_item.depth as usize),
+                            starting_index + inside_item.index as u64 + 1
+                        ),
+                        None => format!("{}- ", "\t".repeat(inside_item.depth as usize)),
+                    };
+                    text.insert_text(text_to_insert.as_str(), selected_chars.start);
+
+                    let [min, max] = text_cursor_range.as_ccursor_range().sorted();
+
+                    println!("prev cursor: {:#?}", edit_state.ccursor_range());
+                    // NOTE that cursor range works in chars, but in this case we inserted only chars that fit into u8
+                    // that byte size and char size of insertion are te same in this case
+                    edit_state.set_ccursor_range(Some(CCursorRange::two(
+                        min + text_to_insert.len(),
+                        max + text_to_insert.len(),
+                    )));
+
+                    println!("next cursor: {:#?}", edit_state.ccursor_range());
+
+                    edit_state.store(ui.ctx(), id);
+                }
+            }
+
+            if ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::B)) {
                 if let (Some(text_cursor_range), Some(mut edit_state)) =
                     (output.cursor_range, TextEditState::load(ui.ctx(), id))
                 {
+                    let text = &mut state.markdown;
                     use egui::TextBuffer as _;
                     let selected_chars = text_cursor_range.as_sorted_char_range();
                     let selected_text = text.char_range(selected_chars.clone());
@@ -345,6 +463,8 @@ pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame
                     edit_state.store(ui.ctx(), id);
                 }
             }
+
+            state.prev_md_layout = md;
         });
     });
 }
