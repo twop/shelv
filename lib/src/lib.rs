@@ -18,18 +18,27 @@ use eframe::{
         vec2, Color32, FontId, Rect, Stroke, TextureHandle, TextureId, Vec2,
     },
 };
-use pulldown_cmark::HeadingLevel;
+
+use syntect::{
+    easy::HighlightLines,
+    highlighting::{Theme, ThemeSet},
+    parsing::{SyntaxDefinition, SyntaxSet},
+    util::LinesWithEndings,
+};
+
+use pulldown_cmark::{CodeBlockKind, HeadingLevel};
 use smallvec::SmallVec;
 
-struct Theme {
+struct AppTheme {
     h1: FontId,
     h2: FontId,
     h3: FontId,
     h4: FontId,
     body: FontId,
+    code: FontId,
 }
 
-impl Default for Theme {
+impl Default for AppTheme {
     fn default() -> Self {
         Self {
             h1: FontId::proportional(24.),
@@ -37,24 +46,30 @@ impl Default for Theme {
             h3: FontId::proportional(18.),
             h4: FontId::proportional(16.),
             body: FontId::proportional(14.),
+            code: FontId::monospace(14.),
         }
     }
 }
-
+// let ps = SyntaxSet::load_defaults_newlines();
+// let ts = ThemeSet::load_defaults();
 pub struct State {
     markdown: String,
     saved: String,
-    theme: Theme,
+    theme: AppTheme,
     prev_md_layout: MdLayout,
+    syntax_set: SyntaxSet,
+    theme_set: ThemeSet,
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
-            markdown: "## title\n- item1".to_string(),
+            markdown: "```rs\nlet a = Some(115);\n```".to_string(),
             saved: "".to_string(),
             theme: Default::default(),
             prev_md_layout: MdLayout::new(),
+            syntax_set: SyntaxSet::load_defaults_newlines(),
+            theme_set: ThemeSet::load_defaults(),
         }
     }
 }
@@ -79,7 +94,7 @@ fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, imag
 }
 
 impl MarkdownState {
-    fn to_text_format(&self, theme: &Theme) -> TextFormat {
+    fn to_text_format(&self, theme: &AppTheme) -> TextFormat {
         let font_id = match self.heading {
             [h1, ..] if h1 > 0 => &theme.h1,
             [_, h2, ..] if h2 > 0 => &theme.h2,
@@ -154,12 +169,13 @@ struct MdLayout {
     list_items: Vec<ListItem>, // range and depth
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 enum Annotation {
     Strike,
     Bold,
     Emphasis,
     Heading(HeadingLevel),
+    Code { lang: String },
 }
 
 enum Ev {
@@ -186,7 +202,7 @@ impl MdLayout {
                 self.points.push(AnnotationPoint {
                     offset: range.start,
                     kind: PointKind::Start,
-                    annotation,
+                    annotation: annotation.clone(),
                 });
 
                 self.points.push(AnnotationPoint {
@@ -236,7 +252,13 @@ impl MdLayout {
         }
     }
 
-    fn layout(&mut self, text: &str, theme: &Theme) -> LayoutJob {
+    fn layout(
+        &mut self,
+        text: &str,
+        theme: &AppTheme,
+        syntax_set: &SyntaxSet,
+        theme_set: &ThemeSet,
+    ) -> LayoutJob {
         let MdLayout { points, .. } = self;
         points.sort_by_key(|p| p.offset);
 
@@ -246,23 +268,62 @@ impl MdLayout {
         let mut state = MarkdownState::new();
 
         for point in points {
-            job.append(
-                text.get(pos..point.offset).unwrap_or(""),
-                0.0,
-                state.to_text_format(theme),
-            );
+            if let (Annotation::Code { lang }, PointKind::End) = (&point.annotation, &point.kind) {
+                let code = text.get(pos..point.offset).unwrap_or("");
 
-            let delta = match point.kind {
-                PointKind::Start => 1,
-                PointKind::End => -1,
-            };
+                match syntax_set.find_syntax_by_extension(&lang) {
+                    Some(syntax) => {
+                        let mut h =
+                            HighlightLines::new(syntax, &theme_set.themes["base16-ocean.dark"]);
+                        // let s = "pub struct Wow { hi: u64 }\nfn blah() -> u64 {}";
+                        // for line in LinesWithEndings::from(s) {
+                        //     let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps).unwrap();
+                        //     let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
+                        //     print!("{}", escaped);
+                        // }
 
-            match point.annotation {
-                Annotation::Strike => state.strike += delta,
-                Annotation::Bold => state.bold += delta,
-                Annotation::Emphasis => state.emphasis += delta,
-                Annotation::Heading(level) => state.heading[level as usize] += delta,
+                        for line in LinesWithEndings::from(code) {
+                            let ranges = h.highlight_line(line, &syntax_set).unwrap();
+                            for v in ranges {
+                                let front = v.0.foreground;
+                                job.append(
+                                    v.1,
+                                    0.0,
+                                    TextFormat::simple(
+                                        theme.code.clone(),
+                                        Color32::from_rgb(front.r, front.g, front.b),
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                    None => job.append(
+                        code,
+                        0.0,
+                        TextFormat::simple(theme.code.clone(), Color32::GRAY),
+                    ),
+                }
+            } else {
+                job.append(
+                    text.get(pos..point.offset).unwrap_or(""),
+                    0.0,
+                    state.to_text_format(theme),
+                );
+
+                let delta = match point.kind {
+                    PointKind::Start => 1,
+                    PointKind::End => -1,
+                };
+
+                match &point.annotation {
+                    Annotation::Strike => state.strike += delta,
+                    Annotation::Bold => state.bold += delta,
+                    Annotation::Emphasis => state.emphasis += delta,
+                    Annotation::Heading(level) => state.heading[*level as usize] += delta,
+                    Annotation::Code { lang } => (),
+                }
             }
+
             pos = point.offset;
         }
 
@@ -304,6 +365,8 @@ pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame
 
                 let parser = pulldown_cmark::Parser::new_ext(text, options);
 
+                let mut code_block: Option<String> = None;
+
                 for (ev, range) in parser.into_offset_iter() {
                     use pulldown_cmark::Event::*;
                     use pulldown_cmark::Tag::*;
@@ -318,6 +381,9 @@ pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame
                             Strikethrough => {
                                 md.event(Ev::Annotation(Annotation::Strike), range);
                             }
+                            CodeBlock(CodeBlockKind::Fenced(lang)) => {
+                                code_block = Some(lang.as_ref().to_string())
+                            }
                             Item => md.event(Ev::ListItem, range),
                             Heading(level, _, _) => md.event(Ev::Heading(level), range),
                             List(starting_index) => md.event(Ev::ListStart(starting_index), range),
@@ -325,13 +391,20 @@ pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame
                         },
 
                         End(List(_)) => md.event(Ev::ListEnd, range),
+                        End(CodeBlock(CodeBlockKind::Fenced(_))) => code_block = None,
+
+                        Text(_) => {
+                            if let Some(lang) = code_block.take() {
+                                md.event(Ev::Annotation(Annotation::Code { lang }), range)
+                            }
+                        }
 
                         TaskListMarker(checked) => md.event(Ev::TaskMarker(checked), range),
                         _ => (),
                     }
                 }
 
-                let mut job = md.layout(text, &state.theme);
+                let mut job = md.layout(text, &state.theme, &state.syntax_set, &state.theme_set);
                 job.wrap.max_width = wrap_width;
 
                 // let mut galley = layout(&mut ui.ctx().fonts().lock().fonts, job.into());
