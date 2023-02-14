@@ -10,12 +10,12 @@ use eframe::{
     egui::{
         self,
         text_edit::{CCursorRange, TextEditState},
-        Id, TextFormat,
+        Button, Id, RichText, TextFormat,
     },
     epaint::{
         pos2,
         text::{layout, LayoutJob},
-        vec2, Color32, FontId, Rect, Stroke, TextureHandle, TextureId, Vec2,
+        vec2, Color32, FontFamily, FontId, Rect, Stroke, TextureHandle, TextureId, Vec2,
     },
 };
 
@@ -29,30 +29,14 @@ use syntect::{
 use pulldown_cmark::{CodeBlockKind, HeadingLevel};
 use smallvec::SmallVec;
 
-struct AppTheme {
-    h1: FontId,
-    h2: FontId,
-    h3: FontId,
-    h4: FontId,
-    body: FontId,
-    code: FontId,
-}
+pub mod nord;
+pub mod theme;
 
-impl Default for AppTheme {
-    fn default() -> Self {
-        Self {
-            h1: FontId::proportional(24.),
-            h2: FontId::proportional(20.),
-            h3: FontId::proportional(18.),
-            h4: FontId::proportional(16.),
-            body: FontId::proportional(14.),
-            code: FontId::monospace(14.),
-        }
-    }
-}
+pub use theme::*;
+
 // let ps = SyntaxSet::load_defaults_newlines();
 // let ts = ThemeSet::load_defaults();
-pub struct State {
+pub struct AppState {
     markdown: String,
     saved: String,
     theme: AppTheme,
@@ -61,17 +45,21 @@ pub struct State {
     theme_set: ThemeSet,
 }
 
-impl Default for State {
-    fn default() -> Self {
+impl AppState {
+    pub fn new(theme: AppTheme) -> Self {
         Self {
+            theme,
             markdown: "```rs\nlet a = Some(115);\n```".to_string(),
             saved: "".to_string(),
-            theme: Default::default(),
             prev_md_layout: MdLayout::new(),
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
         }
     }
+}
+#[no_mangle]
+pub fn create_app_state(theme: AppTheme) -> AppState {
+    AppState::new(theme)
 }
 
 struct MarkdownState {
@@ -95,28 +83,43 @@ fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, imag
 
 impl MarkdownState {
     fn to_text_format(&self, theme: &AppTheme) -> TextFormat {
-        let font_id = match self.heading {
-            [h1, ..] if h1 > 0 => &theme.h1,
-            [_, h2, ..] if h2 > 0 => &theme.h2,
-            [_, _, h3, ..] if h3 > 0 => &theme.h3,
-            [_, _, _, h4, ..] if h4 > 0 => &theme.h4,
-            [_, _, _, _, h5, ..] if h5 > 0 => &theme.h4,
-            [_, _, _, _, _, h6] if h6 > 0 => &theme.h4,
-            _ => &theme.body,
+        let AppTheme { fonts, colors } = theme;
+
+        let ColorTheme {
+            md_strike,
+            md_annotation,
+            md_body,
+            md_header,
+            ..
+        } = colors;
+
+        let (color, font_id) = match self.heading {
+            [h1, ..] if h1 > 0 => (md_header, &fonts.h1),
+            [_, h2, ..] if h2 > 0 => (md_header, &fonts.h2),
+            [_, _, h3, ..] if h3 > 0 => (md_header, &fonts.h3),
+            [_, _, _, h4, ..] if h4 > 0 => (md_header, &fonts.h4),
+            [_, _, _, _, h5, ..] if h5 > 0 => (md_header, &fonts.h4),
+            [_, _, _, _, _, h6] if h6 > 0 => (md_header, &fonts.h4),
+            _ => (md_body, &fonts.body),
         };
 
         let mut res = TextFormat {
+            color: *color,
             font_id: font_id.clone(),
             ..Default::default()
         };
         if self.bold > 0 {
             // todo add a different font
-            res.underline = Stroke::new(0.1, Color32::LIGHT_GRAY);
+            //res.underline = Stroke::new(0.1, Color32::LIGHT_GRAY);
+            res.font_id = FontId {
+                family: fonts.bold_family.clone(),
+                ..res.font_id
+            }
         }
 
         if self.strike > 0 || self.emphasis > 0 {
             // todo add a different font
-            res.strikethrough = Stroke::new(0.2, Color32::LIGHT_GRAY);
+            res.strikethrough = Stroke::new(0.6, *md_strike);
         }
 
         res
@@ -284,13 +287,15 @@ impl MdLayout {
 
                         for line in LinesWithEndings::from(code) {
                             let ranges = h.highlight_line(line, &syntax_set).unwrap();
-                            for v in ranges {
-                                let front = v.0.foreground;
+                            for (style, part) in ranges {
+                                let front = style.foreground;
+
+                                // println!("{:?}", (part, style.foreground));
                                 job.append(
-                                    v.1,
+                                    part,
                                     0.0,
                                     TextFormat::simple(
-                                        theme.code.clone(),
+                                        theme.fonts.code.clone(),
                                         Color32::from_rgb(front.r, front.g, front.b),
                                     ),
                                 );
@@ -300,7 +305,7 @@ impl MdLayout {
                     None => job.append(
                         code,
                         0.0,
-                        TextFormat::simple(theme.code.clone(), Color32::GRAY),
+                        TextFormat::simple(theme.fonts.code.clone(), Color32::GRAY),
                     ),
                 }
             } else {
@@ -339,7 +344,7 @@ impl MdLayout {
 }
 
 #[no_mangle]
-pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+pub fn render(state: &mut AppState, ctx: &egui::Context, _frame: &mut eframe::Frame) {
     egui::CentralPanel::default().show(ctx, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
@@ -460,6 +465,18 @@ pub fn render(state: &mut State, ctx: &egui::Context, _frame: &mut eframe::Frame
 
                 res
             };
+
+            // Test UI controls to tune in styles
+            // let resp = ui.button("ClickMe");
+            // let mut checked = true;
+            // let resp = ui.checkbox(&mut checked, "checkbox");
+
+            // let capture = ui.add(Button::new(
+            //     RichText::new("CAPTURE").text_style(egui::TextStyle::Heading),
+            // ));
+
+            // let mut my_f32: f32 = 30.0;
+            // ui.add(egui::Slider::new(&mut my_f32, 0.0..=100.0).text("My value"));
 
             if ui.input_mut(|input| input.key_pressed(egui::Key::Enter)) {
                 if let (Some(inside_item), Some(text_cursor_range), Some(mut edit_state)) = (

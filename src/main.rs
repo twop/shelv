@@ -7,9 +7,12 @@ use lib::*;
 #[hot_lib_reloader::hot_module(dylib = "lib")]
 mod hot_lib {
     use eframe::egui;
-    pub use lib::State;
+    pub use lib::AppState;
+    pub use lib::AppTheme;
 
     hot_functions_from_file!("lib/src/lib.rs");
+    hot_functions_from_file!("lib/src/theme.rs");
+    hot_functions_from_file!("lib/src/nord.rs");
 
     #[lib_change_subscription]
     pub fn subscribe() -> hot_lib_reloader::LibReloadObserver {}
@@ -17,11 +20,25 @@ mod hot_lib {
 
 // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-use eframe::{egui, epaint::vec2};
+use eframe::{
+    egui::{self, TextStyle, Visuals},
+    epaint::{vec2, FontFamily, FontId},
+    CreationContext,
+};
 
-#[derive(Default)]
 pub struct MyApp {
-    state: State,
+    state: AppState,
+}
+
+impl MyApp {
+    pub fn new(cc: &CreationContext) -> Self {
+        let theme = Default::default();
+        configure_styles(&cc.egui_ctx, &theme);
+
+        Self {
+            state: create_app_state(theme),
+        }
+    }
 }
 
 impl eframe::App for MyApp {
@@ -52,7 +69,7 @@ fn main() {
                     ctx.request_repaint();
                 });
             }
-            Box::new(MyApp::default())
+            Box::new(MyApp::new(cc))
         }),
     )
     .unwrap();
