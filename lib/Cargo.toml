@@ -8,6 +8,7 @@ crate-type = ["rlib", "dylib"]
 
 [dependencies]
 eframe = "0.21.0"
+global-hotkey = "0.1.2"
 image = "0.24.5"
 pulldown-cmark = "0.9.2"
 smallvec = "1.10.0"

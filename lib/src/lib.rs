@@ -3,7 +3,7 @@ use std::{
     ops::{Range, RangeBounds},
     path::Path,
     rc::Rc,
-    sync::Arc,
+    sync::{mpsc::Receiver, Arc},
 };
 
 use eframe::{
@@ -19,6 +19,7 @@ use eframe::{
     },
 };
 
+use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent};
 use syntect::{
     easy::HighlightLines,
     highlighting::{Theme, ThemeSet},
@@ -32,7 +33,8 @@ use smallvec::SmallVec;
 pub mod nord;
 pub mod theme;
 
-pub use theme::*;
+use theme::ColorTheme;
+pub use theme::{configure_styles, AppTheme};
 
 // let ps = SyntaxSet::load_defaults_newlines();
 // let ts = ThemeSet::load_defaults();
@@ -43,23 +45,38 @@ pub struct AppState {
     prev_md_layout: MdLayout,
     syntax_set: SyntaxSet,
     theme_set: ThemeSet,
+    msg_queue: Receiver<AsyncMessage>,
+    pub hidden: bool,
+}
+
+#[derive(Debug)]
+pub enum AsyncMessage {
+    OpenWithGlobalHotkey,
 }
 
 impl AppState {
-    pub fn new(theme: AppTheme) -> Self {
+    pub fn new(theme: AppTheme, msg_queue: Receiver<AsyncMessage>) -> Self {
         Self {
             theme,
-            markdown: "```rs\nlet a = Some(115);\n```".to_string(),
+            markdown: "### title\nbody\n```rs\nlet a = Some(115);\n```".to_string(),
             saved: "".to_string(),
             prev_md_layout: MdLayout::new(),
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
+            msg_queue,
+            hidden: false,
         }
     }
 }
+
+pub struct AppInitData {
+    pub theme: AppTheme,
+    pub msg_queue: Receiver<AsyncMessage>,
+}
+
 #[no_mangle]
-pub fn create_app_state(theme: AppTheme) -> AppState {
-    AppState::new(theme)
+pub fn create_app_state(data: AppInitData) -> AppState {
+    AppState::new(data.theme, data.msg_queue)
 }
 
 struct MarkdownState {
@@ -345,6 +362,39 @@ impl MdLayout {
 
 #[no_mangle]
 pub fn render(state: &mut AppState, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    let id = Id::new("text_edit");
+
+    while let Ok(msg) = state.msg_queue.try_recv() {
+        println!("got in render: {msg:?}");
+        match msg {
+            AsyncMessage::OpenWithGlobalHotkey => {
+                _frame.set_visible(true);
+                // _frame.set_maximized(true);
+                state.hidden = false;
+
+                if let Some(mut text_edit_state) = egui::TextEdit::load_state(ctx, id) {
+                    let ccursor = egui::text::CCursor::new(state.markdown.chars().count());
+                    text_edit_state.set_ccursor_range(Some(egui::text::CCursorRange::one(ccursor)));
+                    text_edit_state.store(ctx, id);
+                    ctx.memory_mut(|mem| mem.request_focus(id)); // give focus back to the [`TextEdit`].
+                }
+            }
+        }
+    }
+
+    if state.hidden {
+        _frame.set_visible(false);
+        state.hidden = false;
+    }
+    // let global_hotkey_channel = GlobalHotKeyEvent::receiver();
+    // if let Ok(event) = global_hotkey_channel.try_recv() {
+
+    //     if state.open_hotkey.id() == event.id {
+    //         // hotkeys_manager.unregister(hotkey2).unwrap();
+    //         println!("pressed: {:#?}", state.open_hotkey);
+    //     }
+    // }
+
     egui::CentralPanel::default().show(ctx, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
@@ -418,8 +468,6 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, _frame: &mut eframe::Fr
 
                 galley
             };
-
-            let id = Id::new("text_edit");
 
             let inside_item = TextEditState::load(ui.ctx(), id)
                 .and_then(|edit_state| edit_state.ccursor_range())

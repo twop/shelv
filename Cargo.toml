@@ -9,8 +9,10 @@ edition = "2021"
 
 [dependencies]
 eframe = "0.21.0"
+global-hotkey = "0.1.2"
 hot-lib-reloader = { version = "^0.6", optional = true }
 lib = { path = "./lib" }
+winit = "0.28.1"
 
 [features]
 default = []

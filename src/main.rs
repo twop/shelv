@@ -1,18 +1,31 @@
+use global_hotkey::{
+    hotkey::{Code, HotKey, Modifiers},
+    GlobalHotKeyEvent, GlobalHotKeyManager,
+};
 #[cfg(feature = "reload")]
 use hot_lib::*;
+use lib::AsyncMessage;
+
 #[cfg(not(feature = "reload"))]
-use lib::*;
+use lib::create_app_state;
+
+use std::{
+    sync::mpsc::{channel, sync_channel},
+    thread,
+};
 
 #[cfg(feature = "reload")]
 #[hot_lib_reloader::hot_module(dylib = "lib")]
 mod hot_lib {
     use eframe::egui;
+    pub use lib::configure_styles;
+    pub use lib::AppInitData;
     pub use lib::AppState;
     pub use lib::AppTheme;
 
     hot_functions_from_file!("lib/src/lib.rs");
-    hot_functions_from_file!("lib/src/theme.rs");
-    hot_functions_from_file!("lib/src/nord.rs");
+    // hot_functions_from_file!("lib/src/theme.rs");
+    // hot_functions_from_file!("lib/src/nord.rs");
 
     #[lib_change_subscription]
     pub fn subscribe() -> hot_lib_reloader::LibReloadObserver {}
@@ -28,6 +41,7 @@ use eframe::{
 
 pub struct MyApp {
     state: AppState,
+    hotkeys_manager: GlobalHotKeyManager,
 }
 
 impl MyApp {
@@ -35,8 +49,30 @@ impl MyApp {
         let theme = Default::default();
         configure_styles(&cc.egui_ctx, &theme);
 
+        let (msg_queue_tx, msg_queue_rx) = sync_channel::<AsyncMessage>(10);
+        let hotkeys_manager = GlobalHotKeyManager::new().unwrap();
+        let global_open_hotkey = HotKey::new(Some(Modifiers::SHIFT | Modifiers::META), Code::KeyM);
+
+        hotkeys_manager.register(global_open_hotkey).unwrap();
+
+        let open_hotkey = global_open_hotkey.clone();
+        let ctx = cc.egui_ctx.clone();
+        GlobalHotKeyEvent::set_event_handler(Some(move |ev: GlobalHotKeyEvent| {
+            if ev.id == open_hotkey.id() {
+                msg_queue_tx
+                    .send(AsyncMessage::OpenWithGlobalHotkey)
+                    .unwrap();
+                ctx.request_repaint();
+                println!("handler: {:?}", open_hotkey);
+            }
+        }));
+
         Self {
-            state: create_app_state(theme),
+            state: create_app_state(AppInitData {
+                theme,
+                msg_queue: msg_queue_rx,
+            }),
+            hotkeys_manager,
         }
     }
 }
@@ -44,6 +80,11 @@ impl MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         render(&mut self.state, ctx, frame);
+    }
+
+    fn on_close_event(&mut self) -> bool {
+        self.state.hidden = true;
+        return false;
     }
 }
 
@@ -54,8 +95,19 @@ fn main() {
         min_window_size: Some(vec2(350.0, 450.0)),
         max_window_size: Some(vec2(350.0, 450.0)),
         resizable: true,
+        always_on_top: true,
+        run_and_return: true,
+        event_loop_builder: Some(Box::new(|builder| {
+            #[cfg(target_os = "macos")]
+            {
+                use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+                builder.with_activation_policy(ActivationPolicy::Accessory);
+            }
+        })),
+
         ..Default::default()
     };
+
     eframe::run_native(
         "Memento",
         options,
