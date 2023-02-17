@@ -46,12 +46,12 @@ pub struct AppState {
     syntax_set: SyntaxSet,
     theme_set: ThemeSet,
     msg_queue: Receiver<AsyncMessage>,
-    pub hidden: bool,
+    hidden: bool,
 }
 
 #[derive(Debug)]
 pub enum AsyncMessage {
-    OpenWithGlobalHotkey,
+    ToggleVisibility,
 }
 
 impl AppState {
@@ -361,18 +361,19 @@ impl MdLayout {
 }
 
 #[no_mangle]
-pub fn render(state: &mut AppState, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Frame) {
     let id = Id::new("text_edit");
 
     while let Ok(msg) = state.msg_queue.try_recv() {
         println!("got in render: {msg:?}");
         match msg {
-            AsyncMessage::OpenWithGlobalHotkey => {
-                _frame.set_visible(true);
-                // _frame.set_maximized(true);
-                state.hidden = false;
+            AsyncMessage::ToggleVisibility => {
+                state.hidden = !state.hidden;
+                frame.set_visible(!state.hidden);
 
-                if let Some(mut text_edit_state) = egui::TextEdit::load_state(ctx, id) {
+                if let (false, Some(mut text_edit_state)) =
+                    (state.hidden, egui::TextEdit::load_state(ctx, id))
+                {
                     let ccursor = egui::text::CCursor::new(state.markdown.chars().count());
                     text_edit_state.set_ccursor_range(Some(egui::text::CCursorRange::one(ccursor)));
                     text_edit_state.store(ctx, id);
@@ -381,19 +382,6 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, _frame: &mut eframe::Fr
             }
         }
     }
-
-    if state.hidden {
-        _frame.set_visible(false);
-        state.hidden = false;
-    }
-    // let global_hotkey_channel = GlobalHotKeyEvent::receiver();
-    // if let Ok(event) = global_hotkey_channel.try_recv() {
-
-    //     if state.open_hotkey.id() == event.id {
-    //         // hotkeys_manager.unregister(hotkey2).unwrap();
-    //         println!("pressed: {:#?}", state.open_hotkey);
-    //     }
-    // }
 
     egui::CentralPanel::default().show(ctx, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {

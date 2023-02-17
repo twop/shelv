@@ -4,13 +4,17 @@ use global_hotkey::{
 };
 #[cfg(feature = "reload")]
 use hot_lib::*;
+use image::ImageFormat;
 use lib::AsyncMessage;
 
 #[cfg(not(feature = "reload"))]
-use lib::create_app_state;
+use lib::{configure_styles, create_app_state, render, AppInitData, AppState, AppTheme};
+
+use tray_icon::{icon::Icon, menu::MenuEvent, TrayEvent, TrayIcon, TrayIconBuilder};
+// use tray_item::TrayItem;
 
 use std::{
-    sync::mpsc::{channel, sync_channel},
+    sync::mpsc::{channel, sync_channel, SyncSender},
     thread,
 };
 
@@ -42,6 +46,8 @@ use eframe::{
 pub struct MyApp {
     state: AppState,
     hotkeys_manager: GlobalHotKeyManager,
+    tray: TrayIcon,
+    msg_queue: SyncSender<AsyncMessage>,
 }
 
 impl MyApp {
@@ -57,15 +63,34 @@ impl MyApp {
 
         let open_hotkey = global_open_hotkey.clone();
         let ctx = cc.egui_ctx.clone();
+        let sender = msg_queue_tx.clone();
         GlobalHotKeyEvent::set_event_handler(Some(move |ev: GlobalHotKeyEvent| {
             if ev.id == open_hotkey.id() {
-                msg_queue_tx
-                    .send(AsyncMessage::OpenWithGlobalHotkey)
-                    .unwrap();
+                sender.send(AsyncMessage::ToggleVisibility).unwrap();
                 ctx.request_repaint();
                 println!("handler: {:?}", open_hotkey);
             }
         }));
+
+        let ctx = cc.egui_ctx.clone();
+        let sender = msg_queue_tx.clone();
+        TrayEvent::set_event_handler(Some(move |ev| {
+            sender.send(AsyncMessage::ToggleVisibility).unwrap();
+            ctx.request_repaint();
+
+            println!("tray event: {:?}", ev);
+        }));
+        let tray_image = image::load_from_memory_with_format(
+            include_bytes!("../assets/tray-icon.png",),
+            ImageFormat::Png,
+        )
+        .unwrap();
+
+        let tray_icon = TrayIconBuilder::new()
+            .with_tooltip("Show/Hide Memoro")
+            .with_icon(Icon::from_rgba(tray_image.into_bytes(), 64, 64).unwrap())
+            .build()
+            .unwrap();
 
         Self {
             state: create_app_state(AppInitData {
@@ -73,6 +98,8 @@ impl MyApp {
                 msg_queue: msg_queue_rx,
             }),
             hotkeys_manager,
+            tray: tray_icon,
+            msg_queue: msg_queue_tx,
         }
     }
 }
@@ -83,17 +110,20 @@ impl eframe::App for MyApp {
     }
 
     fn on_close_event(&mut self) -> bool {
-        self.state.hidden = true;
+        self.msg_queue.send(AsyncMessage::ToggleVisibility).unwrap();
+
         return false;
     }
 }
 
 fn main() {
     let options = eframe::NativeOptions {
-        follow_system_theme: true,
         default_theme: eframe::Theme::Dark,
+        initial_window_size: Some(vec2(350.0, 450.0)),
         min_window_size: Some(vec2(350.0, 450.0)),
-        max_window_size: Some(vec2(350.0, 450.0)),
+        max_window_size: Some(vec2(650.0, 750.0)),
+        // fullsize_content: true,
+        // decorated: false,
         resizable: true,
         always_on_top: true,
         run_and_return: true,
@@ -109,7 +139,7 @@ fn main() {
     };
 
     eframe::run_native(
-        "Memento",
+        "Memoro",
         options,
         Box::new(|cc| {
             // When hot reload is enabled, repaint after every lib change
@@ -121,6 +151,25 @@ fn main() {
                     ctx.request_repaint();
                 });
             }
+
+            //cc.egui_ctx.
+
+            // let mut tray = TrayItem::new("Tray Example", "").unwrap();
+
+            // tray.add_label("Tray Label").unwrap();
+
+            // tray.add_menu_item("Hello", || {
+            //     println!("Hello!");
+            // })
+            // .unwrap();
+
+            // let mut inner = tray.inner_mut();
+            // // inner.set_icon("./assets/tray-icon.png").unwrap();
+            // inner.add_quit_item("Quit");
+            // inner.display();
+
+            // tray_icon.set_visible(true);
+
             Box::new(MyApp::new(cc))
         }),
     )
