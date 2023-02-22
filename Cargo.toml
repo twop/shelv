@@ -8,7 +8,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-eframe = {version = "0.21.0", features = ["persistence", "wgpu"]}
+eframe = { git = "https://github.com/twop/egui", branch = "focus-and-window-builder", features = ["persistence", "wgpu"] }
+# eframe = { path = "../../pub-frameworks/contributing/egui/crates/eframe", features = ["persistence", "wgpu"] }
+# egui_extras = {version = "0.21.0", features = ["svg"] }
+egui_extras = { git = "https://github.com/twop/egui", branch = "focus-and-window-builder", features = ["svg"] }
 global-hotkey = "0.1.2"
 hot-lib-reloader = { version = "^0.6", optional = true }
 image = "0.24.5"

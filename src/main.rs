@@ -8,7 +8,7 @@ use image::ImageFormat;
 use lib::AsyncMessage;
 
 #[cfg(not(feature = "reload"))]
-use lib::{configure_styles, create_app_state, render, AppInitData, AppState, AppTheme};
+use lib::{configure_styles, create_app_state, render, AppIcons, AppInitData, AppState, AppTheme};
 
 use tray_icon::{icon::Icon, menu::MenuEvent, TrayEvent, TrayIcon, TrayIconBuilder};
 // use tray_item::TrayItem;
@@ -23,9 +23,7 @@ use std::{
 mod hot_lib {
     use eframe::egui;
     pub use lib::configure_styles;
-    pub use lib::AppInitData;
-    pub use lib::AppState;
-    pub use lib::AppTheme;
+    pub use lib::{AppIcons, AppInitData, AppState, AppTheme};
 
     hot_functions_from_file!("lib/src/lib.rs");
     // hot_functions_from_file!("lib/src/theme.rs");
@@ -96,6 +94,7 @@ impl MyApp {
             state: create_app_state(AppInitData {
                 theme,
                 msg_queue: msg_queue_rx,
+                icons: load_app_icons(),
             }),
             hotkeys_manager,
             tray: tray_icon,
@@ -127,6 +126,18 @@ fn main() {
         resizable: true,
         always_on_top: true,
         run_and_return: true,
+        window_builder: Some(Box::new(|builder| {
+            #[cfg(target_os = "macos")]
+            use winit::platform::macos::WindowBuilderExtMacOS;
+            #[cfg(target_os = "macos")]
+            return builder
+                .with_fullsize_content_view(true)
+                .with_titlebar_buttons_hidden(true)
+                .with_title_hidden(true)
+                .with_titlebar_transparent(true);
+
+            builder
+        })),
         event_loop_builder: Some(Box::new(|builder| {
             #[cfg(target_os = "macos")]
             {
@@ -174,4 +185,33 @@ fn main() {
         }),
     )
     .unwrap();
+}
+
+pub fn load_app_icons() -> AppIcons {
+    AppIcons {
+        more: egui_extras::RetainedImage::from_svg_bytes_with_size(
+            "more",
+            include_bytes!("../assets/icons/more.svg"),
+            egui_extras::image::FitTo::Size(64, 64),
+        )
+        .unwrap(),
+        gear: egui_extras::RetainedImage::from_svg_bytes_with_size(
+            "gear",
+            include_bytes!("../assets/icons/gear.svg"),
+            egui_extras::image::FitTo::Size(64, 64),
+        )
+        .unwrap(),
+        question_mark: egui_extras::RetainedImage::from_svg_bytes_with_size(
+            "question-mark",
+            include_bytes!("../assets/icons/question-mark.svg"),
+            egui_extras::image::FitTo::Size(64, 64),
+        )
+        .unwrap(),
+        close: egui_extras::RetainedImage::from_svg_bytes_with_size(
+            "close",
+            include_bytes!("../assets/icons/x.svg"),
+            egui_extras::image::FitTo::Size(64, 64),
+        )
+        .unwrap(),
+    }
 }

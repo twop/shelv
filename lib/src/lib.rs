@@ -10,8 +10,9 @@ use eframe::{
     egui::{
         self,
         text_edit::{CCursorRange, TextEditState},
-        Button, Id, RichText, TextFormat,
+        Button, Context, Id, ImageButton, Layout, RichText, TextFormat, TopBottomPanel,
     },
+    emath::Align,
     epaint::{
         pos2,
         text::{layout, LayoutJob},
@@ -19,6 +20,7 @@ use eframe::{
     },
 };
 
+use egui_extras::RetainedImage;
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent};
 use syntect::{
     easy::HighlightLines,
@@ -46,7 +48,15 @@ pub struct AppState {
     syntax_set: SyntaxSet,
     theme_set: ThemeSet,
     msg_queue: Receiver<AsyncMessage>,
+    icons: AppIcons,
     hidden: bool,
+}
+
+pub struct AppIcons {
+    pub more: RetainedImage,
+    pub gear: RetainedImage,
+    pub question_mark: RetainedImage,
+    pub close: RetainedImage,
 }
 
 #[derive(Debug)]
@@ -55,7 +65,12 @@ pub enum AsyncMessage {
 }
 
 impl AppState {
-    pub fn new(theme: AppTheme, msg_queue: Receiver<AsyncMessage>) -> Self {
+    pub fn new(init_data: AppInitData) -> Self {
+        let AppInitData {
+            theme,
+            msg_queue,
+            icons,
+        } = init_data;
         Self {
             theme,
             markdown: "### title\nbody\n```rs\nlet a = Some(115);\n```".to_string(),
@@ -63,6 +78,7 @@ impl AppState {
             prev_md_layout: MdLayout::new(),
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
+            icons,
             msg_queue,
             hidden: false,
         }
@@ -72,11 +88,12 @@ impl AppState {
 pub struct AppInitData {
     pub theme: AppTheme,
     pub msg_queue: Receiver<AsyncMessage>,
+    pub icons: AppIcons,
 }
 
 #[no_mangle]
 pub fn create_app_state(data: AppInitData) -> AppState {
-    AppState::new(data.theme, data.msg_queue)
+    AppState::new(data)
 }
 
 struct MarkdownState {
@@ -375,13 +392,20 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     (state.hidden, egui::TextEdit::load_state(ctx, id))
                 {
                     let ccursor = egui::text::CCursor::new(state.markdown.chars().count());
+
                     text_edit_state.set_ccursor_range(Some(egui::text::CCursorRange::one(ccursor)));
                     text_edit_state.store(ctx, id);
+
                     ctx.memory_mut(|mem| mem.request_focus(id)); // give focus back to the [`TextEdit`].
+
+                    frame.focus_window();
                 }
             }
         }
     }
+
+    render_footer(ctx, &state.icons);
+    render_header_panel(ctx, &state.icons);
 
     egui::CentralPanel::default().show(ctx, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -502,7 +526,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                 res
             };
 
-            // Test UI controls to tune in styles
+            // // Test UI controls to tune in styles
             // let resp = ui.button("ClickMe");
             // let mut checked = true;
             // let resp = ui.checkbox(&mut checked, "checkbox");
@@ -592,5 +616,98 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
 
             state.prev_md_layout = md;
         });
+    });
+}
+
+fn render_footer(ctx: &Context, icons: &AppIcons) {
+    TopBottomPanel::bottom("footer")
+        // .exact_height(32.)
+        .show(ctx, |ui| {
+            // ui.add_space(4.);
+            egui::menu::bar(ui, |ui| {
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    ui.add_space(4.);
+
+                    let capture = ui.add(
+                        Button::image_and_text(
+                            icons.more.texture_id(ctx),
+                            Vec2::new(18., 18.),
+                            RichText::new("Note 1").text_style(egui::TextStyle::Button),
+                        )
+                        .min_size(vec2(24., 24.)),
+                    );
+
+                    ui.add_space(4.);
+                    let record = ui.add(
+                        Button::image_and_text(
+                            icons.more.texture_id(ctx),
+                            Vec2::new(18., 18.),
+                            RichText::new("Note 2").text_style(egui::TextStyle::Button),
+                        )
+                        .min_size(vec2(24., 24.)),
+                    );
+                });
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        ui.add_space(4.);
+
+                        let settings = ui.add(ImageButton::new(
+                            icons.gear.texture_id(ctx),
+                            Vec2::new(18., 18.),
+                        ));
+                        ui.add_space(4.);
+
+                        let help = ui.add(ImageButton::new(
+                            icons.question_mark.texture_id(ctx),
+                            Vec2::new(18., 18.),
+                        ));
+                    }
+                });
+            });
+
+            // ui.add_space(4.);
+        });
+}
+
+// define a TopBottomPanel widget
+fn render_header_panel(ctx: &egui::Context, icons: &AppIcons) {
+    TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        // ui.add_space(4.);
+        egui::menu::bar(ui, |ui| {
+            // logo
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add_space(5.);
+                ui.horizontal(|ui| {
+                    //ui.spacing_mut().item_spacing = Vec2::new(0.3, 0.);
+                    ui.label(RichText::new("MEMENTO").text_style(egui::TextStyle::Button));
+                    // ui.label(
+                    //     RichText::new("ento")
+                    //         .text_style(egui::TextStyle::Heading)
+                    //         .color(Color32::YELLOW),
+                    // );
+                });
+            });
+
+            // controls
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    ui.add_space(4.);
+
+                    let close_btn = ui.add(ImageButton::new(
+                        icons.close.texture_id(ctx),
+                        Vec2::new(18., 18.),
+                    ));
+
+                    if close_btn.clicked() {
+                        // dispatch.add(Message::Quit)
+                    }
+                }
+            });
+        });
+
+        // ui.add_space(4.);
     });
 }

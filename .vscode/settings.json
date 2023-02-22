@@ -1,4 +1,4 @@
 {
-  "rust-analyzer.diagnostics.previewRustcOutput": true,
-  "rust-analyzer.cargo.features": ["reload"]
+  "rust-analyzer.diagnostics.previewRustcOutput": true
+  // "rust-analyzer.cargo.features": ["reload"]
 }
