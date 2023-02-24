@@ -1,3 +1,5 @@
+#![feature(iter_intersperse)]
+
 use std::{
     cell::RefCell,
     ops::{Range, RangeBounds},
@@ -22,6 +24,7 @@ use eframe::{
 
 use egui_extras::RetainedImage;
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent};
+use picker::Picker;
 use syntect::{
     easy::HighlightLines,
     highlighting::{Theme, ThemeSet},
@@ -33,6 +36,7 @@ use pulldown_cmark::{CodeBlockKind, HeadingLevel};
 use smallvec::SmallVec;
 
 pub mod nord;
+pub mod picker;
 pub mod theme;
 
 use theme::ColorTheme;
@@ -49,6 +53,7 @@ pub struct AppState {
     theme_set: ThemeSet,
     msg_queue: Receiver<AsyncMessage>,
     icons: AppIcons,
+    selected_note: u32,
     hidden: bool,
 }
 
@@ -80,6 +85,7 @@ impl AppState {
             theme_set: ThemeSet::load_defaults(),
             icons,
             msg_queue,
+            selected_note: 0,
             hidden: false,
         }
     }
@@ -404,7 +410,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
         }
     }
 
-    render_footer(ctx, &state.icons);
+    render_footer(&mut state.selected_note, ctx, &state.icons, &state.theme);
     render_header_panel(ctx, &state.icons);
 
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -619,93 +625,131 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
     });
 }
 
-fn render_footer(ctx: &Context, icons: &AppIcons) {
+fn render_footer(selected: &mut u32, ctx: &Context, icons: &AppIcons, theme: &AppTheme) {
     TopBottomPanel::bottom("footer")
         // .exact_height(32.)
         .show(ctx, |ui| {
-            // ui.add_space(4.);
-            egui::menu::bar(ui, |ui| {
+            ui.horizontal(|ui| {
+                let height = 24.;
+                let avail_width = ui.available_width();
+                ui.set_min_size(vec2(avail_width, height));
+
+                set_menu_bar_style(ui);
+
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.add_space(4.);
+                    ui.add(Picker {
+                        current: selected,
+                        count: 4,
+                        gap: 8.,
+                        radius: 8.,
+                        inactive: theme.colors.outline_fg,
+                        hover: theme.colors.button_hover_bg_stroke,
+                        pressed: theme.colors.button_pressed_fg,
+                        selected: theme.colors.button_fg,
+                    });
+                    // let capture = ui.add(
+                    //     Button::image_and_text(
+                    //         icons.more.texture_id(ctx),
+                    //         Vec2::new(18., 18.),
+                    //         RichText::new("Note 1").text_style(egui::TextStyle::Button),
+                    //     )
+                    //     .min_size(vec2(24., 24.)),
+                    // );
 
-                    let capture = ui.add(
-                        Button::image_and_text(
-                            icons.more.texture_id(ctx),
-                            Vec2::new(18., 18.),
-                            RichText::new("Note 1").text_style(egui::TextStyle::Button),
-                        )
-                        .min_size(vec2(24., 24.)),
-                    );
-
-                    ui.add_space(4.);
-                    let record = ui.add(
-                        Button::image_and_text(
-                            icons.more.texture_id(ctx),
-                            Vec2::new(18., 18.),
-                            RichText::new("Note 2").text_style(egui::TextStyle::Button),
-                        )
-                        .min_size(vec2(24., 24.)),
-                    );
+                    // ui.add_space(4.);
+                    // let record = ui.add(
+                    //     Button::image_and_text(
+                    //         icons.more.texture_id(ctx),
+                    //         Vec2::new(18., 18.),
+                    //         RichText::new("Note 2").text_style(egui::TextStyle::Button),
+                    //     )
+                    //     .min_size(vec2(24., 24.)),
+                    // );
                 });
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        ui.add_space(4.);
-
-                        let settings = ui.add(ImageButton::new(
-                            icons.gear.texture_id(ctx),
-                            Vec2::new(18., 18.),
-                        ));
-                        ui.add_space(4.);
-
-                        let help = ui.add(ImageButton::new(
-                            icons.question_mark.texture_id(ctx),
-                            Vec2::new(18., 18.),
-                        ));
-                    }
+                    let settings = ui.add(ImageButton::new(
+                        icons.gear.texture_id(ctx),
+                        Vec2::new(18., 18.),
+                    ));
+                    // // ui.add_space(4.);
+                    // ui.separator();
                 });
             });
-
-            // ui.add_space(4.);
         });
+}
+
+fn set_menu_bar_style(ui: &mut egui::Ui) {
+    let style = ui.style_mut();
+    style.spacing.button_padding = vec2(0.0, 0.0);
+    style.spacing.item_spacing = vec2(0.0, 0.0);
+    style.visuals.widgets.active.bg_stroke = Stroke::NONE;
+    style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
+    style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+    style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
 // define a TopBottomPanel widget
 fn render_header_panel(ctx: &egui::Context, icons: &AppIcons) {
     TopBottomPanel::top("top_panel").show(ctx, |ui| {
-        // ui.add_space(4.);
-        egui::menu::bar(ui, |ui| {
-            // logo
+        println!("-----");
+        println!("before menu {:?}", ui.available_size());
+        ui.horizontal(|ui| {
+            let height = 24.;
+            let avail_width = ui.available_width();
+            ui.set_min_size(vec2(avail_width, height));
+            let icon_block_width = 48.;
+
+            set_menu_bar_style(ui);
+
+            println!("before x {:?}", ui.available_size());
+
+            // ui.allocate_ui(vec2(icon_block_width, height), |ui| {
+            // println!("before help {:?}", ui.available_size());
+
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                ui.add_space(5.);
-                ui.horizontal(|ui| {
-                    //ui.spacing_mut().item_spacing = Vec2::new(0.3, 0.);
-                    ui.label(RichText::new("MEMENTO").text_style(egui::TextStyle::Button));
-                    // ui.label(
-                    //     RichText::new("ento")
-                    //         .text_style(egui::TextStyle::Heading)
-                    //         .color(Color32::YELLOW),
-                    // );
-                });
+                // ui.add_space(4.);
+
+                ui.set_width(icon_block_width);
+                let close_btn = ui.add(ImageButton::new(
+                    icons.close.texture_id(ctx),
+                    Vec2::new(18., 18.),
+                ));
+
+                if close_btn.clicked() {}
             });
 
-            // controls
+            // });
+
+            println!("before title {:?}", ui.available_size());
+            // ui.allocate_ui(vec2(avail_width - 2. * icon_block_width, height), |ui| {
+
+            // });
+
+            ui.scope(|ui| {
+                ui.set_width(avail_width - 2. * icon_block_width);
+                ui.with_layout(
+                    Layout::centered_and_justified(egui::Direction::LeftToRight),
+                    |ui| {
+                        ui.label(RichText::new("Memento").text_style(egui::TextStyle::Button));
+                    },
+                );
+            });
+
+            println!("before help {:?}", ui.available_size());
+
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    ui.add_space(4.);
+                ui.set_width(icon_block_width);
 
-                    let close_btn = ui.add(ImageButton::new(
-                        icons.close.texture_id(ctx),
-                        Vec2::new(18., 18.),
-                    ));
+                let help = ui.add(ImageButton::new(
+                    icons.question_mark.texture_id(ctx),
+                    Vec2::new(18., 18.),
+                ));
 
-                    if close_btn.clicked() {
-                        // dispatch.add(Message::Quit)
-                    }
-                }
+                if help.clicked() {}
             });
+
+            // ui.allocate_ui(vec2(icon_block_width, height), |ui| {});
         });
 
         // ui.add_space(4.);
