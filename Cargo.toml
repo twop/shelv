@@ -8,7 +8,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-eframe = { git = "https://github.com/twop/egui", branch = "focus-and-window-builder", features = ["persistence", "wgpu"] }
+eframe = { git = "https://github.com/twop/egui", branch = "focus-and-window-builder", features = ["wgpu"] }
 # eframe = { path = "../../pub-frameworks/contributing/egui/crates/eframe", features = ["persistence", "wgpu"] }
 # egui_extras = {version = "0.21.0", features = ["svg"] }
 egui_extras = { git = "https://github.com/twop/egui", branch = "focus-and-window-builder", features = ["svg"] }

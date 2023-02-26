@@ -23,10 +23,6 @@ name = "accesskit"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4803cf8c252f374ae6bfbb341e49e5a37f7601f2ce74a105927a663eba952c67"
-dependencies = [
- "enumn",
- "serde",
-]
 
 [[package]]
 name = "accesskit_consumer"
@@ -130,7 +126,6 @@ checksum = "2c99f64d1e06488f620f932677e24bc6e2897582980441ae90a671415bd7ec2f"
 dependencies = [
  "cfg-if 1.0.0",
  "once_cell",
- "serde",
  "version_check",
 ]
 
@@ -887,16 +882,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "directories-next"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "339ee130d97a610ea5a5872d2bbb130fdf68884ff09d3028b81bec8a1ac23bbc"
-dependencies = [
- "cfg-if 1.0.0",
- "dirs-sys-next",
-]
-
-[[package]]
 name = "dirs"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -974,7 +959,6 @@ version = "0.21.0"
 source = "git+https://github.com/twop/egui?branch=focus-and-window-builder#8f600940249779c55351dda2d4d0734691dc9a50"
 dependencies = [
  "bytemuck",
- "serde",
 ]
 
 [[package]]
@@ -983,7 +967,6 @@ version = "0.21.3"
 source = "git+https://github.com/twop/egui?branch=focus-and-window-builder#8f600940249779c55351dda2d4d0734691dc9a50"
 dependencies = [
  "bytemuck",
- "directories-next",
  "egui",
  "egui-wgpu",
  "egui-winit",
@@ -995,8 +978,6 @@ dependencies = [
  "percent-encoding",
  "pollster",
  "raw-window-handle",
- "ron",
- "serde",
  "thiserror",
  "tracing",
  "wasm-bindgen",
@@ -1015,8 +996,6 @@ dependencies = [
  "ahash 0.8.3",
  "epaint",
  "nohash-hasher",
- "ron",
- "serde",
  "tracing",
 ]
 
@@ -1043,7 +1022,6 @@ dependencies = [
  "arboard",
  "egui",
  "instant",
- "serde",
  "smithay-clipboard",
  "tracing",
  "webbrowser",
@@ -1088,7 +1066,6 @@ version = "0.21.0"
 source = "git+https://github.com/twop/egui?branch=focus-and-window-builder#8f600940249779c55351dda2d4d0734691dc9a50"
 dependencies = [
  "bytemuck",
- "serde",
 ]
 
 [[package]]
@@ -1113,17 +1090,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "enumn"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e88bcb3a067a6555d577aba299e75eff9942da276e6506fc6274327daa026132"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "epaint"
 version = "0.21.0"
 source = "git+https://github.com/twop/egui?branch=focus-and-window-builder#8f600940249779c55351dda2d4d0734691dc9a50"
@@ -1136,7 +1102,6 @@ dependencies = [
  "emath",
  "nohash-hasher",
  "parking_lot",
- "serde",
 ]
 
 [[package]]
@@ -3109,17 +3074,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20ec2d3e3fc7a92ced357df9cebd5a10b6fb2aa1ee797bf7e9ce2f17dffc8f59"
 dependencies = [
  "bytemuck",
-]
-
-[[package]]
-name = "ron"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "300a51053b1cb55c80b7a9fde4120726ddf25ca241a1cbb926626f62fb136bff"
-dependencies = [
- "base64 0.13.1",
- "bitflags",
- "serde",
 ]
 
 [[package]]

@@ -628,6 +628,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
 fn render_footer(selected: &mut u32, ctx: &Context, icons: &AppIcons, theme: &AppTheme) {
     TopBottomPanel::bottom("footer")
         // .exact_height(32.)
+        .show_separator_line(false)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let height = 24.;
@@ -641,11 +642,12 @@ fn render_footer(selected: &mut u32, ctx: &Context, icons: &AppIcons, theme: &Ap
                         current: selected,
                         count: 4,
                         gap: 8.,
-                        radius: 8.,
+                        radius: 6.,
                         inactive: theme.colors.outline_fg,
                         hover: theme.colors.button_hover_bg_stroke,
                         pressed: theme.colors.button_pressed_fg,
                         selected: theme.colors.button_fg,
+                        outline: Stroke::new(1.0, theme.colors.outline_fg),
                     });
                     // let capture = ui.add(
                     //     Button::image_and_text(
