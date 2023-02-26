@@ -37,7 +37,7 @@ mod hot_lib {
 
 use eframe::{
     egui::{self, TextStyle, Visuals},
-    epaint::{vec2, FontFamily, FontId},
+    epaint::{vec2, Color32, FontFamily, FontId},
     CreationContext,
 };
 
@@ -92,9 +92,9 @@ impl MyApp {
 
         Self {
             state: create_app_state(AppInitData {
+                icons: load_app_icons(theme.colors.button_fg),
                 theme,
                 msg_queue: msg_queue_rx,
-                icons: load_app_icons(),
             }),
             hotkeys_manager,
             tray: tray_icon,
@@ -187,31 +187,34 @@ fn main() {
     .unwrap();
 }
 
-pub fn load_app_icons() -> AppIcons {
-    AppIcons {
-        more: egui_extras::RetainedImage::from_svg_bytes_with_size(
-            "more",
-            include_bytes!("../assets/icons/more.svg"),
-            egui_extras::image::FitTo::Size(64, 64),
-        )
-        .unwrap(),
-        gear: egui_extras::RetainedImage::from_svg_bytes_with_size(
-            "gear",
-            include_bytes!("../assets/icons/gear.svg"),
-            egui_extras::image::FitTo::Size(64, 64),
-        )
-        .unwrap(),
-        question_mark: egui_extras::RetainedImage::from_svg_bytes_with_size(
+pub fn load_app_icons(stroke_color: Color32) -> AppIcons {
+    let [more, gear, question_mark, close] = [
+        ("more", include_str!("../assets/icons/more.svg")),
+        ("gear", include_str!("../assets/icons/gear.svg")),
+        (
             "question-mark",
-            include_bytes!("../assets/icons/question-mark.svg"),
+            include_str!("../assets/icons/question-mark.svg"),
+        ),
+        ("close", include_str!("../assets/icons/x.svg")),
+    ]
+    .map(|(name, svg)| {
+        let [r, g, b, a] = stroke_color.to_array();
+        let svg = svg.replace(
+            "stroke=\"white\"",
+            format!("stroke=\"rgba({}, {}, {}, {})\"", r, g, b, a).as_str(),
+        );
+        egui_extras::RetainedImage::from_svg_bytes_with_size(
+            name,
+            svg.as_bytes(),
             egui_extras::image::FitTo::Size(64, 64),
         )
-        .unwrap(),
-        close: egui_extras::RetainedImage::from_svg_bytes_with_size(
-            "close",
-            include_bytes!("../assets/icons/x.svg"),
-            egui_extras::image::FitTo::Size(64, 64),
-        )
-        .unwrap(),
+        .unwrap()
+    });
+
+    AppIcons {
+        more,
+        gear,
+        question_mark,
+        close,
     }
 }

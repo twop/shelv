@@ -4,7 +4,7 @@ use eframe::{
     egui::{
         self,
         style::{Selection, WidgetVisuals, Widgets},
-        FontDefinitions, TextStyle, Visuals,
+        FontDefinitions, Margin, TextStyle, Visuals,
     },
     epaint::{Color32, FontFamily, FontId, Rounding, Shadow, Stroke},
 };
@@ -91,6 +91,7 @@ pub struct ColorTheme {
     pub selection_stroke: Color32,
     pub hyperlink_color: Color32,
     pub normal_text_color: Color32,
+    pub subtle_text_color: Color32,
 
     // Something just barely different from the background color.
     // Used for [`crate::Grid::striped`].
@@ -142,6 +143,7 @@ impl ColorTheme {
         let selection_stroke = Nord::NORD6;
         let hyperlink_color = Nord::NORD9;
         let normal_text_color = Nord::NORD4;
+        let subtle_text_color = Nord::NORD3;
 
         // Something just barely different from the background color.
         // Used for [`crate::Grid::striped`].
@@ -188,6 +190,7 @@ impl ColorTheme {
             button_bg_stroke,
             md_body,
             md_header,
+            subtle_text_color,
         }
     }
 }
@@ -201,7 +204,7 @@ pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
 
     style.text_styles = text_styles(&theme.fonts);
     style.visuals = visuals(&theme.colors);
-
+    // style.spacing.window_margin = Margin::same(0.);
     ctx.set_style(style);
 }
 
@@ -301,6 +304,7 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         md_annotation: _,
         md_body: _,
         md_header: _,
+        subtle_text_color: _,
     } = color_theme.clone();
 
     // --- window ---

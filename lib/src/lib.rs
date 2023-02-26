@@ -411,7 +411,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
     }
 
     render_footer(&mut state.selected_note, ctx, &state.icons, &state.theme);
-    render_header_panel(ctx, &state.icons);
+    render_header_panel(ctx, &state.icons, &state.theme);
 
     egui::CentralPanel::default().show(ctx, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -642,7 +642,7 @@ fn render_footer(selected: &mut u32, ctx: &Context, icons: &AppIcons, theme: &Ap
                         current: selected,
                         count: 4,
                         gap: 8.,
-                        radius: 6.,
+                        radius: 8.,
                         inactive: theme.colors.outline_fg,
                         hover: theme.colors.button_hover_bg_stroke,
                         pressed: theme.colors.button_pressed_fg,
@@ -692,68 +692,84 @@ fn set_menu_bar_style(ui: &mut egui::Ui) {
 }
 
 // define a TopBottomPanel widget
-fn render_header_panel(ctx: &egui::Context, icons: &AppIcons) {
-    TopBottomPanel::top("top_panel").show(ctx, |ui| {
-        println!("-----");
-        println!("before menu {:?}", ui.available_size());
-        ui.horizontal(|ui| {
-            let height = 24.;
-            let avail_width = ui.available_width();
-            ui.set_min_size(vec2(avail_width, height));
-            let icon_block_width = 48.;
-
-            set_menu_bar_style(ui);
-
-            println!("before x {:?}", ui.available_size());
-
-            // ui.allocate_ui(vec2(icon_block_width, height), |ui| {
-            // println!("before help {:?}", ui.available_size());
-
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                // ui.add_space(4.);
-
-                ui.set_width(icon_block_width);
-                let close_btn = ui.add(ImageButton::new(
-                    icons.close.texture_id(ctx),
-                    Vec2::new(18., 18.),
-                ));
-
-                if close_btn.clicked() {}
-            });
-
-            // });
-
-            println!("before title {:?}", ui.available_size());
-            // ui.allocate_ui(vec2(avail_width - 2. * icon_block_width, height), |ui| {
-
-            // });
-
-            ui.scope(|ui| {
-                ui.set_width(avail_width - 2. * icon_block_width);
-                ui.with_layout(
-                    Layout::centered_and_justified(egui::Direction::LeftToRight),
-                    |ui| {
-                        ui.label(RichText::new("Memento").text_style(egui::TextStyle::Button));
-                    },
+fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) {
+    TopBottomPanel::top("top_panel")
+        .show_separator_line(false)
+        .show(ctx, |ui| {
+            println!("-----");
+            println!("before menu {:?}", ui.available_size());
+            ui.horizontal(|ui| {
+                let height = 24.;
+                let avail_width = ui.available_width();
+                let avail_rect = ui.available_rect_before_wrap();
+                ui.painter().line_segment(
+                    [avail_rect.left(), avail_rect.right()]
+                        .map(|x| pos2(x, avail_rect.top() + height)),
+                    Stroke::new(1.0, theme.colors.outline_fg),
                 );
+                ui.set_min_size(vec2(avail_width, height));
+                let icon_block_width = 48.;
+
+                set_menu_bar_style(ui);
+
+                println!("before x {:?}", ui.available_size());
+
+                // ui.allocate_ui(vec2(icon_block_width, height), |ui| {
+                // println!("before help {:?}", ui.available_size());
+
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    // ui.add_space(4.);
+
+                    ui.set_width(icon_block_width);
+                    let close_btn = ui.add(ImageButton::new(
+                        icons.close.texture_id(ctx),
+                        Vec2::new(18., 18.),
+                    ));
+
+                    if close_btn.clicked() {}
+                });
+
+                // });
+
+                println!("before title {:?}", ui.available_size());
+                // ui.allocate_ui(vec2(avail_width - 2. * icon_block_width, height), |ui| {
+
+                // });
+
+                ui.scope(|ui| {
+                    ui.set_width(avail_width - 2. * icon_block_width);
+                    ui.with_layout(
+                        Layout::centered_and_justified(egui::Direction::LeftToRight),
+                        |ui| {
+                            ui.label(
+                                RichText::new("Shelv")
+                                    .color(theme.colors.subtle_text_color)
+                                    .strong()
+                                    .font(FontId {
+                                        size: 14.,
+                                        family: theme.fonts.bold_family.clone(),
+                                    }), //.text_style(egui::TextStyle::Button),
+                            );
+                        },
+                    );
+                });
+
+                println!("before help {:?}", ui.available_size());
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.set_width(icon_block_width);
+
+                    let help = ui.add(ImageButton::new(
+                        icons.question_mark.texture_id(ctx),
+                        Vec2::new(18., 18.),
+                    ));
+
+                    if help.clicked() {}
+                });
+
+                // ui.allocate_ui(vec2(icon_block_width, height), |ui| {});
             });
 
-            println!("before help {:?}", ui.available_size());
-
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.set_width(icon_block_width);
-
-                let help = ui.add(ImageButton::new(
-                    icons.question_mark.texture_id(ctx),
-                    Vec2::new(18., 18.),
-                ));
-
-                if help.clicked() {}
-            });
-
-            // ui.allocate_ui(vec2(icon_block_width, height), |ui| {});
+            // ui.add_space(4.);
         });
-
-        // ui.add_space(4.);
-    });
 }
