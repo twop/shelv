@@ -143,7 +143,7 @@ impl ColorTheme {
         let selection_stroke = Nord::NORD6;
         let hyperlink_color = Nord::NORD9;
         let normal_text_color = Nord::NORD4;
-        let subtle_text_color = Nord::NORD3;
+        let subtle_text_color = Nord::NORD4.shade(0.5);
 
         // Something just barely different from the background color.
         // Used for [`crate::Grid::striped`].
@@ -216,12 +216,12 @@ fn get_font_definitions() -> FontDefinitions {
     // .ttf and .otf files supported.
     fonts.font_data.insert(
         "inter".to_owned(),
-        egui::FontData::from_static(include_bytes!("../../assets/Inter-Light.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-Light.otf")),
     );
 
     fonts.font_data.insert(
         "inter-bold".to_owned(),
-        egui::FontData::from_static(include_bytes!("../../assets/Inter-SemiBold.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-SemiBold.otf")),
     );
 
     // Put my font first (highest priority) for proportional text:

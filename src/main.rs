@@ -1,15 +1,14 @@
+#![feature(iter_intersperse)]
+
+use app::{create_app_state, render, AppIcons, AppInitData, AppState, AsyncMessage};
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
     GlobalHotKeyEvent, GlobalHotKeyManager,
 };
-#[cfg(feature = "reload")]
-use hot_lib::*;
+
 use image::ImageFormat;
-use lib::AsyncMessage;
 
-#[cfg(not(feature = "reload"))]
-use lib::{configure_styles, create_app_state, render, AppIcons, AppInitData, AppState, AppTheme};
-
+use theme::configure_styles;
 use tray_icon::{icon::Icon, menu::MenuEvent, TrayEvent, TrayIcon, TrayIconBuilder};
 // use tray_item::TrayItem;
 
@@ -18,22 +17,10 @@ use std::{
     thread,
 };
 
-#[cfg(feature = "reload")]
-#[hot_lib_reloader::hot_module(dylib = "lib")]
-mod hot_lib {
-    use eframe::egui;
-    pub use lib::configure_styles;
-    pub use lib::{AppIcons, AppInitData, AppState, AppTheme};
-
-    hot_functions_from_file!("lib/src/lib.rs");
-    // hot_functions_from_file!("lib/src/theme.rs");
-    // hot_functions_from_file!("lib/src/nord.rs");
-
-    #[lib_change_subscription]
-    pub fn subscribe() -> hot_lib_reloader::LibReloadObserver {}
-}
-
-// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+pub mod app;
+pub mod nord;
+pub mod picker;
+pub mod theme;
 
 use eframe::{
     egui::{self, TextStyle, Visuals},

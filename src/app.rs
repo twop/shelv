@@ -1,5 +1,3 @@
-#![feature(iter_intersperse)]
-
 use std::{
     cell::RefCell,
     ops::{Range, RangeBounds},
@@ -24,7 +22,7 @@ use eframe::{
 
 use egui_extras::RetainedImage;
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent};
-use picker::Picker;
+
 use syntect::{
     easy::HighlightLines,
     highlighting::{Theme, ThemeSet},
@@ -35,12 +33,10 @@ use syntect::{
 use pulldown_cmark::{CodeBlockKind, HeadingLevel};
 use smallvec::SmallVec;
 
-pub mod nord;
-pub mod picker;
-pub mod theme;
-
-use theme::ColorTheme;
-pub use theme::{configure_styles, AppTheme};
+use crate::{
+    picker::Picker,
+    theme::{AppTheme, ColorTheme},
+};
 
 // let ps = SyntaxSet::load_defaults_newlines();
 // let ts = ThemeSet::load_defaults();
@@ -744,11 +740,10 @@ fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) 
                             ui.label(
                                 RichText::new("Shelv")
                                     .color(theme.colors.subtle_text_color)
-                                    .strong()
                                     .font(FontId {
-                                        size: 14.,
+                                        size: theme.fonts.body.size,
                                         family: theme.fonts.bold_family.clone(),
-                                    }), //.text_style(egui::TextStyle::Button),
+                                    }),
                             );
                         },
                     );
