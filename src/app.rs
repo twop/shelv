@@ -10,7 +10,8 @@ use eframe::{
     egui::{
         self,
         text_edit::{CCursorRange, TextEditState},
-        Button, Context, Id, ImageButton, Layout, RichText, TextFormat, TopBottomPanel,
+        Button, Context, Id, ImageButton, KeyboardShortcut, Layout, Modifiers, RichText,
+        TextFormat, TopBottomPanel,
     },
     emath::Align,
     epaint::{
@@ -35,7 +36,7 @@ use smallvec::SmallVec;
 
 use crate::{
     picker::Picker,
-    theme::{AppTheme, ColorTheme},
+    theme::{AppTheme, ColorTheme, FontTheme},
 };
 
 // let ps = SyntaxSet::load_defaults_newlines();
@@ -51,6 +52,7 @@ pub struct AppState {
     icons: AppIcons,
     selected_note: u32,
     hidden: bool,
+    md_annotation_shortcuts: Vec<MdAnnotationShortcut>,
 }
 
 pub struct AppIcons {
@@ -63,6 +65,12 @@ pub struct AppIcons {
 #[derive(Debug)]
 pub enum AsyncMessage {
     ToggleVisibility,
+}
+
+struct MdAnnotationShortcut {
+    name: &'static str,
+    annotation: &'static str,
+    shortcut: KeyboardShortcut,
 }
 
 impl AppState {
@@ -83,6 +91,7 @@ impl AppState {
 2. fdsf
 3. 
 bo**dy**
+i*tali*c
 
 
 ```rs
@@ -97,6 +106,30 @@ let a = Some(115);
             msg_queue,
             selected_note: 0,
             hidden: false,
+            md_annotation_shortcuts: [
+                (
+                    "bold",
+                    "**",
+                    KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::B),
+                ),
+                (
+                    "emphasize",
+                    "*",
+                    KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::I),
+                ),
+                (
+                    "strike",
+                    "~~",
+                    KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, egui::Key::E),
+                ),
+            ]
+            .map(|(name, annotation, shortcut)| MdAnnotationShortcut {
+                name,
+                annotation,
+                shortcut,
+            })
+            .into_iter()
+            .collect(),
         }
     }
 }
@@ -134,7 +167,10 @@ fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, imag
 
 impl MarkdownState {
     fn to_text_format(&self, theme: &AppTheme) -> TextFormat {
-        let AppTheme { fonts, colors } = theme;
+        let AppTheme {
+            fonts: FontTheme { size, family },
+            colors,
+        } = theme;
 
         let ColorTheme {
             md_strike,
@@ -144,14 +180,17 @@ impl MarkdownState {
             ..
         } = colors;
 
-        let font_id = match self.heading {
-            [h1, ..] if h1 > 0 => &fonts.h1,
-            [_, h2, ..] if h2 > 0 => &fonts.h2,
-            [_, _, h3, ..] if h3 > 0 => &fonts.h3,
-            [_, _, _, h4, ..] if h4 > 0 => &fonts.h4,
-            [_, _, _, _, h5, ..] if h5 > 0 => &fonts.h4,
-            [_, _, _, _, _, h6] if h6 > 0 => &fonts.h4,
-            _ => &fonts.body,
+        let emphasis = self.emphasis > 0;
+        let bold = self.bold > 0;
+
+        let font_size = match self.heading {
+            [h1, ..] if h1 > 0 => size.h1,
+            [_, h2, ..] if h2 > 0 => size.h2,
+            [_, _, h3, ..] if h3 > 0 => size.h3,
+            [_, _, _, h4, ..] if h4 > 0 => size.h4,
+            [_, _, _, _, h5, ..] if h5 > 0 => size.h4,
+            [_, _, _, _, _, h6] if h6 > 0 => size.h4,
+            _ => size.normal,
         };
 
         let color = match (self.heading.iter().any(|h| *h > 0), self.text > 0) {
@@ -160,31 +199,24 @@ impl MarkdownState {
             (false, true) => md_body,
         };
 
-        let mut res = TextFormat {
-            color: *color,
-            font_id: font_id.clone(),
-            ..Default::default()
+        let font_family = match (emphasis, bold) {
+            (true, true) => &family.bold_italic,
+            (false, true) => &family.bold,
+            (true, false) => &family.italic,
+            (false, false) => &family.normal,
         };
-        if self.bold > 0 {
-            // todo add a different font
-            //res.underline = Stroke::new(0.1, Color32::LIGHT_GRAY);
-            res.font_id = FontId {
-                family: fonts.bold_family.clone(),
-                ..res.font_id
-            }
-        }
 
-        if self.strike > 0 || self.emphasis > 0 {
-            // todo add a different font
-            res.strikethrough = Stroke::new(0.6, *md_strike);
+        TextFormat {
+            color: *color,
+            font_id: FontId::new(font_size, font_family.clone()),
+            strikethrough: if self.strike > 0 {
+                Stroke::new(0.6, *md_strike)
+            } else {
+                Stroke::NONE
+            },
+            ..Default::default()
         }
-
-        res
     }
-
-    // fn has_opened_decor(&self) -> bool {
-    //     self.bold > 0 || self.emphasis > 0 || self.strike > 0
-    // }
 }
 
 impl MarkdownState {
@@ -330,6 +362,11 @@ impl MdLayout {
 
         let mut state = MarkdownState::new();
 
+        let code_font_id = FontId {
+            size: theme.fonts.size.normal,
+            family: theme.fonts.family.code.clone(),
+        };
+
         // println!("points: {:#?}", points);
         for point in points {
             if let (Annotation::Code { lang }, PointKind::End) = (&point.annotation, &point.kind) {
@@ -356,7 +393,7 @@ impl MdLayout {
                                     part,
                                     0.0,
                                     TextFormat::simple(
-                                        theme.fonts.code.clone(),
+                                        code_font_id.clone(),
                                         Color32::from_rgb(front.r, front.g, front.b),
                                     ),
                                 );
@@ -366,7 +403,7 @@ impl MdLayout {
                     None => job.append(
                         code,
                         0.0,
-                        TextFormat::simple(theme.fonts.code.clone(), Color32::GRAY),
+                        TextFormat::simple(code_font_id.clone(), theme.colors.normal_text_color),
                     ),
                 }
             } else {
@@ -632,15 +669,69 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
 
                     let [min, max] = text_cursor_range.as_ccursor_range().sorted();
 
-                    println!("prev cursor: {:#?}", edit_state.ccursor_range());
+                    // println!("prev cursor: {:#?}", edit_state.ccursor_range());
                     edit_state.set_ccursor_range(Some(CCursorRange::two(
                         min,
                         if is_already_bold { max - 4 } else { max + 4 },
                     )));
 
-                    println!("next cursor: {:#?}", edit_state.ccursor_range());
+                    // println!("next cursor: {:#?}", edit_state.ccursor_range());
 
                     edit_state.store(ui.ctx(), id);
+                }
+            }
+
+            for md_shortcut in state.md_annotation_shortcuts.iter() {
+                if ui.input_mut(|input| input.consume_shortcut(&md_shortcut.shortcut)) {
+                    if let (Some(text_cursor_range), Some(mut edit_state)) =
+                        (output.cursor_range, TextEditState::load(ui.ctx(), id))
+                    {
+                        let text = &mut state.markdown;
+                        use egui::TextBuffer as _;
+                        let selected_chars = text_cursor_range.as_sorted_char_range();
+                        let selected_text = text.char_range(selected_chars.clone());
+
+                        let annotation = md_shortcut.annotation;
+                        let annotation_len = annotation.chars().count();
+
+                        let is_already_annotated = selected_text
+                            .starts_with(md_shortcut.annotation)
+                            && selected_text.ends_with(annotation)
+                            && selected_text.chars().count() >= annotation_len * 2;
+
+                        if is_already_annotated {
+                            text.delete_char_range(Range {
+                                start: selected_chars.start,
+                                end: selected_chars.start + annotation_len,
+                            });
+                            text.delete_char_range(Range {
+                                start: selected_chars.end - annotation_len * 2,
+                                end: selected_chars.end - annotation_len,
+                            });
+                        } else {
+                            text.insert_text(annotation, selected_chars.start);
+                            text.insert_text(
+                                md_shortcut.annotation,
+                                selected_chars.end + annotation_len,
+                            );
+                        };
+
+                        let [min, max] = text_cursor_range.as_ccursor_range().sorted();
+
+                        // println!("prev cursor: {:#?}", edit_state.ccursor_range());
+                        edit_state.set_ccursor_range(Some(CCursorRange::two(
+                            min,
+                            if is_already_annotated {
+                                max - annotation_len * 2
+                            } else {
+                                max + annotation_len * 2
+                            },
+                        )));
+
+                        // println!("next cursor: {:#?}", edit_state.ccursor_range());
+
+                        edit_state.store(ui.ctx(), id);
+                    }
                 }
             }
 
@@ -759,8 +850,8 @@ fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) 
                                 RichText::new("Shelv")
                                     .color(theme.colors.subtle_text_color)
                                     .font(FontId {
-                                        size: theme.fonts.body.size,
-                                        family: theme.fonts.bold_family.clone(),
+                                        size: theme.fonts.size.normal,
+                                        family: theme.fonts.family.bold.clone(),
                                     }),
                             );
                         },

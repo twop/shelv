@@ -137,7 +137,7 @@ fn main() {
     };
 
     eframe::run_native(
-        "Memoro",
+        "Shelv",
         options,
         Box::new(|cc| {
             // When hot reload is enabled, repaint after every lib change

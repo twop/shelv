@@ -32,30 +32,59 @@ impl Default for AppTheme {
     }
 }
 
+pub struct FontSizes {
+    pub h1: f32,
+    pub h2: f32,
+    pub h3: f32,
+    pub h4: f32,
+    pub normal: f32,
+    pub small: f32,
+}
+
+impl FontSizes {
+    pub fn new() -> Self {
+        Self {
+            h1: 24.,
+            h2: 20.,
+            h3: 18.,
+            h4: 16.,
+            normal: 14.,
+            small: 8.,
+        }
+    }
+}
+pub struct FontFamilies {
+    pub normal: FontFamily,
+    pub italic: FontFamily,
+    pub bold: FontFamily,
+    pub bold_italic: FontFamily,
+    pub code: FontFamily,
+}
+
+impl FontFamilies {
+    pub fn new() -> Self {
+        Self {
+            normal: FontFamily::Name("inter".into()),
+            italic: FontFamily::Name("inter-italic".into()),
+            bold: FontFamily::Name("inter-bold".into()),
+            bold_italic: FontFamily::Name("inter-bold-italic".into()),
+            code: FontFamily::Monospace,
+        }
+    }
+}
+
 pub struct FontTheme {
-    pub h1: FontId,
-    pub h2: FontId,
-    pub h3: FontId,
-    pub h4: FontId,
-    pub body: FontId,
-    pub code: FontId,
-    pub button: FontId,
-    pub small: FontId,
-    pub bold_family: FontFamily,
+    pub size: FontSizes,
+
+    // families
+    pub family: FontFamilies,
 }
 
 impl Default for FontTheme {
     fn default() -> Self {
         Self {
-            h1: FontId::proportional(24.),
-            h2: FontId::proportional(20.),
-            h3: FontId::proportional(18.),
-            h4: FontId::proportional(16.),
-            body: FontId::proportional(14.),
-            bold_family: FontFamily::Name("inter-bold".into()),
-            code: FontId::monospace(14.),
-            button: FontId::monospace(12.),
-            small: FontId::monospace(8.),
+            size: FontSizes::new(),
+            family: FontFamilies::new(),
         }
     }
 }
@@ -117,7 +146,7 @@ impl ColorTheme {
         // ---------
         // editor specific colors
         let md_strike: Color32 = Nord::NORD4;
-        let md_annotation: Color32 = Nord::NORD4.shade(0.6);
+        let md_annotation: Color32 = Nord::NORD4.shade(0.5);
         let md_body = Nord::NORD4;
         let md_header = Nord::NORD6;
 
@@ -143,7 +172,7 @@ impl ColorTheme {
         let selection_stroke = Nord::NORD6;
         let hyperlink_color = Nord::NORD9;
         let normal_text_color = Nord::NORD4;
-        let subtle_text_color = Nord::NORD4.shade(0.6);
+        let subtle_text_color = Nord::NORD4.shade(0.5);
 
         // Something just barely different from the background color.
         // Used for [`crate::Grid::striped`].
@@ -220,8 +249,17 @@ fn get_font_definitions() -> FontDefinitions {
     );
 
     fonts.font_data.insert(
+        "inter-italic".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-LightItalic.otf")),
+    );
+
+    fonts.font_data.insert(
         "inter-bold".to_owned(),
         egui::FontData::from_static(include_bytes!("../assets/Inter-SemiBold.otf")),
+    );
+    fonts.font_data.insert(
+        "inter-bold-italic".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-SemiBoldItalic.otf")),
     );
 
     // Put my font first (highest priority) for proportional text:
@@ -240,21 +278,54 @@ fn get_font_definitions() -> FontDefinitions {
 
     fonts
         .families
+        .entry(egui::FontFamily::Name("inter".into()))
+        .or_default()
+        .push("inter".to_owned());
+
+    fonts
+        .families
         .entry(egui::FontFamily::Name("inter-bold".into()))
         .or_default()
         .push("inter-bold".to_owned());
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("inter-italic".into()))
+        .or_default()
+        .push("inter-italic".to_owned());
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("inter-bold-italic".into()))
+        .or_default()
+        .push("inter-bold-italic".to_owned());
 
     // Tell egui to use these fonts:
     fonts
 }
 
-fn text_styles(theme: &FontTheme) -> BTreeMap<TextStyle, FontId> {
+fn text_styles(FontTheme { size, family }: &FontTheme) -> BTreeMap<TextStyle, FontId> {
     [
-        (TextStyle::Heading, theme.h1.clone()),
-        (TextStyle::Body, theme.body.clone()),
-        (TextStyle::Monospace, theme.code.clone()),
-        (TextStyle::Button, theme.button.clone()),
-        (TextStyle::Small, theme.small.clone()),
+        (
+            TextStyle::Heading,
+            FontId::new(size.h1, family.normal.clone()),
+        ),
+        (
+            TextStyle::Body,
+            FontId::new(size.normal, family.normal.clone()),
+        ),
+        (
+            TextStyle::Monospace,
+            FontId::new(size.normal, family.code.clone()),
+        ),
+        (
+            TextStyle::Button,
+            FontId::new(size.normal, family.normal.clone()),
+        ),
+        (
+            TextStyle::Small,
+            FontId::new(size.small, family.normal.clone()),
+        ),
     ]
     .into()
 }
