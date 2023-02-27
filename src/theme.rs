@@ -117,7 +117,7 @@ impl ColorTheme {
         // ---------
         // editor specific colors
         let md_strike: Color32 = Nord::NORD4;
-        let md_annotation: Color32 = Nord::NORD4;
+        let md_annotation: Color32 = Nord::NORD4.shade(0.6);
         let md_body = Nord::NORD4;
         let md_header = Nord::NORD6;
 
@@ -143,7 +143,7 @@ impl ColorTheme {
         let selection_stroke = Nord::NORD6;
         let hyperlink_color = Nord::NORD9;
         let normal_text_color = Nord::NORD4;
-        let subtle_text_color = Nord::NORD4.shade(0.5);
+        let subtle_text_color = Nord::NORD4.shade(0.6);
 
         // Something just barely different from the background color.
         // Used for [`crate::Grid::striped`].
@@ -259,7 +259,7 @@ fn text_styles(theme: &FontTheme) -> BTreeMap<TextStyle, FontId> {
     .into()
 }
 
-trait ColorManipulation {
+pub trait ColorManipulation {
     fn shade(self, by: f32) -> Self;
 }
 

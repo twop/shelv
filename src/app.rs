@@ -74,7 +74,21 @@ impl AppState {
         } = init_data;
         Self {
             theme,
-            markdown: "### title\nbody\n```rs\nlet a = Some(115);\n```".to_string(),
+            markdown: "# title
+- adsd
+- fdsf
+	- [ ] fdsf
+	- [x] fdsf
+1. fa
+2. fdsf
+3. 
+bo**dy**
+
+
+```rs
+let a = Some(115);
+```"
+            .to_string(),
             saved: "".to_string(),
             prev_md_layout: MdLayout::new(),
             syntax_set: SyntaxSet::load_defaults_newlines(),
@@ -103,6 +117,7 @@ struct MarkdownState {
     bold: i32,
     strike: i32,
     emphasis: i32,
+    text: i32,
     heading: [i32; 6],
 }
 
@@ -129,14 +144,20 @@ impl MarkdownState {
             ..
         } = colors;
 
-        let (color, font_id) = match self.heading {
-            [h1, ..] if h1 > 0 => (md_header, &fonts.h1),
-            [_, h2, ..] if h2 > 0 => (md_header, &fonts.h2),
-            [_, _, h3, ..] if h3 > 0 => (md_header, &fonts.h3),
-            [_, _, _, h4, ..] if h4 > 0 => (md_header, &fonts.h4),
-            [_, _, _, _, h5, ..] if h5 > 0 => (md_header, &fonts.h4),
-            [_, _, _, _, _, h6] if h6 > 0 => (md_header, &fonts.h4),
-            _ => (md_body, &fonts.body),
+        let font_id = match self.heading {
+            [h1, ..] if h1 > 0 => &fonts.h1,
+            [_, h2, ..] if h2 > 0 => &fonts.h2,
+            [_, _, h3, ..] if h3 > 0 => &fonts.h3,
+            [_, _, _, h4, ..] if h4 > 0 => &fonts.h4,
+            [_, _, _, _, h5, ..] if h5 > 0 => &fonts.h4,
+            [_, _, _, _, _, h6] if h6 > 0 => &fonts.h4,
+            _ => &fonts.body,
+        };
+
+        let color = match (self.heading.iter().any(|h| *h > 0), self.text > 0) {
+            (_, false) => md_annotation,
+            (true, true) => md_header,
+            (false, true) => md_body,
         };
 
         let mut res = TextFormat {
@@ -174,15 +195,17 @@ impl MarkdownState {
             strike: 0,
             emphasis: 0,
             heading: Default::default(),
+            text: 0,
         }
     }
 }
 
+#[derive(Debug)]
 enum PointKind {
     Start,
     End,
 }
-
+#[derive(Debug)]
 struct AnnotationPoint {
     offset: usize,
     kind: PointKind, // 1 or -1 (start and end respectively)
@@ -213,6 +236,7 @@ enum Annotation {
     Strike,
     Bold,
     Emphasis,
+    Text,
     Heading(HeadingLevel),
     Code { lang: String },
 }
@@ -306,6 +330,7 @@ impl MdLayout {
 
         let mut state = MarkdownState::new();
 
+        // println!("points: {:#?}", points);
         for point in points {
             if let (Annotation::Code { lang }, PointKind::End) = (&point.annotation, &point.kind) {
                 let code = text.get(pos..point.offset).unwrap_or("");
@@ -359,6 +384,7 @@ impl MdLayout {
                 match &point.annotation {
                     Annotation::Strike => state.strike += delta,
                     Annotation::Bold => state.bold += delta,
+                    Annotation::Text => state.text += delta,
                     Annotation::Emphasis => state.emphasis += delta,
                     Annotation::Heading(level) => state.heading[*level as usize] += delta,
                     Annotation::Code { lang } => (),
@@ -465,6 +491,8 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                         Text(_) => {
                             if let Some(lang) = code_block.take() {
                                 md.event(Ev::Annotation(Annotation::Code { lang }), range)
+                            } else {
+                                md.event(Ev::Annotation(Annotation::Text), range)
                             }
                         }
 
@@ -642,7 +670,8 @@ fn render_footer(selected: &mut u32, ctx: &Context, icons: &AppIcons, theme: &Ap
                         inactive: theme.colors.outline_fg,
                         hover: theme.colors.button_hover_bg_stroke,
                         pressed: theme.colors.button_pressed_fg,
-                        selected: theme.colors.button_fg,
+                        selected_stroke: theme.colors.button_fg,
+                        selected_fill: theme.colors.button_bg,
                         outline: Stroke::new(1.0, theme.colors.outline_fg),
                     });
                     // let capture = ui.add(
@@ -687,13 +716,12 @@ fn set_menu_bar_style(ui: &mut egui::Ui) {
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
-// define a TopBottomPanel widget
 fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) {
     TopBottomPanel::top("top_panel")
         .show_separator_line(false)
         .show(ctx, |ui| {
-            println!("-----");
-            println!("before menu {:?}", ui.available_size());
+            // println!("-----");
+            // println!("before menu {:?}", ui.available_size());
             ui.horizontal(|ui| {
                 let height = 24.;
                 let avail_width = ui.available_width();
@@ -708,14 +736,9 @@ fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) 
 
                 set_menu_bar_style(ui);
 
-                println!("before x {:?}", ui.available_size());
-
-                // ui.allocate_ui(vec2(icon_block_width, height), |ui| {
-                // println!("before help {:?}", ui.available_size());
+                // println!("before x {:?}", ui.available_size());
 
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    // ui.add_space(4.);
-
                     ui.set_width(icon_block_width);
                     let close_btn = ui.add(ImageButton::new(
                         icons.close.texture_id(ctx),
@@ -725,12 +748,7 @@ fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) 
                     if close_btn.clicked() {}
                 });
 
-                // });
-
-                println!("before title {:?}", ui.available_size());
-                // ui.allocate_ui(vec2(avail_width - 2. * icon_block_width, height), |ui| {
-
-                // });
+                // println!("before title {:?}", ui.available_size());
 
                 ui.scope(|ui| {
                     ui.set_width(avail_width - 2. * icon_block_width);
@@ -749,7 +767,7 @@ fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) 
                     );
                 });
 
-                println!("before help {:?}", ui.available_size());
+                // println!("before help {:?}", ui.available_size());
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.set_width(icon_block_width);
@@ -761,10 +779,6 @@ fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) 
 
                     if help.clicked() {}
                 });
-
-                // ui.allocate_ui(vec2(icon_block_width, height), |ui| {});
             });
-
-            // ui.add_space(4.);
         });
 }

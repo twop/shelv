@@ -6,6 +6,8 @@ use eframe::{
     },
 };
 
+use crate::theme::ColorManipulation;
+
 pub struct Picker<'a> {
     pub current: &'a mut u32,
     pub count: u32,
@@ -15,7 +17,8 @@ pub struct Picker<'a> {
     pub inactive: Color32,
     pub hover: Color32,
     pub pressed: Color32,
-    pub selected: Color32,
+    pub selected_stroke: Color32,
+    pub selected_fill: Color32,
 
     // drop
     pub outline: Stroke,
@@ -50,8 +53,9 @@ impl<'a> Widget for Picker<'a> {
             inactive,
             hover,
             pressed,
-            selected,
+            selected_stroke,
             outline,
+            selected_fill,
         } = self;
 
         let box_size = radius * 2.0;
@@ -93,15 +97,19 @@ impl<'a> Widget for Picker<'a> {
 
                         let selection_progress =
                             ctx.animate_bool_with_time(point_id, is_selected, 0.2);
-                        let fill =
-                            interpolate_color(Color32::TRANSPARENT, selected, selection_progress);
+
+                        let fill = interpolate_color(
+                            Color32::TRANSPARENT,
+                            selected_fill,
+                            selection_progress,
+                        );
 
                         let stroke = match (
                             is_selected,
                             point_response.hovered(),
                             point_response.is_pointer_button_down_on(),
                         ) {
-                            (true, _, _) => Stroke::NONE,
+                            (true, _, _) => Stroke::new(1.5, selected_stroke),
                             (_, true, false) => Stroke::new(1.5, hover),
                             (_, _, true) => Stroke::new(2.0, pressed),
                             _ => Stroke::new(1.0, inactive),
