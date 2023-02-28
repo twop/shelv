@@ -10,7 +10,7 @@ use eframe::{
     egui::{
         self,
         text_edit::{CCursorRange, TextEditState},
-        Button, Context, Id, ImageButton, KeyboardShortcut, Layout, Modifiers, RichText,
+        Button, Context, Id, ImageButton, KeyboardShortcut, Layout, Modifiers, RichText, Sense,
         TextFormat, TopBottomPanel,
     },
     emath::Align,
@@ -453,16 +453,8 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                 state.hidden = !state.hidden;
                 frame.set_visible(!state.hidden);
 
-                if let (false, Some(mut text_edit_state)) =
-                    (state.hidden, egui::TextEdit::load_state(ctx, id))
-                {
-                    let ccursor = egui::text::CCursor::new(state.markdown.chars().count());
-
-                    text_edit_state.set_ccursor_range(Some(egui::text::CCursorRange::one(ccursor)));
-                    text_edit_state.store(ctx, id);
-
-                    ctx.memory_mut(|mem| mem.request_focus(id)); // give focus back to the [`TextEdit`].
-
+                if !state.hidden {
+                    set_cursor_at_the_end(&state.markdown, ctx, id);
                     frame.focus_window();
                 }
             }
@@ -488,8 +480,27 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     println!("-----parser-----");
                     println!("{:?}", text);
                     println!("-----text-end-----");
+                    let mut depth = 0;
                     for (ev, range) in parser.into_offset_iter() {
-                        println!("{:?} -> {:?}", ev, &text[range.start..range.end]);
+                        if let pulldown_cmark::Event::End(_) = &ev {
+                            depth -= 1;
+                        }
+
+                        println!(
+                            "{}{:?} -> {:?}",
+                            "  ".repeat(depth),
+                            ev,
+                            &text[range.start..range.end] // .lines()
+                                                          // .map(|l| format!("{}{}", "  ".repeat(depth), l))
+                                                          // .reduce(|mut all, l| {
+                                                          //     all.extend(l.chars());
+                                                          //     all
+                                                          // })
+                        );
+
+                        if let pulldown_cmark::Event::Start(_) = &ev {
+                            depth += 1;
+                        }
                     }
                     println!("---parser-end---");
                     state.saved = text.to_string();
@@ -593,6 +604,16 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                 res
             };
 
+            let space_below = ui.available_rect_before_wrap();
+
+            if space_below.height() > 0.
+                && ui
+                    .interact(space_below, Id::new("space_below"), Sense::click())
+                    .clicked()
+            {
+                set_cursor_at_the_end(&state.markdown, ctx, id);
+            }
+
             // // Test UI controls to tune in styles
             // let resp = ui.button("ClickMe");
             // let mut checked = true;
@@ -635,47 +656,6 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     )));
 
                     println!("next cursor: {:#?}", edit_state.ccursor_range());
-
-                    edit_state.store(ui.ctx(), id);
-                }
-            }
-
-            if ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::B)) {
-                if let (Some(text_cursor_range), Some(mut edit_state)) =
-                    (output.cursor_range, TextEditState::load(ui.ctx(), id))
-                {
-                    let text = &mut state.markdown;
-                    use egui::TextBuffer as _;
-                    let selected_chars = text_cursor_range.as_sorted_char_range();
-                    let selected_text = text.char_range(selected_chars.clone());
-
-                    let is_already_bold = selected_text.starts_with("**")
-                        && selected_text.ends_with("**")
-                        && selected_text.len() >= 4;
-
-                    if is_already_bold {
-                        text.delete_char_range(Range {
-                            start: selected_chars.start,
-                            end: selected_chars.start + 2,
-                        });
-                        text.delete_char_range(Range {
-                            start: selected_chars.end - 4,
-                            end: selected_chars.end - 2,
-                        });
-                    } else {
-                        text.insert_text("**", selected_chars.start);
-                        text.insert_text("**", selected_chars.end + 2);
-                    };
-
-                    let [min, max] = text_cursor_range.as_ccursor_range().sorted();
-
-                    // println!("prev cursor: {:#?}", edit_state.ccursor_range());
-                    edit_state.set_ccursor_range(Some(CCursorRange::two(
-                        min,
-                        if is_already_bold { max - 4 } else { max + 4 },
-                    )));
-
-                    // println!("next cursor: {:#?}", edit_state.ccursor_range());
 
                     edit_state.store(ui.ctx(), id);
                 }
@@ -738,6 +718,17 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
             state.prev_md_layout = md;
         });
     });
+}
+
+fn set_cursor_at_the_end(text: &str, ctx: &Context, id: Id) {
+    if let Some(mut text_edit_state) = egui::TextEdit::load_state(ctx, id) {
+        let ccursor = egui::text::CCursor::new(text.chars().count());
+
+        text_edit_state.set_ccursor_range(Some(egui::text::CCursorRange::one(ccursor)));
+        text_edit_state.store(ctx, id);
+
+        ctx.memory_mut(|mem| mem.request_focus(id));
+    }
 }
 
 fn render_footer(selected: &mut u32, ctx: &Context, icons: &AppIcons, theme: &AppTheme) {
