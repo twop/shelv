@@ -97,6 +97,7 @@ pub struct ColorTheme {
     pub md_annotation: Color32,
     pub md_body: Color32,
     pub md_header: Color32,
+    pub md_link: Color32,
 
     // ---------
     // egui settings and general colors
@@ -149,6 +150,8 @@ impl ColorTheme {
         let md_annotation: Color32 = Nord::NORD4.shade(0.5);
         let md_body = Nord::NORD4;
         let md_header = Nord::NORD6;
+        // same as hyperlink_color
+        let md_link = Nord::NORD7;
 
         // ---------
         // egui settings and general colors
@@ -170,7 +173,7 @@ impl ColorTheme {
         let outline_fg = Nord::NORD1;
         let selection_bg = Nord::NORD1;
         let selection_stroke = Nord::NORD6;
-        let hyperlink_color = Nord::NORD9;
+        let hyperlink_color = Nord::NORD7;
         let normal_text_color = Nord::NORD4;
         let subtle_text_color = Nord::NORD4.shade(0.5);
 
@@ -220,6 +223,7 @@ impl ColorTheme {
             md_body,
             md_header,
             subtle_text_color,
+            md_link,
         }
     }
 }
@@ -375,6 +379,7 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         md_annotation: _,
         md_body: _,
         md_header: _,
+        md_link: _,
         subtle_text_color: _,
     } = color_theme.clone();
 

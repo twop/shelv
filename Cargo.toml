@@ -17,6 +17,7 @@ smallvec = "1.10.0"
 tray-icon = "0.4.3"
 # tray-item = "0.7.1"
 winit = "0.28.1"
+linkify = "0.9.0"
 
 
 

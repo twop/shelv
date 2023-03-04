@@ -9,7 +9,8 @@ use std::{
 use eframe::{
     egui::{
         self,
-        text_edit::{CCursorRange, TextEditState},
+        text::CCursor,
+        text_edit::{CCursorRange, TextEditOutput, TextEditState},
         Button, Context, Id, ImageButton, KeyboardShortcut, Layout, Modifiers, RichText, Sense,
         TextFormat, TopBottomPanel,
     },
@@ -24,6 +25,7 @@ use eframe::{
 use egui_extras::RetainedImage;
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent};
 
+use linkify::LinkFinder;
 use syntect::{
     easy::HighlightLines,
     highlighting::{Theme, ThemeSet},
@@ -93,6 +95,7 @@ impl AppState {
 bo**dy**
 i*tali*c
 
+https://www.nordtheme.com/docs/colors-and-palettes
 
 ```rs
 let a = Some(115);
@@ -146,12 +149,14 @@ pub fn create_app_state(data: AppInitData) -> AppState {
 }
 
 struct MarkdownState {
-    nesting: i32,
-    bold: i32,
-    strike: i32,
-    emphasis: i32,
-    text: i32,
-    heading: [i32; 6],
+    nesting: i8,
+    bold: i8,
+    strike: i8,
+    emphasis: i8,
+    text: i8,
+    link: i8,
+    task_marker: i8,
+    heading: [i8; 6],
 }
 
 fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, image::ImageError> {
@@ -166,7 +171,7 @@ fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, imag
 }
 
 impl MarkdownState {
-    fn to_text_format(&self, theme: &AppTheme) -> TextFormat {
+    fn to_text_format(&self, theme: &AppTheme, command_pressed: bool) -> TextFormat {
         let AppTheme {
             fonts: FontTheme { size, family },
             colors,
@@ -177,6 +182,7 @@ impl MarkdownState {
             md_annotation,
             md_body,
             md_header,
+            md_link,
             ..
         } = colors;
 
@@ -193,10 +199,15 @@ impl MarkdownState {
             _ => size.normal,
         };
 
-        let color = match (self.heading.iter().any(|h| *h > 0), self.text > 0) {
-            (_, false) => md_annotation,
-            (true, true) => md_header,
-            (false, true) => md_body,
+        let color = match (
+            self.link > 0,
+            self.heading.iter().any(|h| *h > 0),
+            self.text > 0,
+        ) {
+            (true, _, _) => *md_link,
+            (false, _, false) => *md_annotation,
+            (false, true, true) => *md_header,
+            (false, false, true) => *md_body,
         };
 
         let font_family = match (emphasis, bold) {
@@ -206,14 +217,29 @@ impl MarkdownState {
             (false, false) => &family.normal,
         };
 
+        // && command_pressed;
         TextFormat {
-            color: *color,
+            color: if self.task_marker > 0 {
+                *md_link
+            } else {
+                color
+            },
             font_id: FontId::new(font_size, font_family.clone()),
             strikethrough: if self.strike > 0 {
                 Stroke::new(0.6, *md_strike)
             } else {
                 Stroke::NONE
             },
+            underline: if self.link > 0 {
+                Stroke::new(0.6, *md_link)
+            } else {
+                Stroke::NONE
+            },
+            // background: if should_highlight_task {
+            //     md_link.gamma_multiply(0.2)
+            // } else {
+            //     Color32::TRANSPARENT
+            // },
             ..Default::default()
         }
     }
@@ -228,6 +254,8 @@ impl MarkdownState {
             emphasis: 0,
             heading: Default::default(),
             text: 0,
+            link: 0,
+            task_marker: 0,
         }
     }
 }
@@ -269,8 +297,16 @@ enum Annotation {
     Bold,
     Emphasis,
     Text,
+    TaskMarker,
+    Link,
     Heading(HeadingLevel),
     Code { lang: String },
+}
+
+enum InteractiveText {
+    // byte pos the text, note that it is not the same as char
+    TaskMarker { bytes: Range<usize>, checked: bool },
+    Link(String),
 }
 
 enum Ev {
@@ -279,6 +315,7 @@ enum Ev {
     TaskMarker(bool),
     Heading(HeadingLevel),
     ListStart(Option<u64>),
+
     ListEnd,
 }
 
@@ -322,6 +359,8 @@ impl MdLayout {
             }
 
             Ev::TaskMarker(checked) => {
+                self.event(Ev::Annotation(Annotation::TaskMarker), range.clone());
+
                 // the last one to add would be the most nested, thus the one we need
                 let item =
                     self.list_items.iter().rev().find(|r| {
@@ -350,6 +389,7 @@ impl MdLayout {
     fn layout(
         &mut self,
         text: &str,
+        command_pressed: bool,
         theme: &AppTheme,
         syntax_set: &SyntaxSet,
         theme_set: &ThemeSet,
@@ -410,7 +450,7 @@ impl MdLayout {
                 job.append(
                     text.get(pos..point.offset).unwrap_or(""),
                     0.0,
-                    state.to_text_format(theme),
+                    state.to_text_format(theme, command_pressed),
                 );
 
                 let delta = match point.kind {
@@ -422,6 +462,8 @@ impl MdLayout {
                     Annotation::Strike => state.strike += delta,
                     Annotation::Bold => state.bold += delta,
                     Annotation::Text => state.text += delta,
+                    Annotation::Link => state.link += delta,
+                    Annotation::TaskMarker => state.task_marker += delta,
                     Annotation::Emphasis => state.emphasis += delta,
                     Annotation::Heading(level) => state.heading[*level as usize] += delta,
                     Annotation::Code { lang } => (),
@@ -435,7 +477,7 @@ impl MdLayout {
         job.append(
             text.get(pos..).unwrap_or(""),
             0.0,
-            state.to_text_format(theme),
+            state.to_text_format(theme, command_pressed),
         );
 
         job
@@ -470,13 +512,84 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
 
             let mut md = MdLayout::new();
 
-            let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                let options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
-                    | pulldown_cmark::Options::ENABLE_TASKLISTS
-                    | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION;
+            let finder = LinkFinder::new();
+            let mut interactive_parts: Vec<(InteractiveText, CCursorRange)> = vec![];
 
+            for link in finder.links(&state.markdown) {
+                md.event(Ev::Annotation(Annotation::Link), link.start()..link.end());
+                let link_str = link.as_str().to_string();
+                let char_start = state.markdown[..link.start()].chars().count();
+                let char_end = char_start + link_str.chars().count();
+
+                interactive_parts.push((
+                    InteractiveText::Link(link_str),
+                    CCursorRange::two(CCursor::new(char_start), CCursor::new(char_end)),
+                ));
+            }
+
+            let md_parser_options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
+                | pulldown_cmark::Options::ENABLE_TASKLISTS
+                | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION;
+
+            let parser = pulldown_cmark::Parser::new_ext(&state.markdown, md_parser_options);
+
+            let mut code_block: Option<String> = None;
+
+            for (ev, range) in parser.into_offset_iter() {
+                use pulldown_cmark::Event::*;
+                use pulldown_cmark::Tag::*;
+                match ev {
+                    Start(tag) => match tag {
+                        Strong => {
+                            md.event(Ev::Annotation(Annotation::Bold), range);
+                        }
+                        Emphasis => {
+                            md.event(Ev::Annotation(Annotation::Emphasis), range);
+                        }
+                        Strikethrough => {
+                            md.event(Ev::Annotation(Annotation::Strike), range);
+                        }
+                        CodeBlock(CodeBlockKind::Fenced(lang)) => {
+                            code_block = Some(lang.as_ref().to_string())
+                        }
+                        Item => md.event(Ev::ListItem, range),
+                        Heading(level, _, _) => md.event(Ev::Heading(level), range),
+                        List(starting_index) => md.event(Ev::ListStart(starting_index), range),
+                        _ => (),
+                    },
+
+                    End(List(_)) => md.event(Ev::ListEnd, range),
+                    End(CodeBlock(CodeBlockKind::Fenced(_))) => code_block = None,
+
+                    Text(_) => {
+                        if let Some(lang) = code_block.take() {
+                            md.event(Ev::Annotation(Annotation::Code { lang }), range)
+                        } else {
+                            md.event(Ev::Annotation(Annotation::Text), range)
+                        }
+                    }
+
+                    TaskListMarker(checked) => {
+                        md.event(Ev::TaskMarker(checked), range.clone());
+
+                        let char_start = state.markdown[..range.start].chars().count();
+                        let char_end = char_start + state.markdown[range.clone()].chars().count();
+
+                        interactive_parts.push((
+                            InteractiveText::TaskMarker {
+                                bytes: range.clone(),
+                                checked,
+                            },
+                            CCursorRange::two(CCursor::new(char_start), CCursor::new(char_end)),
+                        ));
+                    }
+                    _ => (),
+                }
+            }
+
+            let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
                 if state.saved != text {
-                    let parser = pulldown_cmark::Parser::new_ext(text, options);
+                    let parser = pulldown_cmark::Parser::new_ext(text, md_parser_options);
                     println!("-----parser-----");
                     println!("{:?}", text);
                     println!("-----text-end-----");
@@ -506,57 +619,16 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     state.saved = text.to_string();
                 }
 
-                let parser = pulldown_cmark::Parser::new_ext(text, options);
-
-                let mut code_block: Option<String> = None;
-
-                for (ev, range) in parser.into_offset_iter() {
-                    use pulldown_cmark::Event::*;
-                    use pulldown_cmark::Tag::*;
-                    match ev {
-                        Start(tag) => match tag {
-                            Strong => {
-                                md.event(Ev::Annotation(Annotation::Bold), range);
-                            }
-                            Emphasis => {
-                                md.event(Ev::Annotation(Annotation::Emphasis), range);
-                            }
-                            Strikethrough => {
-                                md.event(Ev::Annotation(Annotation::Strike), range);
-                            }
-                            CodeBlock(CodeBlockKind::Fenced(lang)) => {
-                                code_block = Some(lang.as_ref().to_string())
-                            }
-                            Item => md.event(Ev::ListItem, range),
-                            Heading(level, _, _) => md.event(Ev::Heading(level), range),
-                            List(starting_index) => md.event(Ev::ListStart(starting_index), range),
-                            _ => (),
-                        },
-
-                        End(List(_)) => md.event(Ev::ListEnd, range),
-                        End(CodeBlock(CodeBlockKind::Fenced(_))) => code_block = None,
-
-                        Text(_) => {
-                            if let Some(lang) = code_block.take() {
-                                md.event(Ev::Annotation(Annotation::Code { lang }), range)
-                            } else {
-                                md.event(Ev::Annotation(Annotation::Text), range)
-                            }
-                        }
-
-                        TaskListMarker(checked) => md.event(Ev::TaskMarker(checked), range),
-                        _ => (),
-                    }
-                }
-
-                let mut job = md.layout(text, &state.theme, &state.syntax_set, &state.theme_set);
+                let mut job = md.layout(
+                    text,
+                    ui.input(|i| i.modifiers.command),
+                    &state.theme,
+                    &state.syntax_set,
+                    &state.theme_set,
+                );
                 job.wrap.max_width = wrap_width;
 
-                // let mut galley = layout(&mut ui.ctx().fonts().lock().fonts, job.into());
-                // Arc::new(galley)
-                let galley = ui.fonts(|f| f.layout_job(job));
-
-                galley
+                ui.fonts(|f| f.layout_job(job))
             };
 
             let inside_item = TextEditState::load(ui.ctx(), id)
@@ -583,137 +655,155 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     inside_item
                 });
 
-            let output = {
-                let before = state.markdown.clone();
+            // let mut edited_text = state.markdown.clone();
 
-                let res = egui::TextEdit::multiline(&mut state.markdown)
-                    .font(egui::TextStyle::Monospace) // for cursor height
-                    .code_editor()
-                    .id(id)
-                    // .desired_rows(1000)
-                    .lock_focus(true)
-                    .desired_width(f32::INFINITY)
-                    .frame(false)
-                    .layouter(&mut layouter)
-                    .show(ui);
+            let TextEditOutput {
+                response,
+                galley,
+                text_draw_pos,
+                text_clip_rect: _,
+                state: mut text_edit_state,
+                mut cursor_range,
+            } = egui::TextEdit::multiline(&mut state.markdown)
+                .font(egui::TextStyle::Monospace) // for cursor height
+                .code_editor()
+                .id(id)
+                .lock_focus(true)
+                .desired_width(f32::INFINITY)
+                .frame(false)
+                .layouter(&mut layouter)
+                .show(ui);
 
-                if before != state.markdown {
-                    println!("before: {}\nafter:{}\n", before, state.markdown);
+            // Handling of shortcuts and other interactions that are not just typing
+            if !response.changed() {
+                let space_below = ui.available_rect_before_wrap();
+
+                // ---- CLICKING ON EMPTY AREA FOCUSES ON TEXT EDIT ----
+                if space_below.height() > 0.
+                    && ui
+                        .interact(space_below, Id::new("space_below"), Sense::click())
+                        .clicked()
+                {
+                    set_cursor_at_the_end(&state.markdown, ctx, id);
                 }
 
-                res
-            };
+                // ---- SHORTCUTS FOR MAKING BOLD/ITALIC/STRIKETHROUGH ----
+                let md_annotation_shortcuts = &mut state.md_annotation_shortcuts;
+                for md_shortcut in md_annotation_shortcuts.iter() {
+                    if ui.input_mut(|input| input.consume_shortcut(&md_shortcut.shortcut)) {
+                        if let Some(text_cursor_range) = cursor_range {
+                            let text = &mut state.markdown;
+                            use egui::TextBuffer as _;
+                            let selected_chars = text_cursor_range.as_sorted_char_range();
+                            let selected_text = text.char_range(selected_chars.clone());
 
-            let space_below = ui.available_rect_before_wrap();
+                            let annotation = md_shortcut.annotation;
+                            let annotation_len = annotation.chars().count();
 
-            if space_below.height() > 0.
-                && ui
-                    .interact(space_below, Id::new("space_below"), Sense::click())
-                    .clicked()
-            {
-                set_cursor_at_the_end(&state.markdown, ctx, id);
-            }
+                            let is_already_annotated = selected_text
+                                .starts_with(md_shortcut.annotation)
+                                && selected_text.ends_with(annotation)
+                                && selected_text.chars().count() >= annotation_len * 2;
 
-            // // Test UI controls to tune in styles
-            // let resp = ui.button("ClickMe");
-            // let mut checked = true;
-            // let resp = ui.checkbox(&mut checked, "checkbox");
+                            if is_already_annotated {
+                                text.delete_char_range(Range {
+                                    start: selected_chars.start,
+                                    end: selected_chars.start + annotation_len,
+                                });
+                                text.delete_char_range(Range {
+                                    start: selected_chars.end - annotation_len * 2,
+                                    end: selected_chars.end - annotation_len,
+                                });
+                            } else {
+                                text.insert_text(annotation, selected_chars.start);
+                                text.insert_text(
+                                    md_shortcut.annotation,
+                                    selected_chars.end + annotation_len,
+                                );
+                            };
 
-            // let capture = ui.add(Button::new(
-            //     RichText::new("CAPTURE").text_style(egui::TextStyle::Heading),
-            // ));
+                            let [min, max] = text_cursor_range.as_ccursor_range().sorted();
 
-            // let mut my_f32: f32 = 30.0;
-            // ui.add(egui::Slider::new(&mut my_f32, 0.0..=100.0).text("My value"));
+                            // println!("prev cursor: {:#?}", edit_state.ccursor_range());
+                            text_edit_state.set_ccursor_range(Some(CCursorRange::two(
+                                min,
+                                if is_already_annotated {
+                                    max - annotation_len * 2
+                                } else {
+                                    max + annotation_len * 2
+                                },
+                            )));
 
-            if ui.input_mut(|input| input.key_pressed(egui::Key::Enter)) {
-                if let (Some(inside_item), Some(text_cursor_range), Some(mut edit_state)) = (
-                    inside_item,
-                    output.cursor_range,
-                    TextEditState::load(ui.ctx(), id),
-                ) {
-                    let text = &mut state.markdown;
-                    use egui::TextBuffer as _;
-                    let selected_chars = text_cursor_range.as_sorted_char_range();
-                    let text_to_insert = match inside_item.starting_index {
-                        Some(starting_index) => format!(
-                            "{}{}. ",
-                            "\t".repeat(inside_item.depth as usize),
-                            starting_index + inside_item.index as u64 + 1
-                        ),
-                        None => format!("{}- ", "\t".repeat(inside_item.depth as usize)),
-                    };
-                    text.insert_text(text_to_insert.as_str(), selected_chars.start);
+                            cursor_range = text_edit_state.cursor_range(&galley);
 
-                    let [min, max] = text_cursor_range.as_ccursor_range().sorted();
-
-                    println!("prev cursor: {:#?}", edit_state.ccursor_range());
-                    // NOTE that cursor range works in chars, but in this case we inserted only chars that fit into u8
-                    // that byte size and char size of insertion are te same in this case
-                    edit_state.set_ccursor_range(Some(CCursorRange::two(
-                        min + text_to_insert.len(),
-                        max + text_to_insert.len(),
-                    )));
-
-                    println!("next cursor: {:#?}", edit_state.ccursor_range());
-
-                    edit_state.store(ui.ctx(), id);
+                            // println!("next cursor: {:#?}", edit_state.ccursor_range());
+                        }
+                    }
                 }
-            }
 
-            for md_shortcut in state.md_annotation_shortcuts.iter() {
-                if ui.input_mut(|input| input.consume_shortcut(&md_shortcut.shortcut)) {
-                    if let (Some(text_cursor_range), Some(mut edit_state)) =
-                        (output.cursor_range, TextEditState::load(ui.ctx(), id))
+                // ---- INTERACTIVE TEXT PARTS (TODO + LINKS) ----
+                if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+                    let cursor = galley.cursor_from_pos(pointer_pos - text_draw_pos);
+                    if let Some((interactive, _)) = interactive_parts.iter().find(|(_, range)| {
+                        let [start, end] = range.sorted();
+                        start.index <= cursor.ccursor.index && end.index > cursor.ccursor.index
+                    }) {
+                        if ui.input(|i| i.modifiers.command) {
+                            ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                            if ui.input(|i| i.pointer.primary_clicked()) {
+                                match interactive {
+                                    InteractiveText::TaskMarker { bytes, checked } => {
+                                        state.markdown.replace_range(
+                                            bytes.clone(),
+                                            if *checked { "[ ]" } else { "[x]" },
+                                        );
+                                    }
+                                    InteractiveText::Link(url) => {
+                                        println!("open url {url:}");
+                                        ctx.output_mut(|output| output.open_url(url));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // text did change in this branch
+
+                // ---- AUTO INDENT LISTS ----
+                if ui.input_mut(|input| input.key_pressed(egui::Key::Enter)) {
+                    if let (Some(inside_item), Some(text_cursor_range)) =
+                        (inside_item, cursor_range)
                     {
                         let text = &mut state.markdown;
                         use egui::TextBuffer as _;
                         let selected_chars = text_cursor_range.as_sorted_char_range();
-                        let selected_text = text.char_range(selected_chars.clone());
-
-                        let annotation = md_shortcut.annotation;
-                        let annotation_len = annotation.chars().count();
-
-                        let is_already_annotated = selected_text
-                            .starts_with(md_shortcut.annotation)
-                            && selected_text.ends_with(annotation)
-                            && selected_text.chars().count() >= annotation_len * 2;
-
-                        if is_already_annotated {
-                            text.delete_char_range(Range {
-                                start: selected_chars.start,
-                                end: selected_chars.start + annotation_len,
-                            });
-                            text.delete_char_range(Range {
-                                start: selected_chars.end - annotation_len * 2,
-                                end: selected_chars.end - annotation_len,
-                            });
-                        } else {
-                            text.insert_text(annotation, selected_chars.start);
-                            text.insert_text(
-                                md_shortcut.annotation,
-                                selected_chars.end + annotation_len,
-                            );
+                        let text_to_insert = match inside_item.starting_index {
+                            Some(starting_index) => format!(
+                                "{}{}. ",
+                                "\t".repeat(inside_item.depth as usize),
+                                starting_index + inside_item.index as u64 + 1
+                            ),
+                            None => format!("{}- ", "\t".repeat(inside_item.depth as usize)),
                         };
+                        text.insert_text(text_to_insert.as_str(), selected_chars.start);
 
                         let [min, max] = text_cursor_range.as_ccursor_range().sorted();
 
-                        // println!("prev cursor: {:#?}", edit_state.ccursor_range());
-                        edit_state.set_ccursor_range(Some(CCursorRange::two(
-                            min,
-                            if is_already_annotated {
-                                max - annotation_len * 2
-                            } else {
-                                max + annotation_len * 2
-                            },
+                        println!("prev cursor: {:#?}", text_edit_state.ccursor_range());
+                        // NOTE that cursor range works in chars, but in this case we inserted only chars that fit into u8
+                        // that byte size and char size of insertion are te same in this case
+                        text_edit_state.set_ccursor_range(Some(CCursorRange::two(
+                            min + text_to_insert.len(),
+                            max + text_to_insert.len(),
                         )));
 
-                        // println!("next cursor: {:#?}", edit_state.ccursor_range());
-
-                        edit_state.store(ui.ctx(), id);
+                        println!("next cursor: {:#?}", text_edit_state.ccursor_range());
                     }
                 }
             }
+
+            text_edit_state.store(ui.ctx(), id);
 
             state.prev_md_layout = md;
         });
@@ -756,24 +846,6 @@ fn render_footer(selected: &mut u32, ctx: &Context, icons: &AppIcons, theme: &Ap
                         selected_fill: theme.colors.button_bg,
                         outline: Stroke::new(1.0, theme.colors.outline_fg),
                     });
-                    // let capture = ui.add(
-                    //     Button::image_and_text(
-                    //         icons.more.texture_id(ctx),
-                    //         Vec2::new(18., 18.),
-                    //         RichText::new("Note 1").text_style(egui::TextStyle::Button),
-                    //     )
-                    //     .min_size(vec2(24., 24.)),
-                    // );
-
-                    // ui.add_space(4.);
-                    // let record = ui.add(
-                    //     Button::image_and_text(
-                    //         icons.more.texture_id(ctx),
-                    //         Vec2::new(18., 18.),
-                    //         RichText::new("Note 2").text_style(egui::TextStyle::Button),
-                    //     )
-                    //     .min_size(vec2(24., 24.)),
-                    // );
                 });
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
