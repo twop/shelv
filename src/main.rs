@@ -1,4 +1,5 @@
 #![feature(iter_intersperse)]
+#![feature(let_chains)]
 
 use app::{create_app_state, render, AppIcons, AppInitData, AppState, AsyncMessage};
 use global_hotkey::{
@@ -17,16 +18,18 @@ use std::{
     thread,
 };
 
-pub mod app;
-pub mod nord;
-pub mod picker;
-pub mod theme;
-
 use eframe::{
     egui::{self, TextStyle, Visuals},
     epaint::{vec2, Color32, FontFamily, FontId},
     CreationContext,
 };
+
+pub mod app;
+pub mod md_shortcut;
+pub mod nord;
+pub mod picker;
+pub mod text_structure;
+pub mod theme;
 
 pub struct MyApp {
     state: AppState,
