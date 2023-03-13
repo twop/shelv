@@ -18,17 +18,12 @@ pub enum Ev {
     Emphasis,
     Text,
     Heading(HeadingLevel),
-    CodeBody {
-        lang: String,
-        code_block_pos: Range<usize>,
-    },
+    CodeBlock { lang: String },
     ListItem,
     TaskMarker(bool),
     ListStart(Option<u64>),
     ListEnd,
-    RawLink {
-        url: String,
-    },
+    RawLink { url: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +55,7 @@ struct AnnotationPoint {
     annotation: Annotation,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SpanKind {
     Strike,
     Bold,
@@ -70,14 +65,19 @@ pub enum SpanKind {
     Link,
     Heading,
     CodeBlock,
+    CodeBlockContent,
     // List,
     ListItem,
 }
 
+#[derive(Debug, Clone)]
 pub enum SpanMeta {
-    Code {
+    CodeBlock {
+        content_span: Option<SpanIndex>,
+    },
+    CodeBlockContent {
         lang: String,
-        code_block_pos: Range<usize>,
+        block_span: SpanIndex,
     },
     TaskMarker {
         checked: bool,
@@ -129,9 +129,16 @@ impl MarkdownState {
 }
 
 pub struct TextStructure {
-    list_stack: SmallVec<[ListDesc; 4]>,
-
     points: Vec<AnnotationPoint>,
+    spans: Vec<(SpanKind, Range<usize>)>,
+    metadata: Vec<(SpanIndex, SpanMeta)>,
+}
+
+pub struct TextStructureBuilder<'a> {
+    text: &'a str,
+    list_stack: SmallVec<[ListDesc; 4]>,
+    last_code_block: Option<(SpanIndex, Range<usize>, String)>,
+
     spans: Vec<(SpanKind, Range<usize>)>,
     metadata: Vec<(SpanIndex, SpanMeta)>,
 }
@@ -145,22 +152,20 @@ pub enum InteractiveTextPart<'a> {
     Link(&'a str),
 }
 
-impl TextStructure {
-    pub fn new() -> Self {
+pub struct SpanSearchResult {
+    pub span_byte_range: Range<usize>,
+    pub content_byte_range: Range<usize>,
+}
+
+impl<'a> TextStructureBuilder<'a> {
+    pub fn start(text: &'a str) -> Self {
         Self {
+            text,
+            list_stack: Default::default(),
+            last_code_block: None,
             spans: vec![],
             metadata: vec![],
-            points: vec![],
-            list_stack: Default::default(),
         }
-    }
-
-    pub fn recycle(mut self) -> Self {
-        self.spans.clear();
-        self.metadata.clear();
-        self.points.clear();
-        self.list_stack.clear();
-        self
     }
 
     pub fn event(&mut self, ev: Ev, pos: Range<usize>) {
@@ -205,7 +210,7 @@ impl TextStructure {
                             checked,
                             list_item_index: SpanIndex(index),
                         },
-                    )
+                    );
                 }
             }
 
@@ -221,36 +226,108 @@ impl TextStructure {
             Ev::ListEnd => {
                 self.list_stack.pop();
             }
-            Ev::Strike => self.add(SpanKind::Heading, pos),
-            Ev::Bold => self.add(SpanKind::Bold, pos),
-            Ev::Emphasis => self.add(SpanKind::Emphasis, pos),
-            Ev::Text => self.add(SpanKind::Text, pos),
+            Ev::Strike => {
+                self.add(SpanKind::Heading, pos);
+            }
+            Ev::Bold => {
+                self.add(SpanKind::Bold, pos);
+            }
+            Ev::Emphasis => {
+                self.add(SpanKind::Emphasis, pos);
+            }
+            Ev::Text => match self.last_code_block.clone() {
+                // Text can be within a code block
+                Some((block_span, block_pos, lang))
+                    if block_pos.start <= pos.start && block_pos.end >= pos.end =>
+                {
+                    // trim the last \n if any, it look odd,
+                    // but \n is parsed as a part of the body, thus bandage that
+                    let pos = if self.text[pos.clone()].ends_with("\n") {
+                        pos.start..pos.end - 1
+                    } else {
+                        pos
+                    };
 
-            Ev::CodeBody {
-                lang,
-                code_block_pos,
-            } => self.add_with_meta(
-                SpanKind::CodeBlock,
-                pos,
-                SpanMeta::Code {
-                    lang,
-                    code_block_pos,
-                },
-            ),
-            Ev::RawLink { url } => self.add_with_meta(SpanKind::Link, pos, SpanMeta::Link { url }),
+                    let span_index = self.add_with_meta(
+                        SpanKind::CodeBlockContent,
+                        pos.clone(),
+                        SpanMeta::CodeBlockContent {
+                            block_span,
+                            lang: lang.clone(),
+                        },
+                    );
+
+                    // notify parent block that there is some content
+                    if let Some(SpanMeta::CodeBlock { content_span, .. }) = self
+                        .metadata
+                        .iter_mut()
+                        .find(|(i, _)| *i == block_span)
+                        .map(|(_, meta)| meta)
+                    {
+                        *content_span = Some(span_index);
+                    }
+                }
+
+                _ => {
+                    self.add(SpanKind::Text, pos);
+                }
+            },
+
+            Ev::CodeBlock { lang } => {
+                let span_index = self.add_with_meta(
+                    SpanKind::CodeBlock,
+                    pos.clone(),
+                    SpanMeta::CodeBlock { content_span: None },
+                );
+
+                self.last_code_block = Some((span_index, pos, lang));
+            }
+            Ev::RawLink { url } => {
+                self.add_with_meta(SpanKind::Link, pos, SpanMeta::Link { url });
+            }
         }
     }
 
+    fn add(&mut self, kind: SpanKind, pos: Range<usize>) -> SpanIndex {
+        let index = SpanIndex(self.spans.len());
+        self.spans.push((kind, pos));
+        index
+    }
+
+    fn add_with_meta(&mut self, kind: SpanKind, pos: Range<usize>, meta: SpanMeta) -> SpanIndex {
+        let index = SpanIndex(self.spans.len());
+        self.metadata.push((index, meta));
+        self.spans.push((kind, pos));
+        index
+    }
+
+    pub fn finish(mut self) -> TextStructure {
+        let Self {
+            text,
+            list_stack,
+            last_code_block,
+            spans,
+            metadata,
+        } = self;
+
+        let points = fill_annotation_points(vec![], &spans, &metadata);
+
+        TextStructure {
+            points,
+            spans,
+            metadata,
+        }
+    }
+}
+
+impl TextStructure {
     pub fn create_layout_job(
-        &mut self,
+        &self,
         text: &str,
         theme: &AppTheme,
         syntax_set: &SyntaxSet,
         theme_set: &ThemeSet,
     ) -> LayoutJob {
-        self.points.clear();
-        fill_annotation_points(&mut self.points, &self.spans, &self.metadata);
-
         let mut pos: usize = 0;
         let mut job = LayoutJob::default();
 
@@ -268,7 +345,7 @@ impl TextStructure {
 
                 let lang = find_metadata(point.span_index, &self.metadata)
                     .and_then(|meta| match meta {
-                        SpanMeta::Code { lang, .. } => Some(lang.as_str()),
+                        SpanMeta::CodeBlockContent { lang, .. } => Some(lang.as_str()),
                         _ => None,
                     })
                     .unwrap_or("");
@@ -350,15 +427,6 @@ impl TextStructure {
         job
     }
 
-    fn add(&mut self, kind: SpanKind, pos: Range<usize>) {
-        self.spans.push((kind, pos));
-    }
-
-    fn add_with_meta(&mut self, kind: SpanKind, pos: Range<usize>, meta: SpanMeta) {
-        self.metadata.push((SpanIndex(self.spans.len()), meta));
-        self.spans.push((kind, pos));
-    }
-
     pub fn find_interactive_text_part(&self, byte_cursor: usize) -> Option<InteractiveTextPart> {
         self.spans
             .iter()
@@ -403,13 +471,61 @@ impl TextStructure {
                 _ => None,
             })
     }
+
+    pub fn find_span_at(
+        &self,
+        span_kind: SpanKind,
+        byte_range: Range<usize>,
+    ) -> Option<SpanSearchResult> {
+        self.spans
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, (kind, item_pos))| {
+                *kind == span_kind
+                    && item_pos.start <= byte_range.start
+                    && item_pos.end >= byte_range.end
+            })
+            .and_then(|(index, (kind, pos))| {
+                let ranges = match kind {
+                    SpanKind::Strike => Some((pos.clone(), pos.start + 2..pos.end - 2)), //~~{}~~
+                    SpanKind::Bold => Some((pos.clone(), pos.start + 2..pos.end - 2)),   //**{}**
+                    SpanKind::Emphasis => Some((pos.clone(), pos.start + 1..pos.end - 1)), //*{}*
+                    SpanKind::CodeBlock => find_metadata(SpanIndex(index), &self.metadata)
+                        .and_then(|meta| match meta {
+                            SpanMeta::CodeBlock { content_span } => match content_span {
+                                Some(span) => {
+                                    // if there is code inside, return it as the inner range
+                                    let (_, content_range) = self.spans[span.0].clone();
+                                    Some((pos.clone(), content_range))
+                                }
+                                // means that there is no content yet inside the code block
+                                // thus just return empty range for the content, maybe make it more elegant
+                                None => Some((pos.clone(), pos.start..pos.start)),
+                            },
+                            _ => None,
+                        }),
+                    SpanKind::Text => todo!(),
+                    SpanKind::TaskMarker => todo!(),
+                    SpanKind::Link => todo!(),
+                    SpanKind::Heading => todo!(),
+                    SpanKind::CodeBlockContent => todo!(),
+                    SpanKind::ListItem => todo!(),
+                };
+
+                ranges.map(|(outer, inner)| SpanSearchResult {
+                    span_byte_range: outer,
+                    content_byte_range: inner,
+                })
+            })
+    }
 }
 
 fn fill_annotation_points(
-    points: &mut Vec<AnnotationPoint>,
+    mut points: Vec<AnnotationPoint>,
     spans: &Vec<(SpanKind, Range<usize>)>,
     metadata: &Vec<(SpanIndex, SpanMeta)>,
-) {
+) -> Vec<AnnotationPoint> {
     for (index, (kind, pos)) in spans.iter().enumerate() {
         let span_index = SpanIndex(index);
         let pair: SmallVec<[(Annotation, &Range<usize>); 2]> = match kind {
@@ -435,7 +551,8 @@ fn fill_annotation_points(
             },
             SpanKind::Link => smallvec![(Annotation::Link, pos)],
             SpanKind::Heading => smallvec![(Annotation::Heading, pos)],
-            SpanKind::CodeBlock => smallvec![(Annotation::CodeBlock, pos)],
+            SpanKind::CodeBlockContent => smallvec![(Annotation::CodeBlock, pos)],
+            SpanKind::CodeBlock => smallvec![],
             SpanKind::ListItem => smallvec![],
         };
 
@@ -457,6 +574,7 @@ fn fill_annotation_points(
     }
 
     points.sort_by_key(|p| p.str_offset);
+    points
 }
 
 #[inline(always)]
