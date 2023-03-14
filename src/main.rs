@@ -9,6 +9,7 @@ use global_hotkey::{
 
 use image::ImageFormat;
 
+use persistent_state::PersistentState;
 use theme::configure_styles;
 use tray_icon::{icon::Icon, menu::MenuEvent, TrayEvent, TrayIcon, TrayIconBuilder};
 // use tray_item::TrayItem;
@@ -21,12 +22,13 @@ use std::{
 use eframe::{
     egui::{self, TextStyle, Visuals},
     epaint::{vec2, Color32, FontFamily, FontId},
-    CreationContext,
+    get_value, set_value, CreationContext,
 };
 
 pub mod app;
 pub mod md_shortcut;
 pub mod nord;
+pub mod persistent_state;
 pub mod picker;
 pub mod text_structure;
 pub mod theme;
@@ -80,11 +82,15 @@ impl MyApp {
             .build()
             .unwrap();
 
+        let persistent_state: Option<PersistentState> =
+            cc.storage.and_then(|s| get_value(s, "persistent_state"));
+
         Self {
             state: create_app_state(AppInitData {
                 icons: load_app_icons(theme.colors.button_fg),
                 theme,
                 msg_queue: msg_queue_rx,
+                persistent_state,
             }),
             hotkeys_manager,
             tray: tray_icon,
@@ -102,6 +108,12 @@ impl eframe::App for MyApp {
         self.msg_queue.send(AsyncMessage::ToggleVisibility).unwrap();
 
         return false;
+    }
+
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        if let Some(persistent_state) = self.state.should_persist() {
+            set_value(storage, "persistent_state", &persistent_state);
+        }
     }
 }
 

@@ -27,6 +27,7 @@ use crate::{
         execute_instruction, Edge, Instruction, InstructionCondition, MdAnnotationShortcut,
         ShortcutContext, Source,
     },
+    persistent_state::PersistentState,
     picker::Picker,
     text_structure::{Ev, InteractiveTextPart, SpanKind, TextStructure, TextStructureBuilder},
     theme::AppTheme,
@@ -37,6 +38,7 @@ use crate::{
 pub struct AppState {
     note: String,
     selected_note: u32,
+    save_to_storage: bool,
 
     theme: AppTheme,
     syntax_set: SyntaxSet,
@@ -194,6 +196,7 @@ impl AppState {
             theme,
             msg_queue,
             icons,
+            persistent_state,
         } = init_data;
 
         use Instruction::*;
@@ -208,30 +211,37 @@ impl AppState {
             ),
             code_block: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, egui::Key::C),
         };
+
+        let (selected_note, note) = persistent_state
+            .map(|s| (s.selected_note, s.note))
+            .unwrap_or_else(|| (0, "---".to_string()));
+
+        //             note: "# title
+        // - adsd
+        // - fdsf
+        // 	- [ ] fdsf
+        // 	- [x] fdsf
+        // 1. fa
+        // 2. fdsf
+        // 3.
+        // bo**dy**
+        // i*tali*c
+        // https://www.nordtheme.com/docs/colors-and-palettes
+        // ```rs
+        // let a = Some(115);
+        // ```"
+        // .to_string(),
+
         Self {
+            save_to_storage: false,
             theme,
-            note: "---"
-                //             note: "# title
-                // - adsd
-                // - fdsf
-                // 	- [ ] fdsf
-                // 	- [x] fdsf
-                // 1. fa
-                // 2. fdsf
-                // 3.
-                // bo**dy**
-                // i*tali*c
-                // https://www.nordtheme.com/docs/colors-and-palettes
-                // ```rs
-                // let a = Some(115);
-                // ```"
-                .to_string(),
+            note,
             computed_layout: None,
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
             icons,
             msg_queue,
-            selected_note: 0,
+            selected_note,
             hidden: false,
             md_annotation_shortcuts: [
                 ("bold", "**", app_shortcuts.bold, SpanKind::Bold),
@@ -318,12 +328,25 @@ impl AppState {
             app_shortcuts,
         }
     }
+
+    pub fn should_persist(&mut self) -> Option<PersistentState> {
+        if self.save_to_storage {
+            self.save_to_storage = false;
+            Some(PersistentState {
+                note: self.note.clone(),
+                selected_note: self.selected_note,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 pub struct AppInitData {
     pub theme: AppTheme,
     pub msg_queue: Receiver<AsyncMessage>,
     pub icons: AppIcons,
+    pub persistent_state: Option<PersistentState>,
 }
 
 #[no_mangle]
@@ -361,7 +384,12 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
         }
     }
 
+    let selected_note = state.selected_note;
     render_footer(&mut state.selected_note, ctx, &state.icons, &state.theme);
+    if selected_note != state.selected_note {
+        state.save_to_storage = true;
+    }
+
     render_header_panel(ctx, &state.icons, &state.theme);
 
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -392,7 +420,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
             // let mut edited_text = state.markdown.clone();
 
             let TextEditOutput {
-                response: _,
+                response: text_edit_response,
                 galley,
                 text_draw_pos,
                 text_clip_rect: _,
@@ -407,6 +435,10 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                 .frame(false)
                 .layouter(&mut layouter)
                 .show(ui);
+
+            if text_edit_response.changed() {
+                state.save_to_storage = true;
+            }
 
             let space_below = ui.available_rect_before_wrap();
 
