@@ -1,4 +1,5 @@
 use std::{
+    fmt::format,
     ops::Range,
     sync::{mpsc::Receiver, Arc},
 };
@@ -36,8 +37,10 @@ use crate::{
 // let ps = SyntaxSet::load_defaults_newlines();
 // let ts = ThemeSet::load_defaults();
 pub struct AppState {
-    note: String,
+    notes: Vec<String>,
     selected_note: u32,
+    notes_count: u32,
+
     save_to_storage: bool,
 
     theme: AppTheme,
@@ -130,7 +133,7 @@ impl ComputedLayout {
             }
         }
 
-        let mut text_structure = builder.finish();
+        let text_structure = builder.finish();
 
         let mut job = text_structure.create_layout_job(text, theme, syntax_set, theme_set);
 
@@ -212,9 +215,18 @@ impl AppState {
             code_block: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, egui::Key::C),
         };
 
-        let (selected_note, note) = persistent_state
-            .map(|s| (s.selected_note, s.note))
-            .unwrap_or_else(|| (0, "---".to_string()));
+        let notes_count = 4;
+
+        let (selected_note, mut notes) = persistent_state
+            .map(|s| (s.selected_note, s.notes))
+            .unwrap_or_else(|| (0, (0..notes_count).map(|i| format!("{i}")).collect()));
+
+        let restored_notes_count = notes.len();
+        if restored_notes_count != notes_count {
+            for i in restored_notes_count..notes_count {
+                notes.push(format!("{i}"));
+            }
+        }
 
         //             note: "# title
         // - adsd
@@ -235,7 +247,7 @@ impl AppState {
         Self {
             save_to_storage: false,
             theme,
-            note,
+            notes,
             computed_layout: None,
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
@@ -326,6 +338,7 @@ impl AppState {
             }))
             .collect(),
             app_shortcuts,
+            notes_count: notes_count as u32,
         }
     }
 
@@ -333,7 +346,7 @@ impl AppState {
         if self.save_to_storage {
             self.save_to_storage = false;
             Some(PersistentState {
-                note: self.note.clone(),
+                notes: self.notes.clone(),
                 selected_note: self.selected_note,
             })
         } else {
@@ -367,8 +380,9 @@ fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, imag
 
 #[no_mangle]
 pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Frame) {
-    let id = Id::new("text_edit");
+    let id = Id::new(("text_edit", state.selected_note));
 
+    let current_note = &mut state.notes[state.selected_note as usize];
     while let Ok(msg) = state.msg_queue.try_recv() {
         println!("got in render: {msg:?}");
         match msg {
@@ -377,7 +391,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                 frame.set_visible(!state.hidden);
 
                 if !state.hidden {
-                    set_cursor_at_the_end(&state.note, ctx, id);
+                    set_cursor_at_the_end(current_note, ctx, id);
                     frame.focus_window();
                 }
             }
@@ -385,9 +399,16 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
     }
 
     let selected_note = state.selected_note;
-    render_footer(&mut state.selected_note, ctx, &state.icons, &state.theme);
+    render_footer(
+        &mut state.selected_note,
+        state.notes_count,
+        ctx,
+        &state.icons,
+        &state.theme,
+    );
     if selected_note != state.selected_note {
         state.save_to_storage = true;
+        // TODO invalidate layout and set cursor to the end
     }
 
     render_header_panel(ctx, &state.icons, &state.theme);
@@ -426,7 +447,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                 text_clip_rect: _,
                 state: mut text_edit_state,
                 mut cursor_range,
-            } = egui::TextEdit::multiline(&mut state.note)
+            } = egui::TextEdit::multiline(current_note)
                 .font(egui::TextStyle::Monospace) // for cursor height
                 .code_editor()
                 .id(id)
@@ -448,7 +469,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     .interact(space_below, Id::new("space_below"), Sense::click())
                     .clicked()
             {
-                set_cursor_at_the_end(&state.note, ctx, id);
+                set_cursor_at_the_end(current_note, ctx, id);
             }
 
             // ---- SHORTCUTS FOR MAKING BOLD/ITALIC/STRIKETHROUGH ----
@@ -458,14 +479,14 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
             {
                 for md_shortcut in state.md_annotation_shortcuts.iter() {
                     if ui.input_mut(|input| input.consume_shortcut(&md_shortcut.shortcut)) {
-                        let text = &mut state.note;
                         use egui::TextBuffer as _;
 
                         let selected_chars = text_cursor_range.as_sorted_char_range();
-                        let selected_text = text.char_range(selected_chars.clone());
+                        let selected_text = current_note.char_range(selected_chars.clone());
 
-                        let byte_start = text.byte_index_from_char_index(selected_chars.start);
-                        let byte_end = text.byte_index_from_char_index(selected_chars.end);
+                        let byte_start =
+                            current_note.byte_index_from_char_index(selected_chars.start);
+                        let byte_end = current_note.byte_index_from_char_index(selected_chars.end);
 
                         let span = computed_layout
                             .text_structure
@@ -477,13 +498,15 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                                 // for example: if it is already "bold" then remove "**" on each side
 
                                 match (
-                                    text.get(search_result.content_byte_range)
+                                    current_note
+                                        .get(search_result.content_byte_range)
                                         .map(|s| s.to_string()),
-                                    text.get(0..search_result.span_byte_range.start)
+                                    current_note
+                                        .get(0..search_result.span_byte_range.start)
                                         .map(|s| s.chars().count()),
                                 ) {
                                     (Some(inner_content), Some(span_char_offset)) => {
-                                        text.replace_range(
+                                        current_note.replace_range(
                                             search_result.span_byte_range,
                                             &inner_content,
                                         );
@@ -498,8 +521,8 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                             None => {
                                 // means that we need to execute instruction for the shortcut, presumably to add annotations
                                 let cx = ShortcutContext {
-                                    before_selection: text.get(0..byte_start),
-                                    after_selection: text.get(byte_end..),
+                                    before_selection: current_note.get(0..byte_start),
+                                    after_selection: current_note.get(byte_end..),
                                     selection: match selected_chars.is_empty() {
                                         true => None,
                                         false => Some(selected_text),
@@ -508,7 +531,8 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                                 println!("!! md shortcut:\n{:#?}", cx);
                                 match execute_instruction(cx, &md_shortcut.instruction) {
                                     Some(result) => {
-                                        text.replace_range(byte_start..byte_end, &result.content);
+                                        current_note
+                                            .replace_range(byte_start..byte_end, &result.content);
 
                                         let [min, _] =
                                             text_cursor_range.as_ccursor_range().sorted();
@@ -554,7 +578,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                                     byte_range,
                                     checked,
                                 } => {
-                                    state.note.replace_range(
+                                    current_note.replace_range(
                                         byte_range,
                                         if checked { "[ ]" } else { "[x]" },
                                     );
@@ -575,13 +599,13 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     (cursor_range, &state.computed_layout)
                 {
                     let inside_item = {
-                        let text = &mut state.note;
+                        // let text = current_note;
                         use egui::TextBuffer;
 
                         let char_range = text_cursor_range.as_sorted_char_range();
 
-                        let byte_start = text.byte_index_from_char_index(char_range.start);
-                        let byte_end = text.byte_index_from_char_index(char_range.end);
+                        let byte_start = current_note.byte_index_from_char_index(char_range.start);
+                        let byte_end = current_note.byte_index_from_char_index(char_range.end);
 
                         computed_layout
                             .text_structure
@@ -589,7 +613,6 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     };
 
                     if let Some(inside_list_item) = inside_item {
-                        let text = &mut state.note;
                         use egui::TextBuffer as _;
                         let selected_chars = text_cursor_range.as_sorted_char_range();
                         let text_to_insert = match inside_list_item.starting_index {
@@ -602,7 +625,8 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                                 format!("{}- ", "\t".repeat(inside_list_item.depth as usize))
                             }
                         };
-                        text.insert_text(text_to_insert.as_str(), selected_chars.start);
+
+                        current_note.insert_text(text_to_insert.as_str(), selected_chars.start);
 
                         let [min, max] = text_cursor_range.as_ccursor_range().sorted();
 
@@ -635,7 +659,13 @@ fn set_cursor_at_the_end(text: &str, ctx: &Context, id: Id) {
     }
 }
 
-fn render_footer(selected: &mut u32, ctx: &Context, icons: &AppIcons, theme: &AppTheme) {
+fn render_footer(
+    selected: &mut u32,
+    notes_count: u32,
+    ctx: &Context,
+    icons: &AppIcons,
+    theme: &AppTheme,
+) {
     TopBottomPanel::bottom("footer")
         // .exact_height(32.)
         .show_separator_line(false)
@@ -650,7 +680,7 @@ fn render_footer(selected: &mut u32, ctx: &Context, icons: &AppIcons, theme: &Ap
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     ui.add(Picker {
                         current: selected,
-                        count: 4,
+                        count: notes_count,
                         gap: 8.,
                         radius: 8.,
                         inactive: theme.colors.outline_fg,
