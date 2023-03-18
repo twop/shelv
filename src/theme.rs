@@ -11,9 +11,23 @@ use eframe::{
 
 use crate::nord::Nord;
 
+// #[derive(Debug, Clone, Copy)]
+pub struct Sizes {
+    pub xs: f32,
+    pub s: f32,
+    pub m: f32,
+    pub l: f32,
+    pub xl: f32,
+
+    // semantic
+    pub header_footer: f32,
+    pub toolbar_icon: f32,
+}
+
 pub struct AppTheme {
     pub fonts: FontTheme,
     pub colors: ColorTheme,
+    pub sizes: Sizes,
 }
 
 impl AppTheme {
@@ -22,6 +36,7 @@ impl AppTheme {
         Self {
             fonts: FontTheme::default(),
             colors: ColorTheme::nord(),
+            sizes: Sizes::new(),
         }
     }
 }
@@ -50,6 +65,26 @@ impl FontSizes {
             h4: 16.,
             normal: 14.,
             small: 8.,
+        }
+    }
+}
+
+impl Sizes {
+    pub fn new() -> Self {
+        let xs = 4.0;
+        let s = 8.0;
+        let m = 12.0;
+        let l = 16.0;
+        let xl = 24.0;
+
+        Self {
+            xs,
+            s,
+            m,
+            l,
+            xl,
+            header_footer: xl,
+            toolbar_icon: l,
         }
     }
 }

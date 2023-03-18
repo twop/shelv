@@ -9,11 +9,11 @@ use eframe::{
         self,
         text::CCursor,
         text_edit::{CCursorRange, TextEditOutput},
-        Context, Id, ImageButton, KeyboardShortcut, Layout, Modifiers, RichText, Sense,
-        TopBottomPanel, Ui,
+        Button, Context, Id, ImageButton, KeyboardShortcut, Layout, Modifiers, Painter, RichText,
+        Sense, TopBottomPanel, Ui,
     },
-    emath::Align,
-    epaint::{pos2, vec2, Color32, FontId, Galley, Stroke, Vec2},
+    emath::{Align, Align2},
+    epaint::{pos2, vec2, Color32, FontId, Galley, Rect, Stroke, Vec2},
 };
 
 use egui_extras::RetainedImage;
@@ -256,15 +256,10 @@ impl AppState {
             selected_note,
             hidden: false,
             md_annotation_shortcuts: [
-                ("bold", "**", app_shortcuts.bold, SpanKind::Bold),
+                ("Bold", "**", app_shortcuts.bold, SpanKind::Bold),
+                ("Italic", "*", app_shortcuts.emphasize, SpanKind::Emphasis),
                 (
-                    "emphasize",
-                    "*",
-                    app_shortcuts.emphasize,
-                    SpanKind::Emphasis,
-                ),
-                (
-                    "strike",
+                    "Strikethrough",
                     "~~",
                     app_shortcuts.strikethrough,
                     SpanKind::Strike,
@@ -295,7 +290,7 @@ impl AppState {
             )
             .into_iter()
             .chain(std::iter::once(MdAnnotationShortcut {
-                name: "code_block",
+                name: "Code Block",
                 shortcut: app_shortcuts.code_block,
                 instruction: Instruction::sequence([
                     Instruction::condition(
@@ -414,6 +409,42 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
     render_header_panel(ctx, &state.icons, &state.theme);
 
     egui::CentralPanel::default().show(ctx, |ui| {
+        let avail_space = ui.available_rect_before_wrap();
+
+        {
+            // let hints_ui = ui.child_ui(
+            //     avail_space,
+            //     Layout::centered_and_justified(egui::Direction::TopDown),
+            // );
+
+            // ui.label(
+            //     RichText::new("1")
+            //         .size(20.)
+            //         .color(Color32::WHITE.gamma_multiply(0.1)),
+            // );
+
+            let hints_painter = ui.painter();
+
+            // let hints = [
+            //     "Bold: Cmd + B",
+            //     "Strike: Cmd + Shift + E",
+            //     "Code Block: Cmd + Shift + C",
+            // ]
+            // .map(|h| h.to_string())
+            // .to_vec();
+
+            render_hints(
+                &format!("{}", state.selected_note + 1),
+                current_note
+                    .is_empty()
+                    .then(|| state.md_annotation_shortcuts.as_slice()),
+                avail_space,
+                hints_painter,
+                ctx,
+                &state.theme,
+            );
+        }
+
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
@@ -671,9 +702,9 @@ fn render_footer(
         .show_separator_line(false)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let height = 24.;
+                let sizes = &theme.sizes;
                 let avail_width = ui.available_width();
-                ui.set_min_size(vec2(avail_width, height));
+                ui.set_min_size(vec2(avail_width, sizes.header_footer));
 
                 set_menu_bar_style(ui);
 
@@ -681,8 +712,8 @@ fn render_footer(
                     ui.add(Picker {
                         current: selected,
                         count: notes_count,
-                        gap: 8.,
-                        radius: 8.,
+                        gap: sizes.s,
+                        radius: sizes.s,
                         inactive: theme.colors.outline_fg,
                         hover: theme.colors.button_hover_bg_stroke,
                         pressed: theme.colors.button_pressed_fg,
@@ -695,7 +726,7 @@ fn render_footer(
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let settings = ui.add(ImageButton::new(
                         icons.gear.texture_id(ctx),
-                        Vec2::new(18., 18.),
+                        Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
                     ));
                     // // ui.add_space(4.);
                     // ui.separator();
@@ -721,16 +752,17 @@ fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) 
             // println!("-----");
             // println!("before menu {:?}", ui.available_size());
             ui.horizontal(|ui| {
-                let height = 24.;
+                let sizes = &theme.sizes;
+
                 let avail_width = ui.available_width();
                 let avail_rect = ui.available_rect_before_wrap();
                 ui.painter().line_segment(
                     [avail_rect.left(), avail_rect.right()]
-                        .map(|x| pos2(x, avail_rect.top() + height)),
+                        .map(|x| pos2(x, avail_rect.top() + sizes.header_footer)),
                     Stroke::new(1.0, theme.colors.outline_fg),
                 );
-                ui.set_min_size(vec2(avail_width, height));
-                let icon_block_width = 48.;
+                ui.set_min_size(vec2(avail_width, sizes.header_footer));
+                let icon_block_width = sizes.xl * 2.;
 
                 set_menu_bar_style(ui);
 
@@ -740,7 +772,7 @@ fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) 
                     ui.set_width(icon_block_width);
                     let close_btn = ui.add(ImageButton::new(
                         icons.close.texture_id(ctx),
-                        Vec2::new(18., 18.),
+                        Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
                     ));
 
                     if close_btn.clicked() {}
@@ -779,4 +811,71 @@ fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) 
                 });
             });
         });
+}
+
+fn render_hints(
+    title: &str,
+    shortcuts: Option<&[MdAnnotationShortcut]>,
+    available_space: Rect,
+    painter: &Painter,
+    cx: &egui::Context,
+    theme: &AppTheme,
+) {
+    let AppTheme {
+        fonts,
+        colors,
+        sizes,
+    } = theme;
+    let hint_color = Color32::WHITE.gamma_multiply(0.08);
+
+    painter.text(
+        available_space.center_top(), //+ vec2(0., sizes.header_footer)
+        Align2::CENTER_TOP,
+        title,
+        FontId {
+            size: fonts.size.h1,
+            family: fonts.family.normal.clone(),
+        },
+        hint_color,
+    );
+
+    match shortcuts {
+        Some(shortcuts) if shortcuts.len() > 0 => {
+            let hints_font_id = FontId {
+                size: fonts.size.normal,
+                family: fonts.family.normal.clone(),
+            };
+
+            let starting_point = available_space.center()
+                - vec2(
+                    0.,
+                    ((2 * shortcuts.len() - 1) as f32) / 2.0 * fonts.size.normal,
+                );
+
+            for (i, md_shortcut) in shortcuts.iter().enumerate() {
+                painter.text(
+                    starting_point + vec2(0., (i as f32) * 2.0 * fonts.size.normal),
+                    Align2::RIGHT_CENTER,
+                    format!("{}  ", md_shortcut.name,),
+                    hints_font_id.clone(),
+                    hint_color,
+                );
+                painter.text(
+                    starting_point + vec2(0., (i as f32) * 2.0 * fonts.size.normal),
+                    Align2::CENTER_CENTER,
+                    ":",
+                    hints_font_id.clone(),
+                    hint_color,
+                );
+                painter.text(
+                    starting_point + vec2(0., (i as f32) * 2.0 * fonts.size.normal),
+                    Align2::LEFT_CENTER,
+                    format!("  {}", cx.format_shortcut(&md_shortcut.shortcut)),
+                    hints_font_id.clone(),
+                    hint_color,
+                );
+            }
+        }
+        _ => (),
+    };
 }

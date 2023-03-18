@@ -590,6 +590,7 @@ impl MarkdownState {
         let AppTheme {
             fonts: FontTheme { size, family },
             colors,
+            sizes: _,
         } = theme;
 
         let ColorTheme {
