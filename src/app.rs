@@ -21,7 +21,7 @@ use egui_extras::RetainedImage;
 use linkify::LinkFinder;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
-use pulldown_cmark::CodeBlockKind;
+use pulldown_cmark::{CodeBlockKind, HeadingLevel};
 
 use crate::{
     md_shortcut::{
@@ -30,7 +30,9 @@ use crate::{
     },
     persistent_state::PersistentState,
     picker::Picker,
-    text_structure::{Ev, InteractiveTextPart, SpanKind, TextStructure, TextStructureBuilder},
+    text_structure::{
+        self, Ev, InteractiveTextPart, SpanKind, TextStructure, TextStructureBuilder,
+    },
     theme::AppTheme,
 };
 
@@ -60,6 +62,10 @@ struct AppShortcuts {
     emphasize: KeyboardShortcut,
     strikethrough: KeyboardShortcut,
     code_block: KeyboardShortcut,
+    h1: KeyboardShortcut,
+    h2: KeyboardShortcut,
+    h3: KeyboardShortcut,
+    // h4: KeyboardShortcut,
 }
 
 struct ComputedLayout {
@@ -82,89 +88,13 @@ impl ComputedLayout {
         syntax_set: &SyntaxSet,
         theme_set: &ThemeSet,
     ) -> Self {
-        let mut builder = TextStructureBuilder::start(text);
-
-        let finder = LinkFinder::new();
-
-        for link in finder.links(text) {
-            builder.event(
-                Ev::RawLink {
-                    url: link.as_str().to_string(),
-                },
-                link.start()..link.end(),
-            );
-        }
-
-        let md_parser_options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
-            | pulldown_cmark::Options::ENABLE_TASKLISTS
-            | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION;
-
-        let parser = pulldown_cmark::Parser::new_ext(&text, md_parser_options);
-
-        for (ev, range) in parser.into_offset_iter() {
-            use pulldown_cmark::Event::*;
-            use pulldown_cmark::Tag::*;
-            match ev {
-                Start(tag) => match tag {
-                    Strong => builder.event(Ev::Bold, range),
-                    Emphasis => builder.event(Ev::Emphasis, range),
-                    Strikethrough => builder.event(Ev::Strike, range),
-                    CodeBlock(CodeBlockKind::Fenced(lang)) => builder.event(
-                        Ev::CodeBlock {
-                            lang: lang.as_ref().to_string(),
-                        },
-                        range,
-                    ),
-
-                    Item => builder.event(Ev::ListItem, range),
-                    Heading(level, _, _) => builder.event(Ev::Heading(level), range),
-                    List(starting_index) => builder.event(Ev::ListStart(starting_index), range),
-                    _ => (),
-                },
-
-                End(List(_)) => builder.event(Ev::ListEnd, range),
-                // End(CodeBlock(CodeBlockKind::Fenced(_))) => code_block = None,
-                Text(_) => builder.event(Ev::Text, range),
-
-                TaskListMarker(checked) => {
-                    builder.event(Ev::TaskMarker(checked), range.clone());
-                }
-                _ => (),
-            }
-        }
-
-        let text_structure = builder.finish();
+        let text_structure = TextStructure::create_from(text);
 
         let mut job = text_structure.create_layout_job(text, theme, syntax_set, theme_set);
 
         job.wrap.max_width = wrap_width;
 
         let galley = ui.fonts(|f| f.layout_job(job));
-
-        {
-            let parser = pulldown_cmark::Parser::new_ext(text, md_parser_options);
-            println!("\n-----parser-----");
-            println!("text: {:?}", text);
-            println!("-----text-end-----");
-            let mut depth = 0;
-            for (ev, range) in parser.into_offset_iter() {
-                if let pulldown_cmark::Event::End(_) = &ev {
-                    depth -= 1;
-                }
-
-                println!(
-                    "{}{:?} -> {:?}",
-                    "  ".repeat(depth),
-                    ev,
-                    &text[range.start..range.end]
-                );
-
-                if let pulldown_cmark::Event::Start(_) = &ev {
-                    depth += 1;
-                }
-            }
-            println!("---parser-end---");
-        }
 
         Self {
             galley,
@@ -212,7 +142,11 @@ impl AppState {
                 Modifiers::COMMAND | Modifiers::SHIFT,
                 egui::Key::E,
             ),
-            code_block: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, egui::Key::C),
+            code_block: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::C),
+            h1: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num1),
+            h2: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num2),
+            h3: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num3),
+            // h4: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num4),
         };
 
         let notes_count = 4;
@@ -295,7 +229,7 @@ impl AppState {
                 instruction: Instruction::sequence([
                     Instruction::condition(
                         // add new line prior if we start in the middle of the text
-                        EitherOne(vec![
+                        Any(vec![
                             IsNoneOrEmpty(Source::BeforeSelection),
                             EndsWith(Source::BeforeSelection, "\n"),
                         ]),
@@ -312,7 +246,7 @@ impl AppState {
                         CopyFrom(Source::Selection),
                     ),
                     Instruction::condition(
-                        EitherOne(vec![
+                        Any(vec![
                             IsNoneOrEmpty(Source::Selection),
                             EndsWith(Source::Selection, "\n"),
                         ]),
@@ -321,7 +255,7 @@ impl AppState {
                     ),
                     Insert("```"),
                     Instruction::condition(
-                        EitherOne(vec![
+                        Any(vec![
                             IsNoneOrEmpty(Source::AfterSelection),
                             StartsWith(Source::AfterSelection, "\n"),
                         ]),
@@ -331,6 +265,60 @@ impl AppState {
                 ]),
                 target_span: SpanKind::CodeBlock,
             }))
+            .chain(
+                [
+                    ("H1", "#", HeadingLevel::H1, app_shortcuts.h1),
+                    ("H2", "##", HeadingLevel::H2, app_shortcuts.h2),
+                    ("H3", "###", HeadingLevel::H3, app_shortcuts.h3),
+                    // ("H4", "####", HeadingLevel::H4, app_shortcuts.h4),
+                ]
+                .map(|(name, prefix, level, shortcut)| MdAnnotationShortcut {
+                    name,
+                    shortcut,
+                    instruction: MatchFirst(
+                        [
+                            SpanKind::Heading(HeadingLevel::H1),
+                            SpanKind::Heading(HeadingLevel::H2),
+                            SpanKind::Heading(HeadingLevel::H3),
+                            SpanKind::Heading(HeadingLevel::H4),
+                            SpanKind::Heading(HeadingLevel::H5),
+                            SpanKind::Heading(HeadingLevel::H6),
+                            SpanKind::Paragraph,
+                        ]
+                        .into_iter()
+                        .filter(|kind| *kind != SpanKind::Heading(level))
+                        .map(|kind| {
+                            (
+                                InstructionCondition::IsInside(kind),
+                                Seq([
+                                    SetReplaceArea(kind),
+                                    Insert(prefix),
+                                    Insert(" "),
+                                    PlaceCursor(Edge::Start),
+                                    CopyFrom(Source::SurroundingSpanContent(kind)),
+                                    PlaceCursor(Edge::End),
+                                ]
+                                .into()),
+                            )
+                        })
+                        .chain(
+                            [(
+                                InstructionCondition::IsInsideUnmarkedArea,
+                                Seq([
+                                    Insert(prefix),
+                                    Insert(" "),
+                                    PlaceCursor(Edge::Start),
+                                    PlaceCursor(Edge::End),
+                                ]
+                                .into()),
+                            )]
+                            .into_iter(),
+                        )
+                        .collect(),
+                    ),
+                    target_span: SpanKind::Heading(level),
+                }),
+            )
             .collect(),
             app_shortcuts,
             notes_count: notes_count as u32,
@@ -355,6 +343,56 @@ pub struct AppInitData {
     pub msg_queue: Receiver<AsyncMessage>,
     pub icons: AppIcons,
     pub persistent_state: Option<PersistentState>,
+}
+
+#[derive(Debug)]
+struct ShortcutExecContext<'a> {
+    structure: &'a TextStructure,
+    text: &'a str,
+    selection_byte_range: Range<usize>,
+    replace_range: Range<usize>,
+}
+
+impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
+    fn get_source(&self, source: Source) -> Option<&'a str> {
+        match source {
+            Source::Selection => {
+                if self.selection_byte_range.is_empty() {
+                    None
+                } else {
+                    self.text.get(self.selection_byte_range.clone())
+                }
+            }
+            Source::BeforeSelection => self.text.get(0..self.selection_byte_range.start),
+            Source::AfterSelection => self.text.get(self.selection_byte_range.end..),
+            Source::SurroundingSpanContent(kind) => self
+                .structure
+                .find_span_at(kind, self.selection_byte_range.clone())
+                .map(|(_, index)| self.structure.get_span_inner_content(index))
+                .and_then(|content| self.text.get(content.clone())),
+        }
+    }
+
+    fn is_inside_span(&self, kind: SpanKind) -> bool {
+        self.structure
+            .find_span_at(kind, self.selection_byte_range.clone())
+            .is_some()
+    }
+
+    fn set_replace_area(&mut self, kind: SpanKind) {
+        if let Some((range, _)) = self
+            .structure
+            .find_span_at(kind, self.selection_byte_range.clone())
+        {
+            self.replace_range = range;
+        }
+    }
+
+    fn is_inside_unmarked(&self) -> bool {
+        self.structure
+            .find_any_span_at(self.selection_byte_range.clone())
+            .is_none()
+    }
 }
 
 #[no_mangle]
@@ -504,7 +542,6 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
             }
 
             // ---- SHORTCUTS FOR MAKING BOLD/ITALIC/STRIKETHROUGH ----
-
             if let (Some(text_cursor_range), Some(computed_layout)) =
                 (cursor_range, &state.computed_layout)
             {
@@ -512,35 +549,37 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     if ui.input_mut(|input| input.consume_shortcut(&md_shortcut.shortcut)) {
                         use egui::TextBuffer as _;
 
-                        let selected_chars = text_cursor_range.as_sorted_char_range();
-                        let selected_text = current_note.char_range(selected_chars.clone());
+                        let selected_char_range = text_cursor_range.as_sorted_char_range();
 
                         let byte_start =
-                            current_note.byte_index_from_char_index(selected_chars.start);
-                        let byte_end = current_note.byte_index_from_char_index(selected_chars.end);
+                            current_note.byte_index_from_char_index(selected_char_range.start);
+
+                        let byte_end =
+                            current_note.byte_index_from_char_index(selected_char_range.end);
 
                         let span = computed_layout
                             .text_structure
-                            .find_span_at(md_shortcut.target_span, byte_start..byte_end);
+                            .find_span_at(md_shortcut.target_span, byte_start..byte_end)
+                            .map(|(span_range, idx)| {
+                                (
+                                    span_range,
+                                    computed_layout.text_structure.get_span_inner_content(idx),
+                                )
+                            });
 
                         let [cursor_start, cursor_end] = match span {
-                            Some(search_result) => {
-                                // we need to remove the annotations
+                            Some((span_byte_range, content_byte_range)) => {
+                                // we need to remove the annotations because it is already annotated
                                 // for example: if it is already "bold" then remove "**" on each side
 
                                 match (
+                                    current_note.get(content_byte_range).map(|s| s.to_string()),
                                     current_note
-                                        .get(search_result.content_byte_range)
-                                        .map(|s| s.to_string()),
-                                    current_note
-                                        .get(0..search_result.span_byte_range.start)
+                                        .get(0..span_byte_range.start)
                                         .map(|s| s.chars().count()),
                                 ) {
                                     (Some(inner_content), Some(span_char_offset)) => {
-                                        current_note.replace_range(
-                                            search_result.span_byte_range,
-                                            &inner_content,
-                                        );
+                                        current_note.replace_range(span_byte_range, &inner_content);
 
                                         let cursor_start = CCursor::new(span_char_offset);
 
@@ -551,26 +590,28 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                             }
                             None => {
                                 // means that we need to execute instruction for the shortcut, presumably to add annotations
-                                let cx = ShortcutContext {
-                                    before_selection: current_note.get(0..byte_start),
-                                    after_selection: current_note.get(byte_end..),
-                                    selection: match selected_chars.is_empty() {
-                                        true => None,
-                                        false => Some(selected_text),
-                                    },
+                                let mut cx = ShortcutExecContext {
+                                    structure: &computed_layout.text_structure,
+                                    text: current_note,
+                                    selection_byte_range: byte_start..byte_end,
+                                    replace_range: byte_start..byte_end,
                                 };
-                                println!("!! md shortcut:\n{:#?}", cx);
-                                match execute_instruction(cx, &md_shortcut.instruction) {
-                                    Some(result) => {
-                                        current_note
-                                            .replace_range(byte_start..byte_end, &result.content);
 
-                                        let [min, _] =
-                                            text_cursor_range.as_ccursor_range().sorted();
+                                // println!("!! md shortcut:\n{:#?}", cx);
+                                match execute_instruction(&mut cx, &md_shortcut.instruction) {
+                                    Some(result) => {
+                                        let cursor_start = CCursor::new(
+                                            current_note[..cx.replace_range.start].chars().count(),
+                                        );
+
+                                        current_note.replace_range(
+                                            cx.replace_range.clone(),
+                                            &result.content,
+                                        );
 
                                         [
-                                            min + result.relative_char_cursor.start,
-                                            min + result.relative_char_cursor.end,
+                                            cursor_start + result.relative_char_cursor.start,
+                                            cursor_start + result.relative_char_cursor.end,
                                         ]
                                     }
                                     None => text_cursor_range.as_ccursor_range().sorted(),

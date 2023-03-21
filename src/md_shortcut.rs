@@ -16,23 +16,28 @@ pub enum Edge {
     End,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Source {
     Selection,
     BeforeSelection,
     AfterSelection,
+    SurroundingSpanContent(SpanKind),
 }
 
 pub enum InstructionCondition {
+    IsInside(SpanKind),
+    IsInsideUnmarkedArea,
     IsNoneOrEmpty(Source),
     EndsWith(Source, &'static str),
     StartsWith(Source, &'static str),
-    EitherOne(Vec<InstructionCondition>),
+    Any(Vec<InstructionCondition>),
+    // Any(Vec<InstructionCondition>),
 }
 
 pub enum Instruction {
     Insert(&'static str),
     PlaceCursor(Edge),
+    SetReplaceArea(SpanKind),
     CopyFrom(Source),
     Seq(Vec<Instruction>),
     Condition {
@@ -40,6 +45,7 @@ pub enum Instruction {
         if_true: Box<Instruction>,
         if_false: Box<Instruction>,
     },
+    MatchFirst(Vec<(InstructionCondition, Instruction)>),
 }
 
 impl Instruction {
@@ -60,11 +66,11 @@ impl Instruction {
     }
 }
 
-#[derive(Debug)]
-pub struct ShortcutContext<'a> {
-    pub selection: Option<&'a str>,
-    pub before_selection: Option<&'a str>,
-    pub after_selection: Option<&'a str>,
+pub trait ShortcutContext<'a> {
+    fn get_source(&self, source: Source) -> Option<&'a str>;
+    fn is_inside_span(&self, kind: SpanKind) -> bool;
+    fn is_inside_unmarked(&self) -> bool;
+    fn set_replace_area(&mut self, kind: SpanKind);
 }
 
 #[derive(Debug, PartialEq)]
@@ -83,7 +89,7 @@ struct EvalState {
 
 fn eval_instruction<'a>(
     eval_state: &mut EvalState,
-    cx: &ShortcutContext<'a>,
+    cx: &mut impl ShortcutContext<'a>,
     instruction: &Instruction,
 ) -> Option<()> {
     let EvalState {
@@ -101,7 +107,7 @@ fn eval_instruction<'a>(
             *chars_inserted += s.chars().count()
         }
         Instruction::CopyFrom(source) => {
-            let source_str = select_source(*source, cx)?;
+            let source_str = cx.get_source(*source)?;
 
             result.insert_str(*bytes_inserted, source_str);
             *bytes_inserted += source_str.as_bytes().len();
@@ -132,23 +138,31 @@ fn eval_instruction<'a>(
                 },
             )?;
         }
+        Instruction::MatchFirst(pairs) => {
+            pairs
+                .iter()
+                .find(|(cond, _)| eval_condition(cond, cx).unwrap_or(false))
+                .and_then(|(_, instruction)| eval_instruction(eval_state, cx, instruction));
+        }
+
+        Instruction::SetReplaceArea(kind) => cx.set_replace_area(*kind),
     }
 
     Some(())
 }
 
-fn eval_condition(cond: &InstructionCondition, cx: &ShortcutContext) -> Option<bool> {
+fn eval_condition<'a>(cond: &InstructionCondition, cx: &impl ShortcutContext<'a>) -> Option<bool> {
     match cond {
         InstructionCondition::IsNoneOrEmpty(source) => {
-            Some(select_source(*source, cx).unwrap_or("") == "")
+            Some(cx.get_source(*source).unwrap_or("") == "")
         }
         InstructionCondition::EndsWith(source, pattern) => {
-            Some(select_source(*source, cx)?.ends_with(pattern))
+            Some(cx.get_source(*source)?.ends_with(pattern))
         }
         InstructionCondition::StartsWith(source, pattern) => {
-            Some(select_source(*source, cx)?.starts_with(pattern))
+            Some(cx.get_source(*source)?.starts_with(pattern))
         }
-        InstructionCondition::EitherOne(conditions) => {
+        InstructionCondition::Any(conditions) => {
             for c in conditions {
                 if eval_condition(c, cx)? {
                     return Some(true);
@@ -156,19 +170,14 @@ fn eval_condition(cond: &InstructionCondition, cx: &ShortcutContext) -> Option<b
             }
             Some(false)
         }
+
+        InstructionCondition::IsInside(kind) => Some(cx.is_inside_span(*kind)),
+        InstructionCondition::IsInsideUnmarkedArea => Some(cx.is_inside_unmarked()),
     }
 }
 
-fn select_source<'a>(source: Source, cx: &'a ShortcutContext) -> Option<&'a str> {
-    Some(match source {
-        Source::Selection => cx.selection?,
-        Source::BeforeSelection => cx.before_selection?,
-        Source::AfterSelection => cx.after_selection?,
-    })
-}
-
 pub fn execute_instruction<'a>(
-    cx: ShortcutContext<'a>,
+    cx: &mut impl ShortcutContext<'a>,
     instruction: &Instruction,
 ) -> Option<ShortcutResult> {
     let mut eval_state = EvalState {
@@ -179,7 +188,7 @@ pub fn execute_instruction<'a>(
         result: "".to_string(),
     };
 
-    eval_instruction(&mut eval_state, &cx, instruction)?;
+    eval_instruction(&mut eval_state, cx, instruction)?;
 
     Some(ShortcutResult {
         content: eval_state.result,
@@ -190,6 +199,45 @@ pub fn execute_instruction<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Debug)]
+    struct TestShortcutContext<'a> {
+        sources: Vec<(Source, &'a str)>,
+        inside: Vec<SpanKind>,
+        replace_area: Option<SpanKind>,
+    }
+
+    impl<'a> TestShortcutContext<'a> {
+        fn new(sources: impl IntoIterator<Item = (Source, &'a str)>) -> Self {
+            Self {
+                sources: sources.into_iter().collect(),
+                inside: vec![],
+                replace_area: None,
+            }
+        }
+    }
+
+    impl<'a> ShortcutContext<'a> for TestShortcutContext<'a> {
+        fn get_source(&self, source: Source) -> Option<&'a str> {
+            self.sources
+                .iter()
+                .find(|(s, _)| s == &source)
+                .map(|(_, string)| *string)
+        }
+
+        fn is_inside_span(&self, kind: SpanKind) -> bool {
+            self.inside.iter().any(|k| *k == kind)
+        }
+
+        fn set_replace_area(&mut self, kind: SpanKind) {
+            self.replace_area = Some(kind);
+        }
+
+        fn is_inside_unmarked(&self) -> bool {
+            // TODO fill it out for tests
+            false
+        }
+    }
 
     #[test]
     pub fn test_bold() {
@@ -214,11 +262,7 @@ mod tests {
 
         assert_eq!(
             execute_instruction(
-                ShortcutContext {
-                    selection: Some("bold"),
-                    before_selection: None,
-                    after_selection: None
-                },
+                &mut TestShortcutContext::new([(Source::Selection, "bold")]),
                 &bold,
             ),
             Some(ShortcutResult {
@@ -228,14 +272,7 @@ mod tests {
         );
 
         assert_eq!(
-            execute_instruction(
-                ShortcutContext {
-                    selection: None,
-                    before_selection: None,
-                    after_selection: None
-                },
-                &bold,
-            ),
+            execute_instruction(&mut TestShortcutContext::new([]), &bold,),
             Some(ShortcutResult {
                 content: "****".to_string(),
                 relative_char_cursor: 2..2
@@ -255,11 +292,7 @@ mod tests {
 
         assert_eq!(
             execute_instruction(
-                ShortcutContext {
-                    selection: None,
-                    before_selection: Some("\n"),
-                    after_selection: None
-                },
+                &mut TestShortcutContext::new([(Source::BeforeSelection, "\n")]),
                 &newline_cond,
             ),
             Some(ShortcutResult {
@@ -270,11 +303,7 @@ mod tests {
 
         assert_eq!(
             execute_instruction(
-                ShortcutContext {
-                    selection: None,
-                    before_selection: Some("just space "),
-                    after_selection: None
-                },
+                &mut TestShortcutContext::new([(Source::BeforeSelection, "just space ")]),
                 &newline_cond,
             ),
             Some(ShortcutResult {
