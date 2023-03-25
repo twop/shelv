@@ -8,7 +8,7 @@ use eframe::{
     egui::{
         self,
         text::CCursor,
-        text_edit::{CCursorRange, TextEditOutput},
+        text_edit::{CCursorRange, TextEditOutput, TextEditState},
         Button, Context, Id, ImageButton, KeyboardShortcut, Layout, Modifiers, Painter, RichText,
         Sense, TopBottomPanel, Ui,
     },
@@ -460,6 +460,80 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
             &state.theme,
         );
 
+        // ---- TAB in LISTS ----
+        // Note that it happens before rendering the panel
+        if ui.input_mut(|input| input.modifiers.is_none() && input.key_pressed(egui::Key::Tab)) {
+            if let (Some(mut text_edit_state), Some(computed_layout)) =
+                (TextEditState::load(ctx, id), &state.computed_layout)
+            {
+                use egui::TextBuffer;
+
+                if let Some(ccursor_range) = text_edit_state.ccursor_range() {
+                    let [mut ccursor_start, mut ccursor_end] = ccursor_range.sorted();
+                    let byte_start = current_note.byte_index_from_char_index(ccursor_start.index);
+                    let byte_end = current_note.byte_index_from_char_index(ccursor_start.index);
+
+                    if let Some(inside_list_item) = computed_layout
+                        .text_structure
+                        .find_surrounding_list_item(byte_start..byte_end)
+                    {
+                        let chars_before = current_note[0..inside_list_item.item_byte_pos.start]
+                            .chars()
+                            .count();
+
+                        let cursor_before_list_item = computed_layout
+                            .galley
+                            .from_ccursor(CCursor::new(chars_before));
+
+                        // only apply logic if the item is located on the same line as the cursor
+                        match text_edit_state.cursor_range(&computed_layout.galley) {
+                            Some(range)
+                                if range.sorted().primary.rcursor.row
+                                    == cursor_before_list_item.rcursor.row =>
+                            {
+                                let insertion = "\t";
+                                let list_item_pos = inside_list_item.item_byte_pos.clone();
+
+                                // TODO: normalize working with numbered lists
+                                // if inside_list_item.is_numbered() {
+                                //     let (bytes, chars): (usize, usize) = current_note
+                                //         [list_item_pos.clone()]
+                                //     .chars()
+                                //     .take_while(|c| *c != '.')
+                                //     .fold((0, 0), |(bytes, chars), c| {
+                                //         (bytes + c.len_utf8(), chars + 1)
+                                //     });
+
+                                //     current_note.replace_range(
+                                //         list_item_pos.start..list_item_pos.start + bytes,
+                                //         "1",
+                                //     );
+
+                                //     // todo adjust cursor and selection
+                                // }
+
+                                let inserted_chars_count = insertion.chars().count();
+                                current_note.insert_str(list_item_pos.start, insertion);
+
+                                text_edit_state.set_ccursor_range(Some(CCursorRange::two(
+                                    ccursor_start + inserted_chars_count,
+                                    ccursor_end + inserted_chars_count,
+                                )));
+
+                                text_edit_state.store(ctx, id);
+
+                                // Prevent TAB from modifying the text state
+                                ui.input_mut(|input| {
+                                    input.consume_key(Modifiers::NONE, egui::Key::Tab)
+                                });
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+            }
+        }
+
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
@@ -664,7 +738,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     );
 
                     println!(
-                        "\nnewline\nbefore_cursor={}\ncursor={}\nafter={}",
+                        "\nnewline\nbefore_cursor='{}'\ncursor='{}'\nafter='{}'",
                         &current_note[0..byte_start],
                         &current_note[byte_start..byte_end],
                         &current_note[byte_end..]
@@ -688,15 +762,11 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
 
                         let [min, max] = text_cursor_range.as_ccursor_range().sorted();
 
-                        //println!("prev cursor: {:#?}", text_edit_state.ccursor_range());
-                        // NOTE that cursor range works in chars, but in this case we inserted only chars that fit into u8
                         // that byte size and char size of insertion are te same in this case
                         text_edit_state.set_ccursor_range(Some(CCursorRange::two(
                             min + text_to_insert.len(),
                             max + text_to_insert.len(),
                         )));
-
-                        //println!("next cursor: {:#?}", text_edit_state.ccursor_range());
                     }
                 }
             }

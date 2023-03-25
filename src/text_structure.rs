@@ -101,11 +101,18 @@ pub enum SpanMeta {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ListItemDesc {
     pub item_index: u32,
     pub depth: i32,
     pub starting_index: Option<u64>,
+    pub item_byte_pos: Range<usize>,
+}
+
+impl ListItemDesc {
+    pub fn is_numbered(&self) -> bool {
+        self.starting_index.is_some()
+    }
 }
 
 struct ListDesc {
@@ -191,13 +198,15 @@ impl<'a> TextStructureBuilder<'a> {
 
                     list_desc.items_count += 1;
 
+                    let list_item_pos = trim_trailing_new_lines(&self.text, &pos);
                     self.add_with_meta(
                         SpanKind::ListItem,
-                        trim_trailing_new_lines(&self.text, &pos),
+                        list_item_pos.clone(),
                         SpanMeta::ListItem(ListItemDesc {
                             item_index,
                             depth,
                             starting_index,
+                            item_byte_pos: list_item_pos,
                         }),
                     );
                 }
@@ -627,7 +636,7 @@ impl TextStructure {
             })
             .and_then(|index| find_metadata(index, &self.metadata))
             .and_then(|meta| match meta {
-                SpanMeta::ListItem(desc) => Some(*desc),
+                SpanMeta::ListItem(desc) => Some(desc.clone()),
                 _ => None,
             })
     }
