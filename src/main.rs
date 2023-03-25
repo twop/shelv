@@ -77,7 +77,7 @@ impl MyApp {
         .unwrap();
 
         let tray_icon = TrayIconBuilder::new()
-            .with_tooltip("Show/Hide Memoro")
+            .with_tooltip("Show/Hide Shelv")
             .with_icon(Icon::from_rgba(tray_image.into_bytes(), 64, 64).unwrap())
             .build()
             .unwrap();

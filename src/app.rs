@@ -449,39 +449,16 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
     egui::CentralPanel::default().show(ctx, |ui| {
         let avail_space = ui.available_rect_before_wrap();
 
-        {
-            // let hints_ui = ui.child_ui(
-            //     avail_space,
-            //     Layout::centered_and_justified(egui::Direction::TopDown),
-            // );
-
-            // ui.label(
-            //     RichText::new("1")
-            //         .size(20.)
-            //         .color(Color32::WHITE.gamma_multiply(0.1)),
-            // );
-
-            let hints_painter = ui.painter();
-
-            // let hints = [
-            //     "Bold: Cmd + B",
-            //     "Strike: Cmd + Shift + E",
-            //     "Code Block: Cmd + Shift + C",
-            // ]
-            // .map(|h| h.to_string())
-            // .to_vec();
-
-            render_hints(
-                &format!("{}", state.selected_note + 1),
-                current_note
-                    .is_empty()
-                    .then(|| state.md_annotation_shortcuts.as_slice()),
-                avail_space,
-                hints_painter,
-                ctx,
-                &state.theme,
-            );
-        }
+        render_hints(
+            &format!("{}", state.selected_note + 1),
+            current_note
+                .is_empty()
+                .then(|| state.md_annotation_shortcuts.as_slice()),
+            avail_space,
+            ui.painter(),
+            ctx,
+            &state.theme,
+        );
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
@@ -670,23 +647,32 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                 if let (Some(text_cursor_range), Some(computed_layout)) =
                     (cursor_range, &state.computed_layout)
                 {
-                    let inside_item = {
-                        // let text = current_note;
-                        use egui::TextBuffer;
+                    use egui::TextBuffer;
 
-                        let char_range = text_cursor_range.as_sorted_char_range();
+                    let char_range = text_cursor_range.as_sorted_char_range();
+                    let byte_start = current_note.byte_index_from_char_index(char_range.start);
+                    let byte_end = current_note.byte_index_from_char_index(char_range.end);
 
-                        let byte_start = current_note.byte_index_from_char_index(char_range.start);
-                        let byte_end = current_note.byte_index_from_char_index(char_range.end);
+                    let inside_item = computed_layout.text_structure.find_surrounding_list_item(
+                        // note that "\n" was already inserted,
+                        //thus we need to just look for "cursor_start -1" to detect a list item
+                        if current_note[..byte_start].ends_with("\n") {
+                            (byte_start - 1)..(byte_start - 1)
+                        } else {
+                            byte_start..byte_end
+                        },
+                    );
 
-                        computed_layout
-                            .text_structure
-                            .find_surrounding_list_item(byte_start..byte_end)
-                    };
+                    println!(
+                        "\nnewline\nbefore_cursor={}\ncursor={}\nafter={}",
+                        &current_note[0..byte_start],
+                        &current_note[byte_start..byte_end],
+                        &current_note[byte_end..]
+                    );
 
                     if let Some(inside_list_item) = inside_item {
                         use egui::TextBuffer as _;
-                        let selected_chars = text_cursor_range.as_sorted_char_range();
+
                         let text_to_insert = match inside_list_item.starting_index {
                             Some(starting_index) => format!(
                                 "{}{}. ",
@@ -698,11 +684,11 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                             }
                         };
 
-                        current_note.insert_text(text_to_insert.as_str(), selected_chars.start);
+                        current_note.insert_text(text_to_insert.as_str(), char_range.start);
 
                         let [min, max] = text_cursor_range.as_ccursor_range().sorted();
 
-                        println!("prev cursor: {:#?}", text_edit_state.ccursor_range());
+                        //println!("prev cursor: {:#?}", text_edit_state.ccursor_range());
                         // NOTE that cursor range works in chars, but in this case we inserted only chars that fit into u8
                         // that byte size and char size of insertion are te same in this case
                         text_edit_state.set_ccursor_range(Some(CCursorRange::two(
@@ -710,7 +696,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                             max + text_to_insert.len(),
                         )));
 
-                        println!("next cursor: {:#?}", text_edit_state.ccursor_range());
+                        //println!("next cursor: {:#?}", text_edit_state.ccursor_range());
                     }
                 }
             }
@@ -867,7 +853,8 @@ fn render_hints(
         colors,
         sizes,
     } = theme;
-    let hint_color = Color32::WHITE.gamma_multiply(0.08);
+
+    let hint_color = theme.colors.outline_fg;
 
     painter.text(
         available_space.center_top(), //+ vec2(0., sizes.header_footer)

@@ -193,7 +193,7 @@ impl<'a> TextStructureBuilder<'a> {
 
                     self.add_with_meta(
                         SpanKind::ListItem,
-                        pos,
+                        trim_trailing_new_lines(&self.text, &pos),
                         SpanMeta::ListItem(ListItemDesc {
                             item_index,
                             depth,
@@ -205,14 +205,15 @@ impl<'a> TextStructureBuilder<'a> {
 
             Ev::TaskMarker(checked) => {
                 // the last one to add would be the most nested, thus the one we need
-                let list_item = self.spans.iter().enumerate().rev().find(
-                    |(_, (kind, byte_range))| match kind {
-                        SpanKind::ListItem => {
-                            byte_range.start <= pos.start && byte_range.end >= pos.end
-                        }
-                        _ => false,
-                    },
-                );
+                let list_item =
+                    self.spans
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find(|(_, (kind, list_item_range))| match kind {
+                            SpanKind::ListItem => is_sub_range(list_item_range, &pos),
+                            _ => false,
+                        });
 
                 if let Some((index, _)) = list_item {
                     self.add_with_meta(
@@ -240,7 +241,7 @@ impl<'a> TextStructureBuilder<'a> {
                 Some((block_span, block_pos, lang)) if is_sub_range(&block_pos, &pos) => {
                     // trim the last \n if any, it look odd,
                     // but \n is parsed as a part of the body, thus bandage that
-                    let pos = trim_trailing_new_line(&self.text, &pos);
+                    let pos = trim_trailing_new_lines(&self.text, &pos);
 
                     let span_index = self.add_with_meta(
                         SpanKind::CodeBlockContent,
@@ -283,7 +284,7 @@ impl<'a> TextStructureBuilder<'a> {
             Ev::Heading(level) => {
                 self.add(
                     SpanKind::Heading(level),
-                    trim_trailing_new_line(&self.text, &pos),
+                    trim_trailing_new_lines(&self.text, &pos),
                 );
             }
             Ev::Strike => {
@@ -298,7 +299,7 @@ impl<'a> TextStructureBuilder<'a> {
             Ev::Paragraph => {
                 self.add(
                     SpanKind::Paragraph,
-                    trim_trailing_new_line(&self.text, &pos),
+                    trim_trailing_new_lines(&self.text, &pos),
                 );
             }
             Ev::Code => {
@@ -348,9 +349,9 @@ impl<'a> TextStructureBuilder<'a> {
     }
 
     fn print_structure(&self) {
-        println!("\n-----parser-----");
+        println!("\n\n-----parser-----");
         println!("text: {:?}", self.text);
-        println!("-----text-end-----");
+        println!("-----text-end-----\n");
 
         for (ev, range) in self.spans.iter() {
             // if let pulldown_cmark::Event::End(_) = &ev {
@@ -369,46 +370,44 @@ impl<'a> TextStructureBuilder<'a> {
             //     depth += 1;
             // }
         }
+        println!("---structure-end---\n");
+
+        let md_parser_options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
+            | pulldown_cmark::Options::ENABLE_TASKLISTS
+            | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION;
+
+        let parser = pulldown_cmark::Parser::new_ext(self.text, md_parser_options);
+
+        let mut depth = 0;
+        for (ev, range) in parser.into_offset_iter() {
+            if let pulldown_cmark::Event::End(_) = &ev {
+                depth -= 1;
+            }
+
+            println!(
+                "{}{:?} -> {:?}",
+                "  ".repeat(depth),
+                ev,
+                &self.text[range.start..range.end]
+            );
+
+            if let pulldown_cmark::Event::Start(_) = &ev {
+                depth += 1;
+            }
+        }
         println!("---parser-end---");
-
-        // {
-        //     let md_parser_options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
-        //         | pulldown_cmark::Options::ENABLE_TASKLISTS
-        //         | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION;
-
-        //     let parser = pulldown_cmark::Parser::new_ext(text, md_parser_options);
-        //     println!("\n-----parser-----");
-        //     println!("text: {:?}", text);
-        //     println!("-----text-end-----");
-        //     let mut depth = 0;
-        //     for (ev, range) in parser.into_offset_iter() {
-        //         if let pulldown_cmark::Event::End(_) = &ev {
-        //             depth -= 1;
-        //         }
-
-        //         println!(
-        //             "{}{:?} -> {:?}",
-        //             "  ".repeat(depth),
-        //             ev,
-        //             &text[range.start..range.end]
-        //         );
-
-        //         if let pulldown_cmark::Event::Start(_) = &ev {
-        //             depth += 1;
-        //         }
-        //     }
-        //     println!("---parser-end---");
-        // }
     }
 }
 
-fn trim_trailing_new_line(text: &str, pos: &Range<usize>) -> Range<usize> {
-    let pos = if text[pos.clone()].ends_with("\n") {
-        pos.start..pos.end - 1
-    } else {
-        pos.clone()
-    };
-    pos
+fn trim_trailing_new_lines(text: &str, pos: &Range<usize>) -> Range<usize> {
+    let (start, mut end) = (pos.start, pos.end);
+
+    // TODO optimize it by taking a slice from the string
+    while start < end && text[start..end].ends_with("\n") {
+        end -= 1;
+    }
+
+    start..end
 }
 
 impl TextStructure {
@@ -632,60 +631,6 @@ impl TextStructure {
                 _ => None,
             })
     }
-
-    // pub fn find_span_at(
-    //     &self,
-    //     span_kind: SpanKind,
-    //     byte_range: Range<usize>,
-    // ) -> Option<SpanSearchResult> {
-    //     self.spans
-    //         .iter()
-    //         .enumerate()
-    //         .rev()
-    //         .find(|(_, (kind, item_pos))| {
-    //             *kind == span_kind
-    //                 && item_pos.start <= byte_range.start
-    //                 && item_pos.end >= byte_range.end
-    //         })
-    //         .and_then(|(index, (kind, pos))| {
-    //             let ranges = match kind {
-    //                 SpanKind::Strike => Some((pos.clone(), pos.start + 2..pos.end - 2)), //~~{}~~
-    //                 SpanKind::Bold => Some((pos.clone(), pos.start + 2..pos.end - 2)),   //**{}**
-    //                 SpanKind::Emphasis => Some((pos.clone(), pos.start + 1..pos.end - 1)), //*{}*
-    //                 SpanKind::CodeBlock => find_metadata(SpanIndex(index), &self.metadata)
-    //                     .and_then(|meta| match meta {
-    //                         SpanMeta::CodeBlock { content_span } => match content_span {
-    //                             Some(span) => {
-    //                                 // if there is code inside, return it as the inner range
-    //                                 let (_, content_range) = self.spans[span.0].clone();
-    //                                 Some((pos.clone(), content_range))
-    //                             }
-    //                             // means that there is no content yet inside the code block
-    //                             // thus just return empty range for the content, maybe make it more elegant
-    //                             None => Some((pos.clone(), pos.start..pos.start)),
-    //                         },
-    //                         _ => None,
-    //                     }),
-    //                 SpanKind::Text => todo!(),
-    //                 SpanKind::TaskMarker => todo!(),
-    //                 SpanKind::RawLink => todo!(),
-    //                 SpanKind::Heading(_) => todo!(),
-    //                 SpanKind::CodeBlockContent => todo!(),
-    //                 SpanKind::ListItem => todo!(),
-    //                 SpanKind::Paragraph => todo!(),
-    //                 SpanKind::MdLink => todo!(),
-    //                 SpanKind::List => todo!(),
-    //                 SpanKind::Code => todo!(),
-    //                 SpanKind::Html => todo!(),
-    //                 SpanKind::Image => todo!(),
-    //             };
-
-    //             ranges.map(|(outer, inner)| SpanSearchResult {
-    //                 span_byte_range: outer,
-    //                 content_byte_range: inner,
-    //             })
-    //         })
-    // }
 
     pub fn find_span_at(
         &self,
