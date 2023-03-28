@@ -1,16 +1,21 @@
 use eframe::{
-    egui::{Context, Id, Response, Sense, Ui, Widget, WidgetInfo, WidgetType, WidgetWithState},
+    egui::{
+        self, Context, Id, Response, RichText, Sense, Ui, Widget, WidgetInfo, WidgetType,
+        WidgetWithState,
+    },
     epaint::{
         self, pos2, tessellator::path::add_circle_quadrant, vec2, Color32, PathShape, Pos2, Rect,
         Shape, Stroke, Vec2,
     },
 };
 
-use crate::theme::ColorManipulation;
+pub struct PickerItem {
+    pub tooltip: String,
+}
 
 pub struct Picker<'a> {
     pub current: &'a mut u32,
-    pub count: u32,
+    pub items: &'a [PickerItem],
     pub gap: f32,
     pub radius: f32,
     // colors
@@ -46,7 +51,7 @@ impl<'t> WidgetWithState for Picker<'t> {
 impl<'a> Widget for Picker<'a> {
     fn ui(self, ui: &mut Ui) -> Response {
         let Self {
-            count,
+            items,
             gap,
             radius,
             current,
@@ -59,6 +64,7 @@ impl<'a> Widget for Picker<'a> {
         } = self;
 
         let box_size = radius * 2.0;
+        let count = items.len() as u32;
         let desired_size = vec2(
             box_size * (count as f32) + gap * ((count - 1) as f32),
             box_size,
@@ -87,13 +93,24 @@ impl<'a> Widget for Picker<'a> {
                         let rect = Rect::from_center_size(center, vec2(box_size, box_size));
 
                         let point_id = response.id.with(i);
-                        let point_response = ui.interact(rect, point_id, Sense::click());
+                        let mut point_response = ui.interact(rect, point_id, Sense::click());
 
                         if point_response.clicked() {
                             *current = i;
                         }
 
                         let is_selected = i == *current;
+
+                        if !is_selected {
+                            let tooltip_ui = |ui: &mut egui::Ui| {
+                                ui.label(
+                                    RichText::new(&items[i as usize].tooltip).color(outline.color),
+                                );
+                                //.font(self.font_id.clone())
+                            };
+
+                            point_response = point_response.on_hover_ui(tooltip_ui);
+                        }
 
                         let selection_progress =
                             ctx.animate_bool_with_time(point_id, is_selected, 0.2);

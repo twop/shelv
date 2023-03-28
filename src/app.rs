@@ -9,8 +9,8 @@ use eframe::{
         self,
         text::CCursor,
         text_edit::{CCursorRange, TextEditOutput, TextEditState},
-        Button, Context, Id, ImageButton, KeyboardShortcut, Layout, Modifiers, Painter, RichText,
-        Sense, TopBottomPanel, Ui,
+        Button, Context, Id, ImageButton, Key, KeyboardShortcut, Layout, Modifiers, Painter,
+        RichText, Sense, TopBottomPanel, Ui,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, Galley, Rect, Stroke, Vec2},
@@ -29,20 +29,21 @@ use crate::{
         ShortcutContext, Source,
     },
     persistent_state::PersistentState,
-    picker::Picker,
+    picker::{Picker, PickerItem},
     text_structure::{
         self, Ev, InteractiveTextPart, SpanKind, TextStructure, TextStructureBuilder,
     },
     theme::AppTheme,
 };
 
-// let ps = SyntaxSet::load_defaults_newlines();
-// let ts = ThemeSet::load_defaults();
-pub struct AppState {
-    notes: Vec<String>,
-    selected_note: u32,
-    notes_count: u32,
+pub struct Note {
+    text: String,
+    shortcut: KeyboardShortcut,
+}
 
+pub struct AppState {
+    notes: Vec<Note>,
+    selected_note: u32,
     save_to_storage: bool,
 
     theme: AppTheme,
@@ -161,6 +162,18 @@ impl AppState {
                 notes.push(format!("{i}"));
             }
         }
+
+        let notes: Vec<Note> = notes
+            .into_iter()
+            .enumerate()
+            .map(|(index, text)| {
+                let key = number_to_key(index as u8 + 1).unwrap();
+                Note {
+                    text,
+                    shortcut: KeyboardShortcut::new(Modifiers::COMMAND, key),
+                }
+            })
+            .collect();
 
         //             note: "# title
         // - adsd
@@ -321,7 +334,6 @@ impl AppState {
             )
             .collect(),
             app_shortcuts,
-            notes_count: notes_count as u32,
         }
     }
 
@@ -329,7 +341,7 @@ impl AppState {
         if self.save_to_storage {
             self.save_to_storage = false;
             Some(PersistentState {
-                notes: self.notes.clone(),
+                notes: self.notes.iter().map(|n| n.text.clone()).collect(),
                 selected_note: self.selected_note,
             })
         } else {
@@ -411,11 +423,9 @@ fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, imag
     ))
 }
 
-#[no_mangle]
 pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Frame) {
     let id = Id::new(("text_edit", state.selected_note));
 
-    let current_note = &mut state.notes[state.selected_note as usize];
     while let Ok(msg) = state.msg_queue.try_recv() {
         println!("got in render: {msg:?}");
         match msg {
@@ -424,25 +434,36 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                 frame.set_visible(!state.hidden);
 
                 if !state.hidden {
-                    set_cursor_at_the_end(current_note, ctx, id);
+                    set_cursor_at_the_end(&state.notes[state.selected_note as usize].text, ctx, id);
                     frame.focus_window();
                 }
             }
         }
     }
 
-    let selected_note = state.selected_note;
+    let prev_selected_note = state.selected_note;
     render_footer(
         &mut state.selected_note,
-        state.notes_count,
+        &state.notes,
         ctx,
         &state.icons,
         &state.theme,
     );
-    if selected_note != state.selected_note {
+
+    ctx.input_mut(|input| {
+        for (index, shortcut) in state.notes.iter().map(|n| n.shortcut).enumerate() {
+            if input.consume_shortcut(&shortcut) {
+                state.selected_note = index as u32;
+            }
+        }
+    });
+
+    if prev_selected_note != state.selected_note {
         state.save_to_storage = true;
         // TODO invalidate layout and set cursor to the end
     }
+
+    let current_note = &mut state.notes[state.selected_note as usize].text;
 
     render_header_panel(ctx, &state.icons, &state.theme);
 
@@ -789,7 +810,7 @@ fn set_cursor_at_the_end(text: &str, ctx: &Context, id: Id) {
 
 fn render_footer(
     selected: &mut u32,
-    notes_count: u32,
+    notes: &[Note],
     ctx: &Context,
     icons: &AppIcons,
     theme: &AppTheme,
@@ -808,7 +829,13 @@ fn render_footer(
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     ui.add(Picker {
                         current: selected,
-                        count: notes_count,
+                        items: notes
+                            .iter()
+                            .map(|n| PickerItem {
+                                tooltip: format!("Shelf {}", ctx.format_shortcut(&n.shortcut)),
+                            })
+                            .collect::<Vec<_>>()
+                            .as_slice(),
                         gap: sizes.s,
                         radius: sizes.s,
                         inactive: theme.colors.outline_fg,
@@ -821,10 +848,14 @@ fn render_footer(
                 });
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    // if ui.add(button).on_hover_ui(tooltip_ui).clicked() {
+                    //     ui.output_mut(|o| o.copied_text = chr.to_string());
+                    // }
                     let settings = ui.add(ImageButton::new(
                         icons.gear.texture_id(ctx),
                         Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
                     ));
+                    // .on_hover_ui(tooltip_ui);
                     // // ui.add_space(4.);
                     // ui.separator();
                 });
@@ -976,4 +1007,20 @@ fn render_hints(
         }
         _ => (),
     };
+}
+
+fn number_to_key(key: u8) -> Option<Key> {
+    match key {
+        0 => Some(Key::Num0),
+        1 => Some(Key::Num1),
+        2 => Some(Key::Num2),
+        3 => Some(Key::Num3),
+        4 => Some(Key::Num4),
+        5 => Some(Key::Num5),
+        6 => Some(Key::Num6),
+        7 => Some(Key::Num7),
+        8 => Some(Key::Num8),
+        9 => Some(Key::Num9),
+        _ => None,
+    }
 }
