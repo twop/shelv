@@ -10,7 +10,7 @@ use global_hotkey::{
 use image::ImageFormat;
 
 use persistent_state::PersistentState;
-use theme::configure_styles;
+use theme::{configure_styles, ColorTheme};
 use tray_icon::{icon::Icon, menu::MenuEvent, TrayEvent, TrayIcon, TrayIconBuilder};
 // use tray_item::TrayItem;
 
@@ -87,7 +87,7 @@ impl MyApp {
 
         Self {
             state: create_app_state(AppInitData {
-                icons: load_app_icons(theme.colors.button_fg),
+                icons: load_app_icons(&theme.colors),
                 theme,
                 msg_queue: msg_queue_rx,
                 persistent_state,
@@ -189,22 +189,42 @@ fn main() {
     .unwrap();
 }
 
-pub fn load_app_icons(stroke_color: Color32) -> AppIcons {
-    let [more, gear, question_mark, close] = [
-        ("more", include_str!("../assets/icons/more.svg")),
-        ("gear", include_str!("../assets/icons/gear.svg")),
+pub fn load_app_icons(theme: &ColorTheme) -> AppIcons {
+    let (bright, secondary) = (theme.button_fg, theme.subtle_text_color); // theme.secondary_icon);
+
+    let [more, gear, question_mark, close, twitter, at, home, discord] = [
+        ("more", bright, include_str!("../assets/icons/more.svg")),
+        ("gear", bright, include_str!("../assets/icons/gear.svg")),
         (
             "question-mark",
+            bright,
             include_str!("../assets/icons/question-mark.svg"),
         ),
-        ("close", include_str!("../assets/icons/x.svg")),
+        ("close", bright, include_str!("../assets/icons/x.svg")),
+        (
+            "twitter",
+            secondary,
+            include_str!("../assets/icons/twitter.svg"),
+        ),
+        ("at", secondary, include_str!("../assets/icons/at.svg")),
+        ("home", secondary, include_str!("../assets/icons/home.svg")),
+        (
+            "discord",
+            secondary,
+            include_str!("../assets/icons/discord.svg"),
+        ),
     ]
-    .map(|(name, svg)| {
-        let [r, g, b, a] = stroke_color.to_array();
-        let svg = svg.replace(
-            "stroke=\"white\"",
-            format!("stroke=\"rgba({}, {}, {}, {})\"", r, g, b, a).as_str(),
-        );
+    .map(|(name, color, svg)| {
+        let [r, g, b, a] = color.to_array();
+        let svg = svg
+            .replace(
+                "stroke=\"white\"",
+                format!("stroke=\"rgba({}, {}, {}, {})\"", r, g, b, a).as_str(),
+            )
+            .replace(
+                "fill=\"white\"",
+                format!("fill=\"rgba({}, {}, {}, {})\"", r, g, b, a).as_str(),
+            );
         egui_extras::RetainedImage::from_svg_bytes_with_size(
             name,
             svg.as_bytes(),
@@ -218,5 +238,9 @@ pub fn load_app_icons(stroke_color: Color32) -> AppIcons {
         gear,
         question_mark,
         close,
+        at,
+        twitter,
+        home,
+        discord,
     }
 }

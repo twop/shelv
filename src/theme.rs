@@ -83,8 +83,8 @@ impl Sizes {
             m,
             l,
             xl,
-            header_footer: xl,
-            toolbar_icon: l,
+            header_footer: xl + xs,
+            toolbar_icon: l + xs / 2.,
         }
     }
 }
@@ -187,6 +187,8 @@ impl ColorTheme {
         let md_header = Nord::NORD6;
         // same as hyperlink_color
         let md_link = Nord::NORD7;
+
+        let secondary_icon = Nord::NORD3.shade(1.1);
 
         // ---------
         // egui settings and general colors
@@ -424,10 +426,12 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         stroke: Stroke::new(1.0, selection_stroke),
     };
 
+    let debug_color = Color32::from_rgb(255, 0, 100);
+
     let widgets = Widgets {
         noninteractive: WidgetVisuals {
             weak_bg_fill: Color32::from_gray(27),
-            bg_fill: Color32::from_gray(27),
+            bg_fill: debug_color,
             bg_stroke: Stroke::new(1.0, Color32::from_gray(60)), // separators, indentation lines
             fg_stroke: Stroke::new(1.0, normal_text_color),      // normal text color
             rounding: rounding_controls,
@@ -460,8 +464,8 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         open: WidgetVisuals {
             weak_bg_fill: Color32::from_gray(27),
             bg_fill: Color32::from_gray(27),
-            bg_stroke: Stroke::new(1.0, Color32::from_gray(60)),
-            fg_stroke: Stroke::new(1.0, Color32::from_gray(210)),
+            bg_stroke: Stroke::new(2.0, debug_color), //Stroke::new(1.0, Color32::from_gray(60)),
+            fg_stroke: Stroke::new(2.0, debug_color), // Stroke::new(1.0, Color32::from_gray(210)),
             rounding: rounding_controls,
             expansion: 0.0,
         },

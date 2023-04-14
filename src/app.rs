@@ -111,6 +111,10 @@ pub struct AppIcons {
     pub gear: RetainedImage,
     pub question_mark: RetainedImage,
     pub close: RetainedImage,
+    pub at: RetainedImage,
+    pub twitter: RetainedImage,
+    pub home: RetainedImage,
+    pub discord: RetainedImage,
 }
 
 #[derive(Debug)]
@@ -442,7 +446,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
     }
 
     let prev_selected_note = state.selected_note;
-    render_footer(
+    render_footer_panel(
         &mut state.selected_note,
         &state.notes,
         ctx,
@@ -808,7 +812,7 @@ fn set_cursor_at_the_end(text: &str, ctx: &Context, id: Id) {
     }
 }
 
-fn render_footer(
+fn render_footer_panel(
     selected: &mut u32,
     notes: &[Note],
     ctx: &Context,
@@ -844,20 +848,52 @@ fn render_footer(
                         selected_stroke: theme.colors.button_fg,
                         selected_fill: theme.colors.button_bg,
                         outline: Stroke::new(1.0, theme.colors.outline_fg),
+                        tooltip_text: theme.colors.subtle_text_color,
                     });
                 });
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    // if ui.add(button).on_hover_ui(tooltip_ui).clicked() {
-                    //     ui.output_mut(|o| o.copied_text = chr.to_string());
-                    // }
-                    let settings = ui.add(ImageButton::new(
-                        icons.gear.texture_id(ctx),
-                        Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
-                    ));
-                    // .on_hover_ui(tooltip_ui);
-                    // // ui.add_space(4.);
-                    // ui.separator();
+                    for item in [
+                        (
+                            &icons.twitter,
+                            "tweet us @shelvdotapp",
+                            "https://twitter.com/shelvdotapp",
+                        ),
+                        (&icons.discord, "join our discrod", "https://shelv.app"),
+                        (&icons.home, "visit https://shelv.app", "https://shelv.app"),
+                        // (
+                        //     &icons.at,
+                        //     "e-mail us at hi@shelv.app",
+                        //     "mailto:hi@shelv.app",
+                        // ),
+                    ]
+                    .into_iter()
+                    .map(Some)
+                    .intersperse(None)
+                    {
+                        match item {
+                            Some((icon, tooltip, url)) => {
+                                let resp = ui
+                                    .add(ImageButton::new(
+                                        icon.texture_id(ctx),
+                                        Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
+                                    ))
+                                    .on_hover_ui(|ui| {
+                                        ui.label(
+                                            RichText::new(tooltip)
+                                                .color(theme.colors.subtle_text_color),
+                                        );
+                                    });
+
+                                if resp.clicked() {
+                                    ctx.output_mut(|o| o.open_url(url));
+                                }
+                            }
+                            None => {
+                                ui.add_space(theme.sizes.s);
+                            }
+                        }
+                    }
                 });
             });
         });
@@ -930,12 +966,19 @@ fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.set_width(icon_block_width);
 
-                    let help = ui.add(ImageButton::new(
-                        icons.question_mark.texture_id(ctx),
-                        Vec2::new(18., 18.),
-                    ));
+                    let settings = ui
+                        .add(ImageButton::new(
+                            icons.gear.texture_id(ctx),
+                            Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
+                        ))
+                        .on_hover_ui(|ui| {
+                            ui.label(
+                                RichText::new("open app settings")
+                                    .color(theme.colors.subtle_text_color),
+                            );
+                        });
 
-                    if help.clicked() {}
+                    if settings.clicked() {}
                 });
             });
         });

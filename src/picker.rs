@@ -24,6 +24,7 @@ pub struct Picker<'a> {
     pub pressed: Color32,
     pub selected_stroke: Color32,
     pub selected_fill: Color32,
+    pub tooltip_text: Color32,
 
     // drop
     pub outline: Stroke,
@@ -61,6 +62,7 @@ impl<'a> Widget for Picker<'a> {
             selected_stroke,
             outline,
             selected_fill,
+            tooltip_text,
         } = self;
 
         let box_size = radius * 2.0;
@@ -104,7 +106,7 @@ impl<'a> Widget for Picker<'a> {
                         if !is_selected {
                             let tooltip_ui = |ui: &mut egui::Ui| {
                                 ui.label(
-                                    RichText::new(&items[i as usize].tooltip).color(outline.color),
+                                    RichText::new(&items[i as usize].tooltip).color(tooltip_text),
                                 );
                                 //.font(self.font_id.clone())
                             };
