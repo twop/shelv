@@ -7,7 +7,6 @@
     "dev": "rollup -c --watch",
     "build": "NODE_ENV=production npx rollup -c && npm run ssr",
     "ssr": "ts-node -O \"{\\\"module\\\": \\\"CommonJS\\\"}\" ./src/ssr.ts",
-    "gen-code-snippet": "ts-node -O \"{\\\"module\\\": \\\"CommonJS\\\"}\" ./src/script-gen-code-snippet.ts",
     "serve": "servor ./dist --reload --browse",
     "build-tw-theme": "tsc ./src/theme.ts",
     "print-npm-version": "npm -v"

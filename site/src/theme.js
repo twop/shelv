@@ -13,8 +13,10 @@ function lightenColor(color, percent) {
             .slice(1));
 }
 exports.colors = {
-    "nord-bg": nord_1.polarNight.nord0,
-    "nord-bg-dark": lightenColor(nord_1.polarNight.nord0, -5),
+    // "nord-bg": polarNight.nord0,
+    // "nord-bg-dark": lightenColor(polarNight.nord0, -5),
+    "nord-bg": lightenColor(nord_1.polarNight.nord0, -8),
+    "nord-bg-dark": lightenColor(nord_1.polarNight.nord0, -12),
     "nord-text": nord_1.snowStorm.nord4,
     "nord-h1": nord_1.frost.nord8,
     "nord-h2": nord_1.aurora.nord12,

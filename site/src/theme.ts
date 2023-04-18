@@ -20,8 +20,10 @@ function lightenColor(color: string, percent: number) {
 }
 
 export const colors = {
-  "nord-bg": polarNight.nord0,
-  "nord-bg-dark": lightenColor(polarNight.nord0, -5),
+  // "nord-bg": polarNight.nord0,
+  // "nord-bg-dark": lightenColor(polarNight.nord0, -5),
+  "nord-bg": lightenColor(polarNight.nord0, -8),
+  "nord-bg-dark": lightenColor(polarNight.nord0, -12),
   "nord-text": snowStorm.nord4,
   "nord-h1": frost.nord8,
   "nord-h2": aurora.nord12,

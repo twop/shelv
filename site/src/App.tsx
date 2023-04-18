@@ -20,6 +20,9 @@ const Theme: Preact.FunctionalComponent<{ color: "light" | "dark" }> = ({
   </div>
 );
 
+const IMG_W = 1180;
+const IMG_H = 1128;
+
 const UP_WAVE_PATH =
   "M0,128L120,144C240,160,480,192,720,208C960,224,1200,224,1320,224L1440,224L1440,320L1320,320C1200,320,960,320,720,320C480,320,240,320,120,320L0,320Z";
 const DOWN_WAVE_PATH =
@@ -120,16 +123,14 @@ const Img: Preact.FunctionComponent<{
   eager?: boolean;
 }> = ({ src, alt, extraStyle, width, height, eager }) => (
   <div className="py-6 lg:py-0 w-full h-full flex justify-center">
-    <div className={"bg-nord-bg shadow-lg " + extraStyle ?? ""}>
-      <img
-        // className="transition-opacity duration-1000 delay-200 fade-in"
-        width={width}
-        height={height}
-        loading={eager ? "eager" : "lazy"}
-        alt={alt}
-        src={`images/${src}@2x.png`}
-      ></img>
-    </div>
+    <img
+      // className="transition-opacity duration-1000 delay-200 fade-in"
+      width={width}
+      height={height}
+      loading={eager ? "eager" : "lazy"}
+      alt={alt}
+      src={`images/${src}.png`}
+    ></img>
   </div>
 );
 
@@ -163,11 +164,11 @@ export const App = () => (
           left={<SloganAndMacStoreLink />}
           right={
             <Img
-              width={658}
-              height={706}
-              src="graph-view"
+              width={IMG_W}
+              height={IMG_H}
+              src="screenshot-welcome"
               eager
-              alt="graph view demo"
+              alt="app screenshot with welcome note"
             />
           }
         />
@@ -193,9 +194,8 @@ export const App = () => (
             <Img
               width={3198}
               height={2472}
-              src="instrument"
-              alt="instrumentation example"
-              extraStyle="p-3 rounded"
+              src="screenshot-markdown"
+              alt="app screenshot with markdown features"
             />
           }
         />
@@ -204,11 +204,10 @@ export const App = () => (
         <Block
           left={
             <Img
-              width={1335}
-              height={929}
-              src="Playground"
-              alt="playground demo"
-              extraStyle="p-4 rounded"
+              width={IMG_W}
+              height={IMG_H}
+              src="screenshot-shortcuts"
+              alt="app screenshot with shortcuts"
             />
           }
           right={
@@ -282,7 +281,7 @@ export const App = () => (
             </p>
             <p className="mt-3 text-m leading-7">
               Shoot us an email at{" "}
-              <Link to="mailto:hi@shelv.app">hi@scry.dev</Link>
+              <Link to="mailto:hi@shelv.app">hi@shelv.app</Link>
             </p>
             <div className="py-3 flex justify-end">
               <p className="text-xs leading-7">

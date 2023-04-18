@@ -1,7 +1,6 @@
 import render from "preact-render-to-string";
 import { h } from "preact";
 import { App } from "./App";
-import "./plausible";
 import * as fs from "fs";
 import * as path from "path";
 

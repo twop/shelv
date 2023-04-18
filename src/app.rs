@@ -1000,16 +1000,16 @@ fn render_hints(
 
     let hint_color = theme.colors.outline_fg;
 
-    painter.text(
-        available_space.center_top(), //+ vec2(0., sizes.header_footer)
-        Align2::CENTER_TOP,
-        title,
-        FontId {
-            size: fonts.size.h1,
-            family: fonts.family.normal.clone(),
-        },
-        hint_color,
-    );
+    // painter.text(
+    //     available_space.center_top(), //+ vec2(0., sizes.header_footer)
+    //     Align2::CENTER_TOP,
+    //     title,
+    //     FontId {
+    //         size: fonts.size.h1,
+    //         family: fonts.family.normal.clone(),
+    //     },
+    //     hint_color,
+    // );
 
     match shortcuts {
         Some(shortcuts) if shortcuts.len() > 0 => {
