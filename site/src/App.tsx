@@ -2,6 +2,7 @@ import { Fragment, h } from "preact";
 import * as Preact from "preact";
 
 import { colors } from "./theme";
+import { ShelvLogo } from "./Logo";
 // import { codeSnippetHtml } from "./code-snippet";
 const Content: Preact.FunctionalComponent = ({ children }) => (
   <div className="mx-auto px-4 sm:px-6 max-w-6xl">{children}</div>
@@ -85,22 +86,44 @@ const BlockText: Preact.FunctionComponent = ({ children }) => (
 const PageHeader = () => (
   <div className="flex justify-between items-center py-6 md:justify-start md:space-x-10">
     <div className="inline-flex items-center space-x-2 leading-6 font-medium transition ease-in-out duration-150">
-      <div>Shelv</div>
+      {/* <img
+        src="images/shelv-logo-svg.svg"
+        alt="Shelv app logo"
+        height="68"
+        width="198"
+      /> */}
+      <ShelvLogo></ShelvLogo>
+    </div>
+    <div className="flex flex-shrink flex-row">
+      <SvgIconLink
+        size="large"
+        linkTo="https://github.com/twop"
+        path={githubSvgPath}
+      />
+      <div className="w-6"></div>
+      <SvgIconLink
+        size="large"
+        linkTo="https://twitter.com/shelvdotapp"
+        path={twitterSvgPath}
+      />
     </div>
   </div>
 );
 
+// ## The ultimate playground for your ideas
+// Where you can capture and organize them in a Markdown wonderland. It’s the perfect tool for those who need a fun and efficient way to manage their thoughts. Whether you’re planning a trip, organizing your daily tasks, or brainstorming your next big idea.
 const SloganAndMacStoreLink = () => (
   <Fragment>
     <div className="text-center lg:text-left">
       <div className="">
         <h2 className="text-4xl leading-10 font-semibold sm:text-5xl sm:leading-none lg:text-5xl text-nord-h1">
-          <span className="text-nord-h2">Shelv</span>: Your place for ephemeral
-          notes
+          The ultimate playground for your ideas
         </h2>
         <p className="mt-4 max-w-md mx-auto text-lg sm:text-xl md:mt-5 md:max-w-3xl">
-          A perfect tool to store your meeting notes, temporary information,
-          today's agenda, links all in markdown.
+          Where you can capture and organize them in a Markdown wonderland. It's
+          the perfect tool for those who need a fun and efficient way to manage
+          their thoughts. Whether you're planning a trip, organizing your daily
+          tasks, or brainstorming your next big idea.
         </p>
       </div>
     </div>
@@ -111,7 +134,17 @@ const SloganAndMacStoreLink = () => (
 );
 
 const MacStoreLink: Preact.FunctionComponent<{}> = () => {
-  return <div>Mac App Store link</div>;
+  return (
+    <a href="">
+      <img
+        src="/images/mac-app-store-badge.svg"
+        alt="Download Shelv on the Mac App Store"
+        class="home-app-store-buttons-mac"
+        // width="auto"
+        height="64"
+      />
+    </a>
+  );
 };
 
 const Img: Preact.FunctionComponent<{
@@ -182,18 +215,19 @@ export const App = () => (
             <Fragment>
               <BlockHeader>
                 {/* <span className="text-nord-text-primary">Step 1: </span>{" "} */}
-                Just plain text, but so much more
+                Markdown Native
               </BlockHeader>
               <BlockText>
-                Extensive markdown support: Headings, Lists, Todos, Links, Code
-                blocks.
+                Shelv is built on markdown, which means you can quickly format
+                your ideas in an expensive way that is open and portable to
+                where ever they need to go.
               </BlockText>
             </Fragment>
           }
           right={
             <Img
-              width={3198}
-              height={2472}
+              width={IMG_W}
+              height={IMG_H}
               src="screenshot-markdown"
               alt="app screenshot with markdown features"
             />
@@ -320,12 +354,16 @@ const Link: Preact.FunctionComponent<{ to: string }> = ({ children, to }) => (
 const SvgIconLink: Preact.FunctionComponent<{
   linkTo: string;
   path: Preact.VNode;
-}> = ({ path, linkTo }) => (
+  size?: "small" | "large";
+}> = ({ path, linkTo, size = "small" }) => (
   <a href={linkTo}>
     <svg
-      className="h-4 w-4 inline fill-current text-nord-text-primary hover:text-nord-bg-btn-hovered"
-      viewBox="0 0 20 20"
-      enable-background="new 0 0 20 20"
+      className={
+        "inline fill-current text-nord-text-primary hover:text-nord-bg-btn-hovered" +
+        (size === "small" ? "h-4 w-4" : "h-8 w-8")
+      }
+      viewBox="0 0 24 24"
+      enable-background="new 0 0 24 24"
     >
       {path}
     </svg>
