@@ -84,7 +84,7 @@ const BlockText: Preact.FunctionComponent = ({ children }) => (
 );
 
 const PageHeader = () => (
-  <div className="flex justify-between items-center py-6 md:justify-start md:space-x-10">
+  <div className="flex justify-between items-center py-6">
     <div className="inline-flex items-center space-x-2 leading-6 font-medium transition ease-in-out duration-150">
       {/* <img
         src="images/shelv-logo-svg.svg"
@@ -94,7 +94,22 @@ const PageHeader = () => (
       /> */}
       <ShelvLogo></ShelvLogo>
     </div>
-    <div className="flex flex-shrink flex-row">
+
+    <div className="flex gap-x-12">
+      {[
+        { name: "FAQ", href: "#" },
+        { name: "License", href: "#" },
+      ].map((item) => (
+        <a
+          key={item.name}
+          href={item.href}
+          className="text-sm leading-6 text-nord-text-subtle"
+        >
+          {item.name}
+        </a>
+      ))}
+    </div>
+    {/* <div className="flex flex-shrink flex-row">
       <SvgIconLink
         size="large"
         linkTo="https://github.com/twop"
@@ -106,7 +121,7 @@ const PageHeader = () => (
         linkTo="https://twitter.com/shelvdotapp"
         path={twitterSvgPath}
       />
-    </div>
+    </div> */}
   </div>
 );
 
@@ -219,7 +234,7 @@ export const App = () => (
               </BlockHeader>
               <BlockText>
                 Shelv is built on markdown, which means you can quickly format
-                your ideas in an expensive way that is open and portable to
+                your ideas in an expressive way that is open and portable to
                 where ever they need to go.
               </BlockText>
             </Fragment>
@@ -251,47 +266,18 @@ export const App = () => (
                 Keyboard shortcuts
               </BlockHeader>
               <BlockText>
-                <p>
-                  Show/Hide Shelv with a system wide shortcut, so it is there
-                  when you need it.
-                </p>
-                <p>
-                  Annotation shortcuts for <b>Bold</b>, <i>Italic</i>, Headings
-                  and <code>Code blocks</code>
-                </p>
+                Show/Hide Shelv with a system wide shortcut, so it is there when
+                you need it.
+              </BlockText>
+              <Space sm />
+              <BlockText>
+                Annotation shortcuts for <b>Bold</b>, <i>Italic</i>, Headings
+                and <code>Code blocks</code>
               </BlockText>
             </Fragment>
           }
           main="right"
         />
-        {/* <Space extraOnLarge />
-
-        <Block
-          left={
-            <Fragment>
-              <BlockHeader>
-                <span className="text-nord-text-primary">Step 3: </span> Track
-                your progress with weekly reports
-              </BlockHeader>
-              <BlockText>
-                You just used Scry to discover an optimization that reduces your
-                Time to Interactive by 30% and want it to stay that way. Set up
-                weekly reports that summarize performance data and are delivered
-                via Slack or email. Use reports to keep your team engaged and
-                celebrate performance wins.
-              </BlockText>
-            </Fragment>
-          }
-          right={
-            <Img
-              width={1158}
-              height={882}
-              src="report"
-              extraStyle="xs:m-4 sm:m-8 md:m-12 lg:m-8"
-              alt="perf report example"
-            />
-          }
-        /> */}
         <Space sm />
       </Content>
     </Theme>

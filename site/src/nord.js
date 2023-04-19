@@ -1,5 +1,5 @@
 "use strict";
-exports.__esModule = true;
+Object.defineProperty(exports, "__esModule", { value: true });
 exports.aurora = exports.frost = exports.snowStorm = exports.polarNight = void 0;
 exports.polarNight = {
     /**
@@ -49,7 +49,7 @@ exports.polarNight = {
   
   For bright ambiance designs, it is, next to nord1 and nord2 as darker variants, also used for the most subtle/inconspicuous UI text elements that do not need so much visual attention.
      */
-    nord3: "#4c566a"
+    nord3: "#4c566a",
 };
 exports.snowStorm = {
     /**
@@ -89,7 +89,7 @@ exports.snowStorm = {
   
   For bright ambiance designs, it is used as background and area coloring while it's not used for syntax highlighting at all because otherwise it would collide with the same background color.
      */
-    nord6: "#eceff4"
+    nord6: "#eceff4",
 };
 /**
  * Frost can be described as the heart palette of Nord, a group of four bluish colors that are commonly used for primary UI component and text highlighting and essential code syntax elements.
@@ -126,7 +126,7 @@ exports.frost = {
   
   Used for tertiary UI elements that require more visual attention than default elements.
      */
-    nord10: "#5e81ac"
+    nord10: "#5e81ac",
 };
 /**
  * Aurora consists of five colorful components reminiscent of the „Aurora borealis“, sometimes referred to as polar lights or northern lights.
@@ -163,5 +163,5 @@ exports.aurora = {
   
   Rarely used for UI elements, but it may indicate a more uncommon functionality.
      */
-    nord15: "#b48ead"
+    nord15: "#b48ead",
 };

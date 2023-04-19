@@ -1,5 +1,5 @@
 "use strict";
-exports.__esModule = true;
+Object.defineProperty(exports, "__esModule", { value: true });
 exports.colors = void 0;
 var nord_1 = require("./nord");
 function lightenColor(color, percent) {
@@ -18,6 +18,7 @@ exports.colors = {
     "nord-bg": lightenColor(nord_1.polarNight.nord0, -8),
     "nord-bg-dark": lightenColor(nord_1.polarNight.nord0, -12),
     "nord-text": nord_1.snowStorm.nord4,
+    "nord-text-subtle": nord_1.polarNight.nord3,
     "nord-h1": nord_1.frost.nord8,
     "nord-h2": nord_1.aurora.nord12,
     "nord-input": nord_1.polarNight.nord1,
@@ -29,5 +30,5 @@ exports.colors = {
     "nord-bg-btn": nord_1.frost.nord8,
     "nord-bg-btn-hovered": nord_1.frost.nord10,
     "nord-on-btn": nord_1.polarNight.nord1,
-    "nord-red": nord_1.aurora.nord12
+    "nord-red": nord_1.aurora.nord12,
 };

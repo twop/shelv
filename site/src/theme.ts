@@ -25,6 +25,7 @@ export const colors = {
   "nord-bg": lightenColor(polarNight.nord0, -8),
   "nord-bg-dark": lightenColor(polarNight.nord0, -12),
   "nord-text": snowStorm.nord4,
+  "nord-text-subtle": polarNight.nord3,
   "nord-h1": frost.nord8,
   "nord-h2": aurora.nord12,
   "nord-input": polarNight.nord1,
