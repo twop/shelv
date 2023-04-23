@@ -39,6 +39,7 @@ use crate::{
 pub struct Note {
     text: String,
     shortcut: KeyboardShortcut,
+    cursor: Option<CCursorRange>,
 }
 
 pub struct AppState {
@@ -175,6 +176,7 @@ impl AppState {
                 Note {
                     text,
                     shortcut: KeyboardShortcut::new(Modifiers::COMMAND, key),
+                    cursor: None,
                 }
             })
             .collect();
@@ -428,7 +430,8 @@ fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, imag
 }
 
 pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Frame) {
-    let id = Id::new(("text_edit", state.selected_note));
+    // let text_edit_id = Id::new(("text_edit", state.selected_note));
+    let text_edit_id = Id::new("text_edit");
 
     while let Ok(msg) = state.msg_queue.try_recv() {
         println!("got in render: {msg:?}");
@@ -438,14 +441,20 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                 frame.set_visible(!state.hidden);
 
                 if !state.hidden {
-                    set_cursor_at_the_end(&state.notes[state.selected_note as usize].text, ctx, id);
+                    restore_cursor_from_note_state(
+                        &mut state.notes[state.selected_note as usize],
+                        ctx,
+                        text_edit_id,
+                    );
+                    ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
                     frame.focus_window();
                 }
             }
         }
     }
 
-    let prev_selected_note = state.selected_note;
+    let mut prev_selected_note = state.selected_note;
+
     render_footer_panel(
         &mut state.selected_note,
         &state.notes,
@@ -453,6 +462,24 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
         &state.icons,
         &state.theme,
     );
+
+    if prev_selected_note != state.selected_note {
+        // means that we reselected via UI
+        state.save_to_storage = true;
+
+        // if that is the case then reset cursors from both of the notes
+        state.notes[state.selected_note as usize].cursor = None;
+        state.notes[prev_selected_note as usize].cursor = None;
+
+        // and then remove the cursor from the current note as well
+        if let Some(mut text_edit_state) = egui::TextEdit::load_state(ctx, text_edit_id) {
+            text_edit_state.set_ccursor_range(None);
+            text_edit_state.store(ctx, text_edit_id);
+        }
+
+        // finally sets prev_selected_note to the current one for shortcuts handling
+        prev_selected_note = state.selected_note;
+    }
 
     ctx.input_mut(|input| {
         for (index, shortcut) in state.notes.iter().map(|n| n.shortcut).enumerate() {
@@ -462,12 +489,15 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
         }
     });
 
-    if prev_selected_note != state.selected_note {
-        state.save_to_storage = true;
-        // TODO invalidate layout and set cursor to the end
-    }
+    let current_note = &mut state.notes[state.selected_note as usize];
 
-    let current_note = &mut state.notes[state.selected_note as usize].text;
+    if prev_selected_note != state.selected_note {
+        // means that we reselected via shortcuts
+        state.save_to_storage = true;
+
+        // just restore the cursor from the state, because we didn't loose focus
+        restore_cursor_from_note_state(&current_note, ctx, text_edit_id);
+    }
 
     render_header_panel(ctx, &state.icons, &state.theme);
 
@@ -477,6 +507,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
         render_hints(
             &format!("{}", state.selected_note + 1),
             current_note
+                .text
                 .is_empty()
                 .then(|| state.md_annotation_shortcuts.as_slice()),
             avail_space,
@@ -488,21 +519,27 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
         // ---- TAB in LISTS ----
         // Note that it happens before rendering the panel
         if ui.input_mut(|input| input.modifiers.is_none() && input.key_pressed(egui::Key::Tab)) {
-            if let (Some(mut text_edit_state), Some(computed_layout)) =
-                (TextEditState::load(ctx, id), &state.computed_layout)
-            {
+            if let (Some(mut text_edit_state), Some(computed_layout)) = (
+                TextEditState::load(ctx, text_edit_id),
+                &state.computed_layout,
+            ) {
                 use egui::TextBuffer;
 
                 if let Some(ccursor_range) = text_edit_state.ccursor_range() {
-                    let [mut ccursor_start, mut ccursor_end] = ccursor_range.sorted();
-                    let byte_start = current_note.byte_index_from_char_index(ccursor_start.index);
-                    let byte_end = current_note.byte_index_from_char_index(ccursor_start.index);
+                    let [ccursor_start, ccursor_end] = ccursor_range.sorted();
+                    let byte_start = current_note
+                        .text
+                        .byte_index_from_char_index(ccursor_start.index);
+                    let byte_end = current_note
+                        .text
+                        .byte_index_from_char_index(ccursor_start.index);
 
                     if let Some(inside_list_item) = computed_layout
                         .text_structure
                         .find_surrounding_list_item(byte_start..byte_end)
                     {
-                        let chars_before = current_note[0..inside_list_item.item_byte_pos.start]
+                        let chars_before = current_note.text
+                            [0..inside_list_item.item_byte_pos.start]
                             .chars()
                             .count();
 
@@ -520,32 +557,16 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                                 let list_item_pos = inside_list_item.item_byte_pos.clone();
 
                                 // TODO: normalize working with numbered lists
-                                // if inside_list_item.is_numbered() {
-                                //     let (bytes, chars): (usize, usize) = current_note
-                                //         [list_item_pos.clone()]
-                                //     .chars()
-                                //     .take_while(|c| *c != '.')
-                                //     .fold((0, 0), |(bytes, chars), c| {
-                                //         (bytes + c.len_utf8(), chars + 1)
-                                //     });
-
-                                //     current_note.replace_range(
-                                //         list_item_pos.start..list_item_pos.start + bytes,
-                                //         "1",
-                                //     );
-
-                                //     // todo adjust cursor and selection
-                                // }
 
                                 let inserted_chars_count = insertion.chars().count();
-                                current_note.insert_str(list_item_pos.start, insertion);
+                                current_note.text.insert_str(list_item_pos.start, insertion);
 
                                 text_edit_state.set_ccursor_range(Some(CCursorRange::two(
                                     ccursor_start + inserted_chars_count,
                                     ccursor_end + inserted_chars_count,
                                 )));
 
-                                text_edit_state.store(ctx, id);
+                                text_edit_state.store(ctx, text_edit_id);
 
                                 // Prevent TAB from modifying the text state
                                 ui.input_mut(|input| {
@@ -592,10 +613,10 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                 text_clip_rect: _,
                 state: mut text_edit_state,
                 mut cursor_range,
-            } = egui::TextEdit::multiline(current_note)
+            } = egui::TextEdit::multiline(&mut current_note.text)
                 .font(egui::TextStyle::Monospace) // for cursor height
                 .code_editor()
-                .id(id)
+                .id(text_edit_id)
                 .lock_focus(true)
                 .desired_width(f32::INFINITY)
                 .frame(false)
@@ -614,7 +635,11 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     .interact(space_below, Id::new("space_below"), Sense::click())
                     .clicked()
             {
-                set_cursor_at_the_end(current_note, ctx, id);
+                text_edit_state.set_ccursor_range(Some(egui::text::CCursorRange::one(
+                    egui::text::CCursor::new(current_note.text.chars().count()),
+                )));
+
+                ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
             }
 
             // ---- SHORTCUTS FOR MAKING BOLD/ITALIC/STRIKETHROUGH ----
@@ -627,11 +652,13 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
 
                         let selected_char_range = text_cursor_range.as_sorted_char_range();
 
-                        let byte_start =
-                            current_note.byte_index_from_char_index(selected_char_range.start);
+                        let byte_start = current_note
+                            .text
+                            .byte_index_from_char_index(selected_char_range.start);
 
-                        let byte_end =
-                            current_note.byte_index_from_char_index(selected_char_range.end);
+                        let byte_end = current_note
+                            .text
+                            .byte_index_from_char_index(selected_char_range.end);
 
                         let span = computed_layout
                             .text_structure
@@ -649,13 +676,19 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                                 // for example: if it is already "bold" then remove "**" on each side
 
                                 match (
-                                    current_note.get(content_byte_range).map(|s| s.to_string()),
                                     current_note
+                                        .text
+                                        .get(content_byte_range)
+                                        .map(|s| s.to_string()),
+                                    current_note
+                                        .text
                                         .get(0..span_byte_range.start)
                                         .map(|s| s.chars().count()),
                                 ) {
                                     (Some(inner_content), Some(span_char_offset)) => {
-                                        current_note.replace_range(span_byte_range, &inner_content);
+                                        current_note
+                                            .text
+                                            .replace_range(span_byte_range, &inner_content);
 
                                         let cursor_start = CCursor::new(span_char_offset);
 
@@ -668,7 +701,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                                 // means that we need to execute instruction for the shortcut, presumably to add annotations
                                 let mut cx = ShortcutExecContext {
                                     structure: &computed_layout.text_structure,
-                                    text: current_note,
+                                    text: &current_note.text,
                                     selection_byte_range: byte_start..byte_end,
                                     replace_range: byte_start..byte_end,
                                 };
@@ -677,10 +710,12 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                                 match execute_instruction(&mut cx, &md_shortcut.instruction) {
                                     Some(result) => {
                                         let cursor_start = CCursor::new(
-                                            current_note[..cx.replace_range.start].chars().count(),
+                                            current_note.text[..cx.replace_range.start]
+                                                .chars()
+                                                .count(),
                                         );
 
-                                        current_note.replace_range(
+                                        current_note.text.replace_range(
                                             cx.replace_range.clone(),
                                             &result.content,
                                         );
@@ -726,7 +761,7 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                                     byte_range,
                                     checked,
                                 } => {
-                                    current_note.replace_range(
+                                    current_note.text.replace_range(
                                         byte_range,
                                         if checked { "[ ]" } else { "[x]" },
                                     );
@@ -749,13 +784,15 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                     use egui::TextBuffer;
 
                     let char_range = text_cursor_range.as_sorted_char_range();
-                    let byte_start = current_note.byte_index_from_char_index(char_range.start);
-                    let byte_end = current_note.byte_index_from_char_index(char_range.end);
+                    let byte_start = current_note
+                        .text
+                        .byte_index_from_char_index(char_range.start);
+                    let byte_end = current_note.text.byte_index_from_char_index(char_range.end);
 
                     let inside_item = computed_layout.text_structure.find_surrounding_list_item(
                         // note that "\n" was already inserted,
                         //thus we need to just look for "cursor_start -1" to detect a list item
-                        if current_note[..byte_start].ends_with("\n") {
+                        if current_note.text[..byte_start].ends_with("\n") {
                             (byte_start - 1)..(byte_start - 1)
                         } else {
                             byte_start..byte_end
@@ -764,9 +801,9 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
 
                     println!(
                         "\nnewline\nbefore_cursor='{}'\ncursor='{}'\nafter='{}'",
-                        &current_note[0..byte_start],
-                        &current_note[byte_start..byte_end],
-                        &current_note[byte_end..]
+                        &current_note.text[0..byte_start],
+                        &current_note.text[byte_start..byte_end],
+                        &current_note.text[byte_end..]
                     );
 
                     if let Some(inside_list_item) = inside_item {
@@ -783,7 +820,9 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                             }
                         };
 
-                        current_note.insert_text(text_to_insert.as_str(), char_range.start);
+                        current_note
+                            .text
+                            .insert_text(text_to_insert.as_str(), char_range.start);
 
                         let [min, max] = text_cursor_range.as_ccursor_range().sorted();
 
@@ -796,19 +835,25 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
                 }
             }
 
-            text_edit_state.store(ui.ctx(), id);
+            current_note.cursor = text_edit_state.ccursor_range();
+            text_edit_state.store(ui.ctx(), text_edit_id);
         });
     });
 }
 
-fn set_cursor_at_the_end(text: &str, ctx: &Context, id: Id) {
-    if let Some(mut text_edit_state) = egui::TextEdit::load_state(ctx, id) {
-        let ccursor = egui::text::CCursor::new(text.chars().count());
+fn restore_cursor_from_note_state(note: &Note, ctx: &Context, text_state_id: Id) {
+    if let Some(mut text_edit_state) = egui::TextEdit::load_state(ctx, text_state_id) {
+        // println!(
+        //     "\nswitched\nnote_cursor='{:?}'\nstate_cursor='{:?}'",
+        //     &note.cursor,
+        //     &text_edit_state.ccursor_range(),
+        // );
+        let ccursor = note.cursor.unwrap_or_else(|| {
+            egui::text::CCursorRange::one(egui::text::CCursor::new(note.text.chars().count()))
+        });
 
-        text_edit_state.set_ccursor_range(Some(egui::text::CCursorRange::one(ccursor)));
-        text_edit_state.store(ctx, id);
-
-        ctx.memory_mut(|mem| mem.request_focus(id));
+        text_edit_state.set_ccursor_range(Some(ccursor));
+        text_edit_state.store(ctx, text_state_id);
     }
 }
 
