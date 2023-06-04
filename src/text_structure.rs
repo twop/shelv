@@ -128,6 +128,7 @@ struct MarkdownState {
     text: i8,
     link: i8,
     task_marker: i8,
+    code: i8,
     heading: [i8; 6],
 }
 
@@ -137,6 +138,7 @@ impl MarkdownState {
             nesting: 0,
             bold: 0,
             strike: 0,
+            code: 0,
             emphasis: 0,
             heading: Default::default(),
             text: 0,
@@ -578,7 +580,7 @@ impl TextStructure {
                         state.heading[*level as usize] += delta;
                     }
                     Annotation::CodeBlock => (),
-                    Annotation::Code => todo!(),
+                    Annotation::Code => state.code += delta,
                 }
             }
 
@@ -794,6 +796,7 @@ impl MarkdownState {
             md_body,
             md_header,
             md_link,
+            md_code,
             ..
         } = colors;
 
@@ -810,15 +813,16 @@ impl MarkdownState {
             _ => size.normal,
         };
 
-        let color = match (
-            self.link > 0,
-            self.heading.iter().any(|h| *h > 0),
-            self.text > 0,
-        ) {
-            (true, _, _) => *md_link,
-            (false, _, false) => *md_annotation,
-            (false, true, true) => *md_header,
-            (false, false, true) => *md_body,
+        let color = if self.link > 0 {
+            *md_link
+        } else if self.code > 0 {
+            *md_code
+        } else {
+            match (self.heading.iter().any(|h| *h > 0), self.text > 0) {
+                (_, false) => *md_annotation,
+                (true, true) => *md_header,
+                (false, true) => *md_body,
+            }
         };
 
         let font_family = match (emphasis, bold) {

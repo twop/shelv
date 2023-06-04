@@ -135,10 +135,11 @@ const SloganAndMacStoreLink = () => (
           The ultimate playground for your ideas
         </h2>
         <p className="mt-4 max-w-md mx-auto text-lg sm:text-xl md:mt-5 md:max-w-3xl">
-          Where you can capture and organize them in a Markdown wonderland. It's
-          the perfect tool for those who need a fun and efficient way to manage
-          their thoughts. Whether you're planning a trip, organizing your daily
-          tasks, or brainstorming your next big idea.
+          Capture your top-of-mind using ready-to-go shelvs. Whether you're
+          planning a trip, organizing your daily tasks, or brainstorming your
+          next big idea, our Markdown-enabled shelves allow for a fun and
+          efficient way to capture your thoughts without taking you out of your
+          task.
         </p>
       </div>
     </div>

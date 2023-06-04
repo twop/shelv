@@ -1,7 +1,8 @@
 #![feature(iter_intersperse)]
 #![feature(let_chains)]
 
-use app::{create_app_state, render, AppIcons, AppInitData, AppState, AsyncMessage};
+use app_state::{AppIcons, AppInitData, AppState, MsgToApp};
+use app_ui::render_app;
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
     GlobalHotKeyEvent, GlobalHotKeyManager,
@@ -25,7 +26,9 @@ use eframe::{
     get_value, set_value, CreationContext,
 };
 
-pub mod app;
+pub mod app_state;
+pub mod app_ui;
+pub mod egui_hotkey;
 pub mod md_shortcut;
 pub mod nord;
 pub mod persistent_state;
@@ -37,7 +40,7 @@ pub struct MyApp {
     state: AppState,
     hotkeys_manager: GlobalHotKeyManager,
     tray: TrayIcon,
-    msg_queue: SyncSender<AsyncMessage>,
+    msg_queue: SyncSender<MsgToApp>,
 }
 
 impl MyApp {
@@ -45,7 +48,7 @@ impl MyApp {
         let theme = Default::default();
         configure_styles(&cc.egui_ctx, &theme);
 
-        let (msg_queue_tx, msg_queue_rx) = sync_channel::<AsyncMessage>(10);
+        let (msg_queue_tx, msg_queue_rx) = sync_channel::<MsgToApp>(10);
         let hotkeys_manager = GlobalHotKeyManager::new().unwrap();
         let global_open_hotkey = HotKey::new(Some(Modifiers::SHIFT | Modifiers::META), Code::KeyM);
 
@@ -56,7 +59,7 @@ impl MyApp {
         let sender = msg_queue_tx.clone();
         GlobalHotKeyEvent::set_event_handler(Some(move |ev: GlobalHotKeyEvent| {
             if ev.id == open_hotkey.id() {
-                sender.send(AsyncMessage::ToggleVisibility).unwrap();
+                sender.send(MsgToApp::ToggleVisibility).unwrap();
                 ctx.request_repaint();
                 println!("handler: {:?}", open_hotkey);
             }
@@ -65,7 +68,7 @@ impl MyApp {
         let ctx = cc.egui_ctx.clone();
         let sender = msg_queue_tx.clone();
         TrayEvent::set_event_handler(Some(move |ev| {
-            sender.send(AsyncMessage::ToggleVisibility).unwrap();
+            sender.send(MsgToApp::ToggleVisibility).unwrap();
             ctx.request_repaint();
 
             println!("tray event: {:?}", ev);
@@ -86,7 +89,7 @@ impl MyApp {
             cc.storage.and_then(|s| get_value(s, "persistent_state"));
 
         Self {
-            state: create_app_state(AppInitData {
+            state: AppState::new(AppInitData {
                 icons: load_app_icons(&theme.colors),
                 theme,
                 msg_queue: msg_queue_rx,
@@ -101,11 +104,11 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        render(&mut self.state, ctx, frame);
+        render_app(&mut self.state, ctx, frame);
     }
 
     fn on_close_event(&mut self) -> bool {
-        self.msg_queue.send(AsyncMessage::ToggleVisibility).unwrap();
+        self.msg_queue.send(MsgToApp::ToggleVisibility).unwrap();
 
         return false;
     }

@@ -133,6 +133,7 @@ pub struct ColorTheme {
     pub md_body: Color32,
     pub md_header: Color32,
     pub md_link: Color32,
+    pub md_code: Color32,
 
     // ---------
     // egui settings and general colors
@@ -187,6 +188,7 @@ impl ColorTheme {
         let md_header = Nord::NORD6;
         // same as hyperlink_color
         let md_link = Nord::NORD7;
+        let md_code = Nord::NORD13;
 
         let secondary_icon = Nord::NORD3.shade(1.1);
 
@@ -259,6 +261,7 @@ impl ColorTheme {
             button_bg_stroke,
             md_body,
             md_header,
+            md_code,
             subtle_text_color,
             md_link,
         }
@@ -418,6 +421,7 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         md_header: _,
         md_link: _,
         subtle_text_color: _,
+        md_code: _,
     } = color_theme.clone();
 
     // --- window ---

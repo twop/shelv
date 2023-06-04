@@ -1,367 +1,24 @@
-use std::{
-    fmt::format,
-    ops::Range,
-    sync::{mpsc::Receiver, Arc},
-};
+use std::ops::Range;
 
 use eframe::{
     egui::{
         self,
         text::CCursor,
         text_edit::{CCursorRange, TextEditOutput, TextEditState},
-        Button, Context, Id, ImageButton, Key, KeyboardShortcut, Layout, Modifiers, Painter,
-        RichText, Sense, TopBottomPanel, Ui,
+        Area, Context, Id, ImageButton, Layout, Modifiers, Painter, RichText, Sense,
+        TopBottomPanel, Ui, Window,
     },
     emath::{Align, Align2},
-    epaint::{pos2, vec2, Color32, FontId, Galley, Rect, Stroke, Vec2},
+    epaint::{pos2, vec2, Color32, FontId, Rect, Stroke, Vec2},
 };
-
-use egui_extras::RetainedImage;
-
-use linkify::LinkFinder;
-use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
-
-use pulldown_cmark::{CodeBlockKind, HeadingLevel};
 
 use crate::{
-    md_shortcut::{
-        execute_instruction, Edge, Instruction, InstructionCondition, MdAnnotationShortcut,
-        ShortcutContext, Source,
-    },
-    persistent_state::PersistentState,
+    app_state::{AppIcons, AppState, ComputedLayout, MsgToApp, Note},
+    md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
-    text_structure::{
-        self, Ev, InteractiveTextPart, SpanKind, TextStructure, TextStructureBuilder,
-    },
+    text_structure::{InteractiveTextPart, SpanKind, TextStructure},
     theme::AppTheme,
 };
-
-pub struct Note {
-    text: String,
-    shortcut: KeyboardShortcut,
-    cursor: Option<CCursorRange>,
-}
-
-pub struct AppState {
-    notes: Vec<Note>,
-    selected_note: u32,
-    save_to_storage: bool,
-
-    theme: AppTheme,
-    syntax_set: SyntaxSet,
-    theme_set: ThemeSet,
-    msg_queue: Receiver<AsyncMessage>,
-    icons: AppIcons,
-    hidden: bool,
-    md_annotation_shortcuts: Vec<MdAnnotationShortcut>,
-    app_shortcuts: AppShortcuts,
-
-    computed_layout: Option<ComputedLayout>,
-}
-
-struct AppShortcuts {
-    bold: KeyboardShortcut,
-    emphasize: KeyboardShortcut,
-    strikethrough: KeyboardShortcut,
-    code_block: KeyboardShortcut,
-    h1: KeyboardShortcut,
-    h2: KeyboardShortcut,
-    h3: KeyboardShortcut,
-    // h4: KeyboardShortcut,
-}
-
-struct ComputedLayout {
-    galley: Arc<Galley>,
-    wrap_width: f32,
-    text_structure: TextStructure,
-    computed_for: String, // maybe use hash not to double store the string content?
-}
-
-impl ComputedLayout {
-    fn should_recompute(&self, text: &str, max_width: f32) -> bool {
-        self.wrap_width != max_width || self.computed_for != text
-    }
-
-    fn compute(
-        text: &str,
-        wrap_width: f32,
-        ui: &Ui,
-        theme: &AppTheme,
-        syntax_set: &SyntaxSet,
-        theme_set: &ThemeSet,
-    ) -> Self {
-        let text_structure = TextStructure::create_from(text);
-
-        let mut job = text_structure.create_layout_job(text, theme, syntax_set, theme_set);
-
-        job.wrap.max_width = wrap_width;
-
-        let galley = ui.fonts(|f| f.layout_job(job));
-
-        Self {
-            galley,
-            wrap_width,
-            text_structure,
-            computed_for: text.to_string(),
-        }
-    }
-}
-
-pub struct AppIcons {
-    pub more: RetainedImage,
-    pub gear: RetainedImage,
-    pub question_mark: RetainedImage,
-    pub close: RetainedImage,
-    pub at: RetainedImage,
-    pub twitter: RetainedImage,
-    pub home: RetainedImage,
-    pub discord: RetainedImage,
-}
-
-#[derive(Debug)]
-pub enum AsyncMessage {
-    ToggleVisibility,
-}
-
-// struct MdAnnotationShortcut {
-//     name: &'static str,
-//     annotation: &'static str,
-//     shortcut: KeyboardShortcut,
-// }
-
-impl AppState {
-    pub fn new(init_data: AppInitData) -> Self {
-        let AppInitData {
-            theme,
-            msg_queue,
-            icons,
-            persistent_state,
-        } = init_data;
-
-        use Instruction::*;
-        use InstructionCondition::*;
-
-        let app_shortcuts = AppShortcuts {
-            bold: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::B),
-            emphasize: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::I),
-            strikethrough: KeyboardShortcut::new(
-                Modifiers::COMMAND | Modifiers::SHIFT,
-                egui::Key::E,
-            ),
-            code_block: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::C),
-            h1: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num1),
-            h2: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num2),
-            h3: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num3),
-            // h4: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num4),
-        };
-
-        let notes_count = 4;
-
-        let (selected_note, mut notes) = persistent_state
-            .map(|s| (s.selected_note, s.notes))
-            .unwrap_or_else(|| (0, (0..notes_count).map(|i| format!("{i}")).collect()));
-
-        let restored_notes_count = notes.len();
-        if restored_notes_count != notes_count {
-            for i in restored_notes_count..notes_count {
-                notes.push(format!("{i}"));
-            }
-        }
-
-        let notes: Vec<Note> = notes
-            .into_iter()
-            .enumerate()
-            .map(|(index, text)| {
-                let key = number_to_key(index as u8 + 1).unwrap();
-                Note {
-                    text,
-                    shortcut: KeyboardShortcut::new(Modifiers::COMMAND, key),
-                    cursor: None,
-                }
-            })
-            .collect();
-
-        //             note: "# title
-        // - adsd
-        // - fdsf
-        // 	- [ ] fdsf
-        // 	- [x] fdsf
-        // 1. fa
-        // 2. fdsf
-        // 3.
-        // bo**dy**
-        // i*tali*c
-        // https://www.nordtheme.com/docs/colors-and-palettes
-        // ```rs
-        // let a = Some(115);
-        // ```"
-        // .to_string(),
-
-        Self {
-            save_to_storage: false,
-            theme,
-            notes,
-            computed_layout: None,
-            syntax_set: SyntaxSet::load_defaults_newlines(),
-            theme_set: ThemeSet::load_defaults(),
-            icons,
-            msg_queue,
-            selected_note,
-            hidden: false,
-            md_annotation_shortcuts: [
-                ("Bold", "**", app_shortcuts.bold, SpanKind::Bold),
-                ("Italic", "*", app_shortcuts.emphasize, SpanKind::Emphasis),
-                (
-                    "Strikethrough",
-                    "~~",
-                    app_shortcuts.strikethrough,
-                    SpanKind::Strike,
-                ),
-            ]
-            .map(
-                |(name, annotation, shortcut, target_span)| MdAnnotationShortcut {
-                    name,
-                    shortcut,
-                    instruction: Condition {
-                        cond: IsNoneOrEmpty(Source::Selection),
-                        if_true: Box::new(Seq(vec![
-                            Insert(annotation),
-                            PlaceCursor(Edge::Start),
-                            PlaceCursor(Edge::End),
-                            Insert(annotation),
-                        ])),
-                        if_false: Box::new(Seq(vec![
-                            PlaceCursor(Edge::Start),
-                            Insert(annotation),
-                            CopyFrom(Source::Selection),
-                            Insert(annotation),
-                            PlaceCursor(Edge::End),
-                        ])),
-                    },
-                    target_span,
-                },
-            )
-            .into_iter()
-            .chain(std::iter::once(MdAnnotationShortcut {
-                name: "Code Block",
-                shortcut: app_shortcuts.code_block,
-                instruction: Instruction::sequence([
-                    Instruction::condition(
-                        // add new line prior if we start in the middle of the text
-                        Any(vec![
-                            IsNoneOrEmpty(Source::BeforeSelection),
-                            EndsWith(Source::BeforeSelection, "\n"),
-                        ]),
-                        Insert(""),
-                        Insert("\n"),
-                    ),
-                    Insert("```"),
-                    PlaceCursor(Edge::Start),
-                    PlaceCursor(Edge::End),
-                    Insert("\n"),
-                    Instruction::condition(
-                        IsNoneOrEmpty(Source::Selection),
-                        Insert(""),
-                        CopyFrom(Source::Selection),
-                    ),
-                    Instruction::condition(
-                        Any(vec![
-                            IsNoneOrEmpty(Source::Selection),
-                            EndsWith(Source::Selection, "\n"),
-                        ]),
-                        Insert(""),
-                        Insert("\n"),
-                    ),
-                    Insert("```"),
-                    Instruction::condition(
-                        Any(vec![
-                            IsNoneOrEmpty(Source::AfterSelection),
-                            StartsWith(Source::AfterSelection, "\n"),
-                        ]),
-                        Insert(""),
-                        Insert("\n"),
-                    ),
-                ]),
-                target_span: SpanKind::CodeBlock,
-            }))
-            .chain(
-                [
-                    ("H1", "#", HeadingLevel::H1, app_shortcuts.h1),
-                    ("H2", "##", HeadingLevel::H2, app_shortcuts.h2),
-                    ("H3", "###", HeadingLevel::H3, app_shortcuts.h3),
-                    // ("H4", "####", HeadingLevel::H4, app_shortcuts.h4),
-                ]
-                .map(|(name, prefix, level, shortcut)| MdAnnotationShortcut {
-                    name,
-                    shortcut,
-                    instruction: MatchFirst(
-                        [
-                            SpanKind::Heading(HeadingLevel::H1),
-                            SpanKind::Heading(HeadingLevel::H2),
-                            SpanKind::Heading(HeadingLevel::H3),
-                            SpanKind::Heading(HeadingLevel::H4),
-                            SpanKind::Heading(HeadingLevel::H5),
-                            SpanKind::Heading(HeadingLevel::H6),
-                            SpanKind::Paragraph,
-                        ]
-                        .into_iter()
-                        .filter(|kind| *kind != SpanKind::Heading(level))
-                        .map(|kind| {
-                            (
-                                InstructionCondition::IsInside(kind),
-                                Seq([
-                                    SetReplaceArea(kind),
-                                    Insert(prefix),
-                                    Insert(" "),
-                                    PlaceCursor(Edge::Start),
-                                    CopyFrom(Source::SurroundingSpanContent(kind)),
-                                    PlaceCursor(Edge::End),
-                                ]
-                                .into()),
-                            )
-                        })
-                        .chain(
-                            [(
-                                InstructionCondition::IsInsideUnmarkedArea,
-                                Seq([
-                                    Insert(prefix),
-                                    Insert(" "),
-                                    PlaceCursor(Edge::Start),
-                                    PlaceCursor(Edge::End),
-                                ]
-                                .into()),
-                            )]
-                            .into_iter(),
-                        )
-                        .collect(),
-                    ),
-                    target_span: SpanKind::Heading(level),
-                }),
-            )
-            .collect(),
-            app_shortcuts,
-        }
-    }
-
-    pub fn should_persist(&mut self) -> Option<PersistentState> {
-        if self.save_to_storage {
-            self.save_to_storage = false;
-            Some(PersistentState {
-                notes: self.notes.iter().map(|n| n.text.clone()).collect(),
-                selected_note: self.selected_note,
-            })
-        } else {
-            None
-        }
-    }
-}
-
-pub struct AppInitData {
-    pub theme: AppTheme,
-    pub msg_queue: Receiver<AsyncMessage>,
-    pub icons: AppIcons,
-    pub persistent_state: Option<PersistentState>,
-}
 
 #[derive(Debug)]
 struct ShortcutExecContext<'a> {
@@ -413,11 +70,6 @@ impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
     }
 }
 
-#[no_mangle]
-pub fn create_app_state(data: AppInitData) -> AppState {
-    AppState::new(data)
-}
-
 fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, image::ImageError> {
     let image = image::io::Reader::open(path)?.decode()?;
     let size = [image.width() as _, image.height() as _];
@@ -429,14 +81,14 @@ fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, imag
     ))
 }
 
-pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Frame) {
+pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Frame) {
     // let text_edit_id = Id::new(("text_edit", state.selected_note));
     let text_edit_id = Id::new("text_edit");
 
     while let Ok(msg) = state.msg_queue.try_recv() {
         println!("got in render: {msg:?}");
         match msg {
-            AsyncMessage::ToggleVisibility => {
+            MsgToApp::ToggleVisibility => {
                 state.hidden = !state.hidden;
                 frame.set_visible(!state.hidden);
 
@@ -499,7 +151,12 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
         restore_cursor_from_note_state(&current_note, ctx, text_edit_id);
     }
 
-    render_header_panel(ctx, &state.icons, &state.theme);
+    render_header_panel(
+        ctx,
+        &mut state.is_settings_opened,
+        &state.icons,
+        &state.theme,
+    );
 
     egui::CentralPanel::default().show(ctx, |ui| {
         let avail_space = ui.available_rect_before_wrap();
@@ -839,8 +496,68 @@ pub fn render(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Fra
             text_edit_state.store(ui.ctx(), text_edit_id);
         });
     });
+
+    if state.is_settings_opened {
+        render_settings_dialog(ctx, &state.theme);
+    }
 }
 
+fn render_settings_dialog(ctx: &Context, theme: &AppTheme) {
+    let mut window = Window::new("")
+        .id("settings".into())
+        // .open(&mut state.is_settings_opened)
+        .title_bar(false)
+        .anchor(Align2::CENTER_CENTER, [0., 0.])
+        // .resizable(false)
+        //.default_size((250., 200.))
+        .fixed_size((250., 200.));
+
+    window.show(&ctx, |ui| {
+        ui.vertical(|ui| {
+            let sizes = &theme.sizes;
+
+            let avail_rect = ui.available_rect_before_wrap();
+            ui.set_min_size(vec2(avail_rect.width(), avail_rect.height()));
+
+            ui.painter().line_segment(
+                [avail_rect.left(), avail_rect.right()]
+                    .map(|x| pos2(x, avail_rect.top() + sizes.header_footer)),
+                Stroke::new(1.0, theme.colors.outline_fg),
+            );
+
+            ui.allocate_ui(vec2(avail_rect.width(), theme.sizes.header_footer), |ui| {
+                ui.with_layout(
+                    Layout::centered_and_justified(egui::Direction::TopDown),
+                    |ui| {
+                        ui.label(
+                            RichText::new("Settings")
+                                .color(theme.colors.subtle_text_color)
+                                .font(FontId {
+                                    size: theme.fonts.size.normal,
+                                    family: theme.fonts.family.bold.clone(),
+                                }),
+                        );
+                    },
+                );
+                // ui.horizontal(|ui| {
+                //     ui.label(
+                //         RichText::new("Settings")
+                //             .color(theme.colors.subtle_text_color)
+                //             .font(FontId {
+                //                 size: theme.fonts.size.normal,
+                //                 family: theme.fonts.family.bold.clone(),
+                //             }),
+                //     );
+                // })
+            });
+
+            ui.label("yo");
+            if ui.button("close").clicked() {
+                // state.is_settings_opened = false;
+            }
+        });
+    });
+}
 fn restore_cursor_from_note_state(note: &Note, ctx: &Context, text_state_id: Id) {
     if let Some(mut text_edit_state) = egui::TextEdit::load_state(ctx, text_state_id) {
         // println!(
@@ -954,7 +671,12 @@ fn set_menu_bar_style(ui: &mut egui::Ui) {
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
-fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) {
+fn render_header_panel(
+    ctx: &egui::Context,
+    is_settings_opened: &mut bool,
+    icons: &AppIcons,
+    theme: &AppTheme,
+) {
     TopBottomPanel::top("top_panel")
         .show_separator_line(false)
         .show(ctx, |ui| {
@@ -1023,7 +745,9 @@ fn render_header_panel(ctx: &egui::Context, icons: &AppIcons, theme: &AppTheme) 
                             );
                         });
 
-                    if settings.clicked() {}
+                    if settings.clicked() {
+                        *is_settings_opened = true;
+                    }
                 });
             });
         });
@@ -1095,20 +819,4 @@ fn render_hints(
         }
         _ => (),
     };
-}
-
-fn number_to_key(key: u8) -> Option<Key> {
-    match key {
-        0 => Some(Key::Num0),
-        1 => Some(Key::Num1),
-        2 => Some(Key::Num2),
-        3 => Some(Key::Num3),
-        4 => Some(Key::Num4),
-        5 => Some(Key::Num5),
-        6 => Some(Key::Num6),
-        7 => Some(Key::Num7),
-        8 => Some(Key::Num8),
-        9 => Some(Key::Num9),
-        _ => None,
-    }
 }
