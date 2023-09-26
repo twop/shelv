@@ -12,7 +12,7 @@ use image::ImageFormat;
 
 use persistent_state::PersistentState;
 use theme::{configure_styles, ColorTheme};
-use tray_icon::{icon::Icon, menu::MenuEvent, TrayEvent, TrayIcon, TrayIconBuilder};
+use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 // use tray_item::TrayItem;
 
 use std::{
@@ -21,8 +21,8 @@ use std::{
 };
 
 use eframe::{
-    egui::{self, TextStyle, Visuals},
-    epaint::{vec2, Color32, FontFamily, FontId},
+    egui::{self, TextureOptions},
+    epaint::vec2,
     get_value, set_value, CreationContext,
 };
 
@@ -67,7 +67,7 @@ impl MyApp {
 
         let ctx = cc.egui_ctx.clone();
         let sender = msg_queue_tx.clone();
-        TrayEvent::set_event_handler(Some(move |ev| {
+        TrayIconEvent::set_event_handler(Some(move |ev| {
             sender.send(MsgToApp::ToggleVisibility).unwrap();
             ctx.request_repaint();
 
@@ -90,7 +90,7 @@ impl MyApp {
 
         Self {
             state: AppState::new(AppInitData {
-                icons: load_app_icons(&theme.colors),
+                icons: load_app_icons(&theme.colors, &cc.egui_ctx),
                 theme,
                 msg_queue: msg_queue_rx,
                 persistent_state,
@@ -109,7 +109,6 @@ impl eframe::App for MyApp {
 
     fn on_close_event(&mut self) -> bool {
         self.msg_queue.send(MsgToApp::ToggleVisibility).unwrap();
-
         return false;
     }
 
@@ -192,7 +191,7 @@ fn main() {
     .unwrap();
 }
 
-pub fn load_app_icons(theme: &ColorTheme) -> AppIcons {
+pub fn load_app_icons(theme: &ColorTheme, egui_ctx: &egui::Context) -> AppIcons {
     let (bright, secondary) = (theme.button_fg, theme.subtle_text_color); // theme.secondary_icon);
 
     let [more, gear, question_mark, close, twitter, at, home, discord] = [
@@ -228,12 +227,14 @@ pub fn load_app_icons(theme: &ColorTheme) -> AppIcons {
                 "fill=\"white\"",
                 format!("fill=\"rgba({}, {}, {}, {})\"", r, g, b, a).as_str(),
             );
-        egui_extras::RetainedImage::from_svg_bytes_with_size(
-            name,
+        // name,
+
+        let color_image = egui_extras::image::load_svg_bytes_with_size(
             svg.as_bytes(),
             egui_extras::image::FitTo::Size(64, 64),
         )
-        .unwrap()
+        .unwrap();
+        egui_ctx.load_texture(name, color_image, TextureOptions::default())
     });
 
     AppIcons {

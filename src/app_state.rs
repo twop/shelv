@@ -2,9 +2,8 @@ use std::sync::{mpsc::Receiver, Arc};
 
 use eframe::{
     egui::{self, text_edit::CCursorRange, Key, KeyboardShortcut, Modifiers, Ui},
-    epaint::Galley,
+    epaint::{Galley, TextureHandle},
 };
-use egui_extras::RetainedImage;
 use pulldown_cmark::HeadingLevel;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
@@ -33,6 +32,7 @@ pub struct AppState {
     pub msg_queue: Receiver<MsgToApp>,
     pub icons: AppIcons,
     pub hidden: bool,
+    pub prev_focused: bool,
     pub md_annotation_shortcuts: Vec<MdAnnotationShortcut>,
     app_shortcuts: AppShortcuts,
 
@@ -88,14 +88,14 @@ impl ComputedLayout {
 }
 
 pub struct AppIcons {
-    pub more: RetainedImage,
-    pub gear: RetainedImage,
-    pub question_mark: RetainedImage,
-    pub close: RetainedImage,
-    pub at: RetainedImage,
-    pub twitter: RetainedImage,
-    pub home: RetainedImage,
-    pub discord: RetainedImage,
+    pub more: TextureHandle,
+    pub gear: TextureHandle,
+    pub question_mark: TextureHandle,
+    pub close: TextureHandle,
+    pub at: TextureHandle,
+    pub twitter: TextureHandle,
+    pub home: TextureHandle,
+    pub discord: TextureHandle,
 }
 
 #[derive(Debug)]
@@ -189,6 +189,7 @@ impl AppState {
             msg_queue,
             selected_note,
             hidden: false,
+            prev_focused: false,
             md_annotation_shortcuts: [
                 ("Bold", "**", app_shortcuts.bold, SpanKind::Bold),
                 ("Italic", "*", app_shortcuts.emphasize, SpanKind::Emphasis),

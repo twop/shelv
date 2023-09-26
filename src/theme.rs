@@ -496,7 +496,6 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         panel_fill: main_bg,
         popup_shadow: Shadow::small_dark(),
         resize_corner_size: 12.,
-        text_cursor_width: 2.0,
         text_cursor_preview: false,
         clip_rect_margin: 3.,
         button_frame: true,
@@ -505,5 +504,8 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         striped: false,
         slider_trailing_fill: false,
         widgets,
+        text_cursor: Stroke::new(2.0, normal_text_color),
+        interact_cursor: Some(egui::CursorIcon::PointingHand),
+        image_loading_spinners: true,
     }
 }

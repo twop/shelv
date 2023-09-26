@@ -5,7 +5,7 @@ use eframe::{
         self,
         text::CCursor,
         text_edit::{CCursorRange, TextEditOutput, TextEditState},
-        Area, Context, Id, ImageButton, Layout, Modifiers, Painter, RichText, Sense,
+        Context, Id, ImageButton, Layout, Modifiers, OpenUrl, Painter, RichText, Sense,
         TopBottomPanel, Ui, Window,
     },
     emath::{Align, Align2},
@@ -85,6 +85,13 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
     // let text_edit_id = Id::new(("text_edit", state.selected_note));
     let text_edit_id = Id::new("text_edit");
 
+    // if (state.hacky_render_count == 1) {
+    //     state.hacky_render_count = 2;
+    //     frame.focus();
+    //     ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+    //     println!("focus again");
+    // }
+
     while let Ok(msg) = state.msg_queue.try_recv() {
         println!("got in render: {msg:?}");
         match msg {
@@ -98,12 +105,47 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                         ctx,
                         text_edit_id,
                     );
+                    // println!(
+                    //     "before: focus, has_focus = {:?}",
+                    //     frame.info().window_info.focused
+                    // );
+
+                    // state.hacky_render_count = 1;
+                    frame.focus();
+                    // // frame.request_user_attention(egui::UserAttentionType::Reset);
                     ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-                    frame.focus_window();
+                    println!(
+                        "after: focus, has_focus = {:?}",
+                        frame.info().window_info.focused
+                    );
                 }
             }
         }
     }
+
+    let cur_focus = frame.info().window_info.focused;
+    if state.prev_focused != cur_focus {
+        if cur_focus {
+            println!("gained focus");
+            ctx.memory_mut(|mem| mem.request_focus(text_edit_id))
+        } else {
+            println!("lost focus");
+            state.hidden = true;
+            frame.set_visible(!state.hidden);
+        }
+        state.prev_focused = cur_focus;
+    }
+
+    if !state.hidden && !cur_focus {
+        // println!("restore focus");
+        frame.request_user_attention(egui::UserAttentionType::Informational);
+        frame.focus()
+    }
+
+    // if (!ctx.memory(|m| m.has_focus(text_edit_id))) {
+    //     ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+    //     println!("didn't have focus");
+    // }
 
     let mut prev_selected_note = state.selected_note;
 
@@ -636,10 +678,10 @@ fn render_footer_panel(
                         match item {
                             Some((icon, tooltip, url)) => {
                                 let resp = ui
-                                    .add(ImageButton::new(
-                                        icon.texture_id(ctx),
+                                    .add(ImageButton::new((
+                                        icon.id(),
                                         Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
-                                    ))
+                                    )))
                                     .on_hover_ui(|ui| {
                                         ui.label(
                                             RichText::new(tooltip)
@@ -648,7 +690,7 @@ fn render_footer_panel(
                                     });
 
                                 if resp.clicked() {
-                                    ctx.output_mut(|o| o.open_url(url));
+                                    ctx.open_url(OpenUrl::new_tab(url));
                                 }
                             }
                             None => {
@@ -701,10 +743,10 @@ fn render_header_panel(
 
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     ui.set_width(icon_block_width);
-                    let close_btn = ui.add(ImageButton::new(
-                        icons.close.texture_id(ctx),
+                    let close_btn = ui.add(ImageButton::new((
+                        icons.close.id(),
                         Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
-                    ));
+                    )));
 
                     if close_btn.clicked() {}
                 });
@@ -734,10 +776,10 @@ fn render_header_panel(
                     ui.set_width(icon_block_width);
 
                     let settings = ui
-                        .add(ImageButton::new(
-                            icons.gear.texture_id(ctx),
+                        .add(ImageButton::new((
+                            icons.gear.id(),
                             Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
-                        ))
+                        )))
                         .on_hover_ui(|ui| {
                             ui.label(
                                 RichText::new("open app settings")
