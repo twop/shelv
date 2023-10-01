@@ -1,7 +1,7 @@
 #![feature(iter_intersperse)]
 #![feature(let_chains)]
 
-use app_state::{AppIcons, AppInitData, AppState, MsgToApp};
+use app_state::{AppInitData, AppState, MsgToApp};
 use app_ui::render_app;
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
@@ -11,7 +11,7 @@ use global_hotkey::{
 use image::ImageFormat;
 
 use persistent_state::PersistentState;
-use theme::{configure_styles, ColorTheme};
+use theme::{configure_styles, get_font_definitions, ColorTheme};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 // use tray_item::TrayItem;
 
@@ -47,6 +47,10 @@ impl MyApp {
     pub fn new(cc: &CreationContext) -> Self {
         let theme = Default::default();
         configure_styles(&cc.egui_ctx, &theme);
+
+        let mut fonts = get_font_definitions();
+
+        cc.egui_ctx.set_fonts(fonts);
 
         let (msg_queue_tx, msg_queue_rx) = sync_channel::<MsgToApp>(10);
         let hotkeys_manager = GlobalHotKeyManager::new().unwrap();
@@ -90,7 +94,6 @@ impl MyApp {
 
         Self {
             state: AppState::new(AppInitData {
-                icons: load_app_icons(&theme.colors, &cc.egui_ctx),
                 theme,
                 msg_queue: msg_queue_rx,
                 persistent_state,
@@ -189,62 +192,4 @@ fn main() {
         }),
     )
     .unwrap();
-}
-
-pub fn load_app_icons(theme: &ColorTheme, egui_ctx: &egui::Context) -> AppIcons {
-    let (bright, secondary) = (theme.button_fg, theme.subtle_text_color); // theme.secondary_icon);
-
-    let [more, gear, question_mark, close, twitter, at, home, discord] = [
-        ("more", bright, include_str!("../assets/icons/more.svg")),
-        ("gear", bright, include_str!("../assets/icons/gear.svg")),
-        (
-            "question-mark",
-            bright,
-            include_str!("../assets/icons/question-mark.svg"),
-        ),
-        ("close", bright, include_str!("../assets/icons/x.svg")),
-        (
-            "twitter",
-            secondary,
-            include_str!("../assets/icons/twitter.svg"),
-        ),
-        ("at", secondary, include_str!("../assets/icons/at.svg")),
-        ("home", secondary, include_str!("../assets/icons/home.svg")),
-        (
-            "discord",
-            secondary,
-            include_str!("../assets/icons/discord.svg"),
-        ),
-    ]
-    .map(|(name, color, svg)| {
-        let [r, g, b, a] = color.to_array();
-        let svg = svg
-            .replace(
-                "stroke=\"white\"",
-                format!("stroke=\"rgba({}, {}, {}, {})\"", r, g, b, a).as_str(),
-            )
-            .replace(
-                "fill=\"white\"",
-                format!("fill=\"rgba({}, {}, {}, {})\"", r, g, b, a).as_str(),
-            );
-        // name,
-
-        let color_image = egui_extras::image::load_svg_bytes_with_size(
-            svg.as_bytes(),
-            egui_extras::image::FitTo::Size(64, 64),
-        )
-        .unwrap();
-        egui_ctx.load_texture(name, color_image, TextureOptions::default())
-    });
-
-    AppIcons {
-        more,
-        gear,
-        question_mark,
-        close,
-        at,
-        twitter,
-        home,
-        discord,
-    }
 }

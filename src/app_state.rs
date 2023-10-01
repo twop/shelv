@@ -30,7 +30,6 @@ pub struct AppState {
     pub syntax_set: SyntaxSet,
     pub theme_set: ThemeSet,
     pub msg_queue: Receiver<MsgToApp>,
-    pub icons: AppIcons,
     pub hidden: bool,
     pub prev_focused: bool,
     pub md_annotation_shortcuts: Vec<MdAnnotationShortcut>,
@@ -87,17 +86,6 @@ impl ComputedLayout {
     }
 }
 
-pub struct AppIcons {
-    pub more: TextureHandle,
-    pub gear: TextureHandle,
-    pub question_mark: TextureHandle,
-    pub close: TextureHandle,
-    pub at: TextureHandle,
-    pub twitter: TextureHandle,
-    pub home: TextureHandle,
-    pub discord: TextureHandle,
-}
-
 #[derive(Debug)]
 pub enum MsgToApp {
     ToggleVisibility,
@@ -114,7 +102,6 @@ impl AppState {
         let AppInitData {
             theme,
             msg_queue,
-            icons,
             persistent_state,
         } = init_data;
 
@@ -185,7 +172,6 @@ impl AppState {
             computed_layout: None,
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
-            icons,
             msg_queue,
             selected_note,
             hidden: false,
@@ -341,7 +327,6 @@ impl AppState {
 pub struct AppInitData {
     pub theme: AppTheme,
     pub msg_queue: Receiver<MsgToApp>,
-    pub icons: AppIcons,
     pub persistent_state: Option<PersistentState>,
 }
 

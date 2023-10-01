@@ -4,12 +4,39 @@ use eframe::{
     egui::{
         self,
         style::{Selection, WidgetVisuals, Widgets},
-        FontDefinitions, Margin, TextStyle, Visuals,
+        FontDefinitions, Margin, RichText, TextStyle, Visuals,
     },
     epaint::{Color32, FontFamily, FontId, Rounding, Shadow, Stroke},
 };
 
 use crate::nord::Nord;
+
+pub enum AppIcon {
+    More,
+    Settings,
+    // pub question_mark: TextureHandle,
+    Close,
+    Twitter,
+    HomeSite,
+    Discord,
+}
+
+impl AppIcon {
+    pub fn render(&self, size: f32, color: Color32) -> RichText {
+        use egui_phosphor::regular as P;
+        RichText::new(match self {
+            AppIcon::More => P::DOTS_THREE_OUTLINE,
+            AppIcon::Settings => P::GEAR_FINE,
+            AppIcon::Close => P::X,
+            AppIcon::Twitter => P::TWITTER_LOGO,
+            AppIcon::HomeSite => P::HOUSE_SIMPLE,
+            AppIcon::Discord => P::DISCORD_LOGO,
+        })
+        .family(eframe::epaint::FontFamily::Proportional)
+        .color(color)
+        .size(size)
+    }
+}
 
 // #[derive(Debug, Clone, Copy)]
 pub struct Sizes {
@@ -31,7 +58,6 @@ pub struct AppTheme {
 }
 
 impl AppTheme {
-    #[no_mangle]
     pub fn nord() -> Self {
         Self {
             fonts: FontTheme::default(),
@@ -268,11 +294,7 @@ impl ColorTheme {
     }
 }
 
-#[no_mangle]
 pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
-    let fonts = get_font_definitions();
-    ctx.set_fonts(fonts);
-
     let mut style = (*ctx.style()).clone();
 
     style.text_styles = text_styles(&theme.fonts);
@@ -281,9 +303,18 @@ pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
     ctx.set_style(style);
 }
 
-fn get_font_definitions() -> FontDefinitions {
+pub fn get_font_definitions() -> FontDefinitions {
     // Start with the default fonts (we will be adding to them rather than replacing them).
     let mut fonts = FontDefinitions::default();
+
+    fonts.font_data.insert(
+        "phosphor-light".into(),
+        egui_phosphor::Variant::Light.font_data(),
+    );
+    fonts.families.insert(
+        egui::FontFamily::Name("phosphor-light".into()),
+        vec!["Ubuntu-Light".into(), "phosphor-light".into()],
+    );
 
     // Install my own font (maybe supporting non-latin characters).
     // .ttf and .otf files supported.

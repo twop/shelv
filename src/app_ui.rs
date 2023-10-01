@@ -13,11 +13,11 @@ use eframe::{
 };
 
 use crate::{
-    app_state::{AppIcons, AppState, ComputedLayout, MsgToApp, Note},
+    app_state::{AppState, ComputedLayout, MsgToApp, Note},
     md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
     text_structure::{InteractiveTextPart, SpanKind, TextStructure},
-    theme::AppTheme,
+    theme::{AppIcon, AppTheme},
 };
 
 #[derive(Debug)]
@@ -149,13 +149,7 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
 
     let mut prev_selected_note = state.selected_note;
 
-    render_footer_panel(
-        &mut state.selected_note,
-        &state.notes,
-        ctx,
-        &state.icons,
-        &state.theme,
-    );
+    render_footer_panel(&mut state.selected_note, &state.notes, ctx, &state.theme);
 
     if prev_selected_note != state.selected_note {
         // means that we reselected via UI
@@ -193,12 +187,7 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
         restore_cursor_from_note_state(&current_note, ctx, text_edit_id);
     }
 
-    render_header_panel(
-        ctx,
-        &mut state.is_settings_opened,
-        &state.icons,
-        &state.theme,
-    );
+    render_header_panel(ctx, &mut state.is_settings_opened, &state.theme);
 
     egui::CentralPanel::default().show(ctx, |ui| {
         let avail_space = ui.available_rect_before_wrap();
@@ -616,13 +605,7 @@ fn restore_cursor_from_note_state(note: &Note, ctx: &Context, text_state_id: Id)
     }
 }
 
-fn render_footer_panel(
-    selected: &mut u32,
-    notes: &[Note],
-    ctx: &Context,
-    icons: &AppIcons,
-    theme: &AppTheme,
-) {
+fn render_footer_panel(selected: &mut u32, notes: &[Note], ctx: &Context, theme: &AppTheme) {
     TopBottomPanel::bottom("footer")
         // .exact_height(32.)
         .show_separator_line(false)
@@ -659,12 +642,16 @@ fn render_footer_panel(
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     for item in [
                         (
-                            &icons.twitter,
+                            &AppIcon::Twitter,
                             "tweet us @shelvdotapp",
                             "https://twitter.com/shelvdotapp",
                         ),
-                        (&icons.discord, "join our discrod", "https://shelv.app"),
-                        (&icons.home, "visit https://shelv.app", "https://shelv.app"),
+                        (&AppIcon::Discord, "join our discrod", "https://shelv.app"),
+                        (
+                            &AppIcon::HomeSite,
+                            "visit https://shelv.app",
+                            "https://shelv.app",
+                        ),
                         // (
                         //     &icons.at,
                         //     "e-mail us at hi@shelv.app",
@@ -677,11 +664,11 @@ fn render_footer_panel(
                     {
                         match item {
                             Some((icon, tooltip, url)) => {
-                                let resp = ui
-                                    .add(ImageButton::new((
-                                        icon.id(),
-                                        Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
-                                    )))
+                                let resp =
+                                    ui.button(icon.render(
+                                        sizes.toolbar_icon,
+                                        theme.colors.subtle_text_color,
+                                    ))
                                     .on_hover_ui(|ui| {
                                         ui.label(
                                             RichText::new(tooltip)
@@ -713,12 +700,7 @@ fn set_menu_bar_style(ui: &mut egui::Ui) {
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
-fn render_header_panel(
-    ctx: &egui::Context,
-    is_settings_opened: &mut bool,
-    icons: &AppIcons,
-    theme: &AppTheme,
-) {
+fn render_header_panel(ctx: &egui::Context, is_settings_opened: &mut bool, theme: &AppTheme) {
     TopBottomPanel::top("top_panel")
         .show_separator_line(false)
         .show(ctx, |ui| {
@@ -743,12 +725,11 @@ fn render_header_panel(
 
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     ui.set_width(icon_block_width);
-                    let close_btn = ui.add(ImageButton::new((
-                        icons.close.id(),
-                        Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
-                    )));
 
-                    if close_btn.clicked() {}
+                    if ui
+                        .button(AppIcon::Close.render(sizes.toolbar_icon, theme.colors.button_fg))
+                        .clicked()
+                    {}
                 });
 
                 // println!("before title {:?}", ui.available_size());
@@ -775,11 +756,12 @@ fn render_header_panel(
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.set_width(icon_block_width);
 
+                    // Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
+
                     let settings = ui
-                        .add(ImageButton::new((
-                            icons.gear.id(),
-                            Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
-                        )))
+                        .button(
+                            AppIcon::Settings.render(sizes.toolbar_icon, theme.colors.button_fg),
+                        )
                         .on_hover_ui(|ui| {
                             ui.label(
                                 RichText::new("open app settings")
