@@ -3252,6 +3252,7 @@ dependencies = [
  "global-hotkey",
  "image",
  "linkify",
+ "objc2",
  "pulldown-cmark",
  "ron",
  "serde",

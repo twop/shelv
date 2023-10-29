@@ -97,7 +97,12 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
         match msg {
             MsgToApp::ToggleVisibility => {
                 state.hidden = !state.hidden;
-                frame.set_visible(!state.hidden);
+
+                if state.hidden {
+                    hide_app();
+                } else {
+                    frame.set_visible(!state.hidden);
+                }
 
                 if !state.hidden {
                     restore_cursor_from_note_state(
@@ -131,7 +136,8 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
         } else {
             println!("lost focus");
             state.hidden = true;
-            frame.set_visible(!state.hidden);
+            // frame.set_visible(!state.hidden);
+            hide_app();
         }
         state.prev_focused = cur_focus;
     }
@@ -530,6 +536,18 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
 
     if state.is_settings_opened {
         render_settings_dialog(ctx, &state.theme);
+    }
+}
+
+fn hide_app() {
+    // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
+    use objc2::rc::{Id, Shared};
+    use objc2::runtime::Object;
+    use objc2::{class, msg_send, msg_send_id};
+    unsafe {
+        let app: Id<Object, Shared> = msg_send_id![class!(NSApplication), sharedApplication];
+        let arg = app.as_ref();
+        let _: () = msg_send![&app, hide:arg];
     }
 }
 

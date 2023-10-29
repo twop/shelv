@@ -156,40 +156,5 @@ fn main() {
         ..Default::default()
     };
 
-    eframe::run_native(
-        "Shelv",
-        options,
-        Box::new(|cc| {
-            // When hot reload is enabled, repaint after every lib change
-            #[cfg(feature = "reload")]
-            {
-                let ctx = cc.egui_ctx.clone();
-                std::thread::spawn(move || loop {
-                    hot_lib::subscribe().wait_for_reload();
-                    ctx.request_repaint();
-                });
-            }
-
-            //cc.egui_ctx.
-
-            // let mut tray = TrayItem::new("Tray Example", "").unwrap();
-
-            // tray.add_label("Tray Label").unwrap();
-
-            // tray.add_menu_item("Hello", || {
-            //     println!("Hello!");
-            // })
-            // .unwrap();
-
-            // let mut inner = tray.inner_mut();
-            // // inner.set_icon("./assets/tray-icon.png").unwrap();
-            // inner.add_quit_item("Quit");
-            // inner.display();
-
-            // tray_icon.set_visible(true);
-
-            Box::new(MyApp::new(cc))
-        }),
-    )
-    .unwrap();
+    eframe::run_native("Shelv", options, Box::new(|cc| Box::new(MyApp::new(cc)))).unwrap();
 }
