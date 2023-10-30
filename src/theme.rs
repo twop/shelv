@@ -23,7 +23,7 @@ pub enum AppIcon {
 
 impl AppIcon {
     pub fn render(&self, size: f32, color: Color32) -> RichText {
-        use egui_phosphor::regular as P;
+        use egui_phosphor::light as P;
         RichText::new(match self {
             AppIcon::More => P::DOTS_THREE_OUTLINE,
             AppIcon::Settings => P::GEAR_FINE,
@@ -307,14 +307,15 @@ pub fn get_font_definitions() -> FontDefinitions {
     // Start with the default fonts (we will be adding to them rather than replacing them).
     let mut fonts = FontDefinitions::default();
 
-    fonts.font_data.insert(
-        "phosphor-light".into(),
-        egui_phosphor::Variant::Light.font_data(),
-    );
-    fonts.families.insert(
-        egui::FontFamily::Name("phosphor-light".into()),
-        vec!["Ubuntu-Light".into(), "phosphor-light".into()],
-    );
+    fonts
+        .font_data
+        .insert("phosphor".into(), egui_phosphor::Variant::Light.font_data());
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .push("phosphor".to_owned());
 
     // Install my own font (maybe supporting non-latin characters).
     // .ttf and .otf files supported.
