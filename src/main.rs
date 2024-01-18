@@ -11,21 +11,19 @@ use global_hotkey::{
 use image::ImageFormat;
 
 use persistent_state::PersistentState;
-use theme::{configure_styles, get_font_definitions, ColorTheme};
+use theme::{configure_styles, get_font_definitions};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 // use tray_item::TrayItem;
 
-use std::{
-    sync::mpsc::{channel, sync_channel, SyncSender},
-    thread,
-};
+use std::sync::mpsc::{sync_channel, SyncSender};
 
 use eframe::{
-    egui::{self, TextureOptions},
+    egui::{self},
     epaint::vec2,
     get_value, set_value, CreationContext,
 };
 
+pub mod app_actions;
 pub mod app_state;
 pub mod app_ui;
 pub mod egui_hotkey;

@@ -2,7 +2,7 @@ use std::sync::{mpsc::Receiver, Arc};
 
 use eframe::{
     egui::{self, text_edit::CCursorRange, Key, KeyboardShortcut, Modifiers, Ui},
-    epaint::{Galley, TextureHandle},
+    epaint::Galley,
 };
 use pulldown_cmark::HeadingLevel;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};

@@ -5,14 +5,16 @@ use eframe::{
         self,
         text::CCursor,
         text_edit::{CCursorRange, TextEditOutput, TextEditState},
-        Context, Id, ImageButton, Layout, Modifiers, OpenUrl, Painter, RichText, Sense,
+        Context, Id, KeyboardShortcut, Layout, Modifiers, OpenUrl, Painter, RichText, Sense,
         TopBottomPanel, Ui, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke, Vec2},
 };
+use smallvec::SmallVec;
 
 use crate::{
+    app_actions::{proccess_app_action, AppAction},
     app_state::{AppState, ComputedLayout, MsgToApp, Note},
     md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
@@ -70,17 +72,6 @@ impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
     }
 }
 
-fn load_image_from_path(path: &std::path::Path) -> Result<egui::ColorImage, image::ImageError> {
-    let image = image::io::Reader::open(path)?.decode()?;
-    let size = [image.width() as _, image.height() as _];
-    let image_buffer = image.to_rgba8();
-    let pixels = image_buffer.as_flat_samples();
-    Ok(egui::ColorImage::from_rgba_unmultiplied(
-        size,
-        pixels.as_slice(),
-    ))
-}
-
 pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Frame) {
     // let text_edit_id = Id::new(("text_edit", state.selected_note));
     let text_edit_id = Id::new("text_edit");
@@ -105,17 +96,6 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                 }
 
                 if !state.hidden {
-                    restore_cursor_from_note_state(
-                        &mut state.notes[state.selected_note as usize],
-                        ctx,
-                        text_edit_id,
-                    );
-                    // println!(
-                    //     "before: focus, has_focus = {:?}",
-                    //     frame.info().window_info.focused
-                    // );
-
-                    // state.hacky_render_count = 1;
                     frame.focus();
                     // // frame.request_user_attention(egui::UserAttentionType::Reset);
                     ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
@@ -148,52 +128,43 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
         frame.focus()
     }
 
-    // if (!ctx.memory(|m| m.has_focus(text_edit_id))) {
-    //     ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-    //     println!("didn't have focus");
-    // }
+    // TEST code for cosuming input
+    // ctx.input_mut(|input| {
+    //     if input.consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, egui::Key::Enter)) {
+    //         println!("Consumed Enter")
+    //     }
+    // });
 
-    let mut prev_selected_note = state.selected_note;
-
-    render_footer_panel(&mut state.selected_note, &state.notes, ctx, &state.theme);
-
-    if prev_selected_note != state.selected_note {
-        // means that we reselected via UI
-        state.save_to_storage = true;
-
-        // if that is the case then reset cursors from both of the notes
-        state.notes[state.selected_note as usize].cursor = None;
-        state.notes[prev_selected_note as usize].cursor = None;
-
-        // and then remove the cursor from the current note as well
-        if let Some(mut text_edit_state) = egui::TextEdit::load_state(ctx, text_edit_id) {
-            text_edit_state.set_ccursor_range(None);
-            text_edit_state.store(ctx, text_edit_id);
-        }
-
-        // finally sets prev_selected_note to the current one for shortcuts handling
-        prev_selected_note = state.selected_note;
-    }
+    let mut actions = render_footer_panel(
+        state.selected_note,
+        state
+            .notes
+            .iter()
+            .map(|n| format!("Shelf {}", ctx.format_shortcut(&n.shortcut)))
+            .collect(),
+        ctx,
+        &state.theme,
+    );
 
     ctx.input_mut(|input| {
         for (index, shortcut) in state.notes.iter().map(|n| n.shortcut).enumerate() {
             if input.consume_shortcut(&shortcut) {
-                state.selected_note = index as u32;
+                actions.push(AppAction::SwitchToNote {
+                    index: index as u32,
+                    via_shortcut: true,
+                })
             }
         }
     });
 
-    let current_note = &mut state.notes[state.selected_note as usize];
+    render_header_panel(ctx, &state.theme);
 
-    if prev_selected_note != state.selected_note {
-        // means that we reselected via shortcuts
-        state.save_to_storage = true;
-
-        // just restore the cursor from the state, because we didn't loose focus
-        restore_cursor_from_note_state(&current_note, ctx, text_edit_id);
+    for action in actions {
+        proccess_app_action(action, ctx, state, text_edit_id);
     }
 
-    render_header_panel(ctx, &mut state.is_settings_opened, &state.theme);
+    let current_note = &mut state.notes[state.selected_note as usize];
+    restore_cursor_from_note_state(&current_note, ctx, text_edit_id);
 
     egui::CentralPanel::default().show(ctx, |ui| {
         let avail_space = ui.available_rect_before_wrap();
@@ -447,7 +418,8 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                     .text_structure
                     .find_interactive_text_part(byte_cursor)
                 {
-                    if ui.input(|i| i.modifiers.command) {
+                    // if ui.input(|i| i.modifiers.command)
+                    {
                         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
                         if ui.input(|i| i.pointer.primary_clicked()) {
                             match interactive {
@@ -623,7 +595,14 @@ fn restore_cursor_from_note_state(note: &Note, ctx: &Context, text_state_id: Id)
     }
 }
 
-fn render_footer_panel(selected: &mut u32, notes: &[Note], ctx: &Context, theme: &AppTheme) {
+fn render_footer_panel(
+    selected: u32,
+    tooltips: Vec<String>,
+    ctx: &Context,
+    theme: &AppTheme,
+) -> SmallVec<[AppAction; 1]> {
+    let mut current_selection = selected;
+    let mut actions = SmallVec::new();
     TopBottomPanel::bottom("footer")
         // .exact_height(32.)
         .show_separator_line(false)
@@ -637,11 +616,12 @@ fn render_footer_panel(selected: &mut u32, notes: &[Note], ctx: &Context, theme:
 
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     ui.add(Picker {
-                        current: selected,
-                        items: notes
-                            .iter()
-                            .map(|n| PickerItem {
-                                tooltip: format!("Shelf {}", ctx.format_shortcut(&n.shortcut)),
+                        current: &mut current_selection,
+                        items: tooltips
+                            .into_iter()
+                            .map(|tooltip| PickerItem {
+                                tooltip,
+                                // tooltip: format!("Shelf {}", ctx.format_shortcut(&n.shortcut)),
                             })
                             .collect::<Vec<_>>()
                             .as_slice(),
@@ -695,7 +675,8 @@ fn render_footer_panel(selected: &mut u32, notes: &[Note], ctx: &Context, theme:
                                     });
 
                                 if resp.clicked() {
-                                    ctx.open_url(OpenUrl::new_tab(url));
+                                    actions.push(AppAction::OpenLink(url.to_owned()));
+                                    // ctx.open_url(OpenUrl::new_tab(url));
                                 }
                             }
                             None => {
@@ -706,6 +687,15 @@ fn render_footer_panel(selected: &mut u32, notes: &[Note], ctx: &Context, theme:
                 });
             });
         });
+
+    if current_selection != selected {
+        actions.push(AppAction::SwitchToNote {
+            index: current_selection,
+            via_shortcut: false,
+        });
+    }
+
+    actions
 }
 
 fn set_menu_bar_style(ui: &mut egui::Ui) {
@@ -718,7 +708,7 @@ fn set_menu_bar_style(ui: &mut egui::Ui) {
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
-fn render_header_panel(ctx: &egui::Context, is_settings_opened: &mut bool, theme: &AppTheme) {
+fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) {
     TopBottomPanel::top("top_panel")
         .show_separator_line(false)
         .show(ctx, |ui| {
@@ -788,7 +778,7 @@ fn render_header_panel(ctx: &egui::Context, is_settings_opened: &mut bool, theme
                         });
 
                     if settings.clicked() {
-                        *is_settings_opened = true;
+                        println!("clicked on settings");
                     }
                 });
             });
