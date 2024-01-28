@@ -33,12 +33,13 @@ pub struct AppState {
     pub hidden: bool,
     pub prev_focused: bool,
     pub md_annotation_shortcuts: Vec<MdAnnotationShortcut>,
-    app_shortcuts: AppShortcuts,
+    pub app_shortcuts: AppShortcuts,
 
     pub computed_layout: Option<ComputedLayout>,
+    pub font_scale: i32,
 }
 
-struct AppShortcuts {
+pub struct AppShortcuts {
     bold: KeyboardShortcut,
     emphasize: KeyboardShortcut,
     strikethrough: KeyboardShortcut,
@@ -46,6 +47,8 @@ struct AppShortcuts {
     h1: KeyboardShortcut,
     h2: KeyboardShortcut,
     h3: KeyboardShortcut,
+    pub increase_font: KeyboardShortcut,
+    pub decrease_font: KeyboardShortcut,
     // h4: KeyboardShortcut,
 }
 
@@ -54,17 +57,20 @@ pub struct ComputedLayout {
     pub wrap_width: f32,
     pub text_structure: TextStructure,
     pub computed_for: String, // maybe use hash not to double store the string content?
+    pub font_size: i32,
 }
 
 impl ComputedLayout {
-    pub fn should_recompute(&self, text: &str, max_width: f32) -> bool {
-        self.wrap_width != max_width || self.computed_for != text
+    pub fn should_recompute(&self, text: &str, max_width: f32, font_size: i32) -> bool {
+        // TODO might want to check for any changes to theme, not just font_size
+        self.wrap_width != max_width || self.computed_for != text || self.font_size != font_size
     }
 
     pub fn compute(
         text: &str,
         wrap_width: f32,
         ui: &Ui,
+        font_size: i32,
         theme: &AppTheme,
         syntax_set: &SyntaxSet,
         theme_set: &ThemeSet,
@@ -80,6 +86,7 @@ impl ComputedLayout {
         Self {
             galley,
             wrap_width,
+            font_size,
             text_structure,
             computed_for: text.to_string(),
         }
@@ -120,6 +127,8 @@ impl AppState {
             h2: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num2),
             h3: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num3),
             // h4: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num4),
+            increase_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::PlusEquals),
+            decrease_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::Minus),
         };
 
         let notes_count = 4;
@@ -176,6 +185,7 @@ impl AppState {
             selected_note,
             hidden: false,
             prev_focused: false,
+            font_scale: 0,
             md_annotation_shortcuts: [
                 ("Bold", "**", app_shortcuts.bold, SpanKind::Bold),
                 ("Italic", "*", app_shortcuts.emphasize, SpanKind::Emphasis),

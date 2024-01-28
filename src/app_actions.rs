@@ -7,6 +7,8 @@ pub enum AppAction {
     // HideApp,
     // ShowApp,
     OpenLink(String),
+    IncreaseFontSize,
+    DecreaseFontSize,
 }
 
 pub fn proccess_app_action(
@@ -45,5 +47,11 @@ pub fn proccess_app_action(
             }
         }
         AppAction::OpenLink(url) => ctx.open_url(OpenUrl::new_tab(url)),
+        AppAction::IncreaseFontSize => {
+            state.font_scale += 1;
+        },
+        AppAction::DecreaseFontSize => {
+            state.font_scale -= 1;
+        },
     }
 }

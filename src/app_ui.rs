@@ -137,6 +137,7 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
 
     let mut actions = render_footer_panel(
         state.selected_note,
+        state.font_scale,
         state
             .notes
             .iter()
@@ -155,7 +156,16 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                 })
             }
         }
+
+        if input.consume_shortcut(&state.app_shortcuts.increase_font) {
+            actions.push(AppAction::IncreaseFontSize);
+        }
+        if input.consume_shortcut(&state.app_shortcuts.decrease_font) {
+            actions.push(AppAction::DecreaseFontSize);
+        }
     });
+
+
 
     render_header_panel(ctx, &state.theme);
 
@@ -248,16 +258,19 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
+            let scaled_theme = state.theme.scaled(f32::powi(1.5, state.font_scale));
+
             let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
                 let computed_layout = match state.computed_layout.take() {
-                    Some(layout) if !layout.should_recompute(text, wrap_width) => layout,
+                    Some(layout) if !layout.should_recompute(text, wrap_width, state.font_scale) => layout,
 
                     // TODO reuse the prev computed layout
                     _ => ComputedLayout::compute(
                         text,
                         wrap_width,
                         ui,
-                        &state.theme,
+                        state.font_scale,
+                        &scaled_theme,
                         &state.syntax_set,
                         &state.theme_set,
                     ),
@@ -597,6 +610,7 @@ fn restore_cursor_from_note_state(note: &Note, ctx: &Context, text_state_id: Id)
 
 fn render_footer_panel(
     selected: u32,
+    font_size: i32,
     tooltips: Vec<String>,
     ctx: &Context,
     theme: &AppTheme,
@@ -635,6 +649,17 @@ fn render_footer_panel(
                         outline: Stroke::new(1.0, theme.colors.outline_fg),
                         tooltip_text: theme.colors.subtle_text_color,
                     });
+                });
+
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    ui.label(
+                        RichText::new(format!("Font Size: {}", font_size))
+                            .color(theme.colors.subtle_text_color)
+                            .font(FontId {
+                                size: theme.fonts.size.normal,
+                                family: theme.fonts.family.bold.clone(),
+                            }),
+                    );
                 });
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
