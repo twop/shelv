@@ -353,25 +353,37 @@ impl<'a> TextStructureBuilder<'a> {
         println!("text: {:?}", self.text);
         println!("-----text-end-----\n");
 
-        let mut parent_stack: SmallVec<[SpanIndex; 8]> = smallvec![SpanIndex(0)];
+        let mut container_stack: SmallVec<[SpanIndex; 8]> = Default::default();
 
-        for SpanDesc {
-            kind,
-            byte_pos: range,
-            parent,
-        } in self.spans.iter()
-        {
-            if parent_stack.last().unwrap() != parent {
-                if parent_stack.len() >= 2 && parent_stack[parent_stack.len() - 2] == *parent {
-                    parent_stack.pop();
+        for (index, span) in self.spans.iter().enumerate() {
+            let SpanDesc {
+                kind,
+                byte_pos: range,
+                parent,
+            } = span;
+
+            if container_stack.is_empty() {
+                container_stack.push(*parent);
+            }
+
+            if container_stack.last().unwrap() != parent {
+                if let Some((found_parent_index, _)) = container_stack
+                    .iter()
+                    .enumerate()
+                    .find(|(_, p)| *p == parent)
+                {
+                    let drop_count = container_stack.len() - found_parent_index - 1;
+                    for _ in 0..drop_count {
+                        container_stack.pop();
+                    }
                 } else {
-                    parent_stack.push(*parent);
+                    container_stack.push(*parent);
                 }
             }
 
             println!(
-                "{}{kind:?}: [{}-{}]-> {:?}",
-                "\t".repeat(parent_stack.len() - 1),
+                "{}{kind:?} ({}-{})-> {:?}",
+                "  ".repeat(container_stack.len() - 1),
                 range.start,
                 range.end,
                 &self.text[range.start..range.end]
@@ -1012,6 +1024,23 @@ mod tests {
     #[test]
     pub fn test_span_detection() {
         let md = "a\n\nb";
+
+        let structure = TextStructure::create_from(md);
+
+        let (a_range, _) = structure.find_span_at(SpanKind::Paragraph, 0..0).unwrap();
+        let (b_range, _) = structure.find_span_at(SpanKind::Paragraph, 3..3).unwrap();
+
+        println!("{:#?}", structure.spans);
+        assert_eq!(Some("a"), md.get(a_range));
+        assert_eq!(Some("b"), md.get(b_range));
+
+        let second_line = structure.find_span_at(SpanKind::Paragraph, 2..2);
+        assert_eq!(None, second_line);
+    }
+
+    #[test]
+    pub fn test_print() {
+        let md = "- a\n\t- b\n- c";
 
         let structure = TextStructure::create_from(md);
 
