@@ -449,8 +449,8 @@ impl TextStructure {
                 };
 
                 let lang = match lang.as_str() {
-                    "ts" => "typescript",
-                    "rs" => "rust",
+                    // "ts" => "typescript",
+                    // "rs" => "rust",
                     "output" => "js",
                     l => l,
                 };
@@ -757,7 +757,7 @@ fn fill_annotation_points(
     }) {
         points.push(AnnotationPoint {
             str_offset,
-            kind: PointKind::Start,
+            kind,
             annotation: Annotation::Link,
         });
     }
