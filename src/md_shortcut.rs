@@ -245,14 +245,14 @@ mod tests {
 
         let bold = Condition {
             cond: InstructionCondition::IsNoneOrEmpty(Source::Selection),
-            if_true: Box::new(Seq(vec![
+            if_false: Box::new(Seq(vec![
                 PlaceCursor(Edge::Start),
                 Insert("**"),
                 CopyFrom(Source::Selection),
                 Insert("**"),
                 PlaceCursor(Edge::End),
             ])),
-            if_false: Box::new(Seq(vec![
+            if_true: Box::new(Seq(vec![
                 Insert("**"),
                 PlaceCursor(Edge::Start),
                 PlaceCursor(Edge::End),

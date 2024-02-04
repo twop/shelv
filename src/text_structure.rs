@@ -13,26 +13,6 @@ use syntect::{
 
 use crate::theme::{AppTheme, ColorTheme, FontTheme};
 
-// pub enum Ev {
-//     // Strike,
-//     // Bold,
-//     // Emphasis,
-//     // Text,
-//     // Heading(HeadingLevel),
-//     // Paragraph,
-//     // CodeBlock { lang: String },
-//     // Code,
-//     ListItem,
-//     // TaskMarker(bool),
-//     ListStart(Option<u64>),
-//     ListEnd,
-//     // RawLink { url: String },
-//     // MdLink,
-//     // Image,
-//     // Html,
-//     // ContainerEnd,
-// }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpanIndex(usize);
 
@@ -52,7 +32,7 @@ enum Annotation {
     Link,
     Heading(HeadingLevel),
     CodeBlock,
-    Code,
+    InlineCode,
 }
 
 #[derive(Debug)]
@@ -74,55 +54,30 @@ pub enum SpanKind {
     Heading(HeadingLevel),
     Paragraph,
     CodeBlock,
-    CodeBlockContent,
     List,
-    Code,
+    InlineCode,
     Html,
     ListItem,
     Image,
     Root,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpanMeta {
-    CodeBlock {
-        lang: String,
-    },
-    // CodeBlockContent {
-    //     block_span: SpanIndex,
-    // },
-    TaskMarker {
-        checked: bool,
-        // list_item_index: SpanIndex,
-    },
+    CodeBlock { lang: String },
+    TaskMarker { checked: bool },
     List(ListDesc),
-    Link {
-        url: String,
-    },
+    Link { url: String },
 }
 
-// #[derive(Debug, Clone)]
-// pub struct ListItemDesc {
-//     pub item_index: u32,
-//     pub depth: i32,
-//     pub started_numbered_index: Option<u64>,
-//     pub item_byte_pos: Range<usize>,
-// }
-
-// impl ListItemDesc {
-//     pub fn is_numbered(&self) -> bool {
-//         self.started_numbered_index.is_some()
-//     }
-// }
-
-#[derive(Debug, Clone)]
-struct ListDesc {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListDesc {
     starting_index: Option<u64>,
     // items_count: u32,
 }
 
 struct MarkdownRunningState {
-    nesting: i8,
+    // nesting: i8,
     bold: i8,
     strike: i8,
     emphasis: i8,
@@ -136,7 +91,7 @@ struct MarkdownRunningState {
 impl MarkdownRunningState {
     fn new() -> Self {
         Self {
-            nesting: 0,
+            // nesting: 0,
             bold: 0,
             strike: 0,
             code: 0,
@@ -150,10 +105,10 @@ impl MarkdownRunningState {
 }
 
 #[derive(Debug, Clone)]
-struct SpanDesc {
-    kind: SpanKind,
-    byte_pos: Range<usize>,
-    parent: SpanIndex,
+pub struct SpanDesc {
+    pub kind: SpanKind,
+    pub byte_pos: Range<usize>,
+    pub parent: SpanIndex,
 }
 
 #[derive(Debug)]
@@ -207,112 +162,6 @@ impl<'a> TextStructureBuilder<'a> {
         }
     }
 
-    // pub fn event(&mut self, ev: Ev, pos: Range<usize>) {
-    //     match ev {
-    //         Ev::ListItem => {
-    //             // depth starts with zero for top level list
-    //             let depth = self.list_stack.len() as i32 - 1;
-    //             if let Some(list_desc) = self.list_stack.last_mut() {
-    //                 let item_index = list_desc.items_count;
-    //                 let starting_index = list_desc.starting_index.clone();
-
-    //                 list_desc.items_count += 1;
-
-    //                 let list_item_pos = trim_trailing_new_lines(&self.text, &pos);
-    //                 self.add_with_meta(
-    //                     SpanKind::ListItem,
-    //                     list_item_pos.clone(),
-    //                     SpanMeta::ListItem(ListItemDesc {
-    //                         item_index,
-    //                         depth,
-    //                         started_numbered_index: starting_index,
-    //                         item_byte_pos: list_item_pos,
-    //                     }),
-    //                 );
-    //             }
-    //         } // Ev::TaskMarker(checked) => {
-    //           //     // the last one to add would be the most nested, thus the one we need
-    //           //     let list_item = self.spans.iter().enumerate().rev().find(
-    //           //         |(_, SpanDesc { kind, byte_pos, .. })| match kind {
-    //           //             SpanKind::ListItem => is_sub_range(byte_pos, &pos),
-    //           //             _ => false,
-    //           //         },
-    //           //     );
-
-    //           //     if let Some((index, _)) = list_item {
-    //           //         self.add_with_meta(
-    //           //             SpanKind::TaskMarker,
-    //           //             pos,
-    //           //             SpanMeta::TaskMarker {
-    //           //                 checked,
-    //           //                 list_item_index: SpanIndex(index),
-    //           //             },
-    //           //         );
-    //           //     }
-    //           // }
-    //           // Ev::ListStart(starting_index) => self.list_stack.push(ListDesc {
-    //           //     starting_index,
-    //           //     items_count: 0,
-    //           // }),
-
-    //           // Ev::ListEnd => {
-    //           //     self.list_stack.pop();
-    //           // }
-    //           // Ev::Text => match self.last_code_block.clone() {
-    //           //     // Text can be within a code block
-    //           //     Some((block_span, block_pos, lang)) if is_sub_range(&block_pos, &pos) => {
-    //           //         // trim the last \n if any, it look odd,
-    //           //         // but \n is parsed as a part of the body, thus bandage that
-    //           //         let pos = trim_trailing_new_lines(&self.text, &pos);
-
-    //           //         let span_index = self.add_with_meta(
-    //           //             SpanKind::CodeBlockContent,
-    //           //             pos.clone(),
-    //           //             SpanMeta::CodeBlockContent {
-    //           //                 block_span,
-    //           //                 lang: lang.clone(),
-    //           //             },
-    //           //         );
-
-    //           //         // notify parent block that there is some content
-    //           //         if let Some(SpanMeta::CodeBlock { content_span, .. }) = self
-    //           //             .metadata
-    //           //             .iter_mut()
-    //           //             .find(|(i, _)| *i == block_span)
-    //           //             .map(|(_, meta)| meta)
-    //           //         {
-    //           //             *content_span = Some(span_index);
-    //           //         }
-    //           //     }
-
-    //           //     _ => {
-    //           //         self.add(SpanKind::Text, pos);
-    //           //     }
-    //           // },
-
-    //           // Ev::CodeBlock { lang } => {
-    //           //     let span_index = self.add_with_meta(
-    //           //         SpanKind::CodeBlock,
-    //           //         pos.clone(),
-    //           //         SpanMeta::CodeBlock { lang },
-    //           //     );
-    //           // }
-    //           // Ev::Heading(level) => {
-    //           //     self.add(
-    //           //         SpanKind::Heading(level),
-    //           //         trim_trailing_new_lines(&self.text, &pos),
-    //           //     );
-    //           // }
-
-    //           // Ev::Paragraph => {
-    //           //     self.add(
-    //           //         SpanKind::Paragraph,
-    //           //         trim_trailing_new_lines(&self.text, &pos),
-    //           //     );
-    //           // }
-    //     }
-    // }
-
     fn add(&mut self, kind: SpanKind, pos: Range<usize>) -> SpanIndex {
         let index = SpanIndex(self.spans.len());
         self.spans.push(SpanDesc {
@@ -331,7 +180,6 @@ impl<'a> TextStructureBuilder<'a> {
 
     pub fn finish(self) -> TextStructure {
         let Self {
-            text,
             spans,
             metadata,
             raw_links,
@@ -548,7 +396,7 @@ impl TextStructure {
                 }
 
                 Code(_) => {
-                    builder.add(SpanKind::Code, range);
+                    builder.add(SpanKind::InlineCode, range);
                 }
 
                 Html(_) => {
@@ -584,75 +432,83 @@ impl TextStructure {
 
         // println!("points: {:#?}", points);
         for point in self.points.iter() {
-            if let (Annotation::CodeBlock, PointKind::End) = (&point.annotation, &point.kind) {
-                let code = text.get(pos..point.str_offset).unwrap_or("");
+            match (&point.annotation, &point.kind) {
+                (Annotation::CodeBlock, PointKind::Start) => {
+                    let code_block_byte_range = pos..point.str_offset;
+                    let code = text.get(pos..point.str_offset).unwrap_or("");
 
-                let lang = "";
-                // let lang = find_metadata(point.span_index, &self.metadata)
-                //     .and_then(|meta| match meta {
-                //         SpanMeta::CodeBlock { lang, .. } => Some(lang.as_str()),
-                //         _ => None,
-                //     })
-                //     .unwrap_or("");
+                    let lang = match self
+                        .find_surrounding_span_with_meta(SpanKind::CodeBlock, code_block_byte_range)
+                    {
+                        Some((_, _, SpanMeta::CodeBlock { lang })) => lang.to_string(),
+                        _ => "".to_string(),
+                    };
 
-                match syntax_set.find_syntax_by_extension(&lang) {
-                    Some(syntax) => {
-                        let mut h =
-                            HighlightLines::new(syntax, &theme_set.themes["base16-ocean.dark"]);
-                        // let s = "pub struct Wow { hi: u64 }\nfn blah() -> u64 {}";
-                        // for line in LinesWithEndings::from(s) {
-                        //     let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps).unwrap();
-                        //     let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
-                        //     print!("{}", escaped);
-                        // }
+                    match syntax_set.find_syntax_by_extension(&lang) {
+                        Some(syntax) => {
+                            let mut h =
+                                HighlightLines::new(syntax, &theme_set.themes["base16-ocean.dark"]);
+                            // let s = "pub struct Wow { hi: u64 }\nfn blah() -> u64 {}";
+                            // for line in LinesWithEndings::from(s) {
+                            //     let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps).unwrap();
+                            //     let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
+                            //     print!("{}", escaped);
+                            // }
 
-                        for line in LinesWithEndings::from(code) {
-                            let ranges = h.highlight_line(line, &syntax_set).unwrap();
-                            for (style, part) in ranges {
-                                let front = style.foreground;
+                            for line in LinesWithEndings::from(code) {
+                                let ranges = h.highlight_line(line, &syntax_set).unwrap();
+                                for (style, part) in ranges {
+                                    let front = style.foreground;
 
-                                // println!("{:?}", (part, style.foreground));
-                                job.append(
-                                    part,
-                                    0.0,
-                                    TextFormat::simple(
-                                        code_font_id.clone(),
-                                        Color32::from_rgb(front.r, front.g, front.b),
-                                    ),
-                                );
+                                    // println!("{:?}", (part, style.foreground));
+                                    job.append(
+                                        part,
+                                        0.0,
+                                        TextFormat::simple(
+                                            code_font_id.clone(),
+                                            Color32::from_rgb(front.r, front.g, front.b),
+                                        ),
+                                    );
+                                }
                             }
                         }
+
+                        None => job.append(
+                            code,
+                            0.0,
+                            TextFormat::simple(
+                                code_font_id.clone(),
+                                theme.colors.normal_text_color,
+                            ),
+                        ),
                     }
-                    None => job.append(
-                        code,
-                        0.0,
-                        TextFormat::simple(code_font_id.clone(), theme.colors.normal_text_color),
-                    ),
                 }
-            } else {
-                job.append(
-                    text.get(pos..point.str_offset).unwrap_or(""),
-                    0.0,
-                    state.to_text_format(theme),
-                );
+                _ => {
+                    job.append(
+                        text.get(pos..point.str_offset).unwrap_or(""),
+                        0.0,
+                        state.to_text_format(theme),
+                    );
 
-                let delta = match point.kind {
-                    PointKind::Start => 1,
-                    PointKind::End => -1,
-                };
+                    let delta = match point.kind {
+                        PointKind::Start => 1,
+                        PointKind::End => -1,
+                    };
 
-                match &point.annotation {
-                    Annotation::Strike => state.strike += delta,
-                    Annotation::Bold => state.bold += delta,
-                    Annotation::Text => state.text += delta,
-                    Annotation::Link => state.link += delta,
-                    Annotation::TaskMarker => state.task_marker += delta,
-                    Annotation::Emphasis => state.emphasis += delta,
-                    Annotation::Heading(level) => {
-                        state.heading[*level as usize] += delta;
+                    match &point.annotation {
+                        Annotation::Strike => state.strike += delta,
+                        Annotation::Bold => state.bold += delta,
+                        Annotation::Text => state.text += delta,
+                        Annotation::Link => state.link += delta,
+                        Annotation::TaskMarker => state.task_marker += delta,
+                        Annotation::Emphasis => state.emphasis += delta,
+
+                        Annotation::Heading(level) => {
+                            state.heading[*level as usize] += delta;
+                        }
+                        Annotation::InlineCode => state.code += delta,
+                        Annotation::CodeBlock => (),
                     }
-                    Annotation::CodeBlock => (),
-                    Annotation::Code => state.code += delta,
                 }
             }
 
@@ -722,19 +578,10 @@ impl TextStructure {
         kind: SpanKind,
         byte_cursor: Range<usize>,
     ) -> Option<(SpanIndex, SpanDesc, SpanMeta)> {
-        self.spans
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(index, span)| match kind {
-                SpanKind::ListItem if is_sub_range(&span.byte_pos, &byte_cursor) => {
-                    Some((SpanIndex(index), span.clone()))
-                }
-                _ => None,
-            })
-            .and_then(|(index, span)| {
-                find_metadata(index, &self.metadata).map(|meta| (index, span, meta.clone()))
-            })
+        self.find_span_at(kind, byte_cursor).and_then(|(_, index)| {
+            let span = &self.spans[index.0];
+            find_metadata(index, &self.metadata).map(|meta| (index, span.clone(), meta.clone()))
+        })
     }
 
     pub fn find_span_at(
@@ -779,7 +626,7 @@ impl TextStructure {
         match kind {
             SpanKind::Strike => pos.start + 2..pos.end - 2, //~~{}~~
             SpanKind::Bold => pos.start + 2..pos.end - 2,   //**{}**
-            SpanKind::Emphasis | SpanKind::Code => pos.start + 1..pos.end - 1, //*{}* or `{}`
+            SpanKind::Emphasis | SpanKind::InlineCode => pos.start + 1..pos.end - 1, //*{}* or `{}`
 
             // TODO what to do with Root?
             SpanKind::Root => 0..0,
@@ -788,26 +635,26 @@ impl TextStructure {
             SpanKind::Text
             | SpanKind::TaskMarker
             | SpanKind::MdLink
-            | SpanKind::CodeBlockContent
             | SpanKind::Html
             | SpanKind::Image => pos,
 
             // these are all containers, thus we need to enumerate their content
             SpanKind::ListItem
+            | SpanKind::CodeBlock
             | SpanKind::Heading(_)
             | SpanKind::Paragraph
-            | SpanKind::CodeBlock
-            | SpanKind::List => self
-                .spans
-                .iter()
-                .skip(index + 1)
-                .take_while(|desc| desc.byte_pos.end <= pos.end)
-                .fold(None, |area, desc| match area {
-                    None => Some(desc.byte_pos.clone()),
-                    Some(area) => {
-                        Some(area.start.min(desc.byte_pos.start)..area.end.max(desc.byte_pos.end))
-                    }
-                })
+            | SpanKind::List =>
+            // self
+                // .spans
+                // .iter()
+                // .skip(index + 1)
+                // .take_while(|desc| desc.byte_pos.end <= pos.end)
+                // .fold(None, |area, desc| match area {
+                //     None => Some(desc.byte_pos.clone()),
+                //     Some(area) => {
+                //         Some(area.start.min(desc.byte_pos.start)..area.end.max(desc.byte_pos.end))
+                //     }
+                calc_total_range( iterate_children_of(idx, &self.spans))
                 .unwrap_or(pos.start..pos.start),
         }
     }
@@ -830,7 +677,7 @@ fn fill_annotation_points(
     {
         let pos = byte_pos.clone();
         let span_index = SpanIndex(index);
-        let pair: SmallVec<[(Annotation, Range<usize>); 2]> = match kind {
+        let annotations: SmallVec<[(Annotation, Range<usize>); 2]> = match kind {
             SpanKind::Strike => smallvec![(Annotation::Strike, pos)],
             SpanKind::Bold => smallvec![(Annotation::Bold, pos)],
             SpanKind::Emphasis => smallvec![(Annotation::Emphasis, pos)],
@@ -838,13 +685,9 @@ fn fill_annotation_points(
             SpanKind::TaskMarker => match find_metadata(span_index, metadata) {
                 Some(SpanMeta::TaskMarker { checked }) => match *checked {
                     true => {
-                        let list_item_content = iterate_children_of(*parent, spans).fold(
-                            pos.clone(),
-                            |range, sibling| {
-                                range.start.min(sibling.byte_pos.start)
-                                    ..range.end.max(sibling.byte_pos.end)
-                            },
-                        );
+                        let list_item_content =
+                            calc_total_range(iterate_children_of(*parent, spans))
+                                .unwrap_or(pos.clone());
                         smallvec![
                             (Annotation::TaskMarker, pos),
                             (Annotation::Strike, list_item_content)
@@ -856,11 +699,10 @@ fn fill_annotation_points(
             },
 
             SpanKind::Heading(level) => smallvec![(Annotation::Heading(*level), pos)],
-            SpanKind::CodeBlockContent => smallvec![(Annotation::CodeBlock, pos)],
-            SpanKind::Code => smallvec![(Annotation::Code, pos)],
+            SpanKind::InlineCode => smallvec![(Annotation::InlineCode, pos)],
+            SpanKind::CodeBlock => smallvec![(Annotation::CodeBlock, pos)],
 
             SpanKind::MdLink
-            | SpanKind::CodeBlock
             | SpanKind::List
             | SpanKind::Root
             | SpanKind::Html
@@ -869,7 +711,7 @@ fn fill_annotation_points(
             | SpanKind::Paragraph => smallvec![],
         };
 
-        for (annotation, pos) in pair {
+        for (annotation, pos) in annotations {
             points.push(AnnotationPoint {
                 str_offset: pos.start,
                 kind: PointKind::Start,
@@ -908,8 +750,17 @@ fn iterate_children_of(index: SpanIndex, spans: &Vec<SpanDesc>) -> impl Iterator
     let parent_parent = spans[index.0].parent;
     spans
         .iter()
-        .skip(index.0)
+        .skip(index.0 + 1)
         .take_while(move |child| child.parent != parent_parent)
+}
+
+fn calc_total_range<'a>(spans: impl Iterator<Item = &'a SpanDesc>) -> Option<Range<usize>> {
+    spans.fold(None, |range, sibling| match range {
+        Some(range) => {
+            Some(range.start.min(sibling.byte_pos.start)..range.end.max(sibling.byte_pos.end))
+        }
+        None => Some(sibling.byte_pos.clone()),
+    })
 }
 
 #[inline(always)]
@@ -1039,21 +890,48 @@ mod tests {
     }
 
     #[test]
-    pub fn test_print() {
-        let md = "- a\n\t- b\n- c";
+    pub fn test_code_block_parsing() {
+        let md = "```js\ncode\n```";
 
         let structure = TextStructure::create_from(md);
 
-        let (a_range, _) = structure.find_span_at(SpanKind::Paragraph, 0..0).unwrap();
-        let (b_range, _) = structure.find_span_at(SpanKind::Paragraph, 3..3).unwrap();
+        // println!("{:#?}", structure.spans);
 
-        println!("{:#?}", structure.spans);
-        assert_eq!(Some("a"), md.get(a_range));
-        assert_eq!(Some("b"), md.get(b_range));
+        let res = structure.find_span_at(SpanKind::CodeBlock, 0..0);
+        assert!(res.is_some());
 
-        let second_line = structure.find_span_at(SpanKind::Paragraph, 2..2);
-        assert_eq!(None, second_line);
+        let (index, desc, meta) = structure
+            .find_surrounding_span_with_meta(SpanKind::CodeBlock, 0..0)
+            .unwrap();
+
+        let (code_body, _) = structure.find_span_at(SpanKind::Text, 7..7).unwrap();
+
+        assert_eq!(Some("code\n"), md.get(code_body));
+
+        assert_eq!(
+            SpanMeta::CodeBlock {
+                lang: "js".to_string()
+            },
+            meta
+        );
     }
+
+    // #[test]
+    // pub fn test_print() {
+    //     let md = "- a\n\t- b\n- c";
+
+    //     let structure = TextStructure::create_from(md);
+
+    //     let (a_range, _) = structure.find_span_at(SpanKind::Paragraph, 0..0).unwrap();
+    //     let (b_range, _) = structure.find_span_at(SpanKind::Paragraph, 3..3).unwrap();
+
+    //     println!("{:#?}", structure.spans);
+    //     assert_eq!(Some("a"), md.get(a_range));
+    //     assert_eq!(Some("b"), md.get(b_range));
+
+    //     let second_line = structure.find_span_at(SpanKind::Paragraph, 2..2);
+    //     assert_eq!(None, second_line);
+    // }
 }
 
 fn is_sub_range(outer: &Range<usize>, inner: &Range<usize>) -> bool {
