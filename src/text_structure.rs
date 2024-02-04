@@ -32,6 +32,7 @@ enum Annotation {
     Link,
     Heading(HeadingLevel),
     CodeBlock,
+    // CodeBlockBody,
     InlineCode,
 }
 
@@ -85,6 +86,7 @@ struct MarkdownRunningState {
     link: i8,
     task_marker: i8,
     code: i8,
+    code_block: i8,
     heading: [i8; 6],
 }
 
@@ -95,6 +97,7 @@ impl MarkdownRunningState {
             bold: 0,
             strike: 0,
             code: 0,
+            code_block: 0,
             emphasis: 0,
             heading: Default::default(),
             text: 0,
@@ -432,84 +435,88 @@ impl TextStructure {
 
         // println!("points: {:#?}", points);
         for point in self.points.iter() {
-            match (&point.annotation, &point.kind) {
-                (Annotation::CodeBlock, PointKind::Start) => {
-                    let code_block_byte_range = pos..point.str_offset;
-                    let code = text.get(pos..point.str_offset).unwrap_or("");
+            if state.code_block > 0 && state.text > 0 {
+                // means that we are inside code block body
 
-                    let lang = match self
-                        .find_surrounding_span_with_meta(SpanKind::CodeBlock, code_block_byte_range)
-                    {
-                        Some((_, _, SpanMeta::CodeBlock { lang })) => lang.to_string(),
-                        _ => "".to_string(),
-                    };
+                let code_block_byte_range = pos..point.str_offset;
+                let code = text.get(pos..point.str_offset).unwrap_or("");
 
-                    match syntax_set.find_syntax_by_extension(&lang) {
-                        Some(syntax) => {
-                            let mut h =
-                                HighlightLines::new(syntax, &theme_set.themes["base16-ocean.dark"]);
-                            // let s = "pub struct Wow { hi: u64 }\nfn blah() -> u64 {}";
-                            // for line in LinesWithEndings::from(s) {
-                            //     let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps).unwrap();
-                            //     let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
-                            //     print!("{}", escaped);
-                            // }
+                let lang = match self
+                    .find_surrounding_span_with_meta(SpanKind::CodeBlock, code_block_byte_range)
+                {
+                    Some((_, _, SpanMeta::CodeBlock { lang })) => lang.to_string(),
+                    _ => "".to_string(),
+                };
 
-                            for line in LinesWithEndings::from(code) {
-                                let ranges = h.highlight_line(line, &syntax_set).unwrap();
-                                for (style, part) in ranges {
-                                    let front = style.foreground;
+                let lang = match lang.as_str() {
+                    "ts" => "typescript",
+                    "rs" => "rust",
+                    "output" => "js",
+                    l => l,
+                };
 
-                                    // println!("{:?}", (part, style.foreground));
-                                    job.append(
-                                        part,
-                                        0.0,
-                                        TextFormat::simple(
-                                            code_font_id.clone(),
-                                            Color32::from_rgb(front.r, front.g, front.b),
-                                        ),
-                                    );
-                                }
+                match syntax_set.find_syntax_by_extension(lang) {
+                    Some(syntax) => {
+                        let mut h =
+                            HighlightLines::new(syntax, &theme_set.themes["base16-ocean.dark"]);
+                        // let s = "pub struct Wow { hi: u64 }\nfn blah() -> u64 {}";
+                        // for line in LinesWithEndings::from(s) {
+                        //     let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps).unwrap();
+                        //     let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
+                        //     print!("{}", escaped);
+                        // }
+
+                        for line in LinesWithEndings::from(code) {
+                            let ranges = h.highlight_line(line, &syntax_set).unwrap();
+                            for (style, part) in ranges {
+                                let front = style.foreground;
+
+                                // println!("{:?}", (part, style.foreground));
+                                job.append(
+                                    part,
+                                    0.0,
+                                    TextFormat::simple(
+                                        code_font_id.clone(),
+                                        Color32::from_rgb(front.r, front.g, front.b),
+                                    ),
+                                );
                             }
                         }
-
-                        None => job.append(
-                            code,
-                            0.0,
-                            TextFormat::simple(
-                                code_font_id.clone(),
-                                theme.colors.normal_text_color,
-                            ),
-                        ),
                     }
-                }
-                _ => {
-                    job.append(
-                        text.get(pos..point.str_offset).unwrap_or(""),
+
+                    None => job.append(
+                        code,
                         0.0,
-                        state.to_text_format(theme),
-                    );
-
-                    let delta = match point.kind {
-                        PointKind::Start => 1,
-                        PointKind::End => -1,
-                    };
-
-                    match &point.annotation {
-                        Annotation::Strike => state.strike += delta,
-                        Annotation::Bold => state.bold += delta,
-                        Annotation::Text => state.text += delta,
-                        Annotation::Link => state.link += delta,
-                        Annotation::TaskMarker => state.task_marker += delta,
-                        Annotation::Emphasis => state.emphasis += delta,
-
-                        Annotation::Heading(level) => {
-                            state.heading[*level as usize] += delta;
-                        }
-                        Annotation::InlineCode => state.code += delta,
-                        Annotation::CodeBlock => (),
-                    }
+                        TextFormat::simple(code_font_id.clone(), theme.colors.normal_text_color),
+                    ),
                 }
+            } else {
+                job.append(
+                    text.get(pos..point.str_offset).unwrap_or(""),
+                    0.0,
+                    state.to_text_format(theme),
+                );
+            }
+
+            let delta = match point.kind {
+                PointKind::Start => 1,
+                PointKind::End => -1,
+            };
+
+            // TODO rework this a bit
+            match &point.annotation {
+                Annotation::Strike => state.strike += delta,
+                Annotation::Bold => state.bold += delta,
+                Annotation::Text => state.text += delta,
+                Annotation::Link => state.link += delta,
+                Annotation::TaskMarker => state.task_marker += delta,
+                Annotation::Emphasis => state.emphasis += delta,
+
+                Annotation::Heading(level) => {
+                    state.heading[*level as usize] += delta;
+                }
+                Annotation::InlineCode => state.code += delta,
+                Annotation::CodeBlock => state.code_block += delta,
             }
 
             pos = point.str_offset;
@@ -701,7 +708,21 @@ fn fill_annotation_points(
             SpanKind::Heading(level) => smallvec![(Annotation::Heading(*level), pos)],
             SpanKind::InlineCode => smallvec![(Annotation::InlineCode, pos)],
             SpanKind::CodeBlock => smallvec![(Annotation::CodeBlock, pos)],
-
+            // SpanKind::CodeBlock => match find_metadata(span_index, metadata) {
+            //     Some(SpanMeta::CodeBlock { lang }) => match *checked {
+            //         true => {
+            //             let list_item_content =
+            //                 calc_total_range(iterate_children_of(*parent, spans))
+            //                     .unwrap_or(pos.clone());
+            //             smallvec![
+            //                 (Annotation::TaskMarker, pos),
+            //                 (Annotation::Strike, list_item_content)
+            //             ]
+            //         }
+            //         false => smallvec![(Annotation::TaskMarker, pos)],
+            //     },
+            //     _ => smallvec![(Annotation::CodeBlock, pos)],
+            // },
             SpanKind::MdLink
             | SpanKind::List
             | SpanKind::Root
