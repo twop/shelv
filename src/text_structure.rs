@@ -609,6 +609,37 @@ impl TextStructure {
             })
     }
 
+    pub fn iterate_parents_of(&self, index: SpanIndex) -> impl Iterator<Item = &SpanDesc> {
+        struct ParentIterator<'a> {
+            spans: &'a [SpanDesc],
+            cur: SpanIndex,
+        }
+
+        impl<'a> Iterator for ParentIterator<'a> {
+            type Item = &'a SpanDesc;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                let parent_index = self.spans[self.cur.0].parent;
+                let parent = &self.spans[parent_index.0];
+                if parent.kind == SpanKind::Root {
+                    None
+                } else {
+                    self.cur = parent_index;
+                    Some(parent)
+                }
+            }
+        }
+
+        ParentIterator {
+            spans: &self.spans,
+            cur: index,
+        }
+    }
+
+    // pub fn iterate_direct_children_of(&self, index: SpanIndex) -> impl Iterator<Item = &SpanDesc> {
+    //     iterate_children_of(index, &self.spans)
+    // }
+
     pub fn find_any_span_at(&self, byte_cursor: Range<usize>) -> Option<(Range<usize>, SpanIndex)> {
         self.spans
             .iter()
@@ -921,7 +952,7 @@ mod tests {
         let res = structure.find_span_at(SpanKind::CodeBlock, 0..0);
         assert!(res.is_some());
 
-        let (index, desc, meta) = structure
+        let (_, _, meta) = structure
             .find_surrounding_span_with_meta(SpanKind::CodeBlock, 0..0)
             .unwrap();
 

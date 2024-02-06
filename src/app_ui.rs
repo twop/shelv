@@ -457,63 +457,63 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
             }
 
             // ---- AUTO INDENT LISTS ----
-            // if ui.input_mut(|input| input.key_pressed(egui::Key::Enter)) {
-            //     if let (Some(text_cursor_range), Some(computed_layout)) =
-            //         (cursor_range, &state.computed_layout)
-            //     {
-            //         use egui::TextBuffer;
+            //     if ui.input_mut(|input| input.key_pressed(egui::Key::Enter)) {
+            //         if let (Some(text_cursor_range), Some(computed_layout)) =
+            //             (cursor_range, &state.computed_layout)
+            //         {
+            //             use egui::TextBuffer;
 
-            //         let char_range = text_cursor_range.as_sorted_char_range();
-            //         let byte_start = current_note
-            //             .text
-            //             .byte_index_from_char_index(char_range.start);
-            //         let byte_end = current_note.text.byte_index_from_char_index(char_range.end);
-
-            //         let inside_item = computed_layout.text_structure.find_surrounding_list_item(
-            //             // note that "\n" was already inserted,
-            //             //thus we need to just look for "cursor_start -1" to detect a list item
-            //             if current_note.text[..byte_start].ends_with("\n") {
-            //                 (byte_start - 1)..(byte_start - 1)
-            //             } else {
-            //                 byte_start..byte_end
-            //             },
-            //         );
-
-            //         println!(
-            //             "\nnewline\nbefore_cursor='{}'\ncursor='{}'\nafter='{}'",
-            //             &current_note.text[0..byte_start],
-            //             &current_note.text[byte_start..byte_end],
-            //             &current_note.text[byte_end..]
-            //         );
-
-            //         if let Some(inside_list_item) = inside_item {
-            //             use egui::TextBuffer as _;
-
-            //             let text_to_insert = match inside_list_item.started_numbered_index {
-            //                 Some(starting_index) => format!(
-            //                     "{}{}. ",
-            //                     "\t".repeat(inside_list_item.depth as usize),
-            //                     starting_index + inside_list_item.item_index as u64 + 1
-            //                 ),
-            //                 None => {
-            //                     format!("{}- ", "\t".repeat(inside_list_item.depth as usize))
-            //                 }
-            //             };
-
-            //             current_note
+            //             let char_range = text_cursor_range.as_sorted_char_range();
+            //             let byte_start = current_note
             //                 .text
-            //                 .insert_text(text_to_insert.as_str(), char_range.start);
+            //                 .byte_index_from_char_index(char_range.start);
+            //             let byte_end = current_note.text.byte_index_from_char_index(char_range.end);
 
-            //             let [min, max] = text_cursor_range.as_ccursor_range().sorted();
+            //             let inside_item = computed_layout.text_structure.find_surrounding_list_item(
+            //                 // note that "\n" was already inserted,
+            //                 //thus we need to just look for "cursor_start -1" to detect a list item
+            //                 if current_note.text[..byte_start].ends_with("\n") {
+            //                     (byte_start - 1)..(byte_start - 1)
+            //                 } else {
+            //                     byte_start..byte_end
+            //                 },
+            //             );
 
-            //             // that byte size and char size of insertion are te same in this case
-            //             text_edit_state.set_ccursor_range(Some(CCursorRange::two(
-            //                 min + text_to_insert.len(),
-            //                 max + text_to_insert.len(),
-            //             )));
+            //             println!(
+            //                 "\nnewline\nbefore_cursor='{}'\ncursor='{}'\nafter='{}'",
+            //                 &current_note.text[0..byte_start],
+            //                 &current_note.text[byte_start..byte_end],
+            //                 &current_note.text[byte_end..]
+            //             );
+
+            //             if let Some(inside_list_item) = inside_item {
+            //                 use egui::TextBuffer as _;
+
+            //                 let text_to_insert = match inside_list_item.started_numbered_index {
+            //                     Some(starting_index) => format!(
+            //                         "{}{}. ",
+            //                         "\t".repeat(inside_list_item.depth as usize),
+            //                         starting_index + inside_list_item.item_index as u64 + 1
+            //                     ),
+            //                     None => {
+            //                         format!("{}- ", "\t".repeat(inside_list_item.depth as usize))
+            //                     }
+            //                 };
+
+            //                 current_note
+            //                     .text
+            //                     .insert_text(text_to_insert.as_str(), char_range.start);
+
+            //                 let [min, max] = text_cursor_range.as_ccursor_range().sorted();
+
+            //                 // that byte size and char size of insertion are te same in this case
+            //                 text_edit_state.set_ccursor_range(Some(CCursorRange::two(
+            //                     min + text_to_insert.len(),
+            //                     max + text_to_insert.len(),
+            //                 )));
+            //             }
             //         }
             //     }
-            // }
 
             current_note.cursor = text_edit_state.ccursor_range();
             text_edit_state.store(ui.ctx(), text_edit_id);
