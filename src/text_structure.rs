@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{Deref, Range};
 
 use eframe::{
     egui::TextFormat,
@@ -10,6 +10,17 @@ use smallvec::{smallvec, SmallVec};
 use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ByteRange(pub Range<usize>);
+
+impl Deref for ByteRange {
+    type Target = Range<usize>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 use crate::theme::{AppTheme, ColorTheme, FontTheme};
 
@@ -73,7 +84,7 @@ pub enum SpanMeta {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListDesc {
-    starting_index: Option<u64>,
+    pub starting_index: Option<u64>,
     // items_count: u32,
 }
 
@@ -609,14 +620,17 @@ impl TextStructure {
             })
     }
 
-    pub fn iterate_parents_of(&self, index: SpanIndex) -> impl Iterator<Item = &SpanDesc> {
+    pub fn iterate_parents_of(
+        &self,
+        index: SpanIndex,
+    ) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
         struct ParentIterator<'a> {
             spans: &'a [SpanDesc],
             cur: SpanIndex,
         }
 
         impl<'a> Iterator for ParentIterator<'a> {
-            type Item = &'a SpanDesc;
+            type Item = (SpanIndex, &'a SpanDesc);
 
             fn next(&mut self) -> Option<Self::Item> {
                 let parent_index = self.spans[self.cur.0].parent;
@@ -625,7 +639,7 @@ impl TextStructure {
                     None
                 } else {
                     self.cur = parent_index;
-                    Some(parent)
+                    Some((parent_index, parent))
                 }
             }
         }
@@ -636,9 +650,16 @@ impl TextStructure {
         }
     }
 
-    // pub fn iterate_direct_children_of(&self, index: SpanIndex) -> impl Iterator<Item = &SpanDesc> {
-    //     iterate_children_of(index, &self.spans)
-    // }
+    pub fn iterate_immediate_children_of(
+        &self,
+        parent: SpanIndex,
+    ) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
+        iterate_immediate_children_of(parent, &self.spans)
+    }
+
+    pub fn find_meta(&self, index: SpanIndex) -> Option<&SpanMeta> {
+        find_metadata(index, &self.metadata)
+    }
 
     pub fn find_any_span_at(&self, byte_cursor: Range<usize>) -> Option<(Range<usize>, SpanIndex)> {
         self.spans
@@ -692,7 +713,7 @@ impl TextStructure {
                 //     Some(area) => {
                 //         Some(area.start.min(desc.byte_pos.start)..area.end.max(desc.byte_pos.end))
                 //     }
-                calc_total_range( iterate_children_of(idx, &self.spans))
+                calc_total_range( iterate_immediate_children_of(idx, &self.spans).map(|(_, desc)| desc))
                 .unwrap_or(pos.start..pos.start),
         }
     }
@@ -723,9 +744,10 @@ fn fill_annotation_points(
             SpanKind::TaskMarker => match find_metadata(span_index, metadata) {
                 Some(SpanMeta::TaskMarker { checked }) => match *checked {
                     true => {
-                        let list_item_content =
-                            calc_total_range(iterate_children_of(*parent, spans))
-                                .unwrap_or(pos.clone());
+                        let list_item_content = calc_total_range(
+                            iterate_immediate_children_of(*parent, spans).map(|(_, desc)| desc),
+                        )
+                        .unwrap_or(pos.clone());
                         smallvec![
                             (Annotation::TaskMarker, pos),
                             (Annotation::Strike, list_item_content)
@@ -798,12 +820,17 @@ fn fill_annotation_points(
 }
 
 #[inline(always)]
-fn iterate_children_of(index: SpanIndex, spans: &Vec<SpanDesc>) -> impl Iterator<Item = &SpanDesc> {
+fn iterate_immediate_children_of(
+    index: SpanIndex,
+    spans: &Vec<SpanDesc>,
+) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
     let parent_parent = spans[index.0].parent;
     spans
         .iter()
+        .enumerate()
         .skip(index.0 + 1)
-        .take_while(move |child| child.parent != parent_parent)
+        .map(|(i, desc)| (SpanIndex(i), desc))
+        .take_while(move |(_, child)| child.parent != parent_parent)
 }
 
 fn calc_total_range<'a>(spans: impl Iterator<Item = &'a SpanDesc>) -> Option<Range<usize>> {
