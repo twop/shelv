@@ -19,6 +19,26 @@ pub enum TextChange {
 impl TextChange {
     const CURSOR_EDGE: &'static str = "{|}";
     const CURSOR: &'static str = "{||}";
+
+    pub fn try_extract_cursor(mut text: String) -> (String, Option<ByteRange>) {
+        // let mut text = text.to_string();
+        if let Some(start) = text.find(TextChange::CURSOR) {
+            text.replace_range(start..(start + TextChange::CURSOR.len()), "");
+            (text, Some(ByteRange(start..start)))
+        } else {
+            let Some(start) = text.find(TextChange::CURSOR_EDGE) else {
+                return (text, None);
+            };
+            text.replace_range(start..(start + TextChange::CURSOR_EDGE.len()), "");
+            let Some(end) = text.find(TextChange::CURSOR_EDGE) else {
+                // undo the first removal
+                text.insert_str(start, Self::CURSOR_EDGE);
+                return (text, None);
+            };
+            text.replace_range(end..(end + TextChange::CURSOR_EDGE.len()), "");
+            (text, Some(ByteRange(start..end)))
+        }
+    }
 }
 
 pub enum AppAction {
@@ -120,7 +140,7 @@ pub fn on_enter_inside_list_item(
         Some(
             [TextChange::Replace(
                 ByteRange(cursor.clone()),
-                "\n".to_string() + &"\t".repeat(depth) + "- ",
+                "\n".to_string() + &"\t".repeat(depth) + "- " + TextChange::CURSOR,
             )]
             .into(),
         )
@@ -145,10 +165,16 @@ pub fn on_enter_inside_list_item(
     // }
 }
 
+#[derive(Debug)]
+pub enum TextChangeError {
+    OverlappingChanges,
+}
+
 fn apply_text_changes(
     text: &mut String,
+    prev_cursor: ByteRange,
     changes: impl IntoIterator<Item = TextChange>,
-) -> Option<ByteRange> {
+) -> Result<ByteRange, TextChangeError> {
     #[derive(Debug, Clone)]
     struct Log {
         removed: Range<usize>,
@@ -158,7 +184,11 @@ fn apply_text_changes(
 
     // None -> there is an overlap
     // Some -> successfully adjusted
-    fn append(range: &ByteRange, to_insert: usize, logs: &[Log]) -> Option<(Logs, Range<usize>)> {
+    fn append(
+        range: &ByteRange,
+        to_insert: usize,
+        logs: &[Log],
+    ) -> Result<(Logs, Range<usize>), TextChangeError> {
         let mut res: Logs = logs.iter().map(Log::clone).collect();
         res.sort_by(|a, b| a.removed.end.cmp(&b.removed.end));
 
@@ -173,7 +203,7 @@ fn apply_text_changes(
             {
                 // it means that we have overlapping ranges for removal
                 // that is not allowed
-                return None;
+                return Err(TextChangeError::OverlappingChanges);
             }
             // println!("\n\n$append\n log={res:?} to_add={actual_range:?}");
             // for log in res.iter() {
@@ -208,19 +238,27 @@ fn apply_text_changes(
             },
         );
 
-        Some((res, actual_range))
+        Ok((res, actual_range))
     }
 
     let mut logs: Logs = Logs::new();
 
     let mut actual_changes: SmallVec<[TextChange; 4]> = SmallVec::new();
 
+    let mut inserted_cursor: Option<ByteRange> = None;
+
     for change in changes.into_iter() {
         match change {
             TextChange::Replace(range, with) => {
+                let (with, extracted_cursor) = TextChange::try_extract_cursor(with);
                 let to_insert = with.len();
                 let (new_logs, target) = append(&range, to_insert, &logs)?;
                 logs = new_logs;
+                if let Some(extracted_cursor) = extracted_cursor {
+                    inserted_cursor = Some(ByteRange(
+                        target.start + extracted_cursor.start..target.start + extracted_cursor.end,
+                    ));
+                }
                 actual_changes.push(TextChange::Replace(ByteRange(target), with));
             }
         }
@@ -234,40 +272,75 @@ fn apply_text_changes(
         }
     }
 
-    Some(ByteRange(0..0))
+    Ok(inserted_cursor.unwrap_or(prev_cursor))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn parse(text: &str) -> (String, ByteRange) {
+    fn encode_cursor(text: &str, cursor: ByteRange) -> String {
         let mut text = text.to_string();
-        if let Some(start) = text.find(TextChange::CURSOR) {
-            text.replace_range(start..(start + TextChange::CURSOR.len()), "");
-            (text, ByteRange(start..start))
+        if cursor.is_empty() {
+            text.insert_str(cursor.start, TextChange::CURSOR);
         } else {
-            let start = text.find(TextChange::CURSOR_EDGE).unwrap();
-            text.replace_range(start..(start + TextChange::CURSOR_EDGE.len()), "");
-            let end = text.find(TextChange::CURSOR_EDGE).unwrap();
-            text.replace_range(end..(end + TextChange::CURSOR_EDGE.len()), "");
-            (text, ByteRange(start..end))
+            text.insert_str(cursor.start, TextChange::CURSOR_EDGE);
+            text.insert_str(
+                cursor.end + TextChange::CURSOR_EDGE.len(),
+                TextChange::CURSOR_EDGE,
+            );
         }
+        text
     }
 
     #[test]
-    pub fn test_inner_content() {
-        let (mut text, cursor) = parse("- a{||}b");
+    pub fn test_splitting_list_item_via_enter() {
+        let (mut text, cursor) = TextChange::try_extract_cursor("- a{||}b".to_string());
+        let cursor = cursor.unwrap();
 
         assert_eq!(text, "- ab");
         assert_eq!(cursor, ByteRange(3..3));
 
         let structure = TextStructure::create_from(&text);
 
-        let changes = on_enter_inside_list_item(&structure, &text, cursor).unwrap();
+        let changes =
+            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
 
-        apply_text_changes(&mut text, changes);
-        assert_eq!(text, "- a\n- b");
+        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+        assert_eq!(encode_cursor(&text, cursor), "- a\n- {||}b");
+    }
+
+    #[test]
+    pub fn test_splitting_list_item_via_enter_with_selection() {
+        let (mut text, cursor) = TextChange::try_extract_cursor("- {|}a{|}b".to_string());
+        let cursor = cursor.unwrap();
+
+        assert_eq!(text, "- ab");
+        assert_eq!(cursor, ByteRange(2..3));
+
+        let structure = TextStructure::create_from(&text);
+
+        let changes =
+            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
+
+        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+        assert_eq!(encode_cursor(&text, cursor), "- \n- {||}b");
+    }
+
+    // --------- Text changes cursor tests --------
+
+    #[test]
+    pub fn test_cursor_extraction_from_string() {
+        let (text, cursor) = TextChange::try_extract_cursor("- a{||}b".to_string());
+        assert_eq!(text, "- ab");
+        assert_eq!(cursor, Some(ByteRange(3..3)));
+
+        let (text, cursor) = TextChange::try_extract_cursor("- {|}a{|}b".to_string());
+        assert_eq!(text, "- ab");
+        assert_eq!(cursor, Some(ByteRange(2..3)));
+
+        let (text, cursor) = TextChange::try_extract_cursor("- a{|}b".to_string());
+        assert_eq!(text, "- a{|}b");
+        assert_eq!(cursor, None);
     }
 
     // --------- Apply changes tests --------
@@ -284,7 +357,7 @@ mod tests {
             TextChange::Replace(ByteRange(b_pos + 1..b_pos + 1), "!".into()),
         ];
 
-        apply_text_changes(&mut text, changes).unwrap();
+        apply_text_changes(&mut text, ByteRange(0..0), changes).unwrap();
         assert_eq!(text, "hello world!");
     }
 
@@ -301,11 +374,10 @@ mod tests {
             TextChange::Replace(ByteRange(a_pos..a_pos + 1), "hello".into()),
         ];
 
-        apply_text_changes(&mut text, changes).unwrap();
+        apply_text_changes(&mut text, ByteRange(0..0), changes).unwrap();
         assert_eq!(text, "hello world!");
     }
 
-    // --------- Apply changes tests --------
     #[test]
     pub fn test_overlapping_text_changes_are_not_allowed() {
         let mut text = "a b".to_string();
@@ -320,8 +392,8 @@ mod tests {
             TextChange::Replace(ByteRange(b_pos..b_pos + 1), "world".into()),
         ];
 
-        let cursor = apply_text_changes(&mut text, changes);
-        assert!(cursor.is_none());
+        let cursor = apply_text_changes(&mut text, ByteRange(0..0), changes);
+        assert!(matches!(cursor, Err(TextChangeError::OverlappingChanges)));
         assert_eq!(text, "a b");
     }
 }
