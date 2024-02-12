@@ -14,11 +14,11 @@ use eframe::{
 use smallvec::SmallVec;
 
 use crate::{
-    app_actions::{proccess_app_action, AppAction},
+    app_actions::{apply_text_changes, on_enter_inside_list_item, proccess_app_action, AppAction},
     app_state::{AppState, ComputedLayout, MsgToApp, Note},
     md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
-    text_structure::{InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
+    text_structure::{ByteRange, InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
     theme::{AppIcon, AppTheme},
 };
 
@@ -129,12 +129,50 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
     }
 
     // TEST code for cosuming input
-    // ctx.input_mut(|input| {
-    //     // if inside list
-    //     if input.consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, egui::Key::Enter)) {
-    //         println!("Consumed Enter")
-    //     }
-    // });
+    ctx.input_mut(|input| {
+        // if inside list
+        let keyboard_shortcut = KeyboardShortcut::new(Modifiers::NONE, egui::Key::Enter);
+        if is_shortcut_match(input, &keyboard_shortcut) {
+            let current_note = &mut state.notes[state.selected_note as usize];
+
+            if let (Some(text_cursor_range), Some(computed_layout)) =
+                (current_note.cursor, &state.computed_layout)
+            {
+                use egui::TextBuffer as _;
+
+                let [char_range_start, char_range_end] =
+                    text_cursor_range.sorted().map(|c| c.index);
+
+                let [byte_start, byte_end] = [char_range_start, char_range_end]
+                    .map(|char_idx| current_note.text.byte_index_from_char_index(char_idx));
+
+                if let Some(changes) = on_enter_inside_list_item(
+                    &computed_layout.text_structure,
+                    &current_note.text,
+                    ByteRange(byte_start..byte_end),
+                ) {
+                    if let Ok(ByteRange(byte_cursor)) = apply_text_changes(
+                        &mut current_note.text,
+                        ByteRange(byte_start..byte_end),
+                        changes,
+                    ) {
+                        current_note.cursor = Some(CCursorRange::two(
+                            CCursor::new(char_index_from_byte_index(
+                                &current_note.text,
+                                byte_cursor.start,
+                            )),
+                            CCursor::new(char_index_from_byte_index(
+                                &current_note.text,
+                                byte_cursor.end,
+                            )),
+                        ));
+
+                        input.consume_shortcut(&keyboard_shortcut);
+                    }
+                };
+            }
+        }
+    });
 
     let mut actions = render_footer_panel(
         state.selected_note,
@@ -878,4 +916,33 @@ fn render_hints(
         }
         _ => (),
     };
+}
+
+/// Count presses of a key. If non-zero, the presses are consumed, so that this will only return non-zero once.
+///
+/// Includes key-repeat events.
+pub fn is_shortcut_match(input: &egui::InputState, shortcut: &KeyboardShortcut) -> bool {
+    let KeyboardShortcut { modifiers, key } = shortcut.clone();
+
+    input.events.iter().any(|event| {
+        matches!(
+            event,
+            egui::Event::Key {
+                key: ev_key,
+                modifiers: ev_mods,
+                pressed: true,
+                ..
+            } if *ev_key == key && ev_mods.matches(modifiers)
+        )
+    })
+}
+
+fn char_index_from_byte_index(s: &str, byte_index: usize) -> usize {
+    for (ci, (bi, _)) in s.char_indices().enumerate() {
+        if bi == byte_index {
+            return ci;
+        }
+    }
+
+    s.chars().count()
 }

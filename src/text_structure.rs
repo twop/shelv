@@ -831,6 +831,7 @@ fn iterate_immediate_children_of(
         .skip(index.0 + 1)
         .map(|(i, desc)| (SpanIndex(i), desc))
         .take_while(move |(_, child)| child.parent != parent_parent)
+        .filter(move |(_, child)| child.parent == index)
 }
 
 fn calc_total_range<'a>(spans: impl Iterator<Item = &'a SpanDesc>) -> Option<Range<usize>> {

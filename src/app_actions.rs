@@ -132,18 +132,32 @@ pub fn on_enter_inside_list_item(
 
     let depth = parents.len() - 1;
 
+    let is_empty_list_item = structure.iterate_immediate_children_of(item_index).count() == 0;
+
     // first parent is the immediate parent
     if let Some(starting_index) = parents[0].starting_index {
         todo!()
     } else {
         // means that the list is unordered
-        Some(
-            [TextChange::Replace(
-                ByteRange(cursor.clone()),
-                "\n".to_string() + &"\t".repeat(depth) + "- " + TextChange::CURSOR,
-            )]
-            .into(),
-        )
+
+        if is_empty_list_item {
+            // then we just remove the entire list item and break
+            Some(
+                [TextChange::Replace(
+                    ByteRange(span_range),
+                    format!("{}\n", TextChange::CURSOR),
+                )]
+                .into(),
+            )
+        } else {
+            Some(
+                [TextChange::Replace(
+                    ByteRange(cursor.clone()),
+                    "\n".to_string() + &"\t".repeat(depth) + "- " + TextChange::CURSOR,
+                )]
+                .into(),
+            )
+        }
     }
 
     //--------
@@ -170,12 +184,13 @@ pub enum TextChangeError {
     OverlappingChanges,
 }
 
-fn apply_text_changes(
+pub fn apply_text_changes(
     text: &mut String,
     prev_cursor: ByteRange,
     changes: impl IntoIterator<Item = TextChange>,
 ) -> Result<ByteRange, TextChangeError> {
     #[derive(Debug, Clone)]
+    // #[allow(dead_code)]
     struct Log {
         removed: Range<usize>,
         inserted_len: usize,
@@ -324,6 +339,22 @@ mod tests {
 
         let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
         assert_eq!(encode_cursor(&text, cursor), "- \n- {||}b");
+    }
+
+    #[test]
+    pub fn test_removing_emty_list_item_on_enter() {
+        let (mut text, cursor) = TextChange::try_extract_cursor("- {||}\n- a".to_string());
+        let cursor = cursor.unwrap();
+
+        assert_eq!(text, "- \n- a");
+
+        let structure = TextStructure::create_from(&text);
+
+        let changes =
+            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
+
+        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+        assert_eq!(encode_cursor(&text, cursor), "{||}\n- a");
     }
 
     // --------- Text changes cursor tests --------
