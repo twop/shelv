@@ -121,6 +121,14 @@ pub fn on_enter_inside_list_item(
     //    nay: easy, can do all operations needed
     //
 
+    if span_range.start == cursor.start {
+        // it means that we are right in the begining of the list item
+        // like so `{||}- a` or `{||}1. a`, so process those normally
+        // Note that Bear.app has a special handling for that:
+        // it puts the item as the top list and decreses nesting if needed for the following items
+        return None;
+    }
+
     let parents: SmallVec<[_; 4]> = structure
         .iterate_parents_of(item_index)
         .filter(|(_, desc)| desc.kind == SpanKind::List)
@@ -142,41 +150,17 @@ pub fn on_enter_inside_list_item(
 
         if is_empty_list_item {
             // then we just remove the entire list item and break
-            Some(
-                [TextChange::Replace(
-                    ByteRange(span_range),
-                    format!("{}\n", TextChange::CURSOR),
-                )]
-                .into(),
-            )
+            Some(vec![TextChange::Replace(
+                ByteRange(span_range),
+                format!("{}\n", TextChange::CURSOR),
+            )])
         } else {
-            Some(
-                [TextChange::Replace(
-                    ByteRange(cursor.clone()),
-                    "\n".to_string() + &"\t".repeat(depth) + "- " + TextChange::CURSOR,
-                )]
-                .into(),
-            )
+            Some(vec![TextChange::Replace(
+                ByteRange(cursor.clone()),
+                "\n".to_string() + &"\t".repeat(depth) + "- " + TextChange::CURSOR,
+            )])
         }
     }
-
-    //--------
-    // structure.find_interactive_text_part(byte_cursor_pos)
-    // let text_to_insert = match inside_list_item.started_numbered_index {
-    //     Some(starting_index) => format!(
-    //         "{}{}. ",
-    //         "\t".repeat(inside_list_item.depth as usize),
-    //         starting_index + inside_list_item.item_index as u64 + 1
-    //     ),
-    //     None => {
-    //         format!("{}- ", "\t".repeat(inside_list_item.depth as usize))
-    //     }
-    // };
-
-    // current_note
-    //     .text
-    //     .insert_text(text_to_insert.as_str(), char_range_start);
-    // }
 }
 
 #[derive(Debug)]
@@ -355,6 +339,17 @@ mod tests {
 
         let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
         assert_eq!(encode_cursor(&text, cursor), "{||}\n- a");
+    }
+
+    #[test]
+    pub fn test_skips_handling_enter_if_cursor_on_markup() {
+        let (text, cursor) = TextChange::try_extract_cursor("{||}- a".to_string());
+        let changes = on_enter_inside_list_item(
+            &TextStructure::create_from(&text),
+            &text,
+            ByteRange(cursor.unwrap().clone()),
+        );
+        assert!(changes.is_none());
     }
 
     // --------- Text changes cursor tests --------
