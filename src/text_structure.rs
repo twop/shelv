@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{Deref, Range};
 
 use eframe::{
     egui::TextFormat,
@@ -11,26 +11,18 @@ use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
 
-use crate::theme::{AppTheme, ColorTheme, FontTheme};
+#[derive(Debug, PartialEq, Eq)]
+pub struct ByteRange(pub Range<usize>);
 
-pub enum Ev {
-    Strike,
-    Bold,
-    Emphasis,
-    Text,
-    Heading(HeadingLevel),
-    Paragraph,
-    CodeBlock { lang: String },
-    Code,
-    ListItem,
-    TaskMarker(bool),
-    ListStart(Option<u64>),
-    ListEnd,
-    RawLink { url: String },
-    MdLink,
-    Image,
-    Html,
+impl Deref for ByteRange {
+    type Target = Range<usize>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
+
+use crate::theme::{AppTheme, ColorTheme, FontTheme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpanIndex(usize);
@@ -51,13 +43,14 @@ enum Annotation {
     Link,
     Heading(HeadingLevel),
     CodeBlock,
-    Code,
+    // CodeBlockBody,
+    InlineCode,
 }
 
 #[derive(Debug)]
 struct AnnotationPoint {
     str_offset: usize,
-    span_index: SpanIndex,
+    // span_index: SpanIndex,
     kind: PointKind, // 1 or -1 (start and end respectively)
     annotation: Annotation,
 }
@@ -69,59 +62,34 @@ pub enum SpanKind {
     Emphasis,
     Text,
     TaskMarker,
-    RawLink,
     MdLink,
     Heading(HeadingLevel),
     Paragraph,
     CodeBlock,
-    CodeBlockContent,
     List,
-    Code,
+    InlineCode,
     Html,
     ListItem,
     Image,
+    Root,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpanMeta {
-    CodeBlock {
-        content_span: Option<SpanIndex>,
-    },
-    CodeBlockContent {
-        lang: String,
-        block_span: SpanIndex,
-    },
-    TaskMarker {
-        checked: bool,
-        list_item_index: SpanIndex,
-    },
-    ListItem(ListItemDesc),
-    Link {
-        url: String,
-    },
+    CodeBlock { lang: String },
+    TaskMarker { checked: bool },
+    List(ListDesc),
+    Link { url: String },
 }
 
-#[derive(Debug, Clone)]
-pub struct ListItemDesc {
-    pub item_index: u32,
-    pub depth: i32,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListDesc {
     pub starting_index: Option<u64>,
-    pub item_byte_pos: Range<usize>,
+    // items_count: u32,
 }
 
-impl ListItemDesc {
-    pub fn is_numbered(&self) -> bool {
-        self.starting_index.is_some()
-    }
-}
-
-struct ListDesc {
-    starting_index: Option<u64>,
-    items_count: u32,
-}
-
-struct MarkdownState {
-    nesting: i8,
+struct MarkdownRunningState {
+    // nesting: i8,
     bold: i8,
     strike: i8,
     emphasis: i8,
@@ -129,16 +97,18 @@ struct MarkdownState {
     link: i8,
     task_marker: i8,
     code: i8,
+    code_block: i8,
     heading: [i8; 6],
 }
 
-impl MarkdownState {
+impl MarkdownRunningState {
     fn new() -> Self {
         Self {
-            nesting: 0,
+            // nesting: 0,
             bold: 0,
             strike: 0,
             code: 0,
+            code_block: 0,
             emphasis: 0,
             heading: Default::default(),
             text: 0,
@@ -148,19 +118,32 @@ impl MarkdownState {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SpanDesc {
+    pub kind: SpanKind,
+    pub byte_pos: Range<usize>,
+    pub parent: SpanIndex,
+}
+
 #[derive(Debug)]
 pub struct TextStructure {
     points: Vec<AnnotationPoint>,
-    spans: Vec<(SpanKind, Range<usize>)>,
+    raw_links: Vec<RawLink>,
+    spans: Vec<SpanDesc>,
     metadata: Vec<(SpanIndex, SpanMeta)>,
+}
+
+#[derive(Debug)]
+struct RawLink {
+    url: String,
+    byte_pos: Range<usize>,
 }
 
 pub struct TextStructureBuilder<'a> {
     text: &'a str,
-    list_stack: SmallVec<[ListDesc; 4]>,
-    last_code_block: Option<(SpanIndex, Range<usize>, String)>,
-
-    spans: Vec<(SpanKind, Range<usize>)>,
+    container_stack: SmallVec<[SpanIndex; 8]>,
+    spans: Vec<SpanDesc>,
+    raw_links: Vec<RawLink>,
     metadata: Vec<(SpanIndex, SpanMeta)>,
 }
 
@@ -182,180 +165,48 @@ impl<'a> TextStructureBuilder<'a> {
     pub fn start(text: &'a str) -> Self {
         Self {
             text,
-            list_stack: Default::default(),
-            last_code_block: None,
-            spans: vec![],
+            spans: vec![SpanDesc {
+                kind: SpanKind::Root,
+                byte_pos: 0..0,
+                parent: SpanIndex(0),
+            }],
             metadata: vec![],
-        }
-    }
-
-    pub fn event(&mut self, ev: Ev, pos: Range<usize>) {
-        match ev {
-            Ev::ListItem => {
-                // depth starts with zero for top level list
-                let depth = self.list_stack.len() as i32 - 1;
-                if let Some(list_desc) = self.list_stack.last_mut() {
-                    let item_index = list_desc.items_count;
-                    let starting_index = list_desc.starting_index.clone();
-
-                    list_desc.items_count += 1;
-
-                    let list_item_pos = trim_trailing_new_lines(&self.text, &pos);
-                    self.add_with_meta(
-                        SpanKind::ListItem,
-                        list_item_pos.clone(),
-                        SpanMeta::ListItem(ListItemDesc {
-                            item_index,
-                            depth,
-                            starting_index,
-                            item_byte_pos: list_item_pos,
-                        }),
-                    );
-                }
-            }
-
-            Ev::TaskMarker(checked) => {
-                // the last one to add would be the most nested, thus the one we need
-                let list_item =
-                    self.spans
-                        .iter()
-                        .enumerate()
-                        .rev()
-                        .find(|(_, (kind, list_item_range))| match kind {
-                            SpanKind::ListItem => is_sub_range(list_item_range, &pos),
-                            _ => false,
-                        });
-
-                if let Some((index, _)) = list_item {
-                    self.add_with_meta(
-                        SpanKind::TaskMarker,
-                        pos,
-                        SpanMeta::TaskMarker {
-                            checked,
-                            list_item_index: SpanIndex(index),
-                        },
-                    );
-                }
-            }
-
-            Ev::ListStart(starting_index) => self.list_stack.push(ListDesc {
-                starting_index,
-                items_count: 0,
-            }),
-
-            Ev::ListEnd => {
-                self.list_stack.pop();
-            }
-
-            Ev::Text => match self.last_code_block.clone() {
-                // Text can be within a code block
-                Some((block_span, block_pos, lang)) if is_sub_range(&block_pos, &pos) => {
-                    // trim the last \n if any, it look odd,
-                    // but \n is parsed as a part of the body, thus bandage that
-                    let pos = trim_trailing_new_lines(&self.text, &pos);
-
-                    let span_index = self.add_with_meta(
-                        SpanKind::CodeBlockContent,
-                        pos.clone(),
-                        SpanMeta::CodeBlockContent {
-                            block_span,
-                            lang: lang.clone(),
-                        },
-                    );
-
-                    // notify parent block that there is some content
-                    if let Some(SpanMeta::CodeBlock { content_span, .. }) = self
-                        .metadata
-                        .iter_mut()
-                        .find(|(i, _)| *i == block_span)
-                        .map(|(_, meta)| meta)
-                    {
-                        *content_span = Some(span_index);
-                    }
-                }
-
-                _ => {
-                    self.add(SpanKind::Text, pos);
-                }
-            },
-
-            Ev::CodeBlock { lang } => {
-                let span_index = self.add_with_meta(
-                    SpanKind::CodeBlock,
-                    pos.clone(),
-                    SpanMeta::CodeBlock { content_span: None },
-                );
-
-                self.last_code_block = Some((span_index, pos, lang));
-            }
-            Ev::RawLink { url } => {
-                self.add_with_meta(SpanKind::RawLink, pos, SpanMeta::Link { url });
-            }
-
-            Ev::Heading(level) => {
-                self.add(
-                    SpanKind::Heading(level),
-                    trim_trailing_new_lines(&self.text, &pos),
-                );
-            }
-            Ev::Strike => {
-                self.add(SpanKind::Strike, pos);
-            }
-            Ev::Bold => {
-                self.add(SpanKind::Bold, pos);
-            }
-            Ev::Emphasis => {
-                self.add(SpanKind::Emphasis, pos);
-            }
-            Ev::Paragraph => {
-                self.add(
-                    SpanKind::Paragraph,
-                    trim_trailing_new_lines(&self.text, &pos),
-                );
-            }
-            Ev::Code => {
-                self.add(SpanKind::Code, pos);
-            }
-            Ev::MdLink => {
-                self.add(SpanKind::MdLink, pos);
-            }
-            Ev::Image => {
-                self.add(SpanKind::Image, pos);
-            }
-            Ev::Html => {
-                self.add(SpanKind::Html, pos);
-            }
+            container_stack: smallvec![SpanIndex(0)],
+            raw_links: vec![],
         }
     }
 
     fn add(&mut self, kind: SpanKind, pos: Range<usize>) -> SpanIndex {
         let index = SpanIndex(self.spans.len());
-        self.spans.push((kind, pos));
+        self.spans.push(SpanDesc {
+            kind,
+            byte_pos: pos,
+            parent: self.container_stack.last().unwrap().clone(),
+        });
         index
     }
 
     fn add_with_meta(&mut self, kind: SpanKind, pos: Range<usize>, meta: SpanMeta) -> SpanIndex {
-        let index = SpanIndex(self.spans.len());
+        let index = self.add(kind, pos);
         self.metadata.push((index, meta));
-        self.spans.push((kind, pos));
         index
     }
 
     pub fn finish(self) -> TextStructure {
         let Self {
-            text,
-            list_stack,
-            last_code_block,
             spans,
             metadata,
+            raw_links,
+            ..
         } = self;
 
-        let points = fill_annotation_points(vec![], &spans, &metadata);
+        let points = fill_annotation_points(vec![], &spans, &metadata, &raw_links);
 
         TextStructure {
             points,
             spans,
             metadata,
+            raw_links,
         }
     }
 
@@ -364,23 +215,43 @@ impl<'a> TextStructureBuilder<'a> {
         println!("text: {:?}", self.text);
         println!("-----text-end-----\n");
 
-        for (ev, range) in self.spans.iter() {
-            // if let pulldown_cmark::Event::End(_) = &ev {
-            //     depth -= 1;
-            // }
+        let mut container_stack: SmallVec<[SpanIndex; 8]> = Default::default();
+
+        for (index, span) in self.spans.iter().enumerate() {
+            let SpanDesc {
+                kind,
+                byte_pos: range,
+                parent,
+            } = span;
+
+            if container_stack.is_empty() {
+                container_stack.push(*parent);
+            }
+
+            if container_stack.last().unwrap() != parent {
+                if let Some((found_parent_index, _)) = container_stack
+                    .iter()
+                    .enumerate()
+                    .find(|(_, p)| *p == parent)
+                {
+                    let drop_count = container_stack.len() - found_parent_index - 1;
+                    for _ in 0..drop_count {
+                        container_stack.pop();
+                    }
+                } else {
+                    container_stack.push(*parent);
+                }
+            }
 
             println!(
-                "{:?}: [{}-{}]-> {:?}",
-                ev,
+                "{}{kind:?} ({}-{})-> {:?}",
+                "  ".repeat(container_stack.len() - 1),
                 range.start,
                 range.end,
                 &self.text[range.start..range.end]
             );
-
-            // if let pulldown_cmark::Event::Start(_) = &ev {
-            //     depth += 1;
-            // }
         }
+
         println!("---structure-end---\n");
 
         let md_parser_options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
@@ -428,12 +299,10 @@ impl TextStructure {
         let finder = LinkFinder::new();
 
         for link in finder.links(text) {
-            builder.event(
-                Ev::RawLink {
-                    url: link.as_str().to_string(),
-                },
-                link.start()..link.end(),
-            );
+            builder.raw_links.push(RawLink {
+                url: link.as_str().to_string(),
+                byte_pos: link.start()..link.end(),
+            });
         }
 
         let md_parser_options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
@@ -446,45 +315,109 @@ impl TextStructure {
             use pulldown_cmark::Event::*;
             use pulldown_cmark::Tag::*;
             match ev {
-                Start(tag) => match tag {
-                    Strong => builder.event(Ev::Bold, range),
-                    Emphasis => builder.event(Ev::Emphasis, range),
-                    Strikethrough => builder.event(Ev::Strike, range),
-                    CodeBlock(CodeBlockKind::Fenced(lang)) => builder.event(
-                        Ev::CodeBlock {
-                            lang: lang.as_ref().to_string(),
-                        },
-                        range,
-                    ),
+                Start(tag) => {
+                    let container = match tag {
+                        Strong => Some(builder.add(SpanKind::Bold, range)),
+                        Emphasis => Some(builder.add(SpanKind::Emphasis, range)),
+                        Strikethrough => Some(builder.add(SpanKind::Strike, range)),
 
-                    Item => builder.event(Ev::ListItem, range),
-                    Heading(level, _, _) => builder.event(Ev::Heading(level), range),
-                    List(starting_index) => builder.event(Ev::ListStart(starting_index), range),
-                    Paragraph => builder.event(Ev::Paragraph, range),
-                    Link(_, _, _) => builder.event(Ev::MdLink, range),
-                    Image(_, _, _) => builder.event(Ev::Image, range),
+                        CodeBlock(CodeBlockKind::Fenced(lang)) => Some(builder.add_with_meta(
+                            SpanKind::CodeBlock,
+                            range.clone(),
+                            SpanMeta::CodeBlock {
+                                lang: lang.as_ref().to_string(),
+                            },
+                        )),
 
-                    // We explicitly don't support these containers
-                    Table(_)
-                    | TableHead
-                    | CodeBlock(CodeBlockKind::Indented)
-                    | TableRow
-                    | TableCell
-                    | FootnoteDefinition(_)
-                    | BlockQuote => (),
-                },
-                // we care only about list ending for now due to working with shortcuts
-                End(List(_)) => builder.event(Ev::ListEnd, range),
+                        Item => Some(builder.add(SpanKind::ListItem, range)),
+                        Heading(level, _, _) => Some(builder.add(
+                            SpanKind::Heading(level),
+                            trim_trailing_new_lines(&text, &range),
+                        )),
+                        List(starting_index) => Some(builder.add_with_meta(
+                            SpanKind::List,
+                            range,
+                            SpanMeta::List(ListDesc { starting_index }),
+                        )),
+                        Paragraph => Some(
+                            builder
+                                .add(SpanKind::Paragraph, trim_trailing_new_lines(&text, &range)),
+                        ),
+                        Link(_, url, _) => Some(builder.add_with_meta(
+                            SpanKind::MdLink,
+                            range,
+                            SpanMeta::Link {
+                                url: url.to_string(),
+                            },
+                        )),
+                        Image(_, _, _) => Some(builder.add(SpanKind::Image, range)),
 
-                Text(_) => builder.event(Ev::Text, range),
+                        // We explicitly don't support these containers
+                        Table(_)
+                        | TableHead
+                        | CodeBlock(CodeBlockKind::Indented)
+                        | TableRow
+                        | TableCell
+                        | FootnoteDefinition(_)
+                        | BlockQuote => None,
+                    };
+
+                    if let Some(container_index) = container {
+                        builder.container_stack.push(container_index);
+                    }
+                }
+
+                End(tag) => {
+                    let is_supported_container = match tag {
+                        // We explicitly don't support these containers
+                        // note that it needs to match "Start" variant
+                        Table(_)
+                        | TableHead
+                        | CodeBlock(CodeBlockKind::Indented)
+                        | TableRow
+                        | TableCell
+                        | FootnoteDefinition(_)
+                        | BlockQuote => false,
+
+                        // supported containers. Note that it needs to match "Start" variant
+                        Paragraph
+                        | CodeBlock(CodeBlockKind::Fenced(_))
+                        | Heading(_, _, _)
+                        | List(_)
+                        | Item
+                        | Emphasis
+                        | Strong
+                        | Strikethrough
+                        | Link(_, _, _)
+                        | Image(_, _, _) => true,
+                    };
+
+                    if is_supported_container {
+                        builder.container_stack.pop();
+                    }
+                }
+
+                Text(_) => {
+                    builder.add(SpanKind::Text, range);
+                }
 
                 TaskListMarker(checked) => {
-                    builder.event(Ev::TaskMarker(checked), range.clone());
+                    builder.add_with_meta(
+                        SpanKind::TaskMarker,
+                        range.clone(),
+                        SpanMeta::TaskMarker { checked },
+                    );
                 }
-                Code(_) => builder.event(Ev::Code, range),
-                Html(_) => builder.event(Ev::Html, range),
 
-                End(_) | FootnoteReference(_) | SoftBreak | HardBreak | Rule => (),
+                Code(_) => {
+                    builder.add(SpanKind::InlineCode, range);
+                }
+
+                Html(_) => {
+                    builder.add(SpanKind::Html, range);
+                }
+
+                FootnoteReference(_) | SoftBreak | HardBreak | Rule => (),
             }
         }
 
@@ -504,7 +437,7 @@ impl TextStructure {
         let mut pos: usize = 0;
         let mut job = LayoutJob::default();
 
-        let mut state = MarkdownState::new();
+        let mut state = MarkdownRunningState::new();
 
         let code_font_id = FontId {
             size: theme.fonts.size.normal,
@@ -513,17 +446,27 @@ impl TextStructure {
 
         // println!("points: {:#?}", points);
         for point in self.points.iter() {
-            if let (Annotation::CodeBlock, PointKind::End) = (&point.annotation, &point.kind) {
+            if state.code_block > 0 && state.text > 0 {
+                // means that we are inside code block body
+
+                let code_block_byte_range = pos..point.str_offset;
                 let code = text.get(pos..point.str_offset).unwrap_or("");
 
-                let lang = find_metadata(point.span_index, &self.metadata)
-                    .and_then(|meta| match meta {
-                        SpanMeta::CodeBlockContent { lang, .. } => Some(lang.as_str()),
-                        _ => None,
-                    })
-                    .unwrap_or("");
+                let lang = match self
+                    .find_surrounding_span_with_meta(SpanKind::CodeBlock, code_block_byte_range)
+                {
+                    Some((_, _, SpanMeta::CodeBlock { lang })) => lang.to_string(),
+                    _ => "".to_string(),
+                };
 
-                match syntax_set.find_syntax_by_extension(&lang) {
+                let lang = match lang.as_str() {
+                    // "ts" => "typescript",
+                    // "rs" => "rust",
+                    "output" => "js",
+                    l => l,
+                };
+
+                match syntax_set.find_syntax_by_extension(lang) {
                     Some(syntax) => {
                         let mut h =
                             HighlightLines::new(syntax, &theme_set.themes["base16-ocean.dark"]);
@@ -551,6 +494,7 @@ impl TextStructure {
                             }
                         }
                     }
+
                     None => job.append(
                         code,
                         0.0,
@@ -563,25 +507,27 @@ impl TextStructure {
                     0.0,
                     state.to_text_format(theme),
                 );
+            }
 
-                let delta = match point.kind {
-                    PointKind::Start => 1,
-                    PointKind::End => -1,
-                };
+            let delta = match point.kind {
+                PointKind::Start => 1,
+                PointKind::End => -1,
+            };
 
-                match &point.annotation {
-                    Annotation::Strike => state.strike += delta,
-                    Annotation::Bold => state.bold += delta,
-                    Annotation::Text => state.text += delta,
-                    Annotation::Link => state.link += delta,
-                    Annotation::TaskMarker => state.task_marker += delta,
-                    Annotation::Emphasis => state.emphasis += delta,
-                    Annotation::Heading(level) => {
-                        state.heading[*level as usize] += delta;
-                    }
-                    Annotation::CodeBlock => (),
-                    Annotation::Code => state.code += delta,
+            // TODO rework this a bit
+            match &point.annotation {
+                Annotation::Strike => state.strike += delta,
+                Annotation::Bold => state.bold += delta,
+                Annotation::Text => state.text += delta,
+                Annotation::Link => state.link += delta,
+                Annotation::TaskMarker => state.task_marker += delta,
+                Annotation::Emphasis => state.emphasis += delta,
+
+                Annotation::Heading(level) => {
+                    state.heading[*level as usize] += delta;
                 }
+                Annotation::InlineCode => state.code += delta,
+                Annotation::CodeBlock => state.code_block += delta,
             }
 
             pos = point.str_offset;
@@ -604,43 +550,56 @@ impl TextStructure {
         self.spans
             .iter()
             .enumerate()
-            .find_map(|(index, (kind, part_pos))| match kind {
-                SpanKind::TaskMarker | SpanKind::RawLink if part_pos.contains(&byte_cursor_pos) => {
-                    find_metadata(SpanIndex(index), &self.metadata).and_then(|meta| {
-                        match (kind, meta) {
-                            (SpanKind::TaskMarker, SpanMeta::TaskMarker { checked, .. }) => {
-                                Some(InteractiveTextPart::TaskMarker {
-                                    byte_range: part_pos.clone(),
-                                    checked: *checked,
-                                })
+            .find_map(
+                |(
+                    index,
+                    SpanDesc {
+                        kind,
+                        byte_pos,
+                        parent,
+                    },
+                )| match kind {
+                    SpanKind::TaskMarker | SpanKind::MdLink
+                        if byte_pos.contains(&byte_cursor_pos) =>
+                    {
+                        find_metadata(SpanIndex(index), &self.metadata).and_then(|meta| {
+                            match (kind, meta) {
+                                (SpanKind::TaskMarker, SpanMeta::TaskMarker { checked, .. }) => {
+                                    Some(InteractiveTextPart::TaskMarker {
+                                        byte_range: byte_pos.clone(),
+                                        checked: *checked,
+                                    })
+                                }
+                                (SpanKind::MdLink, SpanMeta::Link { url }) => {
+                                    Some(InteractiveTextPart::Link(url.as_str()))
+                                }
+                                _ => None,
                             }
-                            (SpanKind::RawLink, SpanMeta::Link { url }) => {
-                                Some(InteractiveTextPart::Link(url.as_str()))
-                            }
-                            _ => None,
-                        }
-                    })
-                }
-                _ => None,
+                        })
+                    }
+                    _ => None,
+                },
+            )
+            .or_else(|| {
+                self.raw_links.iter().find_map(|RawLink { url, byte_pos }| {
+                    if byte_pos.contains(&byte_cursor_pos) {
+                        Some(InteractiveTextPart::Link(url.as_str()))
+                    } else {
+                        None
+                    }
+                })
             })
     }
 
-    pub fn find_surrounding_list_item(&self, byte_cursor: Range<usize>) -> Option<ListItemDesc> {
-        self.spans
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(index, (kind, item_pos))| match kind {
-                SpanKind::ListItem if is_sub_range(item_pos, &byte_cursor) => {
-                    Some(SpanIndex(index))
-                }
-                _ => None,
-            })
-            .and_then(|index| find_metadata(index, &self.metadata))
-            .and_then(|meta| match meta {
-                SpanMeta::ListItem(desc) => Some(desc.clone()),
-                _ => None,
-            })
+    pub fn find_surrounding_span_with_meta(
+        &self,
+        kind: SpanKind,
+        byte_cursor: Range<usize>,
+    ) -> Option<(SpanIndex, SpanDesc, SpanMeta)> {
+        self.find_span_at(kind, byte_cursor).and_then(|(_, index)| {
+            let span = &self.spans[index.0];
+            find_metadata(index, &self.metadata).map(|meta| (index, span.clone(), meta.clone()))
+        })
     }
 
     pub fn find_span_at(
@@ -652,13 +611,54 @@ impl TextStructure {
             .iter()
             .enumerate()
             .rev()
-            .find_map(|(i, (kind, item_pos))| {
-                if *kind == span_kind && is_sub_range(item_pos, &byte_cursor) {
-                    Some((item_pos.clone(), SpanIndex(i)))
+            .find_map(|(i, SpanDesc { kind, byte_pos, .. })| {
+                if *kind == span_kind && is_sub_range(byte_pos, &byte_cursor) {
+                    Some((byte_pos.clone(), SpanIndex(i)))
                 } else {
                     None
                 }
             })
+    }
+
+    pub fn iterate_parents_of(
+        &self,
+        index: SpanIndex,
+    ) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
+        struct ParentIterator<'a> {
+            spans: &'a [SpanDesc],
+            cur: SpanIndex,
+        }
+
+        impl<'a> Iterator for ParentIterator<'a> {
+            type Item = (SpanIndex, &'a SpanDesc);
+
+            fn next(&mut self) -> Option<Self::Item> {
+                let parent_index = self.spans[self.cur.0].parent;
+                let parent = &self.spans[parent_index.0];
+                if parent.kind == SpanKind::Root {
+                    None
+                } else {
+                    self.cur = parent_index;
+                    Some((parent_index, parent))
+                }
+            }
+        }
+
+        ParentIterator {
+            spans: &self.spans,
+            cur: index,
+        }
+    }
+
+    pub fn iterate_immediate_children_of(
+        &self,
+        parent: SpanIndex,
+    ) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
+        iterate_immediate_children_of(parent, &self.spans)
+    }
+
+    pub fn find_meta(&self, index: SpanIndex) -> Option<&SpanMeta> {
+        find_metadata(index, &self.metadata)
     }
 
     pub fn find_any_span_at(&self, byte_cursor: Range<usize>) -> Option<(Range<usize>, SpanIndex)> {
@@ -666,9 +666,9 @@ impl TextStructure {
             .iter()
             .enumerate()
             .rev()
-            .find_map(|(i, (_, item_pos))| {
-                if is_sub_range(item_pos, &byte_cursor) {
-                    Some((item_pos.clone(), SpanIndex(i)))
+            .find_map(|(i, SpanDesc { byte_pos, .. })| {
+                if is_sub_range(byte_pos, &byte_cursor) {
+                    Some((byte_pos.clone(), SpanIndex(i)))
                 } else {
                     None
                 }
@@ -677,35 +677,43 @@ impl TextStructure {
 
     pub fn get_span_inner_content(&self, idx: SpanIndex) -> Range<usize> {
         let SpanIndex(index) = idx;
-        let (kind, pos) = self.spans[index].clone();
+        let SpanDesc {
+            kind,
+            byte_pos: pos,
+            ..
+        } = self.spans[index].clone();
         match kind {
             SpanKind::Strike => pos.start + 2..pos.end - 2, //~~{}~~
             SpanKind::Bold => pos.start + 2..pos.end - 2,   //**{}**
-            SpanKind::Emphasis | SpanKind::Code => pos.start + 1..pos.end - 1, //*{}* or `{}`
+            SpanKind::Emphasis | SpanKind::InlineCode => pos.start + 1..pos.end - 1, //*{}* or `{}`
+
+            // TODO what to do with Root?
+            SpanKind::Root => 0..0,
 
             // these can be considered as atomic, thus return itself
             SpanKind::Text
             | SpanKind::TaskMarker
-            | SpanKind::RawLink
             | SpanKind::MdLink
-            | SpanKind::CodeBlockContent
             | SpanKind::Html
             | SpanKind::Image => pos,
 
             // these are all containers, thus we need to enumerate their content
             SpanKind::ListItem
+            | SpanKind::CodeBlock
             | SpanKind::Heading(_)
             | SpanKind::Paragraph
-            | SpanKind::CodeBlock
-            | SpanKind::List => self
-                .spans
-                .iter()
-                .skip(index + 1)
-                .take_while(|(_, item_pos)| item_pos.end <= pos.end)
-                .fold(None, |area, (kind, item_pos)| match area {
-                    None => Some(item_pos.clone()),
-                    Some(area) => Some(area.start.min(item_pos.start)..area.end.max(item_pos.end)),
-                })
+            | SpanKind::List =>
+            // self
+                // .spans
+                // .iter()
+                // .skip(index + 1)
+                // .take_while(|desc| desc.byte_pos.end <= pos.end)
+                // .fold(None, |area, desc| match area {
+                //     None => Some(desc.byte_pos.clone()),
+                //     Some(area) => {
+                //         Some(area.start.min(desc.byte_pos.start)..area.end.max(desc.byte_pos.end))
+                //     }
+                calc_total_range( iterate_immediate_children_of(idx, &self.spans).map(|(_, desc)| desc))
                 .unwrap_or(pos.start..pos.start),
         }
     }
@@ -713,65 +721,126 @@ impl TextStructure {
 
 fn fill_annotation_points(
     mut points: Vec<AnnotationPoint>,
-    spans: &Vec<(SpanKind, Range<usize>)>,
+    spans: &Vec<SpanDesc>,
     metadata: &Vec<(SpanIndex, SpanMeta)>,
+    raw_links: &Vec<RawLink>,
 ) -> Vec<AnnotationPoint> {
-    for (index, (kind, pos)) in spans.iter().enumerate() {
+    for (
+        index,
+        SpanDesc {
+            kind,
+            byte_pos,
+            parent,
+        },
+    ) in spans.iter().enumerate()
+    {
+        let pos = byte_pos.clone();
         let span_index = SpanIndex(index);
-        let pair: SmallVec<[(Annotation, &Range<usize>); 2]> = match kind {
+        let annotations: SmallVec<[(Annotation, Range<usize>); 2]> = match kind {
             SpanKind::Strike => smallvec![(Annotation::Strike, pos)],
             SpanKind::Bold => smallvec![(Annotation::Bold, pos)],
             SpanKind::Emphasis => smallvec![(Annotation::Emphasis, pos)],
             SpanKind::Text => smallvec![(Annotation::Text, pos)],
             SpanKind::TaskMarker => match find_metadata(span_index, metadata) {
-                Some(SpanMeta::TaskMarker {
-                    checked,
-                    list_item_index,
-                }) => match *checked {
+                Some(SpanMeta::TaskMarker { checked }) => match *checked {
                     true => {
-                        let (_, list_item_pos) = &spans[list_item_index.0];
+                        let list_item_content = calc_total_range(
+                            iterate_immediate_children_of(*parent, spans).map(|(_, desc)| desc),
+                        )
+                        .unwrap_or(pos.clone());
                         smallvec![
                             (Annotation::TaskMarker, pos),
-                            (Annotation::Strike, list_item_pos)
+                            (Annotation::Strike, list_item_content)
                         ]
                     }
                     false => smallvec![(Annotation::TaskMarker, pos)],
                 },
                 _ => smallvec![],
             },
-            SpanKind::RawLink => smallvec![(Annotation::Link, pos)],
-            SpanKind::Heading(level) => smallvec![(Annotation::Heading(*level), pos)],
-            SpanKind::CodeBlockContent => smallvec![(Annotation::CodeBlock, pos)],
-            SpanKind::Code => smallvec![(Annotation::Code, pos)],
 
+            SpanKind::Heading(level) => smallvec![(Annotation::Heading(*level), pos)],
+            SpanKind::InlineCode => smallvec![(Annotation::InlineCode, pos)],
+            SpanKind::CodeBlock => smallvec![(Annotation::CodeBlock, pos)],
+            // SpanKind::CodeBlock => match find_metadata(span_index, metadata) {
+            //     Some(SpanMeta::CodeBlock { lang }) => match *checked {
+            //         true => {
+            //             let list_item_content =
+            //                 calc_total_range(iterate_children_of(*parent, spans))
+            //                     .unwrap_or(pos.clone());
+            //             smallvec![
+            //                 (Annotation::TaskMarker, pos),
+            //                 (Annotation::Strike, list_item_content)
+            //             ]
+            //         }
+            //         false => smallvec![(Annotation::TaskMarker, pos)],
+            //     },
+            //     _ => smallvec![(Annotation::CodeBlock, pos)],
+            // },
             SpanKind::MdLink
-            | SpanKind::CodeBlock
             | SpanKind::List
+            | SpanKind::Root
             | SpanKind::Html
             | SpanKind::Image
             | SpanKind::ListItem
             | SpanKind::Paragraph => smallvec![],
         };
 
-        for (annotation, pos) in pair {
+        for (annotation, pos) in annotations {
             points.push(AnnotationPoint {
                 str_offset: pos.start,
                 kind: PointKind::Start,
                 annotation,
-                span_index,
+                // span_index,
             });
 
             points.push(AnnotationPoint {
                 str_offset: pos.end,
                 kind: PointKind::End,
                 annotation,
-                span_index,
+                // span_index,
             });
         }
     }
 
+    for (kind, str_offset) in raw_links.iter().flat_map(|link| {
+        [
+            (PointKind::Start, link.byte_pos.start),
+            (PointKind::End, link.byte_pos.end),
+        ]
+    }) {
+        points.push(AnnotationPoint {
+            str_offset,
+            kind,
+            annotation: Annotation::Link,
+        });
+    }
+
     points.sort_by_key(|p| p.str_offset);
     points
+}
+
+#[inline(always)]
+fn iterate_immediate_children_of(
+    index: SpanIndex,
+    spans: &Vec<SpanDesc>,
+) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
+    let parent_parent = spans[index.0].parent;
+    spans
+        .iter()
+        .enumerate()
+        .skip(index.0 + 1)
+        .map(|(i, desc)| (SpanIndex(i), desc))
+        .take_while(move |(_, child)| child.parent != parent_parent)
+        .filter(move |(_, child)| child.parent == index)
+}
+
+fn calc_total_range<'a>(spans: impl Iterator<Item = &'a SpanDesc>) -> Option<Range<usize>> {
+    spans.fold(None, |range, sibling| match range {
+        Some(range) => {
+            Some(range.start.min(sibling.byte_pos.start)..range.end.max(sibling.byte_pos.end))
+        }
+        None => Some(sibling.byte_pos.clone()),
+    })
 }
 
 #[inline(always)]
@@ -782,7 +851,7 @@ fn find_metadata(index: SpanIndex, metadata: &Vec<(SpanIndex, SpanMeta)>) -> Opt
         .map(|(_, meta)| meta)
 }
 
-impl MarkdownState {
+impl MarkdownRunningState {
     fn to_text_format(&self, theme: &AppTheme) -> TextFormat {
         let AppTheme {
             fonts: FontTheme { size, family },
@@ -899,6 +968,50 @@ mod tests {
         let second_line = structure.find_span_at(SpanKind::Paragraph, 2..2);
         assert_eq!(None, second_line);
     }
+
+    #[test]
+    pub fn test_code_block_parsing() {
+        let md = "```js\ncode\n```";
+
+        let structure = TextStructure::create_from(md);
+
+        // println!("{:#?}", structure.spans);
+
+        let res = structure.find_span_at(SpanKind::CodeBlock, 0..0);
+        assert!(res.is_some());
+
+        let (_, _, meta) = structure
+            .find_surrounding_span_with_meta(SpanKind::CodeBlock, 0..0)
+            .unwrap();
+
+        let (code_body, _) = structure.find_span_at(SpanKind::Text, 7..7).unwrap();
+
+        assert_eq!(Some("code\n"), md.get(code_body));
+
+        assert_eq!(
+            SpanMeta::CodeBlock {
+                lang: "js".to_string()
+            },
+            meta
+        );
+    }
+
+    // #[test]
+    // pub fn test_print() {
+    //     let md = "- a\n\t- b\n- c";
+
+    //     let structure = TextStructure::create_from(md);
+
+    //     let (a_range, _) = structure.find_span_at(SpanKind::Paragraph, 0..0).unwrap();
+    //     let (b_range, _) = structure.find_span_at(SpanKind::Paragraph, 3..3).unwrap();
+
+    //     println!("{:#?}", structure.spans);
+    //     assert_eq!(Some("a"), md.get(a_range));
+    //     assert_eq!(Some("b"), md.get(b_range));
+
+    //     let second_line = structure.find_span_at(SpanKind::Paragraph, 2..2);
+    //     assert_eq!(None, second_line);
+    // }
 }
 
 fn is_sub_range(outer: &Range<usize>, inner: &Range<usize>) -> bool {

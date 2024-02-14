@@ -35,7 +35,7 @@ syntect = { version = "5.0.0", default-features = false, features = [
   "default-fancy",
 ] }
 smallvec = "1.10.0"
-tray-icon = "0.9.0"
+tray-icon = "0.11.2"
 egui-phosphor = { version = "0.3.0", features = ["light"] }
 # tray-item = "0.7.1"
 winit = "0.28.1"

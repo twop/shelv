@@ -14,11 +14,11 @@ use eframe::{
 use smallvec::SmallVec;
 
 use crate::{
-    app_actions::{proccess_app_action, AppAction},
+    app_actions::{apply_text_changes, on_enter_inside_list_item, proccess_app_action, AppAction},
     app_state::{AppState, ComputedLayout, MsgToApp, Note},
     md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
-    text_structure::{InteractiveTextPart, SpanKind, TextStructure},
+    text_structure::{ByteRange, InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
     theme::{AppIcon, AppTheme},
 };
 
@@ -129,11 +129,50 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
     }
 
     // TEST code for cosuming input
-    // ctx.input_mut(|input| {
-    //     if input.consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, egui::Key::Enter)) {
-    //         println!("Consumed Enter")
-    //     }
-    // });
+    ctx.input_mut(|input| {
+        // if inside list
+        let keyboard_shortcut = KeyboardShortcut::new(Modifiers::NONE, egui::Key::Enter);
+        if is_shortcut_match(input, &keyboard_shortcut) {
+            let current_note = &mut state.notes[state.selected_note as usize];
+
+            if let (Some(text_cursor_range), Some(computed_layout)) =
+                (current_note.cursor, &state.computed_layout)
+            {
+                use egui::TextBuffer as _;
+
+                let [char_range_start, char_range_end] =
+                    text_cursor_range.sorted().map(|c| c.index);
+
+                let [byte_start, byte_end] = [char_range_start, char_range_end]
+                    .map(|char_idx| current_note.text.byte_index_from_char_index(char_idx));
+
+                if let Some(changes) = on_enter_inside_list_item(
+                    &computed_layout.text_structure,
+                    &current_note.text,
+                    ByteRange(byte_start..byte_end),
+                ) {
+                    if let Ok(ByteRange(byte_cursor)) = apply_text_changes(
+                        &mut current_note.text,
+                        ByteRange(byte_start..byte_end),
+                        changes,
+                    ) {
+                        current_note.cursor = Some(CCursorRange::two(
+                            CCursor::new(char_index_from_byte_index(
+                                &current_note.text,
+                                byte_cursor.start,
+                            )),
+                            CCursor::new(char_index_from_byte_index(
+                                &current_note.text,
+                                byte_cursor.end,
+                            )),
+                        ));
+
+                        input.consume_shortcut(&keyboard_shortcut);
+                    }
+                };
+            }
+        }
+    });
 
     let mut actions = render_footer_panel(
         state.selected_note,
@@ -164,8 +203,6 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
             actions.push(AppAction::DecreaseFontSize);
         }
     });
-
-
 
     render_header_panel(ctx, &state.theme);
 
@@ -209,14 +246,12 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                         .text
                         .byte_index_from_char_index(ccursor_start.index);
 
-                    if let Some(inside_list_item) = computed_layout
+                    if let Some((item_byte_pos, _)) = computed_layout
                         .text_structure
-                        .find_surrounding_list_item(byte_start..byte_end)
+                        .find_span_at(SpanKind::ListItem, byte_start..byte_end)
                     {
-                        let chars_before = current_note.text
-                            [0..inside_list_item.item_byte_pos.start]
-                            .chars()
-                            .count();
+                        let chars_before =
+                            current_note.text[0..item_byte_pos.start].chars().count();
 
                         let cursor_before_list_item = computed_layout
                             .galley
@@ -229,7 +264,7 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                                     == cursor_before_list_item.rcursor.row =>
                             {
                                 let insertion = "\t";
-                                let list_item_pos = inside_list_item.item_byte_pos.clone();
+                                let list_item_pos = item_byte_pos.clone();
 
                                 // TODO: normalize working with numbered lists
 
@@ -262,7 +297,11 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
 
             let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
                 let computed_layout = match state.computed_layout.take() {
-                    Some(layout) if !layout.should_recompute(text, wrap_width, state.font_scale) => layout,
+                    Some(layout)
+                        if !layout.should_recompute(text, wrap_width, state.font_scale) =>
+                    {
+                        layout
+                    }
 
                     // TODO reuse the prev computed layout
                     _ => ComputedLayout::compute(
@@ -456,63 +495,63 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
             }
 
             // ---- AUTO INDENT LISTS ----
-            if ui.input_mut(|input| input.key_pressed(egui::Key::Enter)) {
-                if let (Some(text_cursor_range), Some(computed_layout)) =
-                    (cursor_range, &state.computed_layout)
-                {
-                    use egui::TextBuffer;
+            //     if ui.input_mut(|input| input.key_pressed(egui::Key::Enter)) {
+            //         if let (Some(text_cursor_range), Some(computed_layout)) =
+            //             (cursor_range, &state.computed_layout)
+            //         {
+            //             use egui::TextBuffer;
 
-                    let char_range = text_cursor_range.as_sorted_char_range();
-                    let byte_start = current_note
-                        .text
-                        .byte_index_from_char_index(char_range.start);
-                    let byte_end = current_note.text.byte_index_from_char_index(char_range.end);
+            //             let char_range = text_cursor_range.as_sorted_char_range();
+            //             let byte_start = current_note
+            //                 .text
+            //                 .byte_index_from_char_index(char_range.start);
+            //             let byte_end = current_note.text.byte_index_from_char_index(char_range.end);
 
-                    let inside_item = computed_layout.text_structure.find_surrounding_list_item(
-                        // note that "\n" was already inserted,
-                        //thus we need to just look for "cursor_start -1" to detect a list item
-                        if current_note.text[..byte_start].ends_with("\n") {
-                            (byte_start - 1)..(byte_start - 1)
-                        } else {
-                            byte_start..byte_end
-                        },
-                    );
+            //             let inside_item = computed_layout.text_structure.find_surrounding_list_item(
+            //                 // note that "\n" was already inserted,
+            //                 //thus we need to just look for "cursor_start -1" to detect a list item
+            //                 if current_note.text[..byte_start].ends_with("\n") {
+            //                     (byte_start - 1)..(byte_start - 1)
+            //                 } else {
+            //                     byte_start..byte_end
+            //                 },
+            //             );
 
-                    println!(
-                        "\nnewline\nbefore_cursor='{}'\ncursor='{}'\nafter='{}'",
-                        &current_note.text[0..byte_start],
-                        &current_note.text[byte_start..byte_end],
-                        &current_note.text[byte_end..]
-                    );
+            //             println!(
+            //                 "\nnewline\nbefore_cursor='{}'\ncursor='{}'\nafter='{}'",
+            //                 &current_note.text[0..byte_start],
+            //                 &current_note.text[byte_start..byte_end],
+            //                 &current_note.text[byte_end..]
+            //             );
 
-                    if let Some(inside_list_item) = inside_item {
-                        use egui::TextBuffer as _;
+            //             if let Some(inside_list_item) = inside_item {
+            //                 use egui::TextBuffer as _;
 
-                        let text_to_insert = match inside_list_item.starting_index {
-                            Some(starting_index) => format!(
-                                "{}{}. ",
-                                "\t".repeat(inside_list_item.depth as usize),
-                                starting_index + inside_list_item.item_index as u64 + 1
-                            ),
-                            None => {
-                                format!("{}- ", "\t".repeat(inside_list_item.depth as usize))
-                            }
-                        };
+            //                 let text_to_insert = match inside_list_item.started_numbered_index {
+            //                     Some(starting_index) => format!(
+            //                         "{}{}. ",
+            //                         "\t".repeat(inside_list_item.depth as usize),
+            //                         starting_index + inside_list_item.item_index as u64 + 1
+            //                     ),
+            //                     None => {
+            //                         format!("{}- ", "\t".repeat(inside_list_item.depth as usize))
+            //                     }
+            //                 };
 
-                        current_note
-                            .text
-                            .insert_text(text_to_insert.as_str(), char_range.start);
+            //                 current_note
+            //                     .text
+            //                     .insert_text(text_to_insert.as_str(), char_range.start);
 
-                        let [min, max] = text_cursor_range.as_ccursor_range().sorted();
+            //                 let [min, max] = text_cursor_range.as_ccursor_range().sorted();
 
-                        // that byte size and char size of insertion are te same in this case
-                        text_edit_state.set_ccursor_range(Some(CCursorRange::two(
-                            min + text_to_insert.len(),
-                            max + text_to_insert.len(),
-                        )));
-                    }
-                }
-            }
+            //                 // that byte size and char size of insertion are te same in this case
+            //                 text_edit_state.set_ccursor_range(Some(CCursorRange::two(
+            //                     min + text_to_insert.len(),
+            //                     max + text_to_insert.len(),
+            //                 )));
+            //             }
+            //         }
+            //     }
 
             current_note.cursor = text_edit_state.ccursor_range();
             text_edit_state.store(ui.ctx(), text_edit_id);
@@ -652,6 +691,7 @@ fn render_footer_panel(
                 });
 
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    ui.add_space(theme.sizes.m);
                     ui.label(
                         RichText::new(format!("Font Size: {}", font_size))
                             .color(theme.colors.subtle_text_color)
@@ -876,4 +916,33 @@ fn render_hints(
         }
         _ => (),
     };
+}
+
+/// Count presses of a key. If non-zero, the presses are consumed, so that this will only return non-zero once.
+///
+/// Includes key-repeat events.
+pub fn is_shortcut_match(input: &egui::InputState, shortcut: &KeyboardShortcut) -> bool {
+    let KeyboardShortcut { modifiers, key } = shortcut.clone();
+
+    input.events.iter().any(|event| {
+        matches!(
+            event,
+            egui::Event::Key {
+                key: ev_key,
+                modifiers: ev_mods,
+                pressed: true,
+                ..
+            } if *ev_key == key && ev_mods.matches(modifiers)
+        )
+    })
+}
+
+fn char_index_from_byte_index(s: &str, byte_index: usize) -> usize {
+    for (ci, (bi, _)) in s.char_indices().enumerate() {
+        if bi == byte_index {
+            return ci;
+        }
+    }
+
+    s.chars().count()
 }
