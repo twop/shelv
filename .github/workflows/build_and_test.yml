@@ -11,18 +11,6 @@ env:
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v3
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
-
-
-  build-mac:
     runs-on: macos-latest
 
     steps:
@@ -41,9 +29,11 @@ jobs:
           args: --release --all-features
 
       # - name: Upload binaries to release
+      #   if: github.event_name == 'push'
       #   uses: svenstaro/upload-release-action@v1-release
       #   with:
       #     repo_token: ${{ secrets.GITHUB_TOKEN }}
-      #     file: target/release/#{your final bin name here}
-      #     asset_name: #{your final bin name here}
+      #     file: target/release/shelv
+      #     asset_name: shelv
       #     tag: build-${{ github.ref }}
+      #     overwrite: true
