@@ -14,19 +14,28 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v1
-      - name: Cache Rust dependencies
-        uses: actions/cache@v1.0.1
+      - uses: actions/checkout@v1
+
+      - name: ⚡ Cargo Cache
         with:
-          path: target
-          key: ${{ runner.OS }}-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.OS }}-build-
-      - uses: actions-rs/cargo@v1
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: 🔨 Build
+        uses: actions-rs/cargo@v1
         with:
           command: build
           args: --release --all-features
+
+      - name: 🔎 Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
 
       # - name: Upload binaries to release
       #   if: github.event_name == 'push'
