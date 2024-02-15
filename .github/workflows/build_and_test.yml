@@ -38,12 +38,12 @@ jobs:
         with:
           command: test
 
-      # - name: Upload binaries to release
-      #   if: github.event_name == 'push'
-      #   uses: svenstaro/upload-release-action@v1-release
-      #   with:
-      #     repo_token: ${{ secrets.GITHUB_TOKEN }}
-      #     file: target/release/shelv
-      #     asset_name: shelv
-      #     tag: build-${{ github.ref }}
-      #     overwrite: true
+      - name: Upload binaries to release
+        if: github.event_name == 'push'
+        uses: svenstaro/upload-release-action@v1-release
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/release/shelv
+          asset_name: shelv
+          tag: build-${{ github.ref }}
+          overwrite: true
