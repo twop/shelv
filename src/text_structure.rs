@@ -14,12 +14,14 @@ use syntect::{
 #[derive(Debug, PartialEq, Eq)]
 pub struct ByteRange(pub Range<usize>);
 
-impl Deref for ByteRange {
-    type Target = Range<usize>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+#[derive(Debug, PartialEq, Eq)]
+pub enum RangeRelation {
+    Before,
+    After,
+    StartInside,
+    EndInside,
+    Inside,
+    Contains,
 }
 
 use crate::theme::{AppTheme, ColorTheme, FontTheme};
@@ -929,6 +931,44 @@ impl MarkdownRunningState {
     }
 }
 
+impl Deref for ByteRange {
+    type Target = Range<usize>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ByteRange {
+    pub fn relative_to(&self, other: &Self) -> RangeRelation {
+        let (s_start, s_end) = (self.0.start, self.0.end);
+        let (other_start, other_end) = (other.0.start, other.0.end);
+        assert!(s_start <= s_end, "self: assumes left -> right direction");
+        assert!(
+            other_start <= other_end,
+            "other: assumes left -> right direction"
+        );
+
+        if s_end <= other_start {
+            RangeRelation::Before
+        } else if s_start >= other_end {
+            RangeRelation::After
+        } else if s_start >= other_start && s_end <= other_end {
+            RangeRelation::Inside
+        } else if s_start <= other_start && s_end >= other_end {
+            RangeRelation::Contains
+        }
+        // note strict comparison here, due to range being not inclusive
+        else if s_end > other_start && s_start < other_start {
+            RangeRelation::EndInside
+        } else if s_start < other_end && s_end > other_end {
+            RangeRelation::StartInside
+        } else {
+            panic!("should be exhaustive")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -996,22 +1036,25 @@ mod tests {
         );
     }
 
-    // #[test]
-    // pub fn test_print() {
-    //     let md = "- a\n\t- b\n- c";
+    #[test]
+    pub fn test_byte_range_relation() {
+        let test_cases = [
+            (0..1, 1..3, RangeRelation::Before),
+            (2..4, 1..2, RangeRelation::After),
+            (0..3, 1..2, RangeRelation::Contains),
+            (0..3, 1..5, RangeRelation::EndInside),
+            (2..4, 0..3, RangeRelation::StartInside),
+            (1..2, 0..3, RangeRelation::Inside),
+        ];
 
-    //     let structure = TextStructure::create_from(md);
-
-    //     let (a_range, _) = structure.find_span_at(SpanKind::Paragraph, 0..0).unwrap();
-    //     let (b_range, _) = structure.find_span_at(SpanKind::Paragraph, 3..3).unwrap();
-
-    //     println!("{:#?}", structure.spans);
-    //     assert_eq!(Some("a"), md.get(a_range));
-    //     assert_eq!(Some("b"), md.get(b_range));
-
-    //     let second_line = structure.find_span_at(SpanKind::Paragraph, 2..2);
-    //     assert_eq!(None, second_line);
-    // }
+        for (a, b, expected) in test_cases {
+            assert_eq!(
+                ByteRange(a.clone()).relative_to(&ByteRange(b.clone())),
+                expected,
+                "wrong relation {a:?} to {b:?}"
+            );
+        }
+    }
 }
 
 fn is_sub_range(outer: &Range<usize>, inner: &Range<usize>) -> bool {
