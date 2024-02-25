@@ -299,7 +299,7 @@ fn on_tab_inside_list(
 
             // the numbered items after the item now will need to be adjusted by -1
             for (index, (_, list_item)) in list_items[item_pos_in_list + 1..].into_iter() {
-                let intended_number = *starting_index + *index as u64;
+                let intended_number = *starting_index + *index as u64 - 1;
 
                 // TODO only modify items that actually need adjustments
                 let item_text = &text[list_item.byte_pos.clone()];
@@ -315,7 +315,7 @@ fn on_tab_inside_list(
             if let Some(dot_pos) = &text[span_range.clone()].find(".") {
                 changes.push(TextChange::Replace(
                     ByteRange(span_range.start..span_range.start + dot_pos),
-                    format!("{}", 1),
+                    format!("\t{}", 1),
                 ))
             }
 
@@ -601,7 +601,7 @@ mod tests {
     #[test]
     pub fn test_tabs_in_ordered_lists() {
         let (mut text, cursor) =
-            TextChange::try_extract_cursor("- a\n- b{||}\n\t- c\n\t\t 1. d".to_string());
+            TextChange::try_extract_cursor("1. a\n2. b{||}\n\t- c\n\t\t 1. d\n4. d".to_string());
         let cursor = cursor.unwrap();
 
         let changes = on_tab_inside_list(
@@ -614,7 +614,7 @@ mod tests {
         let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
         assert_eq!(
             TextChange::encode_cursor(&text, cursor),
-            "- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d"
+            "1. a\n\t1. b{||}\n\t\t* c\n\t\t\t 1. d\n2. d"
         );
     }
 
