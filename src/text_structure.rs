@@ -659,6 +659,13 @@ impl TextStructure {
         iterate_immediate_children_of(parent, &self.spans)
     }
 
+    pub fn iterate_children_recursively_of(
+        &self,
+        parent: SpanIndex,
+    ) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
+        iterate_children_recursively_of(parent, &self.spans)
+    }
+
     pub fn find_meta(&self, index: SpanIndex) -> Option<&SpanMeta> {
         find_metadata(index, &self.metadata)
     }
@@ -826,6 +833,14 @@ fn iterate_immediate_children_of(
     index: SpanIndex,
     spans: &Vec<SpanDesc>,
 ) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
+    iterate_children_recursively_of(index, spans).filter(move |(_, child)| child.parent == index)
+}
+
+#[inline(always)]
+fn iterate_children_recursively_of(
+    index: SpanIndex,
+    spans: &Vec<SpanDesc>,
+) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
     let parent_parent = spans[index.0].parent;
     spans
         .iter()
@@ -833,7 +848,7 @@ fn iterate_immediate_children_of(
         .skip(index.0 + 1)
         .map(|(i, desc)| (SpanIndex(i), desc))
         .take_while(move |(_, child)| child.parent != parent_parent)
-        .filter(move |(_, child)| child.parent == index)
+
 }
 
 fn calc_total_range<'a>(spans: impl Iterator<Item = &'a SpanDesc>) -> Option<Range<usize>> {

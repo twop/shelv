@@ -283,58 +283,107 @@ fn on_tab_inside_list(
             },
         ) => {
             // ^^ means that is a numbered list
-            // let list_items: SmallVec<[_; 6]> = structure
-            //     .iterate_immediate_children_of(parent_list_index)
-            //     .filter(|(_, desc)| desc.kind == SpanKind::ListItem)
-            //     .enumerate()
-            //     .collect();
+            let list_items: SmallVec<[_; 6]> = structure
+                .iterate_immediate_children_of(parent_list_index)
+                .filter(|(_, desc)| desc.kind == SpanKind::ListItem)
+                .enumerate()
+                .collect();
 
-            // let (item_pos_in_list, _) = list_items
-            //     .iter()
-            //     .find(|(_, (span_index, _))| span_index == &item_index)?;
-            // let item_pos_in_list = *item_pos_in_list;
+            let (item_pos_in_list, _) = list_items
+                .iter()
+                .find(|(_, (span_index, _))| span_index == &item_index)?;
+            let item_pos_in_list = *item_pos_in_list;
 
             // // first split the first one in half
-            // let mut changes = vec![TextChange::Replace(
-            //     ByteRange(cursor.clone()),
-            //     format!(
-            //         "\n{dep}1. {cur}",
-            //         dep = "\t".repeat(depth + 1),
-            //         cur = TextChange::CURSOR
-            //     ),
-            // )];
+            let mut changes: Vec<TextChange> = vec![];
 
-            // // and then adjust the ordering for the rest
-            // for (index, (_, list_item)) in list_items.into_iter() {
-            //     // now for each following list item we need to set the proper index
-            //     let intended_number = match index > item_pos_in_list {
-            //         true => *starting_index + index as u64 + 1,
-            //         false => *starting_index + index as u64,
-            //     };
+            // the numbered items after the item now will need to be adjusted by -1
+            for (index, (_, list_item)) in list_items[item_pos_in_list + 1..].into_iter() {
+                let intended_number = *starting_index + *index as u64;
 
-            //     // TODO only modify items that actually need adjustments
-            //     let item_text = &text[list_item.byte_pos.clone()];
-            //     if let Some(dot_pos) = item_text.find(".") {
-            //         changes.push(TextChange::Replace(
-            //             ByteRange(list_item.byte_pos.start..list_item.byte_pos.start + dot_pos),
-            //             format!("{}", intended_number),
-            //         ))
-            //     }
+                // TODO only modify items that actually need adjustments
+                let item_text = &text[list_item.byte_pos.clone()];
+                if let Some(dot_pos) = item_text.find(".") {
+                    changes.push(TextChange::Replace(
+                        ByteRange(list_item.byte_pos.start..list_item.byte_pos.start + dot_pos),
+                        format!("{}", intended_number),
+                    ))
+                }
+            }
 
-            //     Some(changes)
-            // }
-            None
+            // move itself, note that now the index starts with "1"
+            if let Some(dot_pos) = &text[span_range.clone()].find(".") {
+                changes.push(TextChange::Replace(
+                    ByteRange(span_range.start..span_range.start + dot_pos),
+                    format!("{}", 1),
+                ))
+            }
+
+            // finally increase identation of inner items
+            changes.extend(increase_nesting_for_lists(structure, item_index));
+
+            Some(changes)
         }
         _ => {
             // means that the list is unordered
 
-            Some(vec![TextChange::Replace(
-                ByteRange(cursor.clone()),
-                "\n".to_string() + &"\t".repeat(depth) + "- " + TextChange::CURSOR,
-            )])
+            // move all inner items of the list item
+            let mut changes = increase_nesting_for_lists(structure, item_index);
+
+            // move itself
+            changes.push(TextChange::Replace(
+                ByteRange(span_range.start..span_range.start + 1), //this is for "-" -> "*" replacement
+                format!("\t{}", select_unordered_list_marker(depth + 1)),
+            ));
+
+            Some(changes)
         }
     }
 }
+
+fn increase_nesting_for_lists(
+    structure: &TextStructure,
+    item_index: crate::text_structure::SpanIndex,
+) -> Vec<TextChange> {
+    let mut changes = vec![];
+
+    for (nested_item_index, nested_item_des) in structure
+        .iterate_children_recursively_of(item_index)
+        .filter(|(_, desc)| desc.kind == SpanKind::ListItem)
+    {
+        let parents: SmallVec<[_; 4]> = structure
+            .iterate_parents_of(nested_item_index)
+            .filter(|(_, desc)| desc.kind == SpanKind::List)
+            .filter_map(|(idx, _)| match structure.find_meta(idx) {
+                Some(SpanMeta::List(list_desc)) => Some(list_desc),
+                _ => None,
+            })
+            .collect();
+
+        let nested_item_start = nested_item_des.byte_pos.start;
+        changes.push(match parents[0] {
+            ListDesc {
+                starting_index: Some(_),
+                ..
+            } =>
+            // numbered lists do not need modifications
+            {
+                TextChange::Replace(
+                    ByteRange(nested_item_start..nested_item_start),
+                    "\t".to_string(),
+                )
+            }
+
+            //unordered need "-" -> "*" replacement
+            _ => TextChange::Replace(
+                ByteRange(nested_item_start..nested_item_start + 1),
+                format!("\t{}", select_unordered_list_marker(parents.len())),
+            ),
+        });
+    }
+    changes
+}
+
 // ----  text change handler ----
 #[derive(Debug)]
 pub enum TextChangeError {
@@ -527,6 +576,49 @@ pub fn apply_text_changes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    // --- handling tabs inside lists ---
+
+    #[test]
+    pub fn test_tabs_in_unordered_lists() {
+        let (mut text, cursor) =
+            TextChange::try_extract_cursor("- a\n- b{||}\n\t- c\n\t\t 1. d".to_string());
+        let cursor = cursor.unwrap();
+
+        let changes = on_tab_inside_list(
+            &TextStructure::create_from(&text),
+            &text,
+            ByteRange(cursor.clone()),
+        )
+        .unwrap();
+
+        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+        assert_eq!(
+            TextChange::encode_cursor(&text, cursor),
+            "- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d"
+        );
+    }
+
+    #[test]
+    pub fn test_tabs_in_ordered_lists() {
+        let (mut text, cursor) =
+            TextChange::try_extract_cursor("- a\n- b{||}\n\t- c\n\t\t 1. d".to_string());
+        let cursor = cursor.unwrap();
+
+        let changes = on_tab_inside_list(
+            &TextStructure::create_from(&text),
+            &text,
+            ByteRange(cursor.clone()),
+        )
+        .unwrap();
+
+        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+        assert_eq!(
+            TextChange::encode_cursor(&text, cursor),
+            "- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d"
+        );
+    }
+
+    // --- spitting lists via enter ---
 
     #[test]
     pub fn test_splitting_list_item_via_enter() {
