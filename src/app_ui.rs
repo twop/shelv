@@ -14,7 +14,7 @@ use eframe::{
 use smallvec::SmallVec;
 
 use crate::{
-    app_actions::{apply_text_changes, on_enter_inside_list_item, proccess_app_action, AppAction},
+    app_actions::{apply_text_changes, proccess_app_action, AppAction},
     app_state::{AppState, ComputedLayout, MsgToApp, Note},
     md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
@@ -128,48 +128,53 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
         frame.focus()
     }
 
-    // TEST code for cosuming input
+    // handling commands
+    // sych as {tab, enter} inside a list
     ctx.input_mut(|input| {
-        // if inside list
-        let keyboard_shortcut = KeyboardShortcut::new(Modifiers::NONE, egui::Key::Enter);
-        if is_shortcut_match(input, &keyboard_shortcut) {
-            let current_note = &mut state.notes[state.selected_note as usize];
+        for editor_command in state.editor_commands.iter() {
+            let keyboard_shortcut = editor_command.shortcut();
+            if is_shortcut_match(input, &keyboard_shortcut) {
+                let current_note = &mut state.notes[state.selected_note as usize];
 
-            if let (Some(text_cursor_range), Some(computed_layout)) =
-                (current_note.cursor, &state.computed_layout)
-            {
-                use egui::TextBuffer as _;
+                if let (Some(text_cursor_range), Some(computed_layout)) =
+                    (current_note.cursor, &state.computed_layout)
+                {
+                    use egui::TextBuffer as _;
 
-                let [char_range_start, char_range_end] =
-                    text_cursor_range.sorted().map(|c| c.index);
+                    let [char_range_start, char_range_end] =
+                        text_cursor_range.sorted().map(|c| c.index);
 
-                let [byte_start, byte_end] = [char_range_start, char_range_end]
-                    .map(|char_idx| current_note.text.byte_index_from_char_index(char_idx));
+                    let [byte_start, byte_end] = [char_range_start, char_range_end]
+                        .map(|char_idx| current_note.text.byte_index_from_char_index(char_idx));
 
-                if let Some(changes) = on_enter_inside_list_item(
-                    &computed_layout.text_structure,
-                    &current_note.text,
-                    ByteRange(byte_start..byte_end),
-                ) {
-                    if let Ok(ByteRange(byte_cursor)) = apply_text_changes(
-                        &mut current_note.text,
+                    if let Some(changes) = editor_command.try_handle(
+                        &computed_layout.text_structure,
+                        &current_note.text,
                         ByteRange(byte_start..byte_end),
-                        changes,
                     ) {
-                        current_note.cursor = Some(CCursorRange::two(
-                            CCursor::new(char_index_from_byte_index(
-                                &current_note.text,
-                                byte_cursor.start,
-                            )),
-                            CCursor::new(char_index_from_byte_index(
-                                &current_note.text,
-                                byte_cursor.end,
-                            )),
-                        ));
+                        if let Ok(ByteRange(byte_cursor)) = apply_text_changes(
+                            &mut current_note.text,
+                            ByteRange(byte_start..byte_end),
+                            changes,
+                        ) {
+                            current_note.cursor = Some(CCursorRange::two(
+                                CCursor::new(char_index_from_byte_index(
+                                    &current_note.text,
+                                    byte_cursor.start,
+                                )),
+                                CCursor::new(char_index_from_byte_index(
+                                    &current_note.text,
+                                    byte_cursor.end,
+                                )),
+                            ));
 
-                        input.consume_shortcut(&keyboard_shortcut);
-                    }
-                };
+                            input.consume_shortcut(&keyboard_shortcut);
+
+                            // only one command can be handled at a time
+                            break;
+                        }
+                    };
+                }
             }
         }
     });
@@ -227,68 +232,6 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
             ctx,
             &state.theme,
         );
-
-        // ---- TAB in LISTS ----
-        // Note that it happens before rendering the panel
-        if ui.input_mut(|input| input.modifiers.is_none() && input.key_pressed(egui::Key::Tab)) {
-            if let (Some(mut text_edit_state), Some(computed_layout)) = (
-                TextEditState::load(ctx, text_edit_id),
-                &state.computed_layout,
-            ) {
-                use egui::TextBuffer;
-
-                if let Some(ccursor_range) = text_edit_state.ccursor_range() {
-                    let [ccursor_start, ccursor_end] = ccursor_range.sorted();
-                    let byte_start = current_note
-                        .text
-                        .byte_index_from_char_index(ccursor_start.index);
-                    let byte_end = current_note
-                        .text
-                        .byte_index_from_char_index(ccursor_start.index);
-
-                    if let Some((item_byte_pos, _)) = computed_layout
-                        .text_structure
-                        .find_span_at(SpanKind::ListItem, byte_start..byte_end)
-                    {
-                        let chars_before =
-                            current_note.text[0..item_byte_pos.start].chars().count();
-
-                        let cursor_before_list_item = computed_layout
-                            .galley
-                            .from_ccursor(CCursor::new(chars_before));
-
-                        // only apply logic if the item is located on the same line as the cursor
-                        match text_edit_state.cursor_range(&computed_layout.galley) {
-                            Some(range)
-                                if range.sorted().primary.rcursor.row
-                                    == cursor_before_list_item.rcursor.row =>
-                            {
-                                let insertion = "\t";
-                                let list_item_pos = item_byte_pos.clone();
-
-                                // TODO: normalize working with numbered lists
-
-                                let inserted_chars_count = insertion.chars().count();
-                                current_note.text.insert_str(list_item_pos.start, insertion);
-
-                                text_edit_state.set_ccursor_range(Some(CCursorRange::two(
-                                    ccursor_start + inserted_chars_count,
-                                    ccursor_end + inserted_chars_count,
-                                )));
-
-                                text_edit_state.store(ctx, text_edit_id);
-
-                                // Prevent TAB from modifying the text state
-                                ui.input_mut(|input| {
-                                    input.consume_key(Modifiers::NONE, egui::Key::Tab)
-                                });
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-            }
-        }
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);

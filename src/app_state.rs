@@ -8,6 +8,8 @@ use pulldown_cmark::HeadingLevel;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
+    app_actions::{EnterInsideListCommand, TabInsideListCommand},
+    commands::EditorCommand,
     md_shortcut::{Edge, Instruction, InstructionCondition, MdAnnotationShortcut, Source},
     persistent_state::PersistentState,
     text_structure::{SpanKind, TextStructure},
@@ -34,6 +36,7 @@ pub struct AppState {
     pub prev_focused: bool,
     pub md_annotation_shortcuts: Vec<MdAnnotationShortcut>,
     pub app_shortcuts: AppShortcuts,
+    pub editor_commands: Vec<Box<dyn EditorCommand>>,
 
     pub computed_layout: Option<ComputedLayout>,
     pub font_scale: i32,
@@ -186,6 +189,10 @@ impl AppState {
             hidden: false,
             prev_focused: false,
             font_scale: 0,
+            editor_commands: vec![
+                Box::new(TabInsideListCommand),
+                Box::new(EnterInsideListCommand),
+            ],
             md_annotation_shortcuts: [
                 ("Bold", "**", app_shortcuts.bold, SpanKind::Bold),
                 ("Italic", "*", app_shortcuts.emphasize, SpanKind::Emphasis),

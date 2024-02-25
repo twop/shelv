@@ -23,16 +23,17 @@ use eframe::{
     get_value, set_value, CreationContext,
 };
 
-pub mod app_actions;
-pub mod app_state;
-pub mod app_ui;
-pub mod egui_hotkey;
-pub mod md_shortcut;
-pub mod nord;
-pub mod persistent_state;
-pub mod picker;
-pub mod text_structure;
-pub mod theme;
+mod app_actions;
+mod app_state;
+mod app_ui;
+mod commands;
+mod egui_hotkey;
+mod md_shortcut;
+mod nord;
+mod persistent_state;
+mod picker;
+mod text_structure;
+mod theme;
 
 pub struct MyApp {
     state: AppState,

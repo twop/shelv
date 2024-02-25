@@ -1,15 +1,14 @@
-use std::{
-    num::NonZeroUsize,
-    ops::{Deref, Range, RangeBounds},
-};
+use std::ops::{Deref, Range};
 
 use eframe::egui::{
-    text::CCursor, text_edit::CCursorRange, Context, Id, OpenUrl, TextBuffer, TextEdit,
+    text::CCursor, text_edit::CCursorRange, Context, Id, KeyboardShortcut, Modifiers, OpenUrl,
 };
+
 use smallvec::SmallVec;
 
 use crate::{
     app_state::AppState,
+    commands::EditorCommand,
     text_structure::{ByteRange, ListDesc, RangeRelation, SpanKind, SpanMeta, TextStructure},
 };
 
@@ -113,6 +112,47 @@ pub fn proccess_app_action(
     }
 }
 
+pub struct TabInsideListCommand;
+pub struct EnterInsideListCommand;
+
+impl EditorCommand for TabInsideListCommand {
+    fn name(&self) -> &str {
+        "TabInsideList"
+    }
+
+    fn shortcut(&self) -> KeyboardShortcut {
+        KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Tab)
+    }
+
+    fn try_handle(
+        &self,
+        text_structure: &TextStructure,
+        text: &str,
+        byte_cursor: ByteRange,
+    ) -> Option<Vec<TextChange>> {
+        on_tab_inside_list(text_structure, text, byte_cursor)
+    }
+}
+
+impl EditorCommand for EnterInsideListCommand {
+    fn name(&self) -> &str {
+        "EnterInsideList"
+    }
+
+    fn shortcut(&self) -> KeyboardShortcut {
+        KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Enter)
+    }
+
+    fn try_handle(
+        &self,
+        text_structure: &TextStructure,
+        text: &str,
+        byte_cursor: ByteRange,
+    ) -> Option<Vec<TextChange>> {
+        on_enter_inside_list_item(text_structure, text, byte_cursor)
+    }
+}
+
 fn select_unordered_list_marker(depth: usize) -> &'static str {
     match depth {
         0 => "-",
@@ -121,7 +161,7 @@ fn select_unordered_list_marker(depth: usize) -> &'static str {
 }
 
 // handler on ENTER
-pub fn on_enter_inside_list_item(
+fn on_enter_inside_list_item(
     structure: &TextStructure,
     text: &str,
     cursor: ByteRange,
@@ -595,6 +635,26 @@ mod tests {
         assert_eq!(
             TextChange::encode_cursor(&text, cursor),
             "- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d"
+        );
+    }
+
+    #[test]
+    pub fn test_tabs_in_unordered_nested_lists() {
+        let (mut text, cursor) =
+            TextChange::try_extract_cursor("- a\n\t* b\n\t* c{||}\n- d \n".to_string());
+        let cursor = cursor.unwrap();
+
+        let changes = on_tab_inside_list(
+            &TextStructure::create_from(&text),
+            &text,
+            ByteRange(cursor.clone()),
+        )
+        .unwrap();
+
+        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+        assert_eq!(
+            TextChange::encode_cursor(&text, cursor),
+            "- a\n\t* b\n\t\t* c{||}\n- d \n"
         );
     }
 
