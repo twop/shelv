@@ -293,7 +293,7 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
-            let scaled_theme = state.theme.scaled(f32::powi(1.5, state.font_scale));
+            let scaled_theme = state.theme.scaled(f32::powi(1.2, state.font_scale));
 
             let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
                 let computed_layout = match state.computed_layout.take() {
@@ -690,15 +690,25 @@ fn render_footer_panel(
                     });
                 });
 
+                // TODO Maybe this should be a global notification/toast UI instead of just font size.
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.add_space(theme.sizes.m);
+                    let font_animation_id = ui.id().with("font_size");
+                    let color_animation_id = ui.id().with("message_color");
+
+                    let font_size_value = ctx.animate_value_with_time(font_animation_id, font_size as f32, 2.0);
+                    let show_font_message = font_size_value != font_size as f32;
+                    
+                    let show_hide_value = ctx.animate_value_with_time(color_animation_id, if show_font_message { 1.0 } else { 0.0 }, 0.2);
+                    let interpolated_font_color = interpolate_color(Color32::TRANSPARENT, theme.colors.subtle_text_color, show_hide_value);
+                    
+                    ui.add_space(theme.sizes.xl);
                     ui.label(
-                        RichText::new(format!("Font Size: {}", font_size))
-                            .color(theme.colors.subtle_text_color)
+                        RichText::new(format!("Font scaling set to {}", font_size))
+                            .color(interpolated_font_color)
                             .font(FontId {
                                 size: theme.fonts.size.normal,
                                 family: theme.fonts.family.bold.clone(),
-                            }),
+                            }) 
                     );
                 });
 
@@ -945,4 +955,19 @@ fn char_index_from_byte_index(s: &str, byte_index: usize) -> usize {
     }
 
     s.chars().count()
+}
+
+fn interpolate_color(from: Color32, to: Color32, progress: f32) -> Color32 {
+    let f = from.linear_multiply(1.0 - progress);
+    let t = to.linear_multiply(progress);
+
+    let [fr, fg, fb, fa] = f.to_normalized_gamma_f32();
+    let [tr, tg, tb, ta] = t.to_normalized_gamma_f32();
+
+    Color32::from_rgba_premultiplied(
+        ((fr + tr) * 255.) as u8,
+        ((fg + tg) * 255.) as u8,
+        ((fb + tb) * 255.) as u8,
+        ((fa + ta) * 255.) as u8,
+    )
 }
