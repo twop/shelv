@@ -235,7 +235,7 @@ fn on_enter_inside_list_item(
                 // means that we need to remove the current list
                 let mut changes = vec![TextChange::Replace(
                     ByteRange(span_range),
-                    format!("{}\n", TextChange::CURSOR),
+                    format!("{}", TextChange::CURSOR),
                 )];
 
                 // and then adjust the ordering for the rest
@@ -855,6 +855,51 @@ mod tests {
                 desc
             );
         }
+    }
+
+    #[test]
+    pub fn test_adding_list_item_with_enter() {
+        let (mut text, cursor) = TextChange::try_extract_cursor("- item{||}".to_string());
+        let cursor = cursor.unwrap();
+
+        assert_eq!(text, "- item");
+
+        let structure = TextStructure::create_from(&text);
+
+        let changes =
+            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
+
+        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+        assert_eq!(TextChange::encode_cursor(&text, cursor), "- item\n- {||}");
+    }
+
+    #[test]
+    pub fn test_adding_list_item_with_enter_on_complex_list_item() {
+        let (mut text, cursor) = TextChange::try_extract_cursor("- *item*{||}".to_string());
+        let cursor = cursor.unwrap();
+
+        assert_eq!(text, "- *item*");
+
+        let structure = TextStructure::create_from(&text);
+
+        let changes =
+            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
+
+        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+        assert_eq!(TextChange::encode_cursor(&text, cursor), "- *item*\n- {||}");
+    }
+
+    #[test]
+    pub fn test_not_adding_list_item_on_empty_line() {
+        let (mut text, cursor) = TextChange::try_extract_cursor("- item\n{||}".to_string());
+        let cursor = cursor.unwrap();
+
+        assert_eq!(text, "- item\n");
+
+        let structure = TextStructure::create_from(&text);
+
+        let changes = on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone()));
+        assert!(changes.is_none());
     }
 
     #[test]
