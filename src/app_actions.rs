@@ -209,7 +209,11 @@ fn on_enter_inside_list_item(
 
     let depth = parents.len() - 1;
 
-    let is_empty_list_item = structure.iterate_immediate_children_of(item_index).count() == 0;
+    let is_empty_list_item = structure
+        .iterate_immediate_children_of(item_index)
+        .filter(|(_, desc)| desc.kind != SpanKind::TaskMarker)
+        .count()
+        == 0;
 
     // first parent is the immediate parent
     match parents[0] {
@@ -301,15 +305,19 @@ fn on_enter_inside_list_item(
                 // then we just remove the entire list item and break
                 Some(vec![TextChange::Replace(
                     ByteRange(span_range),
-                    format!("{}\n", TextChange::CURSOR),
+                    format!("{}", TextChange::CURSOR),
                 )])
             } else {
+                let has_task_marker = structure
+                    .iterate_immediate_children_of(item_index)
+                    .any(|(_, desc)| desc.kind == SpanKind::TaskMarker);
+                // cond ? the_true : the_false
                 Some(vec![TextChange::Replace(
                     ByteRange(cursor.clone()),
                     "\n".to_string()
                         + &"\t".repeat(depth)
                         + select_unordered_list_marker(depth)
-                        + " "
+                        + if has_task_marker { " [ ] " } else { " " }
                         + TextChange::CURSOR,
                 )])
             }
@@ -793,9 +801,14 @@ mod tests {
                 "- \n- {||}b",
             ),
             (
-                "## Enter on empty list item removes it ##",
+                "## Enter on empty list item removes it with newline ##",
                 "- {||}\n- a",
                 "{||}\n- a",
+            ),
+            (
+                "## Enter on empty list item removes it ##",
+                "- a\n- {||}",
+                "- a\n{||}",
             ),
             (
                 "## Removing empty item in a numbered list adjusts indicies ##",
@@ -811,6 +824,17 @@ mod tests {
                 "## Splitting an unordered nested list##",
                 "- a\n\t* b{||}",
                 "- a\n\t* b\n\t* {||}",
+            ),
+            // todo items
+            (
+                "## adding a todo item in case the origin has a todo marker##",
+                "- [ ] item{||}",
+                "- [ ] item\n- [ ] {||}",
+            ),
+            (
+                "## removing empty todo item on enter ##",
+                "- [ ] {||}",
+                "{||}",
             ),
         ];
 
