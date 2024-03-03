@@ -710,6 +710,21 @@ mod tests {
                 "- a\n- b{||}\n\t- c\n\t\t 1. d",
                 "- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d",
             ),
+            //             (
+            //                 "-- identing numbered lists honors nested indicies --",
+            //                 r#"
+            // 1. a
+            // \t1. b
+            // \t2. boo
+            // 2. c{||}
+            // 3. d"#,
+            //                 r#"
+            // 1. a
+            // \t1. b
+            // \t2. boo
+            // \t3. c{||}
+            // 2. d"#,
+            //             ),
         ];
 
         for (desc, input, output) in test_cases {
