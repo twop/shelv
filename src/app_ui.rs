@@ -14,7 +14,7 @@ use eframe::{
 use smallvec::SmallVec;
 
 use crate::{
-    app_actions::{apply_text_changes, proccess_app_action, AppAction},
+    app_actions::{apply_text_changes, process_app_action, AppAction},
     app_state::{AppState, ComputedLayout, MsgToApp, Note},
     md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
@@ -212,7 +212,7 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
     render_header_panel(ctx, &state.theme);
 
     for action in actions {
-        proccess_app_action(action, ctx, state, text_edit_id);
+        process_app_action(action, ctx, state, text_edit_id);
     }
 
     let current_note = &mut state.notes[state.selected_note as usize];

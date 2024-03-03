@@ -43,7 +43,7 @@ impl TextChange {
         }
     }
 
-    fn encode_cursor(text: &str, cursor: ByteRange) -> String {
+    pub fn encode_cursor(text: &str, cursor: ByteRange) -> String {
         let mut text = text.to_string();
         if cursor.is_empty() {
             text.insert_str(cursor.start, TextChange::CURSOR);
@@ -67,7 +67,7 @@ pub enum AppAction {
     DecreaseFontSize,
 }
 
-pub fn proccess_app_action(
+pub fn process_app_action(
     action: AppAction,
     ctx: &Context,
     state: &mut AppState,
@@ -113,6 +113,7 @@ pub fn proccess_app_action(
 }
 
 pub struct TabInsideListCommand;
+pub struct ShiftTabInsideListCommand;
 pub struct EnterInsideListCommand;
 
 impl EditorCommand for TabInsideListCommand {
@@ -131,6 +132,25 @@ impl EditorCommand for TabInsideListCommand {
         byte_cursor: ByteRange,
     ) -> Option<Vec<TextChange>> {
         on_tab_inside_list(text_structure, text, byte_cursor)
+    }
+}
+
+impl EditorCommand for ShiftTabInsideListCommand {
+    fn name(&self) -> &str {
+        "ShiftTabInsideList"
+    }
+
+    fn shortcut(&self) -> KeyboardShortcut {
+        KeyboardShortcut::new(Modifiers::SHIFT, eframe::egui::Key::Tab)
+    }
+
+    fn try_handle(
+        &self,
+        text_structure: &TextStructure,
+        text: &str,
+        byte_cursor: ByteRange,
+    ) -> Option<Vec<TextChange>> {
+        on_shift_tab_inside_list(text_structure, text, byte_cursor)
     }
 }
 
@@ -286,9 +306,63 @@ fn on_enter_inside_list_item(
             } else {
                 Some(vec![TextChange::Replace(
                     ByteRange(cursor.clone()),
-                    "\n".to_string() + &"\t".repeat(depth) + "- " + TextChange::CURSOR,
+                    "\n".to_string()
+                        + &"\t".repeat(depth)
+                        + select_unordered_list_marker(depth)
+                        + " "
+                        + TextChange::CURSOR,
                 )])
             }
+        }
+    }
+}
+
+fn on_shift_tab_inside_list(
+    structure: &TextStructure,
+    text: &str,
+    cursor: ByteRange,
+) -> Option<Vec<TextChange>> {
+    let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
+
+    let parents: SmallVec<[_; 4]> = structure
+        .iterate_parents_of(item_index)
+        .filter(|(_, desc)| desc.kind == SpanKind::List)
+        .filter_map(|(idx, _)| match structure.find_meta(idx) {
+            Some(SpanMeta::List(list_desc)) => Some((idx, list_desc)),
+            _ => None,
+        })
+        .collect();
+
+    let depth = parents.len() - 1;
+
+    // let is_empty_list_item = structure.iterate_immediate_children_of(item_index).count() == 0;
+
+    // first parent is the immediate parent
+    match parents[0] {
+        (
+            parent_list_index,
+            ListDesc {
+                starting_index: Some(starting_index),
+                ..
+            },
+        ) => None,
+        _ => {
+            // means that the list is unordered
+            // move just the item by itself
+            let mut changes = vec![];
+
+            let t = &text[..span_range.start];
+
+            if depth > 0 && t.ends_with("\t") {
+                // move itself
+                changes.push(TextChange::Replace(
+                    ByteRange(span_range.start - 1..span_range.start + 1), //this is for "-" -> "*" replacement
+                    format!("{}", select_unordered_list_marker(depth - 1)),
+                ));
+            } else {
+                return None;
+            };
+            Some(changes)
         }
     }
 }
@@ -619,115 +693,129 @@ mod tests {
     // --- handling tabs inside lists ---
 
     #[test]
-    pub fn test_tabs_in_unordered_lists() {
-        let (mut text, cursor) =
-            TextChange::try_extract_cursor("- a\n- b{||}\n\t- c\n\t\t 1. d".to_string());
-        let cursor = cursor.unwrap();
+    pub fn test_tabs_cases() {
+        let test_cases = [
+            (
+                "-- tabs in ordered lists modify numbers --",
+                "1. a\n2. b{||}\n\t- c\n\t\t 1. d\n4. d",
+                "1. a\n\t1. b{||}\n\t\t* c\n\t\t\t 1. d\n2. d",
+            ),
+            (
+                "-- tabbing inside nested unordered list --",
+                "- a\n\t* b\n\t* c{||}\n- d \n",
+                "- a\n\t* b\n\t\t* c{||}\n- d \n",
+            ),
+            (
+                "-- tabbing inside unordered list picks proper list item marker --",
+                "- a\n- b{||}\n\t- c\n\t\t 1. d",
+                "- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d",
+            ),
+        ];
 
-        let changes = on_tab_inside_list(
-            &TextStructure::create_from(&text),
-            &text,
-            ByteRange(cursor.clone()),
-        )
-        .unwrap();
+        for (desc, input, output) in test_cases {
+            let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
+            let cursor = cursor.unwrap();
 
-        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
-        assert_eq!(
-            TextChange::encode_cursor(&text, cursor),
-            "- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d"
-        );
+            let changes = on_tab_inside_list(
+                &TextStructure::create_from(&text),
+                &text,
+                ByteRange(cursor.clone()),
+            )
+            .unwrap();
+
+            let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+            assert_eq!(
+                TextChange::encode_cursor(&text, cursor),
+                output,
+                "test case: {}",
+                desc
+            );
+        }
     }
 
     #[test]
-    pub fn test_tabs_in_unordered_nested_lists() {
-        let (mut text, cursor) =
-            TextChange::try_extract_cursor("- a\n\t* b\n\t* c{||}\n- d \n".to_string());
-        let cursor = cursor.unwrap();
+    pub fn test_shift_tabs_cases() {
+        let test_cases = [(
+            "-- shift left unordered list item --",
+            "- a\n\t* b{||}",
+            "- a\n- b{||}",
+        )];
 
-        let changes = on_tab_inside_list(
-            &TextStructure::create_from(&text),
-            &text,
-            ByteRange(cursor.clone()),
-        )
-        .unwrap();
+        for (desc, input, output) in test_cases {
+            let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
+            let cursor = cursor.unwrap();
 
-        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
-        assert_eq!(
-            TextChange::encode_cursor(&text, cursor),
-            "- a\n\t* b\n\t\t* c{||}\n- d \n"
-        );
-    }
+            let changes = on_shift_tab_inside_list(
+                &TextStructure::create_from(&text),
+                &text,
+                ByteRange(cursor.clone()),
+            )
+            .unwrap();
 
-    #[test]
-    pub fn test_tabs_in_ordered_lists() {
-        let (mut text, cursor) =
-            TextChange::try_extract_cursor("1. a\n2. b{||}\n\t- c\n\t\t 1. d\n4. d".to_string());
-        let cursor = cursor.unwrap();
-
-        let changes = on_tab_inside_list(
-            &TextStructure::create_from(&text),
-            &text,
-            ByteRange(cursor.clone()),
-        )
-        .unwrap();
-
-        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
-        assert_eq!(
-            TextChange::encode_cursor(&text, cursor),
-            "1. a\n\t1. b{||}\n\t\t* c\n\t\t\t 1. d\n2. d"
-        );
+            let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+            assert_eq!(
+                TextChange::encode_cursor(&text, cursor),
+                output,
+                "test case: {}",
+                desc
+            );
+        }
     }
 
     // --- spitting lists via enter ---
 
     #[test]
     pub fn test_splitting_list_item_via_enter() {
-        let (mut text, cursor) = TextChange::try_extract_cursor("- a{||}b".to_string());
-        let cursor = cursor.unwrap();
+        let test_cases = [
+            (
+                "## Primitive case of list item splitting ##",
+                "- a{||}b",
+                "- a\n- {||}b",
+            ),
+            (
+                "## List item splitting with selection ##",
+                "- {|}a{|}b",
+                "- \n- {||}b",
+            ),
+            (
+                "## Enter on empty list item removes it ##",
+                "- {||}\n- a",
+                "{||}\n- a",
+            ),
+            (
+                "## Removing empty item in a numbered list adjusts indicies ##",
+                "1. a\n2. {||}\n3. c",
+                "1. a\n{||}\n2. c",
+            ),
+            (
+                "## Splitting a numbered list with selection ##",
+                "- parent\n\t1. {|}a{|}b\n\t2. c",
+                "- parent\n\t1. \n\t2. {||}b\n\t3. c",
+            ),
+            (
+                "## Splitting an unordered nested list##",
+                "- a\n\t* b{||}",
+                "- a\n\t* b\n\t* {||}",
+            ),
+        ];
 
-        assert_eq!(text, "- ab");
-        assert_eq!(cursor, ByteRange(3..3));
+        for (desc, input, output) in test_cases {
+            let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
+            let cursor = cursor.unwrap();
 
-        let structure = TextStructure::create_from(&text);
+            let structure = TextStructure::create_from(&text);
 
-        let changes =
-            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
+            let changes =
+                on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
 
-        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
-        assert_eq!(TextChange::encode_cursor(&text, cursor), "- a\n- {||}b");
-    }
-
-    #[test]
-    pub fn test_splitting_list_item_via_enter_with_selection() {
-        let (mut text, cursor) = TextChange::try_extract_cursor("- {|}a{|}b".to_string());
-        let cursor = cursor.unwrap();
-
-        assert_eq!(text, "- ab");
-        assert_eq!(cursor, ByteRange(2..3));
-
-        let structure = TextStructure::create_from(&text);
-
-        let changes =
-            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
-
-        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
-        assert_eq!(TextChange::encode_cursor(&text, cursor), "- \n- {||}b");
-    }
-
-    #[test]
-    pub fn test_removing_emty_list_item_on_enter() {
-        let (mut text, cursor) = TextChange::try_extract_cursor("- {||}\n- a".to_string());
-        let cursor = cursor.unwrap();
-
-        assert_eq!(text, "- \n- a");
-
-        let structure = TextStructure::create_from(&text);
-
-        let changes =
-            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
-
-        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
-        assert_eq!(TextChange::encode_cursor(&text, cursor), "{||}\n- a");
+            let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+            assert_eq!(
+                TextChange::encode_cursor(&text, cursor),
+                output,
+                "test case: {}",
+                desc
+            );
+        }
     }
 
     #[test]
@@ -739,38 +827,6 @@ mod tests {
             ByteRange(cursor.unwrap().clone()),
         );
         assert!(changes.is_none());
-    }
-
-    #[test]
-    pub fn test_removing_numbered_emty_list_item_on_enter() {
-        let (mut text, cursor) = TextChange::try_extract_cursor("1. a\n2. {||}\n3. c".to_string());
-        let cursor = cursor.unwrap();
-
-        let structure = TextStructure::create_from(&text);
-
-        let changes =
-            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
-
-        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
-        assert_eq!(TextChange::encode_cursor(&text, cursor), "1. a\n{||}\n2. c");
-    }
-
-    #[test]
-    pub fn test_splitting_numbered_list_item_via_enter_with_selection() {
-        let (mut text, cursor) =
-            TextChange::try_extract_cursor("- parent\n\t1. {|}a{|}b\n\t2. c".to_string());
-        let cursor = cursor.unwrap();
-
-        let structure = TextStructure::create_from(&text);
-
-        let changes =
-            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
-
-        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
-        assert_eq!(
-            TextChange::encode_cursor(&text, cursor),
-            "- parent\n\t1. \n\t2. {||}b\n\t3. c"
-        );
     }
     // --------- Text changes cursor tests --------
 

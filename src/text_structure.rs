@@ -841,14 +841,17 @@ fn iterate_children_recursively_of(
     index: SpanIndex,
     spans: &Vec<SpanDesc>,
 ) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
-    let parent_parent = spans[index.0].parent;
+    // note that we rely here on ordering
+    // hence we need to stop iterating when the parent pos of an element
+    // is either the parent of the targeted item (means siblings)
+    // or even earlier parent (e.g. even closer to the root)
+    let parent_parent = spans[index.0].parent.0;
     spans
         .iter()
         .enumerate()
         .skip(index.0 + 1)
         .map(|(i, desc)| (SpanIndex(i), desc))
-        .take_while(move |(_, child)| child.parent != parent_parent)
-
+        .take_while(move |(_, child)| child.parent.0 > parent_parent)
 }
 
 fn calc_total_range<'a>(spans: impl Iterator<Item = &'a SpanDesc>) -> Option<Range<usize>> {
