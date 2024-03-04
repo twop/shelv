@@ -670,6 +670,15 @@ impl TextStructure {
         find_metadata(index, &self.metadata)
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
+        // note that the first el is root itself
+        self.spans
+            .iter()
+            .enumerate()
+            .skip(1)
+            .map(|(i, desc)| (SpanIndex(i), desc))
+    }
+
     pub fn find_any_span_at(&self, byte_cursor: Range<usize>) -> Option<(Range<usize>, SpanIndex)> {
         self.spans
             .iter()

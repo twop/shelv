@@ -437,65 +437,6 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                 }
             }
 
-            // ---- AUTO INDENT LISTS ----
-            //     if ui.input_mut(|input| input.key_pressed(egui::Key::Enter)) {
-            //         if let (Some(text_cursor_range), Some(computed_layout)) =
-            //             (cursor_range, &state.computed_layout)
-            //         {
-            //             use egui::TextBuffer;
-
-            //             let char_range = text_cursor_range.as_sorted_char_range();
-            //             let byte_start = current_note
-            //                 .text
-            //                 .byte_index_from_char_index(char_range.start);
-            //             let byte_end = current_note.text.byte_index_from_char_index(char_range.end);
-
-            //             let inside_item = computed_layout.text_structure.find_surrounding_list_item(
-            //                 // note that "\n" was already inserted,
-            //                 //thus we need to just look for "cursor_start -1" to detect a list item
-            //                 if current_note.text[..byte_start].ends_with("\n") {
-            //                     (byte_start - 1)..(byte_start - 1)
-            //                 } else {
-            //                     byte_start..byte_end
-            //                 },
-            //             );
-
-            //             println!(
-            //                 "\nnewline\nbefore_cursor='{}'\ncursor='{}'\nafter='{}'",
-            //                 &current_note.text[0..byte_start],
-            //                 &current_note.text[byte_start..byte_end],
-            //                 &current_note.text[byte_end..]
-            //             );
-
-            //             if let Some(inside_list_item) = inside_item {
-            //                 use egui::TextBuffer as _;
-
-            //                 let text_to_insert = match inside_list_item.started_numbered_index {
-            //                     Some(starting_index) => format!(
-            //                         "{}{}. ",
-            //                         "\t".repeat(inside_list_item.depth as usize),
-            //                         starting_index + inside_list_item.item_index as u64 + 1
-            //                     ),
-            //                     None => {
-            //                         format!("{}- ", "\t".repeat(inside_list_item.depth as usize))
-            //                     }
-            //                 };
-
-            //                 current_note
-            //                     .text
-            //                     .insert_text(text_to_insert.as_str(), char_range.start);
-
-            //                 let [min, max] = text_cursor_range.as_ccursor_range().sorted();
-
-            //                 // that byte size and char size of insertion are te same in this case
-            //                 text_edit_state.set_ccursor_range(Some(CCursorRange::two(
-            //                     min + text_to_insert.len(),
-            //                     max + text_to_insert.len(),
-            //                 )));
-            //             }
-            //         }
-            //     }
-
             current_note.cursor = text_edit_state.ccursor_range();
             text_edit_state.store(ui.ctx(), text_edit_id);
         });
@@ -638,12 +579,21 @@ fn render_footer_panel(
                     let font_animation_id = ui.id().with("font_size");
                     let color_animation_id = ui.id().with("message_color");
 
-                    let font_size_value = ctx.animate_value_with_time(font_animation_id, font_size as f32, 2.0);
+                    let font_size_value =
+                        ctx.animate_value_with_time(font_animation_id, font_size as f32, 2.0);
                     let show_font_message = font_size_value != font_size as f32;
-                    
-                    let show_hide_value = ctx.animate_value_with_time(color_animation_id, if show_font_message { 1.0 } else { 0.0 }, 0.2);
-                    let interpolated_font_color = interpolate_color(Color32::TRANSPARENT, theme.colors.subtle_text_color, show_hide_value);
-                    
+
+                    let show_hide_value = ctx.animate_value_with_time(
+                        color_animation_id,
+                        if show_font_message { 1.0 } else { 0.0 },
+                        0.2,
+                    );
+                    let interpolated_font_color = interpolate_color(
+                        Color32::TRANSPARENT,
+                        theme.colors.subtle_text_color,
+                        show_hide_value,
+                    );
+
                     ui.add_space(theme.sizes.xl);
                     ui.label(
                         RichText::new(format!("Font scaling set to {}", font_size))
@@ -651,7 +601,7 @@ fn render_footer_panel(
                             .font(FontId {
                                 size: theme.fonts.size.normal,
                                 family: theme.fonts.family.bold.clone(),
-                            }) 
+                            }),
                     );
                 });
 

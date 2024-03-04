@@ -3,6 +3,7 @@
 
 use app_state::{AppInitData, AppState, MsgToApp};
 use app_ui::render_app;
+use boa_engine::{Context, Source};
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
     GlobalHotKeyEvent, GlobalHotKeyManager,
@@ -32,6 +33,7 @@ mod md_shortcut;
 mod nord;
 mod persistent_state;
 mod picker;
+mod scripting;
 mod text_structure;
 mod theme;
 
