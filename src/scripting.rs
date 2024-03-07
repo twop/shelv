@@ -130,8 +130,14 @@ pub fn execute_live_scripts(
 
 fn print_output_block(body: &str) -> String {
     let mut context = Context::default();
-    let result = context.eval(Source::from_bytes(body)).unwrap();
-    format!("```output\n{}\n```", result.display())
+    let result = context.eval(Source::from_bytes(body));
+    format!(
+        "```output\n{}\n```",
+        match result {
+            Ok(res) => res.display().to_string(),
+            Err(err) => format!("{:#}", err),
+        }
+    )
 }
 
 fn calculate_hash(t: &str) -> u64 {
@@ -203,6 +209,22 @@ mod tests {
 ```{||}
 ```output
 4
+```
+"#,
+            ),
+            (
+                "## prints an error ##",
+                r#"
+```js
+throw new Error("yo!")
+```{||}
+"#,
+                r#"
+```js
+throw new Error("yo!")
+```{||}
+```output
+Error: yo!
 ```
 "#,
             ),
