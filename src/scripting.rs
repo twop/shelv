@@ -1,4 +1,5 @@
 use boa_engine::{Context, Source};
+use eframe::egui::output;
 use smallvec::SmallVec;
 use std::{
     fmt::format,
@@ -10,26 +11,23 @@ use crate::{
     text_structure::{ByteRange, SpanIndex, SpanKind, TextStructure},
 };
 
-#[derive(PartialEq, Debug)]
-pub struct SourceHash(u64);
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub struct SourceHash(u16);
 
-pub struct ScriptComputeCache {
-    evals: Vec<(SourceHash, u8)>,
-    generation: u8,
+impl SourceHash {
+    fn parse(hex: &str) -> Option<Self> {
+        u16::from_str_radix(hex, 16).ok().map(SourceHash)
+    }
 }
+
+pub const OUTPUT_LANG: &str = "#";
 
 enum CodeBlock {
-    LiveJS(ByteRange),
-    Output(ByteRange),
+    LiveJS(ByteRange, SourceHash),
+    Output(ByteRange, Option<SourceHash>),
 }
 
-pub fn execute_live_scripts(
-    text_structure: &TextStructure,
-    text: &str,
-    compute_cache: &mut ScriptComputeCache,
-) -> Option<Vec<TextChange>> {
-    let this_generation = compute_cache.generation.wrapping_add(1);
-
+pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Option<Vec<TextChange>> {
     let script_blocks: SmallVec<[_; 8]> = text_structure
         .iter()
         .filter_map(|(index, desc)| match desc.kind {
@@ -44,8 +42,19 @@ pub fn execute_live_scripts(
                     let code = &text[code_desc.byte_pos.clone()];
 
                     match lang.as_str() {
-                        "js" => Some((index, CodeBlock::LiveJS(byte_range), code)),
-                        "output" => Some((index, CodeBlock::Output(byte_range), code)),
+                        "js" => Some((
+                            index,
+                            CodeBlock::LiveJS(byte_range, calculate_hash(code)),
+                            code,
+                        )),
+                        output if output.starts_with(OUTPUT_LANG) => {
+                            let hex_str = &output[OUTPUT_LANG.len()..];
+                            Some((
+                                index,
+                                CodeBlock::Output(byte_range, SourceHash::parse(hex_str)),
+                                code,
+                            ))
+                        }
                         _ => None,
                     }
                 }
@@ -62,64 +71,42 @@ pub fn execute_live_scripts(
 
     let mut changes: Vec<TextChange> = vec![];
 
-    let mut last_was_js: Option<(SpanIndex, ByteRange, &str)> = None;
+    let mut last_was_js: Option<(SourceHash, ByteRange, &str)> = None;
 
     for (block_index, block, inner_body) in script_blocks {
         match block {
-            CodeBlock::LiveJS(current_block_range) => {
-                if let Some((_, prev_code_block_range, prev_block_body)) = last_was_js.take() {
-                    compute_cache.evals.push((
-                        SourceHash(calculate_hash(&prev_block_body)),
-                        this_generation,
-                    ));
+            CodeBlock::LiveJS(current_block_range, current_hash) => {
+                // this branch means that we are missing an ouput block => add it
+                if let Some((source_hash, block_range, prev_block_body)) = last_was_js.take() {
                     changes.push(TextChange::Replace(
-                        ByteRange(prev_code_block_range.end..prev_code_block_range.end),
-                        "\n".to_string() + &print_output_block(prev_block_body),
+                        ByteRange(block_range.end..block_range.end),
+                        "\n".to_string() + &print_output_block(prev_block_body, source_hash),
                     ));
                 };
 
-                last_was_js = Some((block_index, current_block_range, inner_body));
+                last_was_js = Some((current_hash, current_block_range, inner_body));
             }
-            CodeBlock::Output(output_range) => match last_was_js.take() {
-                Some((prev_js_block_index, source_range, source_code)) => {
-                    let source_hash = SourceHash(calculate_hash(&source_code));
-                    let exisiting = compute_cache
-                        .evals
-                        .iter_mut()
-                        .find(|(hash, _)| hash == &source_hash);
-
-                    if let Some((_, gen)) = exisiting {
-                        // just update generation for gc
-                        *gen = this_generation;
-                    } else {
-                        let eval_res = print_output_block(source_code);
-                        compute_cache.evals.push((source_hash, this_generation));
+            CodeBlock::Output(output_range, maybe_hash) => match last_was_js.take() {
+                Some((source_hash, source_range, source_code)) => {
+                    if maybe_hash != Some(source_hash) {
+                        let eval_res = print_output_block(source_code, source_hash);
                         changes.push(TextChange::Replace(output_range, eval_res));
                     }
                 }
                 None => {
-                    // it means that we have an orphant code block => remote it
+                    // this branch means that we have an orphant code block => remove it
                     changes.push(TextChange::Replace(output_range, "".to_string()));
                 }
             },
         }
     }
 
-    if let Some((block_index, range, body)) = last_was_js {
-        compute_cache
-            .evals
-            .push((SourceHash(calculate_hash(&body)), this_generation));
-
+    if let Some((source_hash, range, body)) = last_was_js {
         changes.push(TextChange::Replace(
             ByteRange(range.end..range.end),
-            "\n".to_string() + &print_output_block(body),
+            "\n".to_string() + &print_output_block(body, source_hash),
         ));
     };
-
-    // GC for unused evals
-    compute_cache
-        .evals
-        .retain(|(_, gen)| *gen == this_generation);
 
     if changes.is_empty() {
         None
@@ -128,11 +115,13 @@ pub fn execute_live_scripts(
     }
 }
 
-fn print_output_block(body: &str) -> String {
+fn print_output_block(body: &str, hash: SourceHash) -> String {
     let mut context = Context::default();
     let result = context.eval(Source::from_bytes(body));
     format!(
-        "```output\n{}\n```",
+        "```{}{:x}\n{}\n```",
+        OUTPUT_LANG,
+        hash.0,
         match result {
             Ok(res) => res.display().to_string(),
             Err(err) => format!("{:#}", err),
@@ -140,10 +129,10 @@ fn print_output_block(body: &str) -> String {
     )
 }
 
-fn calculate_hash(t: &str) -> u64 {
+fn calculate_hash(t: &str) -> SourceHash {
     let mut s = DefaultHasher::new();
     t.hash(&mut s);
-    s.finish()
+    SourceHash(s.finish() as u16)
 }
 
 #[cfg(test)]
@@ -161,57 +150,101 @@ mod tests {
 'hello world' + '!'
 ```{||}
 "#,
+                Some(
+                    r#"
+```js
+'hello world' + '!'
+```{||}
+```#da0b
+"hello world!"
+```
+"#,
+                ),
+            ),
+            // ________________________________________________
+            (
+                "## overrides a block if hashes don't match ##",
                 r#"
 ```js
 'hello world' + '!'
 ```{||}
-```output
+```#aaa
+I will be overwritten
+```
+"#,
+                Some(
+                    r#"
+```js
+'hello world' + '!'
+```{||}
+```#da0b
 "hello world!"
 ```
 "#,
+                ),
             ),
+            // ________________________________________________
+            (
+                "## and it doesn't override output block if hashes match ##",
+                r#"
+```js
+'hello world' + '!'
+```{||}
+```#da0b
+I should be overwritten, but I won't
+```
+"#,
+                None,
+            ),
+            // ________________________________________________
             (
                 "## replaces the content of the output block if cache is empty ##",
                 r#"
 ```js
 2 + 2
 ```{||}
-```output
+```#asd
 1
 ```
 "#,
-                r#"
+                Some(
+                    r#"
 ```js
 2 + 2
 ```{||}
-```output
+```#2cd1
 4
 ```
 "#,
+                ),
             ),
+            // ________________________________________________
             (
                 "## removes orhpant output blocks ##",
                 r#"
-```output
+```#dfgh
 1
 ```
 ```js
 2 + 2
 ```{||}
-```output
+```#2
 3
 ```
 "#,
-                r#"
+                Some(
+                    r#"
 
 ```js
 2 + 2
 ```{||}
-```output
+```#2cd1
 4
 ```
 "#,
+                ),
             ),
+            // ________________________________________________
             (
                 "## prints an error ##",
                 r#"
@@ -219,14 +252,16 @@ mod tests {
 throw new Error("yo!")
 ```{||}
 "#,
-                r#"
+                Some(
+                    r#"
 ```js
 throw new Error("yo!")
 ```{||}
-```output
+```#b511
 Error: yo!
 ```
 "#,
+                ),
             ),
         ];
 
@@ -236,23 +271,25 @@ Error: yo!
 
             let structure = TextStructure::create_from(&text);
 
-            let changes = execute_live_scripts(
-                &structure,
-                &text,
-                &mut ScriptComputeCache {
-                    evals: vec![],
-                    generation: 0,
-                },
-            )
-            .unwrap();
+            let changes = execute_live_scripts(&structure, &text);
 
-            let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
-            assert_eq!(
-                TextChange::encode_cursor(&text, cursor),
-                expected_output,
-                "test case: {}",
-                desc
-            );
+            match (changes, expected_output) {
+                (Some(changes), Some(expected_output)) => {
+                    let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+                    assert_eq!(
+                        TextChange::encode_cursor(&text, cursor),
+                        expected_output,
+                        "test case: {}",
+                        desc
+                    )
+                }
+                (None, None) => (),
+                (changes, expected) => assert!(
+                    false,
+                    "expected={:?}, but got this changes={:?}",
+                    expected, changes
+                ),
+            }
         }
     }
 }

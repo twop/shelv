@@ -18,6 +18,7 @@ use crate::{
     app_state::{AppState, ComputedLayout, MsgToApp, Note},
     md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
+    scripting::execute_live_scripts,
     text_structure::{ByteRange, InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
     theme::{AppIcon, AppTheme},
 };
@@ -217,6 +218,40 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
 
     let current_note = &mut state.notes[state.selected_note as usize];
     restore_cursor_from_note_state(&current_note, ctx, text_edit_id);
+
+    // TODO actually do that if no changes were detected
+
+    if let (Some(text_cursor_range), Some(computed_layout)) =
+        (current_note.cursor, &state.computed_layout)
+    {
+        if let Some(changes) =
+            execute_live_scripts(&computed_layout.text_structure, &current_note.text)
+        {
+            use egui::TextBuffer as _;
+
+            let [char_range_start, char_range_end] = text_cursor_range.sorted().map(|c| c.index);
+
+            let [byte_start, byte_end] = [char_range_start, char_range_end]
+                .map(|char_idx| current_note.text.byte_index_from_char_index(char_idx));
+
+            if let Ok(ByteRange(byte_cursor)) = apply_text_changes(
+                &mut current_note.text,
+                ByteRange(byte_start..byte_end),
+                changes,
+            ) {
+                current_note.cursor = Some(CCursorRange::two(
+                    CCursor::new(char_index_from_byte_index(
+                        &current_note.text,
+                        byte_cursor.start,
+                    )),
+                    CCursor::new(char_index_from_byte_index(
+                        &current_note.text,
+                        byte_cursor.end,
+                    )),
+                ));
+            }
+        }
+    }
 
     egui::CentralPanel::default().show(ctx, |ui| {
         let avail_space = ui.available_rect_before_wrap();

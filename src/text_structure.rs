@@ -24,7 +24,10 @@ pub enum RangeRelation {
     Contains,
 }
 
-use crate::theme::{AppTheme, ColorTheme, FontTheme};
+use crate::{
+    scripting::OUTPUT_LANG,
+    theme::{AppTheme, ColorTheme, FontTheme},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpanIndex(usize);
@@ -464,7 +467,7 @@ impl TextStructure {
                 let lang = match lang.as_str() {
                     // "ts" => "typescript",
                     // "rs" => "rust",
-                    "output" => "js",
+                    l if l.starts_with(OUTPUT_LANG) => "js",
                     l => l,
                 };
 
