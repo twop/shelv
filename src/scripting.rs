@@ -69,12 +69,24 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
         return None;
     }
 
-    let mut changes: Vec<TextChange> = vec![];
+    let mut changes: SmallVec<[TextChange; 4]> = SmallVec::new();
 
     let mut last_was_js: Option<(SourceHash, ByteRange, &str)> = None;
+
+    let needs_re_eval = script_blocks.len() % 2 != 0 ||  script_blocks[..]
+        .chunks_exact(2)
+        .all(|elements| match &elements {
+               &[(_,CodeBlock::LiveJS(_, source_hash), _), (_, CodeBlock::Output(_, Some(output_source_hash)), _)] =>  source_hash == output_source_hash ,
+            _ => false,
+        });
+
+    if !needs_re_eval {
+        return None;
+    }
+
     let mut context = Context::default();
 
-    for (block_index, block, inner_body) in script_blocks {
+    for (_, block, inner_body) in script_blocks {
         match block {
             CodeBlock::LiveJS(current_block_range, current_hash) => {
                 // this branch means that we are missing an ouput block => add it
@@ -88,11 +100,15 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
 
                 last_was_js = Some((current_hash, current_block_range, inner_body));
             }
-            CodeBlock::Output(output_range, maybe_hash) => match last_was_js.take() {
-                Some((source_hash, source_range, source_code)) => {
-                    // TOD optimization: only update code block if a previous block was changed.
+            CodeBlock::Output(output_range, _) => match last_was_js.take() {
+                Some((source_hash, _, source_code)) => {
+                    // this branch means that we have a corresponding output block
                     let eval_res = print_output_block(source_code, source_hash, &mut context);
-                    changes.push(TextChange::Replace(output_range, eval_res));
+                    if eval_res.as_str() != inner_body {
+                        // don't add a text change if the result is the same
+                        // note that we still need to compute JS for JS context to be consistent
+                        changes.push(TextChange::Replace(output_range, eval_res));
+                    }
                 }
                 None => {
                     // this branch means that we have an orphant code block => remove it
@@ -112,7 +128,7 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
     if changes.is_empty() {
         None
     } else {
-        Some(changes)
+        Some(changes.into_vec())
     }
 }
 
