@@ -334,7 +334,9 @@ impl TextStructure {
                             },
                         )),
 
-                        Item => Some(builder.add(SpanKind::ListItem, range)),
+                        Item => Some(
+                            builder.add(SpanKind::ListItem, trim_trailing_new_lines(&text, &range)),
+                        ),
                         Heading(level, _, _) => Some(builder.add(
                             SpanKind::Heading(level),
                             trim_trailing_new_lines(&text, &range),
