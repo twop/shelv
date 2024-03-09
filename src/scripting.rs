@@ -75,8 +75,8 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
 
     let needs_re_eval = script_blocks.len() % 2 != 0 ||  script_blocks[..]
         .chunks_exact(2)
-        .all(|elements| match &elements {
-               &[(_,CodeBlock::LiveJS(_, source_hash), _), (_, CodeBlock::Output(_, Some(output_source_hash)), _)] =>  source_hash == output_source_hash ,
+        .any(|elements| match &elements {
+               &[(_,CodeBlock::LiveJS(_, source_hash), _), (_, CodeBlock::Output(_, Some(output_source_hash)), _)] =>  source_hash != output_source_hash ,
             _ => false,
         });
 
