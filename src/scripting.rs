@@ -72,6 +72,7 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
     let mut changes: Vec<TextChange> = vec![];
 
     let mut last_was_js: Option<(SourceHash, ByteRange, &str)> = None;
+    let mut context = Context::default();
 
     for (block_index, block, inner_body) in script_blocks {
         match block {
@@ -80,7 +81,8 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
                 if let Some((source_hash, block_range, prev_block_body)) = last_was_js.take() {
                     changes.push(TextChange::Replace(
                         ByteRange(block_range.end..block_range.end),
-                        "\n".to_string() + &print_output_block(prev_block_body, source_hash),
+                        "\n".to_string()
+                            + &print_output_block(prev_block_body, source_hash, &mut context),
                     ));
                 };
 
@@ -88,10 +90,9 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
             }
             CodeBlock::Output(output_range, maybe_hash) => match last_was_js.take() {
                 Some((source_hash, source_range, source_code)) => {
-                    if maybe_hash != Some(source_hash) {
-                        let eval_res = print_output_block(source_code, source_hash);
-                        changes.push(TextChange::Replace(output_range, eval_res));
-                    }
+                    // TOD optimization: only update code block if a previous block was changed.
+                    let eval_res = print_output_block(source_code, source_hash, &mut context);
+                    changes.push(TextChange::Replace(output_range, eval_res));
                 }
                 None => {
                     // this branch means that we have an orphant code block => remove it
@@ -104,7 +105,7 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
     if let Some((source_hash, range, body)) = last_was_js {
         changes.push(TextChange::Replace(
             ByteRange(range.end..range.end),
-            "\n".to_string() + &print_output_block(body, source_hash),
+            "\n".to_string() + &print_output_block(body, source_hash, &mut context),
         ));
     };
 
@@ -115,8 +116,7 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
     }
 }
 
-fn print_output_block(body: &str, hash: SourceHash) -> String {
-    let mut context = Context::default();
+fn print_output_block(body: &str, hash: SourceHash, context: &mut Context) -> String {
     let result = context.eval(Source::from_bytes(body));
     format!(
         "```{}{:x}\n{}\n```",
