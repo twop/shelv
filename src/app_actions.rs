@@ -115,6 +115,26 @@ pub fn process_app_action(
 pub struct TabInsideListCommand;
 pub struct ShiftTabInsideListCommand;
 pub struct EnterInsideListCommand;
+pub struct SpaceAfterTaskMarkersCommand;
+
+impl EditorCommand for SpaceAfterTaskMarkersCommand {
+    fn name(&self) -> &str {
+        "SpaceAfterTaskMarker"
+    }
+
+    fn shortcut(&self) -> KeyboardShortcut {
+        KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Space)
+    }
+
+    fn try_handle(
+        &self,
+        text_structure: &TextStructure,
+        text: &str,
+        byte_cursor: ByteRange,
+    ) -> Option<Vec<TextChange>> {
+        on_space_after_task_markers(text_structure, text, byte_cursor)
+    }
+}
 
 impl EditorCommand for TabInsideListCommand {
     fn name(&self) -> &str {
@@ -504,6 +524,50 @@ fn increase_nesting_for_lists(
         });
     }
     changes
+}
+
+fn on_space_after_task_markers(
+    structure: &TextStructure,
+    text: &str,
+    cursor: ByteRange,
+) -> Option<Vec<TextChange>> {
+    let unexpanded_task_markers = &text[..cursor.start].ends_with("[]");
+
+    if !unexpanded_task_markers {
+        return None;
+    }
+
+    if structure
+        .find_span_at(SpanKind::ListItem, cursor.clone())
+        .is_some_and(|(span, _)| {
+            // At the beggining of a list item with unexpanded task markers "- []{}"
+            cursor.start == span.start + 4
+        })
+    {
+        // Ie. "- []{}" -> "- [ ]{}"
+        return Some(vec![TextChange::Replace(
+            ByteRange(cursor.start - 2..cursor.start),
+            "[ ]".to_string(),
+        )]);
+    }
+
+    if structure
+        .find_span_at(SpanKind::CodeBlock, cursor.clone())
+        .is_none()
+    {
+        let text_before_task_markers = &text[..cursor.start - 2];
+
+        // Start of the file or a new line, so we must add a new list item
+        if text_before_task_markers.len() == 0 || text_before_task_markers.ends_with("\n") {
+            // Ie. "[]{}" -> "- []{}"
+            return Some(vec![TextChange::Replace(
+                ByteRange(cursor.start - 2..cursor.start),
+                select_unordered_list_marker(0).to_string() + " [ ]",
+            )]);
+        }
+    }
+
+    None
 }
 
 // ----  text change handler ----
@@ -912,6 +976,73 @@ mod tests {
         );
         assert!(changes.is_none());
     }
+
+    #[test]
+    pub fn test_skips_expanding_task_markers_when_not_start_of_line() {
+        let (text, cursor) = TextChange::try_extract_cursor("a[]{||}".to_string());
+        let changes = on_space_after_task_markers(
+            &TextStructure::create_from(&text),
+            &text,
+            ByteRange(cursor.unwrap().clone()),
+        );
+        assert!(changes.is_none());
+    }
+
+    #[test]
+    pub fn test_skips_expanding_task_markers_when_in_code_block() {
+        let (text, cursor) = TextChange::try_extract_cursor("```\n[]{||}```".to_string());
+        let changes = on_space_after_task_markers(
+            &TextStructure::create_from(&text),
+            &text,
+            ByteRange(cursor.unwrap().clone()),
+        );
+        assert!(changes.is_none());
+    }
+
+    #[test]
+    pub fn test_space_expands_task_markerss() {
+        let test_cases = [
+            (
+                "## Expanding a task marker on the first line ##",
+                "[]{||}",
+                "- [ ]{||}",
+            ),
+            (
+                "## Expanding a task marker on any empty line ##",
+                "a\n[]{||}",
+                "a\n- [ ]{||}",
+            ),
+            (
+                "## Expanding a task marker on the start of a list item ##",
+                "- []{||}",
+                "- [ ]{||}",
+            ),
+            (
+                "## Expanding a task marker on a nested list item ##",
+                "- a\n\t* []{||}",
+                "- a\n\t* [ ]{||}",
+            ),
+        ];
+
+        for (desc, input, output) in test_cases {
+            let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
+            let cursor = cursor.unwrap();
+
+            let structure = TextStructure::create_from(&text);
+
+            let changes =
+                on_space_after_task_markers(&structure, &text, ByteRange(cursor.clone())).unwrap();
+
+            let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+            assert_eq!(
+                TextChange::encode_cursor(&text, cursor),
+                output,
+                "test case: {}",
+                desc
+            );
+        }
+    }
+
     // --------- Text changes cursor tests --------
 
     #[test]
