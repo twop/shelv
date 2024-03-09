@@ -1001,9 +1001,10 @@ mod tests {
 
     #[test]
     pub fn test_space_expands_task_markerss() {
+        // Note: the [Space] press in reality adds a space after the cursor
         let test_cases = [
             (
-                "## Expanding a task marker on the first line ##",
+                "## Expanding a task marker on the first empty line ##",
                 "[]{||}",
                 "- [ ]{||}",
             ),
@@ -1021,6 +1022,11 @@ mod tests {
                 "## Expanding a task marker on a nested list item ##",
                 "- a\n\t* []{||}",
                 "- a\n\t* [ ]{||}",
+            ),
+            (
+                "## Expanding a task marker from the start of a non-empty line##",
+                "[]{||}abc",
+                "- [ ]{||}abc",
             ),
         ];
 
