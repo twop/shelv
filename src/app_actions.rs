@@ -100,6 +100,9 @@ pub fn process_app_action(
                 }
 
                 state.selected_note = index;
+                state.text_structure = state
+                    .text_structure
+                    .recycle_with(&state.notes[index as usize].text);
             }
         }
         AppAction::OpenLink(url) => ctx.open_url(OpenUrl::new_tab(url)),

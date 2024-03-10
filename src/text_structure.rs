@@ -197,7 +197,7 @@ impl<'a> TextStructureBuilder<'a> {
         index
     }
 
-    pub fn finish(self) -> TextStructure {
+    pub fn finish(self, annotation_points: Vec<AnnotationPoint>) -> TextStructure {
         let Self {
             spans,
             metadata,
@@ -205,7 +205,7 @@ impl<'a> TextStructureBuilder<'a> {
             ..
         } = self;
 
-        let points = fill_annotation_points(vec![], &spans, &metadata, &raw_links);
+        let points = fill_annotation_points(annotation_points, &spans, &metadata, &raw_links);
 
         TextStructure {
             points,
@@ -298,8 +298,31 @@ fn trim_trailing_new_lines(text: &str, pos: &Range<usize>) -> Range<usize> {
 }
 
 impl TextStructure {
-    pub fn create_from(text: &str) -> TextStructure {
-        let mut builder = TextStructureBuilder::start(text);
+    pub fn from(text: &str) -> Self {
+        let struture = Self {
+            points: vec![],
+            raw_links: vec![],
+            spans: vec![],
+            metadata: vec![],
+        };
+        struture.recycle_with(text)
+    }
+
+    pub fn recycle_with(self, text: &str) -> TextStructure {
+        let Self {
+            points,
+            raw_links,
+            spans,
+            metadata,
+        } = self;
+
+        let mut builder = TextStructureBuilder {
+            text,
+            container_stack: todo!(),
+            spans,
+            raw_links,
+            metadata,
+        };
 
         let finder = LinkFinder::new();
 
@@ -430,7 +453,7 @@ impl TextStructure {
 
         builder.print_structure();
 
-        let text_structure = builder.finish();
+        let text_structure = builder.finish(points);
         text_structure
     }
 

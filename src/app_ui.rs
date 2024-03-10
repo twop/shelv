@@ -15,11 +15,11 @@ use smallvec::SmallVec;
 
 use crate::{
     app_actions::{apply_text_changes, process_app_action, AppAction},
-    app_state::{AppState, ComputedLayout, MsgToApp, Note},
+    app_state::{AppState, ComputedLayout, LayoutCacheParams, MsgToApp, Note},
     md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
     scripting::execute_live_scripts,
-    text_structure::{ByteRange, InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
+    text_structure::{self, ByteRange, InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
     theme::{AppIcon, AppTheme},
 };
 
@@ -74,15 +74,7 @@ impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
 }
 
 pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Frame) {
-    // let text_edit_id = Id::new(("text_edit", state.selected_note));
     let text_edit_id = Id::new("text_edit");
-
-    // if (state.hacky_render_count == 1) {
-    //     state.hacky_render_count = 2;
-    //     frame.focus();
-    //     ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-    //     println!("focus again");
-    // }
 
     while let Ok(msg) = state.msg_queue.try_recv() {
         println!("got in render: {msg:?}");
@@ -137,44 +129,50 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
             if is_shortcut_match(input, &keyboard_shortcut) {
                 let current_note = &mut state.notes[state.selected_note as usize];
 
-                if let (Some(text_cursor_range), Some(computed_layout)) =
-                    (current_note.cursor, &state.computed_layout)
-                {
-                    use egui::TextBuffer as _;
+                match current_note.cursor {
+                    Some(text_cursor_range) => {
+                        use egui::TextBuffer as _;
 
-                    let [char_range_start, char_range_end] =
-                        text_cursor_range.sorted().map(|c| c.index);
+                        let [char_range_start, char_range_end] =
+                            text_cursor_range.sorted().map(|c| c.index);
 
-                    let [byte_start, byte_end] = [char_range_start, char_range_end]
-                        .map(|char_idx| current_note.text.byte_index_from_char_index(char_idx));
+                        let [byte_start, byte_end] = [char_range_start, char_range_end]
+                            .map(|char_idx| current_note.text.byte_index_from_char_index(char_idx));
 
-                    if let Some(changes) = editor_command.try_handle(
-                        &computed_layout.text_structure,
-                        &current_note.text,
-                        ByteRange(byte_start..byte_end),
-                    ) {
-                        if let Ok(ByteRange(byte_cursor)) = apply_text_changes(
-                            &mut current_note.text,
+                        let changes = editor_command.try_handle(
+                            &state.text_structure,
+                            &current_note.text,
                             ByteRange(byte_start..byte_end),
-                            changes,
-                        ) {
-                            current_note.cursor = Some(CCursorRange::two(
-                                CCursor::new(char_index_from_byte_index(
-                                    &current_note.text,
-                                    byte_cursor.start,
-                                )),
-                                CCursor::new(char_index_from_byte_index(
-                                    &current_note.text,
-                                    byte_cursor.end,
-                                )),
-                            ));
+                        );
 
-                            input.consume_shortcut(&keyboard_shortcut);
+                        if let Some(changes) = changes {
+                            if let Ok(ByteRange(byte_cursor)) = apply_text_changes(
+                                &mut current_note.text,
+                                ByteRange(byte_start..byte_end),
+                                changes,
+                            ) {
+                                state.text_structure =
+                                    state.text_structure.recycle_with(&current_note.text);
 
-                            // only one command can be handled at a time
-                            break;
-                        }
-                    };
+                                current_note.cursor = Some(CCursorRange::two(
+                                    CCursor::new(char_index_from_byte_index(
+                                        &current_note.text,
+                                        byte_cursor.start,
+                                    )),
+                                    CCursor::new(char_index_from_byte_index(
+                                        &current_note.text,
+                                        byte_cursor.end,
+                                    )),
+                                ));
+
+                                input.consume_shortcut(&keyboard_shortcut);
+
+                                // only one command can be handled at a time
+                                break;
+                            }
+                        };
+                    }
+                    _ => (),
                 }
             }
         }
@@ -221,12 +219,9 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
 
     // TODO actually do that if no changes were detected
 
-    if let (Some(text_cursor_range), Some(computed_layout)) =
-        (current_note.cursor, &state.computed_layout)
-    {
-        if let Some(changes) =
-            execute_live_scripts(&computed_layout.text_structure, &current_note.text)
-        {
+    if let Some(text_cursor_range) = current_note.cursor {
+        let script_changes = execute_live_scripts(&state.text_structure, &current_note.text);
+        if let Some(changes) = script_changes {
             use egui::TextBuffer as _;
 
             let [char_range_start, char_range_end] = text_cursor_range.sorted().map(|c| c.index);
@@ -239,6 +234,8 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                 ByteRange(byte_start..byte_end),
                 changes,
             ) {
+                state.text_structure = state.text_structure.recycle_with(&current_note.text);
+
                 current_note.cursor = Some(CCursorRange::two(
                     CCursor::new(char_index_from_byte_index(
                         &current_note.text,
@@ -274,19 +271,16 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
             let scaled_theme = state.theme.scaled(f32::powi(1.2, state.font_scale));
 
             let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                let computed_layout = match state.computed_layout.take() {
-                    Some(layout)
-                        if !layout.should_recompute(text, wrap_width, state.font_scale) =>
-                    {
-                        layout
-                    }
+                let layout_cache_params =
+                    LayoutCacheParams::new(text, wrap_width, state.font_scale);
 
-                    // TODO reuse the prev computed layout
+                let computed_layout = match state.computed_layout.take() {
+                    Some(layout) if !layout.should_recompute(&layout_cache_params) => layout,
+
                     _ => ComputedLayout::compute(
-                        text,
-                        wrap_width,
+                        &state.text_structure,
+                        &layout_cache_params,
                         ui,
-                        state.font_scale,
                         &scaled_theme,
                         &state.syntax_set,
                         &state.theme_set,
@@ -319,6 +313,7 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                 .show(ui);
 
             if text_edit_response.changed() {
+                state.text_structure = state.text_structure.recycle_with(&current_note.text);
                 state.save_to_storage = true;
             }
 
@@ -338,9 +333,7 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
             }
 
             // ---- SHORTCUTS FOR MAKING BOLD/ITALIC/STRIKETHROUGH ----
-            if let (Some(text_cursor_range), Some(computed_layout)) =
-                (cursor_range, &state.computed_layout)
-            {
+            if let Some(text_cursor_range) = cursor_range {
                 for md_shortcut in state.md_annotation_shortcuts.iter() {
                     if ui.input_mut(|input| input.consume_shortcut(&md_shortcut.shortcut)) {
                         use egui::TextBuffer as _;
@@ -355,14 +348,11 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                             .text
                             .byte_index_from_char_index(selected_char_range.end);
 
-                        let span = computed_layout
+                        let span = state
                             .text_structure
                             .find_span_at(md_shortcut.target_span, byte_start..byte_end)
                             .map(|(span_range, idx)| {
-                                (
-                                    span_range,
-                                    computed_layout.text_structure.get_span_inner_content(idx),
-                                )
+                                (span_range, state.text_structure.get_span_inner_content(idx))
                             });
 
                         let [cursor_start, cursor_end] = match span {
@@ -395,7 +385,7 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                             None => {
                                 // means that we need to execute instruction for the shortcut, presumably to add annotations
                                 let mut cx = ShortcutExecContext {
-                                    structure: &computed_layout.text_structure,
+                                    structure: &state.text_structure,
                                     text: &current_note.text,
                                     selection_byte_range: byte_start..byte_end,
                                     replace_range: byte_start..byte_end,
@@ -415,6 +405,9 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                                             &result.content,
                                         );
 
+                                        state.text_structure =
+                                            state.text_structure.recycle_with(&current_note.text);
+
                                         [
                                             cursor_start + result.relative_char_cursor.start,
                                             cursor_start + result.relative_char_cursor.end,
@@ -427,16 +420,12 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
 
                         text_edit_state
                             .set_ccursor_range(Some(CCursorRange::two(cursor_start, cursor_end)));
-
-                        cursor_range = text_edit_state.cursor_range(&galley);
                     }
                 }
             }
 
             // ---- INTERACTIVE TEXT PARTS (TODO + LINKS) ----
-            if let (Some(pointer_pos), Some(computed_layout)) =
-                (ui.ctx().pointer_interact_pos(), &state.computed_layout)
-            {
+            if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
                 let cursor = galley.cursor_from_pos(pointer_pos - text_draw_pos);
                 use egui::TextBuffer;
 
@@ -444,9 +433,8 @@ pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe:
                     .text()
                     .byte_index_from_char_index(cursor.ccursor.index);
 
-                if let Some(interactive) = computed_layout
-                    .text_structure
-                    .find_interactive_text_part(byte_cursor)
+                if let Some(interactive) =
+                    state.text_structure.find_interactive_text_part(byte_cursor)
                 {
                     // if ui.input(|i| i.modifiers.command)
                     {

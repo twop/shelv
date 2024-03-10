@@ -1,4 +1,7 @@
-use std::sync::{mpsc::Receiver, Arc};
+use std::{
+    hash::{DefaultHasher, Hash, Hasher},
+    sync::{mpsc::Receiver, Arc},
+};
 
 use eframe::{
     egui::{self, text_edit::CCursorRange, Key, KeyboardShortcut, Modifiers, Ui},
@@ -39,6 +42,7 @@ pub struct AppState {
     pub editor_commands: Vec<Box<dyn EditorCommand>>,
 
     pub computed_layout: Option<ComputedLayout>,
+    pub text_structure: TextStructure,
     pub font_scale: i32,
 }
 
@@ -57,41 +61,64 @@ pub struct AppShortcuts {
 
 pub struct ComputedLayout {
     pub galley: Arc<Galley>,
-    pub wrap_width: f32,
-    pub text_structure: TextStructure,
-    pub computed_for: String, // maybe use hash not to double store the string content?
-    pub font_size: i32,
+    pub layout_params_hash: u64,
+    // pub wrap_width: f32,
+    // pub text_structure: TextStructure,
+    // pub computed_for: String, // maybe use hash not to double store the string content?
+    // pub font_size: i32,
+}
+
+pub struct LayoutCacheParams<'a> {
+    text: &'a str,
+    wrap_width: f32,
+    font_size: i32,
+    hash: u64,
+}
+
+impl<'a> LayoutCacheParams<'a> {
+    pub fn new(text: &'a str, wrap_width: f32, font_size: i32) -> Self {
+        Self {
+            text,
+            wrap_width,
+            font_size,
+            hash: {
+                let mut s = DefaultHasher::new();
+                text.hash(&mut s);
+                font_size.hash(&mut s);
+                // note that it is OK to round it up
+                ((wrap_width * 100.0) as i64).hash(&mut s);
+                s.finish()
+            },
+        }
+    }
 }
 
 impl ComputedLayout {
-    pub fn should_recompute(&self, text: &str, max_width: f32, font_size: i32) -> bool {
+    pub fn should_recompute(&self, layout_params: &LayoutCacheParams) -> bool {
         // TODO might want to check for any changes to theme, not just font_size
-        self.wrap_width != max_width || self.computed_for != text || self.font_size != font_size
+        self.layout_params_hash == layout_params.hash
     }
 
     pub fn compute(
-        text: &str,
-        wrap_width: f32,
+        text_structure: &TextStructure,
+        layout_params: &LayoutCacheParams,
         ui: &Ui,
-        font_size: i32,
         theme: &AppTheme,
         syntax_set: &SyntaxSet,
         theme_set: &ThemeSet,
     ) -> Self {
-        let text_structure = TextStructure::create_from(text);
+        // let text_structure = TextStructure::create_from(text);
 
-        let mut job = text_structure.create_layout_job(text, theme, syntax_set, theme_set);
+        let mut job =
+            text_structure.create_layout_job(layout_params.text, theme, syntax_set, theme_set);
 
-        job.wrap.max_width = wrap_width;
+        job.wrap.max_width = layout_params.wrap_width;
 
         let galley = ui.fonts(|f| f.layout_job(job));
 
         Self {
             galley,
-            wrap_width,
-            font_size,
-            text_structure,
-            computed_for: text.to_string(),
+            layout_params_hash: layout_params.hash,
         }
     }
 }
@@ -160,28 +187,13 @@ impl AppState {
             })
             .collect();
 
-        //             note: "# title
-        // - adsd
-        // - fdsf
-        // 	- [ ] fdsf
-        // 	- [x] fdsf
-        // 1. fa
-        // 2. fdsf
-        // 3.
-        // bo**dy**
-        // i*tali*c
-        // https://www.nordtheme.com/docs/colors-and-palettes
-        // ```rs
-        // let a = Some(115);
-        // ```"
-        // .to_string(),
-
         Self {
             is_settings_opened: false,
             save_to_storage: false,
             theme,
             notes,
             computed_layout: None,
+            text_structure: TextStructure::from(&notes[selected_note as usize].text),
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
             msg_queue,

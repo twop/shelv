@@ -18,6 +18,12 @@ impl SourceHash {
     fn parse(hex: &str) -> Option<Self> {
         u16::from_str_radix(hex, 16).ok().map(SourceHash)
     }
+
+    fn from(code: &str) -> Self {
+        let mut s = DefaultHasher::new();
+        code.hash(&mut s);
+        SourceHash(s.finish() as u16)
+    }
 }
 
 pub const OUTPUT_LANG: &str = "#";
@@ -44,7 +50,7 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
                     match lang.as_str() {
                         "js" => Some((
                             index,
-                            CodeBlock::LiveJS(byte_range, calculate_hash(code)),
+                            CodeBlock::LiveJS(byte_range, SourceHash::from(code)),
                             code,
                         )),
                         output if output.starts_with(OUTPUT_LANG) => {
@@ -143,12 +149,6 @@ fn print_output_block(body: &str, hash: SourceHash, context: &mut Context) -> St
             Err(err) => format!("{:#}", err),
         }
     )
-}
-
-fn calculate_hash(t: &str) -> SourceHash {
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    SourceHash(s.finish() as u16)
 }
 
 #[cfg(test)]
