@@ -39,13 +39,13 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
         .filter_map(|(index, desc)| match desc.kind {
             SpanKind::CodeBlock => text_structure.find_meta(index).and_then(|meta| match meta {
                 crate::text_structure::SpanMeta::CodeBlock { lang } => {
-                    let byte_range = ByteRange(desc.byte_pos.clone());
+                    let byte_range = desc.byte_pos.clone();
 
                     let (_, code_desc) = text_structure
                         .iterate_immediate_children_of(index)
                         .find(|(_, desc)| desc.kind == SpanKind::Text)?;
 
-                    let code = &text[code_desc.byte_pos.clone()];
+                    let code = &text[code_desc.byte_pos.clone().0];
 
                     match lang.as_str() {
                         "js" => Some((
@@ -285,7 +285,7 @@ Error: yo!
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let structure = TextStructure::create_from(&text);
+            let structure = TextStructure::new(&text);
 
             let changes = execute_live_scripts(&structure, &text);
 

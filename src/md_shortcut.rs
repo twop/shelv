@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use eframe::egui::KeyboardShortcut;
 
-use crate::text_structure::SpanKind;
+use crate::text_structure::{ByteRange, SpanKind};
 
 pub struct MdAnnotationShortcut {
     pub name: &'static str,
@@ -76,7 +76,7 @@ pub trait ShortcutContext<'a> {
 #[derive(Debug, PartialEq)]
 pub struct ShortcutResult {
     pub content: String,
-    pub relative_char_cursor: Range<usize>,
+    pub relative_byte_cursor: ByteRange,
 }
 
 struct EvalState {
@@ -192,7 +192,7 @@ pub fn execute_instruction<'a>(
 
     Some(ShortcutResult {
         content: eval_state.result,
-        relative_char_cursor: eval_state.cursor_start..eval_state.cursor_end,
+        relative_byte_cursor: ByteRange(eval_state.cursor_start..eval_state.cursor_end),
     })
 }
 
@@ -267,7 +267,7 @@ mod tests {
             ),
             Some(ShortcutResult {
                 content: "**bold**".to_string(),
-                relative_char_cursor: 0..8
+                relative_byte_cursor: ByteRange(0..8)
             }),
         );
 
@@ -275,7 +275,7 @@ mod tests {
             execute_instruction(&mut TestShortcutContext::new([]), &bold,),
             Some(ShortcutResult {
                 content: "****".to_string(),
-                relative_char_cursor: 2..2
+                relative_byte_cursor: ByteRange(2..2)
             }),
         );
     }
@@ -297,7 +297,7 @@ mod tests {
             ),
             Some(ShortcutResult {
                 content: "newline".to_string(),
-                relative_char_cursor: 0..0
+                relative_byte_cursor: ByteRange(0..0)
             }),
         );
 
@@ -308,7 +308,7 @@ mod tests {
             ),
             Some(ShortcutResult {
                 content: "no newline".to_string(),
-                relative_char_cursor: 0..0
+                relative_byte_cursor: ByteRange(0..0)
             }),
         );
     }

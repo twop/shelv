@@ -83,8 +83,11 @@ pub fn process_app_action(
 
                 if via_shortcut {
                     let note = &mut state.notes[index as usize];
-                    note.cursor = match note.cursor {
-                        None => Some(CCursorRange::one(CCursor::new(note.text.chars().count()))),
+                    note.cursor = match note.cursor.clone() {
+                        None => {
+                            let len = note.text.len();
+                            Some(ByteRange(len..len))
+                        }
                         prev => prev,
                     };
 
@@ -99,10 +102,9 @@ pub fn process_app_action(
                     state.notes[index as usize].cursor = None;
                 }
 
+                let text = &state.notes[index as usize].text;
                 state.selected_note = index;
-                state.text_structure = state
-                    .text_structure
-                    .recycle_with(&state.notes[index as usize].text);
+                state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
             }
         }
         AppAction::OpenLink(url) => ctx.open_url(OpenUrl::new_tab(url)),
@@ -237,7 +239,7 @@ fn on_enter_inside_list_item(
             if is_empty_list_item {
                 // means that we need to remove the current list
                 let mut changes = vec![TextChange::Replace(
-                    ByteRange(span_range),
+                    span_range,
                     format!("{}", TextChange::CURSOR),
                 )];
 
@@ -251,7 +253,7 @@ fn on_enter_inside_list_item(
                     // note that -1 is to take into account item we just removed
                     let intended_number = *starting_index + index as u64 - 1;
 
-                    let item_text = &text[list_item.byte_pos.clone()];
+                    let item_text = &text[list_item.byte_pos.clone().0];
                     // println!("list_items.enumerate(): item=`{}`", item_text);
 
                     if let Some(dot_pos) = item_text.find(".") {
@@ -271,7 +273,7 @@ fn on_enter_inside_list_item(
 
                 // first split the first one in half
                 let mut changes = vec![TextChange::Replace(
-                    ByteRange(cursor.clone()),
+                    cursor.clone(),
                     format!(
                         "\n{dep}{n}. {cur}",
                         dep = "\t".repeat(depth),
@@ -289,7 +291,7 @@ fn on_enter_inside_list_item(
                     };
 
                     // TODO only modify items that actually need adjustments
-                    let item_text = &text[list_item.byte_pos.clone()];
+                    let item_text = &text[list_item.byte_pos.clone().0];
                     if let Some(dot_pos) = item_text.find(".") {
                         changes.push(TextChange::Replace(
                             ByteRange(list_item.byte_pos.start..list_item.byte_pos.start + dot_pos),
@@ -307,7 +309,7 @@ fn on_enter_inside_list_item(
             if is_empty_list_item {
                 // then we just remove the entire list item and break
                 Some(vec![TextChange::Replace(
-                    ByteRange(span_range),
+                    span_range,
                     format!("{}", TextChange::CURSOR),
                 )])
             } else {
@@ -316,7 +318,7 @@ fn on_enter_inside_list_item(
                     .any(|(_, desc)| desc.kind == SpanKind::TaskMarker);
                 // cond ? the_true : the_false
                 Some(vec![TextChange::Replace(
-                    ByteRange(cursor.clone()),
+                    cursor.clone(),
                     "\n".to_string()
                         + &"\t".repeat(depth)
                         + select_unordered_list_marker(depth)
@@ -427,7 +429,7 @@ fn on_tab_inside_list(
                 let intended_number = *starting_index + *index as u64 - 1;
 
                 // TODO only modify items that actually need adjustments
-                let item_text = &text[list_item.byte_pos.clone()];
+                let item_text = &text[list_item.byte_pos.clone().0];
                 if let Some(dot_pos) = item_text.find(".") {
                     changes.push(TextChange::Replace(
                         ByteRange(list_item.byte_pos.start..list_item.byte_pos.start + dot_pos),
@@ -437,7 +439,7 @@ fn on_tab_inside_list(
             }
 
             // move itself, note that now the index starts with "1"
-            if let Some(dot_pos) = &text[span_range.clone()].find(".") {
+            if let Some(dot_pos) = &text[span_range.clone().0].find(".") {
                 changes.push(TextChange::Replace(
                     ByteRange(span_range.start..span_range.start + dot_pos),
                     format!("\t{}", 1),
@@ -742,12 +744,8 @@ mod tests {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let changes = on_tab_inside_list(
-                &TextStructure::create_from(&text),
-                &text,
-                ByteRange(cursor.clone()),
-            )
-            .unwrap();
+            let changes =
+                on_tab_inside_list(&TextStructure::new(&text), &text, cursor.clone()).unwrap();
 
             let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
             assert_eq!(
@@ -771,12 +769,9 @@ mod tests {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let changes = on_shift_tab_inside_list(
-                &TextStructure::create_from(&text),
-                &text,
-                ByteRange(cursor.clone()),
-            )
-            .unwrap();
+            let changes =
+                on_shift_tab_inside_list(&TextStructure::new(&text), &text, cursor.clone())
+                    .unwrap();
 
             let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
             assert_eq!(
@@ -845,10 +840,9 @@ mod tests {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let structure = TextStructure::create_from(&text);
+            let structure = TextStructure::new(&text);
 
-            let changes =
-                on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
+            let changes = on_enter_inside_list_item(&structure, &text, cursor.clone()).unwrap();
 
             let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
             assert_eq!(
@@ -867,10 +861,9 @@ mod tests {
 
         assert_eq!(text, "- item");
 
-        let structure = TextStructure::create_from(&text);
+        let structure = TextStructure::new(&text);
 
-        let changes =
-            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
+        let changes = on_enter_inside_list_item(&structure, &text, cursor.clone()).unwrap();
 
         let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
         assert_eq!(TextChange::encode_cursor(&text, cursor), "- item\n- {||}");
@@ -883,10 +876,9 @@ mod tests {
 
         assert_eq!(text, "- *item*");
 
-        let structure = TextStructure::create_from(&text);
+        let structure = TextStructure::new(&text);
 
-        let changes =
-            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
+        let changes = on_enter_inside_list_item(&structure, &text, cursor.clone()).unwrap();
 
         let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
         assert_eq!(TextChange::encode_cursor(&text, cursor), "- *item*\n- {||}");
@@ -899,20 +891,17 @@ mod tests {
 
         assert_eq!(text, "- item\n");
 
-        let structure = TextStructure::create_from(&text);
+        let structure = TextStructure::new(&text);
 
-        let changes = on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone()));
+        let changes = on_enter_inside_list_item(&structure, &text, cursor.clone());
         assert!(changes.is_none());
     }
 
     #[test]
     pub fn test_skips_handling_enter_if_cursor_on_markup() {
         let (text, cursor) = TextChange::try_extract_cursor("{||}- a".to_string());
-        let changes = on_enter_inside_list_item(
-            &TextStructure::create_from(&text),
-            &text,
-            ByteRange(cursor.unwrap().clone()),
-        );
+        let changes =
+            on_enter_inside_list_item(&TextStructure::new(&text), &text, cursor.unwrap().clone());
         assert!(changes.is_none());
     }
     // --------- Text changes cursor tests --------

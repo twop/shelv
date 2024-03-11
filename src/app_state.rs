@@ -4,7 +4,7 @@ use std::{
 };
 
 use eframe::{
-    egui::{self, text_edit::CCursorRange, Key, KeyboardShortcut, Modifiers, Ui},
+    egui::{self, Key, KeyboardShortcut, Modifiers, Ui},
     epaint::Galley,
 };
 use pulldown_cmark::HeadingLevel;
@@ -15,14 +15,13 @@ use crate::{
     commands::EditorCommand,
     md_shortcut::{Edge, Instruction, InstructionCondition, MdAnnotationShortcut, Source},
     persistent_state::PersistentState,
-    text_structure::{SpanKind, TextStructure},
+    text_structure::{ByteRange, SpanKind, TextStructure},
     theme::AppTheme,
 };
 
 pub struct Note {
     pub text: String,
-    pub shortcut: KeyboardShortcut,
-    pub cursor: Option<CCursorRange>,
+    pub cursor: Option<ByteRange>,
 }
 
 pub struct AppState {
@@ -42,7 +41,7 @@ pub struct AppState {
     pub editor_commands: Vec<Box<dyn EditorCommand>>,
 
     pub computed_layout: Option<ComputedLayout>,
-    pub text_structure: TextStructure,
+    pub text_structure: Option<TextStructure>,
     pub font_scale: i32,
 }
 
@@ -56,16 +55,13 @@ pub struct AppShortcuts {
     h3: KeyboardShortcut,
     pub increase_font: KeyboardShortcut,
     pub decrease_font: KeyboardShortcut,
+    pub switch_to_note: Vec<KeyboardShortcut>,
     // h4: KeyboardShortcut,
 }
 
 pub struct ComputedLayout {
     pub galley: Arc<Galley>,
     pub layout_params_hash: u64,
-    // pub wrap_width: f32,
-    // pub text_structure: TextStructure,
-    // pub computed_for: String, // maybe use hash not to double store the string content?
-    // pub font_size: i32,
 }
 
 pub struct LayoutCacheParams<'a> {
@@ -145,6 +141,8 @@ impl AppState {
         use Instruction::*;
         use InstructionCondition::*;
 
+        let notes_count = 4;
+
         let app_shortcuts = AppShortcuts {
             bold: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::B),
             emphasize: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::I),
@@ -159,9 +157,16 @@ impl AppState {
             // h4: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num4),
             increase_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::PlusEquals),
             decrease_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::Minus),
-        };
 
-        let notes_count = 4;
+            switch_to_note: (0..notes_count)
+                .map(|index| {
+                    KeyboardShortcut::new(
+                        Modifiers::COMMAND,
+                        number_to_key(index as u8 + 1).unwrap(),
+                    )
+                })
+                .collect(),
+        };
 
         let (selected_note, mut notes) = persistent_state
             .map(|s| (s.selected_note, s.notes))
@@ -177,15 +182,10 @@ impl AppState {
         let notes: Vec<Note> = notes
             .into_iter()
             .enumerate()
-            .map(|(index, text)| {
-                let key = number_to_key(index as u8 + 1).unwrap();
-                Note {
-                    text,
-                    shortcut: KeyboardShortcut::new(Modifiers::COMMAND, key),
-                    cursor: None,
-                }
-            })
+            .map(|(index, text)| Note { text, cursor: None })
             .collect();
+
+        let text_structure = TextStructure::new(&notes[selected_note as usize].text);
 
         Self {
             is_settings_opened: false,
@@ -193,7 +193,7 @@ impl AppState {
             theme,
             notes,
             computed_layout: None,
-            text_structure: TextStructure::from(&notes[selected_note as usize].text),
+            text_structure: Some(text_structure),
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
             msg_queue,

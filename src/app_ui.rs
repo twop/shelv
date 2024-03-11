@@ -12,14 +12,15 @@ use eframe::{
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke, Vec2},
 };
 use smallvec::SmallVec;
+use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     app_actions::{apply_text_changes, process_app_action, AppAction},
-    app_state::{AppState, ComputedLayout, LayoutCacheParams, MsgToApp, Note},
+    app_state::{AppShortcuts, AppState, ComputedLayout, LayoutCacheParams, MsgToApp, Note},
     md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
     scripting::execute_live_scripts,
-    text_structure::{self, ByteRange, InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
+    text_structure::{ByteRange, InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
     theme::{AppIcon, AppTheme},
 };
 
@@ -27,8 +28,8 @@ use crate::{
 struct ShortcutExecContext<'a> {
     structure: &'a TextStructure,
     text: &'a str,
-    selection_byte_range: Range<usize>,
-    replace_range: Range<usize>,
+    selection_byte_range: ByteRange,
+    replace_range: ByteRange,
 }
 
 impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
@@ -38,7 +39,7 @@ impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
                 if self.selection_byte_range.is_empty() {
                     None
                 } else {
-                    self.text.get(self.selection_byte_range.clone())
+                    self.text.get(self.selection_byte_range.clone().0)
                 }
             }
             Source::BeforeSelection => self.text.get(0..self.selection_byte_range.start),
@@ -47,7 +48,7 @@ impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
                 .structure
                 .find_span_at(kind, self.selection_byte_range.clone())
                 .map(|(_, index)| self.structure.get_span_inner_content(index))
-                .and_then(|content| self.text.get(content.clone())),
+                .and_then(|content| self.text.get(content.clone().0)),
         }
     }
 
@@ -73,401 +74,368 @@ impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
     }
 }
 
-pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Frame) {
-    let text_edit_id = Id::new("text_edit");
+pub struct AppRenderData<'a> {
+    pub selected_note: u32,
+    pub text_edit_id: Id,
+    pub font_scale: i32,
+    pub byte_cursor: Option<ByteRange>,
+    pub md_shortcuts: &'a [MdAnnotationShortcut],
+    pub syntax_set: &'a SyntaxSet,
+    pub theme_set: &'a ThemeSet,
+    pub computed_layout: Option<ComputedLayout>,
+}
 
-    while let Ok(msg) = state.msg_queue.try_recv() {
-        println!("got in render: {msg:?}");
-        match msg {
-            MsgToApp::ToggleVisibility => {
-                state.hidden = !state.hidden;
+pub struct RenderAppResult(
+    pub SmallVec<[AppAction; 4]>,
+    pub TextStructure,
+    pub Option<ByteRange>,
+    pub Option<ComputedLayout>,
+);
 
-                if state.hidden {
-                    hide_app();
-                } else {
-                    frame.set_visible(!state.hidden);
-                }
+pub fn render_app(
+    mut text_structure: TextStructure,
+    editor_text: &mut String,
+    visual_state: AppRenderData,
+    shortcuts: &AppShortcuts,
+    theme: &AppTheme,
+    ctx: &egui::Context,
+) -> RenderAppResult {
+    let AppRenderData {
+        selected_note,
+        text_edit_id,
+        font_scale,
+        mut byte_cursor,
+        md_shortcuts,
+        mut computed_layout,
+        syntax_set,
+        theme_set,
+    } = visual_state;
 
-                if !state.hidden {
-                    frame.focus();
-                    // // frame.request_user_attention(egui::UserAttentionType::Reset);
-                    ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-                    println!(
-                        "after: focus, has_focus = {:?}",
-                        frame.info().window_info.focused
-                    );
-                }
-            }
-        }
-    }
+    let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
 
-    let cur_focus = frame.info().window_info.focused;
-    if state.prev_focused != cur_focus {
-        if cur_focus {
-            println!("gained focus");
-            ctx.memory_mut(|mem| mem.request_focus(text_edit_id))
-        } else {
-            println!("lost focus");
-            state.hidden = true;
-            // frame.set_visible(!state.hidden);
-            hide_app();
-        }
-        state.prev_focused = cur_focus;
-    }
+    // while let Ok(msg) = state.msg_queue.try_recv() {
+    //     println!("got in render: {msg:?}");
+    //     match msg {
+    //         MsgToApp::ToggleVisibility => {
+    //             state.hidden = !state.hidden;
 
-    if !state.hidden && !cur_focus {
-        // println!("restore focus");
-        frame.request_user_attention(egui::UserAttentionType::Informational);
-        frame.focus()
-    }
+    //             if state.hidden {
+    //                 hide_app();
+    //             } else {
+    //                 frame.set_visible(!state.hidden);
+    //             }
 
-    // handling commands
-    // sych as {tab, enter} inside a list
-    ctx.input_mut(|input| {
-        for editor_command in state.editor_commands.iter() {
-            let keyboard_shortcut = editor_command.shortcut();
-            if is_shortcut_match(input, &keyboard_shortcut) {
-                let current_note = &mut state.notes[state.selected_note as usize];
+    //             if !state.hidden {
+    //                 frame.focus();
+    //                 // // frame.request_user_attention(egui::UserAttentionType::Reset);
+    //                 ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+    //                 println!(
+    //                     "after: focus, has_focus = {:?}",
+    //                     frame.info().window_info.focused
+    //                 );
+    //             }
+    //         }
+    //     }
+    // }
 
-                match current_note.cursor {
-                    Some(text_cursor_range) => {
-                        use egui::TextBuffer as _;
+    // let cur_focus = frame.info().window_info.focused;
+    // if state.prev_focused != cur_focus {
+    //     if cur_focus {
+    //         println!("gained focus");
+    //         ctx.memory_mut(|mem| mem.request_focus(text_edit_id))
+    //     } else {
+    //         println!("lost focus");
+    //         state.hidden = true;
+    //         // frame.set_visible(!state.hidden);
+    //         hide_app();
+    //     }
+    //     state.prev_focused = cur_focus;
+    // }
 
-                        let [char_range_start, char_range_end] =
-                            text_cursor_range.sorted().map(|c| c.index);
+    // if !state.hidden && !cur_focus {
+    //     // println!("restore focus");
+    //     frame.request_user_attention(egui::UserAttentionType::Informational);
+    //     frame.focus()
+    // }
 
-                        let [byte_start, byte_end] = [char_range_start, char_range_end]
-                            .map(|char_idx| current_note.text.byte_index_from_char_index(char_idx));
+    // println!("{:#?}", text_structure);
 
-                        let changes = editor_command.try_handle(
-                            &state.text_structure,
-                            &current_note.text,
-                            ByteRange(byte_start..byte_end),
-                        );
-
-                        if let Some(changes) = changes {
-                            if let Ok(ByteRange(byte_cursor)) = apply_text_changes(
-                                &mut current_note.text,
-                                ByteRange(byte_start..byte_end),
-                                changes,
-                            ) {
-                                state.text_structure =
-                                    state.text_structure.recycle_with(&current_note.text);
-
-                                current_note.cursor = Some(CCursorRange::two(
-                                    CCursor::new(char_index_from_byte_index(
-                                        &current_note.text,
-                                        byte_cursor.start,
-                                    )),
-                                    CCursor::new(char_index_from_byte_index(
-                                        &current_note.text,
-                                        byte_cursor.end,
-                                    )),
-                                ));
-
-                                input.consume_shortcut(&keyboard_shortcut);
-
-                                // only one command can be handled at a time
-                                break;
-                            }
-                        };
-                    }
-                    _ => (),
-                }
-            }
-        }
-    });
-
-    let mut actions = render_footer_panel(
-        state.selected_note,
-        state.font_scale,
-        state
-            .notes
+    let footer_actions = render_footer_panel(
+        selected_note,
+        font_scale,
+        shortcuts
+            .switch_to_note
             .iter()
-            .map(|n| format!("Shelf {}", ctx.format_shortcut(&n.shortcut)))
+            .map(|shortcut| format!("Shelf {}", ctx.format_shortcut(&shortcut)))
             .collect(),
         ctx,
-        &state.theme,
+        &theme,
     );
 
+    output_actions.extend(footer_actions);
+
     ctx.input_mut(|input| {
-        for (index, shortcut) in state.notes.iter().map(|n| n.shortcut).enumerate() {
+        for (index, shortcut) in shortcuts.switch_to_note.iter().enumerate() {
             if input.consume_shortcut(&shortcut) {
-                actions.push(AppAction::SwitchToNote {
+                output_actions.push(AppAction::SwitchToNote {
                     index: index as u32,
                     via_shortcut: true,
                 })
             }
         }
 
-        if input.consume_shortcut(&state.app_shortcuts.increase_font) {
-            actions.push(AppAction::IncreaseFontSize);
+        if input.consume_shortcut(&shortcuts.increase_font) {
+            output_actions.push(AppAction::IncreaseFontSize);
         }
-        if input.consume_shortcut(&state.app_shortcuts.decrease_font) {
-            actions.push(AppAction::DecreaseFontSize);
+        if input.consume_shortcut(&shortcuts.decrease_font) {
+            output_actions.push(AppAction::DecreaseFontSize);
         }
     });
 
-    render_header_panel(ctx, &state.theme);
-
-    for action in actions {
-        process_app_action(action, ctx, state, text_edit_id);
-    }
-
-    let current_note = &mut state.notes[state.selected_note as usize];
-    restore_cursor_from_note_state(&current_note, ctx, text_edit_id);
+    render_header_panel(ctx, theme);
 
     // TODO actually do that if no changes were detected
-
-    if let Some(text_cursor_range) = current_note.cursor {
-        let script_changes = execute_live_scripts(&state.text_structure, &current_note.text);
+    if let Some(text_cursor_range) = byte_cursor.clone() {
+        let script_changes = execute_live_scripts(&text_structure, &editor_text);
         if let Some(changes) = script_changes {
-            use egui::TextBuffer as _;
-
-            let [char_range_start, char_range_end] = text_cursor_range.sorted().map(|c| c.index);
-
-            let [byte_start, byte_end] = [char_range_start, char_range_end]
-                .map(|char_idx| current_note.text.byte_index_from_char_index(char_idx));
-
-            if let Ok(ByteRange(byte_cursor)) = apply_text_changes(
-                &mut current_note.text,
-                ByteRange(byte_start..byte_end),
-                changes,
-            ) {
-                state.text_structure = state.text_structure.recycle_with(&current_note.text);
-
-                current_note.cursor = Some(CCursorRange::two(
-                    CCursor::new(char_index_from_byte_index(
-                        &current_note.text,
-                        byte_cursor.start,
-                    )),
-                    CCursor::new(char_index_from_byte_index(
-                        &current_note.text,
-                        byte_cursor.end,
-                    )),
-                ));
+            if let Ok(updated_cursor) = apply_text_changes(editor_text, text_cursor_range, changes)
+            {
+                text_structure = text_structure.recycle(editor_text);
+                byte_cursor = Some(updated_cursor);
             }
         }
     }
 
-    egui::CentralPanel::default().show(ctx, |ui| {
-        let avail_space = ui.available_rect_before_wrap();
+    restore_cursor_from_note_state(&editor_text, byte_cursor.clone(), ctx, text_edit_id);
 
-        render_hints(
-            &format!("{}", state.selected_note + 1),
-            current_note
-                .text
-                .is_empty()
-                .then(|| state.md_annotation_shortcuts.as_slice()),
-            avail_space,
-            ui.painter(),
-            ctx,
-            &state.theme,
-        );
+    let (text_structure, byte_cursor) = egui::CentralPanel::default()
+        .show(ctx, |ui| {
+            let avail_space = ui.available_rect_before_wrap();
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            render_hints(
+                &format!("{}", selected_note + 1),
+                editor_text.is_empty().then(|| md_shortcuts),
+                avail_space,
+                ui.painter(),
+                ctx,
+                &theme,
+            );
 
-            let scaled_theme = state.theme.scaled(f32::powi(1.2, state.font_scale));
+            egui::ScrollArea::vertical()
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
-            let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                let layout_cache_params =
-                    LayoutCacheParams::new(text, wrap_width, state.font_scale);
+                    let scaled_theme = theme.scaled(f32::powi(1.2, font_scale));
 
-                let computed_layout = match state.computed_layout.take() {
-                    Some(layout) if !layout.should_recompute(&layout_cache_params) => layout,
+                    let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                        let layout_cache_params =
+                            LayoutCacheParams::new(text, wrap_width, font_scale);
 
-                    _ => ComputedLayout::compute(
-                        &state.text_structure,
-                        &layout_cache_params,
-                        ui,
-                        &scaled_theme,
-                        &state.syntax_set,
-                        &state.theme_set,
-                    ),
-                };
-
-                let res = computed_layout.galley.clone();
-                state.computed_layout = Some(computed_layout);
-
-                res
-            };
-
-            // let mut edited_text = state.markdown.clone();
-
-            let TextEditOutput {
-                response: text_edit_response,
-                galley,
-                text_draw_pos,
-                text_clip_rect: _,
-                state: mut text_edit_state,
-                mut cursor_range,
-            } = egui::TextEdit::multiline(&mut current_note.text)
-                .font(egui::TextStyle::Monospace) // for cursor height
-                .code_editor()
-                .id(text_edit_id)
-                .lock_focus(true)
-                .desired_width(f32::INFINITY)
-                .frame(false)
-                .layouter(&mut layouter)
-                .show(ui);
-
-            if text_edit_response.changed() {
-                state.text_structure = state.text_structure.recycle_with(&current_note.text);
-                state.save_to_storage = true;
-            }
-
-            let space_below = ui.available_rect_before_wrap();
-
-            // ---- CLICKING ON EMPTY AREA FOCUSES ON TEXT EDIT ----
-            if space_below.height() > 0.
-                && ui
-                    .interact(space_below, Id::new("space_below"), Sense::click())
-                    .clicked()
-            {
-                text_edit_state.set_ccursor_range(Some(egui::text::CCursorRange::one(
-                    egui::text::CCursor::new(current_note.text.chars().count()),
-                )));
-
-                ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-            }
-
-            // ---- SHORTCUTS FOR MAKING BOLD/ITALIC/STRIKETHROUGH ----
-            if let Some(text_cursor_range) = cursor_range {
-                for md_shortcut in state.md_annotation_shortcuts.iter() {
-                    if ui.input_mut(|input| input.consume_shortcut(&md_shortcut.shortcut)) {
-                        use egui::TextBuffer as _;
-
-                        let selected_char_range = text_cursor_range.as_sorted_char_range();
-
-                        let byte_start = current_note
-                            .text
-                            .byte_index_from_char_index(selected_char_range.start);
-
-                        let byte_end = current_note
-                            .text
-                            .byte_index_from_char_index(selected_char_range.end);
-
-                        let span = state
-                            .text_structure
-                            .find_span_at(md_shortcut.target_span, byte_start..byte_end)
-                            .map(|(span_range, idx)| {
-                                (span_range, state.text_structure.get_span_inner_content(idx))
-                            });
-
-                        let [cursor_start, cursor_end] = match span {
-                            Some((span_byte_range, content_byte_range)) => {
-                                // we need to remove the annotations because it is already annotated
-                                // for example: if it is already "bold" then remove "**" on each side
-
-                                match (
-                                    current_note
-                                        .text
-                                        .get(content_byte_range)
-                                        .map(|s| s.to_string()),
-                                    current_note
-                                        .text
-                                        .get(0..span_byte_range.start)
-                                        .map(|s| s.chars().count()),
-                                ) {
-                                    (Some(inner_content), Some(span_char_offset)) => {
-                                        current_note
-                                            .text
-                                            .replace_range(span_byte_range, &inner_content);
-
-                                        let cursor_start = CCursor::new(span_char_offset);
-
-                                        [cursor_start, cursor_start + inner_content.chars().count()]
-                                    }
-                                    _ => text_cursor_range.as_ccursor_range().sorted(),
-                                }
+                        let layout = match computed_layout.take() {
+                            Some(layout) if !layout.should_recompute(&layout_cache_params) => {
+                                layout
                             }
-                            None => {
-                                // means that we need to execute instruction for the shortcut, presumably to add annotations
-                                let mut cx = ShortcutExecContext {
-                                    structure: &state.text_structure,
-                                    text: &current_note.text,
-                                    selection_byte_range: byte_start..byte_end,
-                                    replace_range: byte_start..byte_end,
-                                };
 
-                                // println!("!! md shortcut:\n{:#?}", cx);
-                                match execute_instruction(&mut cx, &md_shortcut.instruction) {
-                                    Some(result) => {
-                                        let cursor_start = CCursor::new(
-                                            current_note.text[..cx.replace_range.start]
-                                                .chars()
-                                                .count(),
-                                        );
-
-                                        current_note.text.replace_range(
-                                            cx.replace_range.clone(),
-                                            &result.content,
-                                        );
-
-                                        state.text_structure =
-                                            state.text_structure.recycle_with(&current_note.text);
-
-                                        [
-                                            cursor_start + result.relative_char_cursor.start,
-                                            cursor_start + result.relative_char_cursor.end,
-                                        ]
-                                    }
-                                    None => text_cursor_range.as_ccursor_range().sorted(),
-                                }
-                            }
+                            _ => ComputedLayout::compute(
+                                &text_structure,
+                                &layout_cache_params,
+                                ui,
+                                &scaled_theme,
+                                syntax_set,
+                                theme_set,
+                            ),
                         };
 
-                        text_edit_state
-                            .set_ccursor_range(Some(CCursorRange::two(cursor_start, cursor_end)));
+                        let res = layout.galley.clone();
+                        computed_layout = Some(layout);
+                        res
+                    };
+
+                    // let mut edited_text = state.markdown.clone();
+
+                    let TextEditOutput {
+                        response: text_edit_response,
+                        galley,
+                        text_draw_pos,
+                        text_clip_rect: _,
+                        state: _,
+                        cursor_range,
+                    } = egui::TextEdit::multiline(editor_text)
+                        .font(egui::TextStyle::Monospace) // for cursor height
+                        .code_editor()
+                        .id(text_edit_id)
+                        .lock_focus(true)
+                        .desired_width(f32::INFINITY)
+                        .frame(false)
+                        .layouter(&mut layouter)
+                        .show(ui);
+
+                    use egui::TextBuffer;
+
+                    byte_cursor = cursor_range.map(|range| {
+                        let [start, end] = range
+                            .sorted_cursors()
+                            .map(|c| editor_text.byte_index_from_char_index(c.ccursor.index));
+
+                        ByteRange(start..end)
+                    });
+
+                    if text_edit_response.changed() {
+                        text_structure = text_structure.recycle(&editor_text);
                     }
-                }
-            }
 
-            // ---- INTERACTIVE TEXT PARTS (TODO + LINKS) ----
-            if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
-                let cursor = galley.cursor_from_pos(pointer_pos - text_draw_pos);
-                use egui::TextBuffer;
+                    let space_below = ui.available_rect_before_wrap();
 
-                let byte_cursor = galley
-                    .text()
-                    .byte_index_from_char_index(cursor.ccursor.index);
-
-                if let Some(interactive) =
-                    state.text_structure.find_interactive_text_part(byte_cursor)
-                {
-                    // if ui.input(|i| i.modifiers.command)
+                    // ---- CLICKING ON EMPTY AREA FOCUSES ON TEXT EDIT ----
+                    if space_below.height() > 0.
+                        && ui
+                            .interact(space_below, Id::new("space_below"), Sense::click())
+                            .clicked()
                     {
-                        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-                        if ui.input(|i| i.pointer.primary_clicked()) {
-                            match interactive {
-                                InteractiveTextPart::TaskMarker {
-                                    byte_range,
-                                    checked,
-                                } => {
-                                    current_note.text.replace_range(
-                                        byte_range,
-                                        if checked { "[ ]" } else { "[x]" },
-                                    );
-                                }
-                                InteractiveTextPart::Link(url) => {
-                                    println!("open url {url:}");
-                                    ctx.output_mut(|output| output.open_url(url));
+                        byte_cursor = Some(ByteRange(editor_text.len()..editor_text.len()));
+                        ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+                    }
+
+                    // cursor_range =
+
+                    // ---- SHORTCUTS FOR MAKING BOLD/ITALIC/STRIKETHROUGH ----
+                    if let Some(text_cursor_range) = cursor_range {
+                        for md_shortcut in md_shortcuts.iter() {
+                            if ui.input_mut(|input| input.consume_shortcut(&md_shortcut.shortcut)) {
+                                use egui::TextBuffer as _;
+
+                                let selected_char_range = text_cursor_range.as_sorted_char_range();
+
+                                let byte_start = editor_text
+                                    .byte_index_from_char_index(selected_char_range.start);
+
+                                let byte_end =
+                                    editor_text.byte_index_from_char_index(selected_char_range.end);
+
+                                let span = text_structure
+                                    .find_span_at(
+                                        md_shortcut.target_span,
+                                        ByteRange(byte_start..byte_end),
+                                    )
+                                    .map(|(span_range, idx)| {
+                                        (span_range, text_structure.get_span_inner_content(idx))
+                                    });
+
+                                let updated_byte_cursor = match span {
+                                    Some((span_byte_range, content_byte_range)) => {
+                                        // we need to remove the annotations because it is already annotated
+                                        // for example: if it is already "bold" then remove "**" on each side
+
+                                        match (
+                                            editor_text
+                                                .get(content_byte_range.0)
+                                                .map(|s| s.to_string()),
+                                            editor_text
+                                                .get(0..span_byte_range.start)
+                                                .map(|s| s.len()),
+                                        ) {
+                                            (Some(inner_content), Some(span_byte_offset)) => {
+                                                editor_text.replace_range(
+                                                    span_byte_range.0,
+                                                    &inner_content,
+                                                );
+                                                text_structure =
+                                                    text_structure.recycle(editor_text);
+
+                                                ByteRange(span_byte_offset..inner_content.len())
+                                            }
+                                            _ => byte_cursor.unwrap(), // TODO FIX => cursor should not be optional here
+                                        }
+                                    }
+                                    None => {
+                                        // means that we need to execute instruction for the shortcut, presumably to add annotations
+                                        let mut cx = ShortcutExecContext {
+                                            structure: &text_structure,
+                                            text: &editor_text,
+                                            selection_byte_range: ByteRange(byte_start..byte_end),
+                                            replace_range: ByteRange(byte_start..byte_end),
+                                        };
+
+                                        // println!("!! md shortcut:\n{:#?}", cx);
+                                        match execute_instruction(&mut cx, &md_shortcut.instruction)
+                                        {
+                                            Some(result) => {
+                                                let cursor_start =
+                                                    editor_text[..cx.replace_range.start].len();
+
+                                                editor_text.replace_range(
+                                                    cx.replace_range.clone().0,
+                                                    &result.content,
+                                                );
+
+                                                text_structure =
+                                                    text_structure.recycle(&editor_text);
+
+                                                ByteRange(
+                                                    cursor_start + result.relative_byte_cursor.start
+                                                        ..cursor_start
+                                                            + result.relative_byte_cursor.end,
+                                                )
+                                            }
+                                            None => byte_cursor.unwrap(), // TODO FIX => cursor should not be optional here
+                                        }
+                                    }
+                                };
+
+                                byte_cursor = Some(updated_byte_cursor);
+                            }
+                        }
+                    }
+
+                    // ---- INTERACTIVE TEXT PARTS (TODO + LINKS) ----
+                    if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
+                        let cursor = galley.cursor_from_pos(pointer_pos - text_draw_pos);
+
+                        let byte_cursor = galley
+                            .text()
+                            .byte_index_from_char_index(cursor.ccursor.index);
+
+                        if let Some(interactive) =
+                            text_structure.find_interactive_text_part(byte_cursor)
+                        {
+                            // if ui.input(|i| i.modifiers.command)
+                            {
+                                ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                                if ui.input(|i| i.pointer.primary_clicked()) {
+                                    match interactive {
+                                        InteractiveTextPart::TaskMarker {
+                                            byte_range,
+                                            checked,
+                                        } => {
+                                            editor_text.replace_range(
+                                                byte_range.0,
+                                                if checked { "[ ]" } else { "[x]" },
+                                            );
+
+                                            text_structure = text_structure.recycle(&editor_text);
+                                        }
+                                        InteractiveTextPart::Link(url) => {
+                                            println!("open url {url:}");
+                                            output_actions
+                                                .push(AppAction::OpenLink(url.to_string()));
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            current_note.cursor = text_edit_state.ccursor_range();
-            text_edit_state.store(ui.ctx(), text_edit_id);
-        });
-    });
+                    (text_structure, byte_cursor)
+                })
+                .inner
+        })
+        .inner;
 
-    if state.is_settings_opened {
-        render_settings_dialog(ctx, &state.theme);
-    }
+    // if state.is_settings_opened {
+    //     render_settings_dialog(ctx, &state.theme);
+    // }
+
+    RenderAppResult(output_actions, text_structure, byte_cursor, computed_layout)
 }
 
 fn hide_app() {
@@ -538,18 +506,23 @@ fn render_settings_dialog(ctx: &Context, theme: &AppTheme) {
         });
     });
 }
-fn restore_cursor_from_note_state(note: &Note, ctx: &Context, text_state_id: Id) {
+fn restore_cursor_from_note_state(
+    text: &str,
+    byte_cursor: Option<ByteRange>,
+    ctx: &Context,
+    text_state_id: Id,
+) {
     if let Some(mut text_edit_state) = egui::TextEdit::load_state(ctx, text_state_id) {
-        // println!(
-        //     "\nswitched\nnote_cursor='{:?}'\nstate_cursor='{:?}'",
-        //     &note.cursor,
-        //     &text_edit_state.ccursor_range(),
-        // );
-        let ccursor = note.cursor.unwrap_or_else(|| {
-            egui::text::CCursorRange::one(egui::text::CCursor::new(note.text.chars().count()))
+        let ccursor_range = byte_cursor.map(|ByteRange(range)| {
+            CCursorRange::two(
+                CCursor::new(char_index_from_byte_index(&text, range.start)),
+                CCursor::new(char_index_from_byte_index(&text, range.end)),
+            )
         });
+        //     egui::text::CCursorRange::one(egui::text::CCursor::new(text.chars().count()))
+        // });
 
-        text_edit_state.set_ccursor_range(Some(ccursor));
+        text_edit_state.set_ccursor_range(ccursor_range);
         text_edit_state.store(ctx, text_state_id);
     }
 }
@@ -863,7 +836,7 @@ pub fn is_shortcut_match(input: &egui::InputState, shortcut: &KeyboardShortcut) 
     })
 }
 
-fn char_index_from_byte_index(s: &str, byte_index: usize) -> usize {
+pub fn char_index_from_byte_index(s: &str, byte_index: usize) -> usize {
     for (ci, (bi, _)) in s.char_indices().enumerate() {
         if bi == byte_index {
             return ci;
