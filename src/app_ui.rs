@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use eframe::{
     egui::{
         self,
@@ -16,7 +14,7 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     app_actions::{apply_text_changes, process_app_action, AppAction},
-    app_state::{AppShortcuts, AppState, ComputedLayout, LayoutCacheParams, MsgToApp, Note},
+    app_state::{AppShortcuts, AppState, ComputedLayout, LayoutParams, MsgToApp, Note},
     md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
     scripting::execute_live_scripts,
@@ -24,62 +22,12 @@ use crate::{
     theme::{AppIcon, AppTheme},
 };
 
-#[derive(Debug)]
-struct ShortcutExecContext<'a> {
-    structure: &'a TextStructure,
-    text: &'a str,
-    selection_byte_range: ByteRange,
-    replace_range: ByteRange,
-}
-
-impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
-    fn get_source(&self, source: Source) -> Option<&'a str> {
-        match source {
-            Source::Selection => {
-                if self.selection_byte_range.is_empty() {
-                    None
-                } else {
-                    self.text.get(self.selection_byte_range.clone().0)
-                }
-            }
-            Source::BeforeSelection => self.text.get(0..self.selection_byte_range.start),
-            Source::AfterSelection => self.text.get(self.selection_byte_range.end..),
-            Source::SurroundingSpanContent(kind) => self
-                .structure
-                .find_span_at(kind, self.selection_byte_range.clone())
-                .map(|(_, index)| self.structure.get_span_inner_content(index))
-                .and_then(|content| self.text.get(content.clone().0)),
-        }
-    }
-
-    fn is_inside_span(&self, kind: SpanKind) -> bool {
-        self.structure
-            .find_span_at(kind, self.selection_byte_range.clone())
-            .is_some()
-    }
-
-    fn set_replace_area(&mut self, kind: SpanKind) {
-        if let Some((range, _)) = self
-            .structure
-            .find_span_at(kind, self.selection_byte_range.clone())
-        {
-            self.replace_range = range;
-        }
-    }
-
-    fn is_inside_unmarked(&self) -> bool {
-        self.structure
-            .find_any_span_at(self.selection_byte_range.clone())
-            .is_none()
-    }
-}
-
 pub struct AppRenderData<'a> {
     pub selected_note: u32,
     pub text_edit_id: Id,
     pub font_scale: i32,
     pub byte_cursor: Option<ByteRange>,
-    pub md_shortcuts: &'a [MdAnnotationShortcut],
+    pub md_shortcuts: &'a [(String, KeyboardShortcut)],
     pub syntax_set: &'a SyntaxSet,
     pub theme_set: &'a ThemeSet,
     pub computed_layout: Option<ComputedLayout>,
@@ -228,8 +176,7 @@ pub fn render_app(
                     let scaled_theme = theme.scaled(f32::powi(1.2, font_scale));
 
                     let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                        let layout_cache_params =
-                            LayoutCacheParams::new(text, wrap_width, font_scale);
+                        let layout_cache_params = LayoutParams::new(text, wrap_width, font_scale);
 
                         let layout = match computed_layout.take() {
                             Some(layout) if !layout.should_recompute(&layout_cache_params) => {
@@ -299,93 +246,7 @@ pub fn render_app(
                     // cursor_range =
 
                     // ---- SHORTCUTS FOR MAKING BOLD/ITALIC/STRIKETHROUGH ----
-                    if let Some(text_cursor_range) = cursor_range {
-                        for md_shortcut in md_shortcuts.iter() {
-                            if ui.input_mut(|input| input.consume_shortcut(&md_shortcut.shortcut)) {
-                                use egui::TextBuffer as _;
-
-                                let selected_char_range = text_cursor_range.as_sorted_char_range();
-
-                                let byte_start = editor_text
-                                    .byte_index_from_char_index(selected_char_range.start);
-
-                                let byte_end =
-                                    editor_text.byte_index_from_char_index(selected_char_range.end);
-
-                                let span = text_structure
-                                    .find_span_at(
-                                        md_shortcut.target_span,
-                                        ByteRange(byte_start..byte_end),
-                                    )
-                                    .map(|(span_range, idx)| {
-                                        (span_range, text_structure.get_span_inner_content(idx))
-                                    });
-
-                                let updated_byte_cursor = match span {
-                                    Some((span_byte_range, content_byte_range)) => {
-                                        // we need to remove the annotations because it is already annotated
-                                        // for example: if it is already "bold" then remove "**" on each side
-
-                                        match (
-                                            editor_text
-                                                .get(content_byte_range.0)
-                                                .map(|s| s.to_string()),
-                                            editor_text
-                                                .get(0..span_byte_range.start)
-                                                .map(|s| s.len()),
-                                        ) {
-                                            (Some(inner_content), Some(span_byte_offset)) => {
-                                                editor_text.replace_range(
-                                                    span_byte_range.0,
-                                                    &inner_content,
-                                                );
-                                                text_structure =
-                                                    text_structure.recycle(editor_text);
-
-                                                ByteRange(span_byte_offset..inner_content.len())
-                                            }
-                                            _ => byte_cursor.unwrap(), // TODO FIX => cursor should not be optional here
-                                        }
-                                    }
-                                    None => {
-                                        // means that we need to execute instruction for the shortcut, presumably to add annotations
-                                        let mut cx = ShortcutExecContext {
-                                            structure: &text_structure,
-                                            text: &editor_text,
-                                            selection_byte_range: ByteRange(byte_start..byte_end),
-                                            replace_range: ByteRange(byte_start..byte_end),
-                                        };
-
-                                        // println!("!! md shortcut:\n{:#?}", cx);
-                                        match execute_instruction(&mut cx, &md_shortcut.instruction)
-                                        {
-                                            Some(result) => {
-                                                let cursor_start =
-                                                    editor_text[..cx.replace_range.start].len();
-
-                                                editor_text.replace_range(
-                                                    cx.replace_range.clone().0,
-                                                    &result.content,
-                                                );
-
-                                                text_structure =
-                                                    text_structure.recycle(&editor_text);
-
-                                                ByteRange(
-                                                    cursor_start + result.relative_byte_cursor.start
-                                                        ..cursor_start
-                                                            + result.relative_byte_cursor.end,
-                                                )
-                                            }
-                                            None => byte_cursor.unwrap(), // TODO FIX => cursor should not be optional here
-                                        }
-                                    }
-                                };
-
-                                byte_cursor = Some(updated_byte_cursor);
-                            }
-                        }
-                    }
+                    // if let Some(text_cursor_range) = cursor_range
 
                     // ---- INTERACTIVE TEXT PARTS (TODO + LINKS) ----
                     if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
@@ -751,7 +612,7 @@ fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) {
 
 fn render_hints(
     title: &str,
-    shortcuts: Option<&[MdAnnotationShortcut]>,
+    shortcuts: Option<&[(String, KeyboardShortcut)]>,
     available_space: Rect,
     painter: &Painter,
     cx: &egui::Context,
@@ -789,11 +650,11 @@ fn render_hints(
                     ((2 * shortcuts.len() - 1) as f32) / 2.0 * fonts.size.normal,
                 );
 
-            for (i, md_shortcut) in shortcuts.iter().enumerate() {
+            for (i, (name, shortcut)) in shortcuts.iter().enumerate() {
                 painter.text(
                     starting_point + vec2(0., (i as f32) * 2.0 * fonts.size.normal),
                     Align2::RIGHT_CENTER,
-                    format!("{}  ", md_shortcut.name,),
+                    format!("{}  ", name,),
                     hints_font_id.clone(),
                     hint_color,
                 );
@@ -807,7 +668,7 @@ fn render_hints(
                 painter.text(
                     starting_point + vec2(0., (i as f32) * 2.0 * fonts.size.normal),
                     Align2::LEFT_CENTER,
-                    format!("  {}", cx.format_shortcut(&md_shortcut.shortcut)),
+                    format!("  {}", cx.format_shortcut(shortcut)),
                     hints_font_id.clone(),
                     hint_color,
                 );

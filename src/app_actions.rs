@@ -20,8 +20,8 @@ pub enum TextChange {
 }
 
 impl TextChange {
-    const CURSOR_EDGE: &'static str = "{|}";
-    const CURSOR: &'static str = "{||}";
+    pub const CURSOR_EDGE: &'static str = "{|}";
+    pub const CURSOR: &'static str = "{||}";
 
     pub fn try_extract_cursor(mut text: String) -> (String, Option<ByteRange>) {
         // let mut text = text.to_string();
