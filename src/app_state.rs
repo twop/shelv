@@ -93,7 +93,7 @@ impl<'a> LayoutParams<'a> {
 impl ComputedLayout {
     pub fn should_recompute(&self, layout_params: &LayoutParams) -> bool {
         // TODO might want to check for any changes to theme, not just font_size
-        self.layout_params_hash == layout_params.hash
+        self.layout_params_hash != layout_params.hash
     }
 
     pub fn compute(

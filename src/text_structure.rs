@@ -218,13 +218,15 @@ impl<'a> TextStructureBuilder<'a> {
         index
     }
 
-    pub fn finish(self, annotation_points: Vec<AnnotationPoint>) -> TextStructure {
+    fn finish(self, mut annotation_points: Vec<AnnotationPoint>) -> TextStructure {
         let Self {
             spans,
             metadata,
             raw_links,
             ..
         } = self;
+
+        annotation_points.clear();
 
         let points = fill_annotation_points(annotation_points, &spans, &metadata, &raw_links);
 

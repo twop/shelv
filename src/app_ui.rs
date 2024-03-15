@@ -18,7 +18,7 @@ use crate::{
     md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
     picker::{Picker, PickerItem},
     scripting::execute_live_scripts,
-    text_structure::{ByteRange, InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
+    text_structure::{self, ByteRange, InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
     theme::{AppIcon, AppTheme},
 };
 
@@ -54,7 +54,7 @@ pub fn render_app(
         font_scale,
         mut byte_cursor,
         md_shortcuts,
-        mut computed_layout,
+        computed_layout,
         syntax_set,
         theme_set,
     } = visual_state;
@@ -156,7 +156,7 @@ pub fn render_app(
 
     restore_cursor_from_note_state(&editor_text, byte_cursor.clone(), ctx, text_edit_id);
 
-    let (text_structure, byte_cursor) = egui::CentralPanel::default()
+    let (text_structure, computed_layout, updated_cursor) = egui::CentralPanel::default()
         .show(ctx, |ui| {
             let avail_space = ui.available_rect_before_wrap();
 
@@ -173,63 +173,22 @@ pub fn render_app(
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
-                    let scaled_theme = theme.scaled(f32::powi(1.2, font_scale));
+                    let (layout, mut text_structure, mut updated_cursor, text_draw_pos) =
+                        render_editor(
+                            ui,
+                            editor_text,
+                            text_structure,
+                            font_scale,
+                            computed_layout,
+                            theme,
+                            syntax_set,
+                            theme_set,
+                            text_edit_id,
+                        );
 
-                    let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                        let layout_cache_params = LayoutParams::new(text, wrap_width, font_scale);
-
-                        let layout = match computed_layout.take() {
-                            Some(layout) if !layout.should_recompute(&layout_cache_params) => {
-                                layout
-                            }
-
-                            _ => ComputedLayout::compute(
-                                &text_structure,
-                                &layout_cache_params,
-                                ui,
-                                &scaled_theme,
-                                syntax_set,
-                                theme_set,
-                            ),
-                        };
-
-                        let res = layout.galley.clone();
-                        computed_layout = Some(layout);
-                        res
-                    };
-
-                    // let mut edited_text = state.markdown.clone();
-
-                    let TextEditOutput {
-                        response: text_edit_response,
-                        galley,
-                        text_draw_pos,
-                        text_clip_rect: _,
-                        state: _,
-                        cursor_range,
-                    } = egui::TextEdit::multiline(editor_text)
-                        .font(egui::TextStyle::Monospace) // for cursor height
-                        .code_editor()
-                        .id(text_edit_id)
-                        .lock_focus(true)
-                        .desired_width(f32::INFINITY)
-                        .frame(false)
-                        .layouter(&mut layouter)
-                        .show(ui);
-
-                    use egui::TextBuffer;
-
-                    byte_cursor = cursor_range.map(|range| {
-                        let [start, end] = range
-                            .sorted_cursors()
-                            .map(|c| editor_text.byte_index_from_char_index(c.ccursor.index));
-
-                        ByteRange(start..end)
-                    });
-
-                    if text_edit_response.changed() {
-                        text_structure = text_structure.recycle(&editor_text);
-                    }
+                    // if text_edit_response.changed() {
+                    //     text_structure = text_structure.recycle(&editor_text);
+                    // }
 
                     let space_below = ui.available_rect_before_wrap();
 
@@ -239,20 +198,19 @@ pub fn render_app(
                             .interact(space_below, Id::new("space_below"), Sense::click())
                             .clicked()
                     {
-                        byte_cursor = Some(ByteRange(editor_text.len()..editor_text.len()));
+                        updated_cursor = Some(ByteRange(editor_text.len()..editor_text.len()));
                         ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
                     }
 
-                    // cursor_range =
-
-                    // ---- SHORTCUTS FOR MAKING BOLD/ITALIC/STRIKETHROUGH ----
-                    // if let Some(text_cursor_range) = cursor_range
-
                     // ---- INTERACTIVE TEXT PARTS (TODO + LINKS) ----
-                    if let Some(pointer_pos) = ui.ctx().pointer_interact_pos() {
-                        let cursor = galley.cursor_from_pos(pointer_pos - text_draw_pos);
+                    if let (Some(layout), Some(pointer_pos)) =
+                        (&layout, ui.ctx().pointer_interact_pos())
+                    {
+                        let cursor = layout.galley.cursor_from_pos(pointer_pos - text_draw_pos);
 
-                        let byte_cursor = galley
+                        use eframe::egui::TextBuffer as _;
+                        let byte_cursor = layout
+                            .galley
                             .text()
                             .byte_index_from_char_index(cursor.ccursor.index);
 
@@ -286,17 +244,102 @@ pub fn render_app(
                         }
                     }
 
-                    (text_structure, byte_cursor)
+                    (text_structure, layout, updated_cursor)
                 })
                 .inner
         })
         .inner;
 
-    // if state.is_settings_opened {
-    //     render_settings_dialog(ctx, &state.theme);
-    // }
+    RenderAppResult(
+        output_actions,
+        text_structure,
+        updated_cursor,
+        computed_layout,
+    )
+}
 
-    RenderAppResult(output_actions, text_structure, byte_cursor, computed_layout)
+fn render_editor(
+    ui: &mut Ui,
+    editor_text: &mut String,
+    text_structure: TextStructure,
+    font_scale: i32,
+    mut computed_layout: Option<ComputedLayout>,
+    theme: &AppTheme,
+    syntax_set: &SyntaxSet,
+    theme_set: &ThemeSet,
+    text_edit_id: Id,
+) -> (
+    Option<ComputedLayout>,
+    TextStructure,
+    Option<ByteRange>,
+    egui::Pos2,
+) {
+    let mut structure_wrapper = Some(text_structure);
+
+    let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+        let layout_cache_params = LayoutParams::new(text, wrap_width, font_scale);
+
+        let layout = match computed_layout.take() {
+            Some(layout) if !layout.should_recompute(&layout_cache_params) => layout,
+
+            _ => {
+                let scaled_theme = theme.scaled(f32::powi(1.2, font_scale));
+
+                let structure = structure_wrapper.take().unwrap().recycle(text);
+
+                // println!("### updated structure {structure:#?}");
+                // println!("### rerender with {text}");
+                let layout = ComputedLayout::compute(
+                    &structure,
+                    &layout_cache_params,
+                    ui,
+                    &scaled_theme,
+                    syntax_set,
+                    theme_set,
+                );
+
+                structure_wrapper = Some(structure);
+
+                layout
+            }
+        };
+
+        let res = layout.galley.clone();
+        computed_layout = Some(layout);
+        res
+    };
+
+    // let mut edited_text = state.markdown.clone();
+
+    let TextEditOutput {
+        response: text_edit_response,
+        galley,
+        text_draw_pos,
+        text_clip_rect: _,
+        state: _,
+        cursor_range,
+    } = egui::TextEdit::multiline(editor_text)
+        .font(egui::TextStyle::Monospace) // for cursor height
+        .code_editor()
+        .id(text_edit_id)
+        .lock_focus(true)
+        .desired_width(f32::INFINITY)
+        .frame(false)
+        .layouter(&mut layouter)
+        .show(ui);
+
+    use egui::TextBuffer;
+
+    let byte_cursor = cursor_range.map(|range| {
+        let [start, end] = range
+            .sorted_cursors()
+            .map(|c| editor_text.byte_index_from_char_index(c.ccursor.index));
+
+        ByteRange(start..end)
+    });
+
+    let text_structure = structure_wrapper.unwrap();
+    (computed_layout, text_structure, byte_cursor, text_draw_pos)
 }
 
 fn hide_app() {
