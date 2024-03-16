@@ -61,53 +61,6 @@ pub fn render_app(
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
 
-    // while let Ok(msg) = state.msg_queue.try_recv() {
-    //     println!("got in render: {msg:?}");
-    //     match msg {
-    //         MsgToApp::ToggleVisibility => {
-    //             state.hidden = !state.hidden;
-
-    //             if state.hidden {
-    //                 hide_app();
-    //             } else {
-    //                 frame.set_visible(!state.hidden);
-    //             }
-
-    //             if !state.hidden {
-    //                 frame.focus();
-    //                 // // frame.request_user_attention(egui::UserAttentionType::Reset);
-    //                 ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-    //                 println!(
-    //                     "after: focus, has_focus = {:?}",
-    //                     frame.info().window_info.focused
-    //                 );
-    //             }
-    //         }
-    //     }
-    // }
-
-    // let cur_focus = frame.info().window_info.focused;
-    // if state.prev_focused != cur_focus {
-    //     if cur_focus {
-    //         println!("gained focus");
-    //         ctx.memory_mut(|mem| mem.request_focus(text_edit_id))
-    //     } else {
-    //         println!("lost focus");
-    //         state.hidden = true;
-    //         // frame.set_visible(!state.hidden);
-    //         hide_app();
-    //     }
-    //     state.prev_focused = cur_focus;
-    // }
-
-    // if !state.hidden && !cur_focus {
-    //     // println!("restore focus");
-    //     frame.request_user_attention(egui::UserAttentionType::Informational);
-    //     frame.focus()
-    // }
-
-    // println!("{:#?}", text_structure);
-
     let footer_actions = render_footer_panel(
         selected_note,
         font_scale,
@@ -122,6 +75,9 @@ pub fn render_app(
 
     output_actions.extend(footer_actions);
 
+    // TODO migrate these to be commands
+    // note that it is possible that commands might need to be more generalized
+    // for example you should be able to switch to a note even withtout having a focus
     ctx.input_mut(|input| {
         for (index, shortcut) in shortcuts.switch_to_note.iter().enumerate() {
             if input.consume_shortcut(&shortcut) {
@@ -186,13 +142,10 @@ pub fn render_app(
                             text_edit_id,
                         );
 
-                    // if text_edit_response.changed() {
-                    //     text_structure = text_structure.recycle(&editor_text);
-                    // }
-
                     let space_below = ui.available_rect_before_wrap();
 
                     // ---- CLICKING ON EMPTY AREA FOCUSES ON TEXT EDIT ----
+                    // TODO migrate to use app actions
                     if space_below.height() > 0.
                         && ui
                             .interact(space_below, Id::new("space_below"), Sense::click())
@@ -340,18 +293,6 @@ fn render_editor(
 
     let text_structure = structure_wrapper.unwrap();
     (computed_layout, text_structure, byte_cursor, text_draw_pos)
-}
-
-fn hide_app() {
-    // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
-    use objc2::rc::{Id, Shared};
-    use objc2::runtime::Object;
-    use objc2::{class, msg_send, msg_send_id};
-    unsafe {
-        let app: Id<Object, Shared> = msg_send_id![class!(NSApplication), sharedApplication];
-        let arg = app.as_ref();
-        let _: () = msg_send![&app, hide:arg];
-    }
 }
 
 fn render_settings_dialog(ctx: &Context, theme: &AppTheme) {

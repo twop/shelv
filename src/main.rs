@@ -4,7 +4,6 @@
 use app_actions::{process_app_action, TextChange};
 use app_state::{AppInitData, AppState, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
-use boa_engine::{Context, Source};
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
     GlobalHotKeyEvent, GlobalHotKeyManager,
@@ -21,18 +20,12 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use std::sync::mpsc::{sync_channel, SyncSender};
 
 use eframe::{
-    egui::{
-        self,
-        text::{CCursor, CCursorRange},
-        Id,
-    },
+    egui::{self, Id},
     epaint::vec2,
     get_value, set_value, CreationContext,
 };
 
-use crate::{
-    app_actions::apply_text_changes, app_ui::char_index_from_byte_index, text_structure::ByteRange,
-};
+use crate::{app_actions::apply_text_changes, text_structure::ByteRange};
 
 mod app_actions;
 mod app_state;
@@ -59,7 +52,7 @@ impl MyApp {
         let theme = Default::default();
         configure_styles(&cc.egui_ctx, &theme);
 
-        let mut fonts = get_font_definitions();
+        let fonts = get_font_definitions();
 
         cc.egui_ctx.set_fonts(fonts);
 
@@ -117,7 +110,7 @@ impl MyApp {
 }
 
 impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let text_edit_id = Id::new("text_edit");
 
         let app_state = &mut self.state;
@@ -129,6 +122,42 @@ impl eframe::App for MyApp {
             .text_structure
             .take()
             .unwrap_or_else(|| TextStructure::new(editor_text));
+
+        // handling message queue
+        while let Ok(msg) = app_state.msg_queue.try_recv() {
+            match msg {
+                MsgToApp::ToggleVisibility => {
+                    app_state.hidden = !app_state.hidden;
+
+                    if app_state.hidden {
+                        hide_app();
+                    } else {
+                        frame.set_visible(!app_state.hidden);
+                        frame.focus();
+                        ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+                    }
+                }
+            }
+        }
+
+        // handling focus lost
+        let is_frame_actually_focused = frame.info().window_info.focused;
+        if app_state.prev_focused != is_frame_actually_focused {
+            if is_frame_actually_focused {
+                println!("gained focus");
+                ctx.memory_mut(|mem| mem.request_focus(text_edit_id))
+            } else {
+                println!("lost focus");
+                app_state.hidden = true;
+                hide_app();
+            }
+            app_state.prev_focused = is_frame_actually_focused;
+        }
+
+        // restore focus, it seems that there is a lag
+        if !app_state.hidden && !is_frame_actually_focused {
+            frame.focus()
+        }
 
         // handling commands
         // sych as {tab, enter} inside a list
@@ -217,13 +246,14 @@ fn main() {
         run_and_return: true,
         window_builder: Some(Box::new(|builder| {
             #[cfg(target_os = "macos")]
-            use winit::platform::macos::WindowBuilderExtMacOS;
-            #[cfg(target_os = "macos")]
-            return builder
-                .with_fullsize_content_view(true)
-                .with_titlebar_buttons_hidden(true)
-                .with_title_hidden(true)
-                .with_titlebar_transparent(true);
+            {
+                use winit::platform::macos::WindowBuilderExtMacOS;
+                return builder
+                    .with_fullsize_content_view(true)
+                    .with_titlebar_buttons_hidden(true)
+                    .with_title_hidden(true)
+                    .with_titlebar_transparent(true);
+            }
 
             builder
         })),
@@ -239,4 +269,16 @@ fn main() {
     };
 
     eframe::run_native("Shelv", options, Box::new(|cc| Box::new(MyApp::new(cc)))).unwrap();
+}
+
+fn hide_app() {
+    // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
+    use objc2::rc::{Id, Shared};
+    use objc2::runtime::Object;
+    use objc2::{class, msg_send, msg_send_id};
+    unsafe {
+        let app: Id<Object, Shared> = msg_send_id![class!(NSApplication), sharedApplication];
+        let arg = app.as_ref();
+        let _: () = msg_send![&app, hide:arg];
+    }
 }
