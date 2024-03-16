@@ -30,6 +30,7 @@ use crate::{app_actions::apply_text_changes, text_structure::ByteRange};
 mod app_actions;
 mod app_state;
 mod app_ui;
+mod byte_span;
 mod commands;
 mod egui_hotkey;
 mod md_shortcut;

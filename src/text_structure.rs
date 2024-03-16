@@ -11,18 +11,6 @@ use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
 
-#[derive(Debug, Clone, Copy)]
-pub struct ByteSpan {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl ByteSpan {
-    pub fn range(&self) -> Range<usize> {
-        self.start..self.end
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ByteRange(pub Range<usize>);
 
