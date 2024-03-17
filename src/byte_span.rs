@@ -1,11 +1,21 @@
-use std::{marker::PhantomData, ops::Range, usize};
+use std::{fmt::Pointer, marker::PhantomData, ops::Range, usize};
 
 /// Ordered byte span
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct ByteSpan {
     pub start: usize,
     pub end: usize,
     marker: PhantomData<()>,
+}
+
+impl std::fmt::Debug for ByteSpan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ByteSpan({}..{})", self.start, self.end)
+        // f.fmt("ByteSpan")
+        //     .field(&self.start)
+        //     .field(&self.end)
+        //     .finish()
+    }
 }
 
 impl ByteSpan {
@@ -62,10 +72,6 @@ impl UnOrderedByteSpan {
             end,
             marker: PhantomData,
         }
-    }
-
-    pub fn range(&self) -> Range<usize> {
-        self.start..self.end
     }
 
     pub fn ordered(&self) -> ByteSpan {

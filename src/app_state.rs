@@ -29,9 +29,15 @@ pub struct Note {
 }
 
 pub struct AppState {
+    // -----this is persistent model-------
     pub notes: Vec<Note>,
     pub selected_note: u32,
+    // ------------------------------------
+    // -------- emphemeral state ----------
     pub save_to_storage: bool,
+    pub scheduled_script_run_version: Option<u64>,
+
+    // ------------------------------------
     pub is_settings_opened: bool,
 
     pub theme: AppTheme,
@@ -338,6 +344,7 @@ impl AppState {
         Self {
             is_settings_opened: false,
             save_to_storage: false,
+            scheduled_script_run_version: None,
             theme,
             notes,
             computed_layout: None,

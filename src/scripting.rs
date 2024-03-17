@@ -28,6 +28,7 @@ impl SourceHash {
 
 pub const OUTPUT_LANG: &str = "#";
 
+#[derive(Debug)]
 enum CodeBlock {
     LiveJS(ByteSpan, SourceHash),
     Output(ByteSpan, Option<SourceHash>),
@@ -75,6 +76,8 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
         return None;
     }
 
+    // println!("script blocks: {:#?}", script_blocks);
+
     let mut changes: SmallVec<[TextChange; 4]> = SmallVec::new();
 
     let mut last_was_js: Option<(SourceHash, ByteSpan, &str)> = None;
@@ -82,8 +85,11 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
     let needs_re_eval = script_blocks.len() % 2 != 0 ||  script_blocks[..]
         .chunks_exact(2)
         .any(|elements| match &elements {
-               &[(_,CodeBlock::LiveJS(_, source_hash), _), (_, CodeBlock::Output(_, Some(output_source_hash)), _)] =>  source_hash != output_source_hash ,
-            _ => false,
+                // if hash was parsed check if it matches
+               &[(_,CodeBlock::LiveJS(_, source_hash), _), (_, CodeBlock::Output(_, Some(output_source_hash)), _)] =>  source_hash != output_source_hash,
+               // failed to parse
+               // &[(_,CodeBlock::LiveJS(_, _), _), (_, CodeBlock::Output(_, None), _)] => true ,
+            _ => true,
         });
 
     if !needs_re_eval {
@@ -126,7 +132,7 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
 
     if let Some((source_hash, range, body)) = last_was_js {
         changes.push(TextChange::Replace(
-            range,
+            ByteSpan::new(range.end, range.end),
             "\n".to_string() + &print_output_block(body, source_hash, &mut context),
         ));
     };
@@ -157,7 +163,7 @@ mod tests {
 
     use super::*;
     #[test]
-    pub fn test_splitting_list_item_via_enter() {
+    pub fn test_executing_live_js_blocks() {
         let test_cases = [
             (
                 "## computes an output for a standalone jsblock ##",
@@ -214,12 +220,12 @@ I should be overwritten, but I won't
             ),
             // ________________________________________________
             (
-                "## replaces the content of the output block if cache is empty ##",
+                "## replaces the content of the output block if cache doesn't match or doesn't parse ##",
                 r#"
 ```js
 2 + 2
 ```{||}
-```#asd
+```#oops
 1
 ```
 "#,
@@ -296,15 +302,15 @@ Error: yo!
                     assert_eq!(
                         TextChange::encode_cursor(&text, cursor),
                         expected_output,
-                        "test case: {}",
+                        "test case: \n{}\n",
                         desc
                     )
                 }
                 (None, None) => (),
                 (changes, expected) => assert!(
                     false,
-                    "expected={:?}, but got this changes={:?}",
-                    expected, changes
+                    "\n{:?}\nexpected:\n{:?}\n\nbut got this changes:\n{:?}\n",
+                    desc, expected, changes
                 ),
             }
         }

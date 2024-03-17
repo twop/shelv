@@ -13,6 +13,7 @@ use global_hotkey::{
 use image::ImageFormat;
 
 use persistent_state::PersistentState;
+use scripting::execute_live_scripts;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -118,13 +119,14 @@ impl eframe::App for MyApp {
         let app_state = &mut self.state;
         let note = &mut app_state.notes[app_state.selected_note as usize];
         let mut cursor: Option<UnOrderedByteSpan> = note.cursor;
-        let original_cursor: Option<UnOrderedByteSpan> = note.cursor;
 
         let editor_text = &mut note.text;
         let mut text_structure = app_state
             .text_structure
             .take()
             .unwrap_or_else(|| TextStructure::new(editor_text));
+
+        let orignal_text_version = text_structure.opaque_version();
 
         // handling message queue
         while let Ok(msg) = app_state.msg_queue.try_recv() {
@@ -196,6 +198,23 @@ impl eframe::App for MyApp {
             }
         };
 
+        // handling scheduled JS execution
+        if let (Some(text_cursor_range), Some(scheduled_version)) =
+            (cursor, app_state.scheduled_script_run_version.take())
+        {
+            // println!("executing live scripts for version = {scheduled_version}",);
+            let script_changes = execute_live_scripts(&text_structure, &editor_text);
+            if let Some(changes) = script_changes {
+                // println!("detected changes from: js\n{changes:?}\n\n");
+                if let Ok(updated_cursor) =
+                    apply_text_changes(editor_text, text_cursor_range, changes)
+                {
+                    text_structure = text_structure.recycle(&editor_text);
+                    cursor = Some(updated_cursor);
+                }
+            }
+        }
+
         let vis_state = AppRenderData {
             selected_note: app_state.selected_note,
             text_edit_id,
@@ -221,7 +240,17 @@ impl eframe::App for MyApp {
         app_state.notes[app_state.selected_note as usize].cursor = byte_cursor;
 
         for action in actions {
-            process_app_action(action, ctx, app_state, text_edit_id)
+            process_app_action(action, ctx, app_state, text_edit_id);
+        }
+
+        let updated_structure_version = app_state
+            .text_structure
+            .as_ref()
+            .map(|s| s.opaque_version());
+
+        if updated_structure_version != Some(orignal_text_version) {
+            app_state.save_to_storage = true;
+            app_state.scheduled_script_run_version = updated_structure_version;
         }
     }
 

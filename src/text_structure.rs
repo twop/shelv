@@ -124,6 +124,7 @@ pub struct TextStructure {
     raw_links: Vec<RawLink>,
     spans: Vec<SpanDesc>,
     metadata: Vec<(SpanIndex, SpanMeta)>,
+    generation: u64,
 }
 
 #[derive(Debug)]
@@ -186,7 +187,7 @@ impl<'a> TextStructureBuilder<'a> {
         index
     }
 
-    fn finish(self, mut annotation_points: Vec<AnnotationPoint>) -> TextStructure {
+    fn finish(self, mut annotation_points: Vec<AnnotationPoint>, generation: u64) -> TextStructure {
         let Self {
             spans,
             metadata,
@@ -203,6 +204,7 @@ impl<'a> TextStructureBuilder<'a> {
             spans,
             metadata,
             raw_links,
+            generation,
         }
     }
 
@@ -295,8 +297,13 @@ impl TextStructure {
             raw_links: vec![],
             spans: vec![],
             metadata: vec![],
+            generation: 0,
         };
         struture.recycle(text)
+    }
+
+    pub fn opaque_version(&self) -> u64 {
+        self.generation
     }
 
     pub fn recycle(self, text: &str) -> Self {
@@ -305,6 +312,7 @@ impl TextStructure {
             raw_links,
             spans,
             metadata,
+            generation,
         } = self;
 
         let mut builder = TextStructureBuilder::start(text, (spans, raw_links, metadata));
@@ -437,7 +445,7 @@ impl TextStructure {
 
         builder.print_structure();
 
-        builder.finish(points)
+        builder.finish(points, generation.wrapping_add(1))
     }
 
     pub fn create_layout_job(

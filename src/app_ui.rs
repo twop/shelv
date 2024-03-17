@@ -98,18 +98,6 @@ pub fn render_app(
 
     render_header_panel(ctx, theme);
 
-    // TODO actually do that if no changes were detected
-    if let Some(text_cursor_range) = byte_cursor.clone() {
-        let script_changes = execute_live_scripts(&text_structure, &editor_text);
-        if let Some(changes) = script_changes {
-            if let Ok(updated_cursor) = apply_text_changes(editor_text, text_cursor_range, changes)
-            {
-                text_structure = text_structure.recycle(editor_text);
-                byte_cursor = Some(updated_cursor);
-            }
-        }
-    }
-
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
 
     let (text_structure, computed_layout, updated_cursor) = egui::CentralPanel::default()
