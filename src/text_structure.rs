@@ -11,20 +11,8 @@ use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ByteRange(pub Range<usize>);
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum RangeRelation {
-    Before,
-    After,
-    StartInside,
-    EndInside,
-    Inside,
-    Contains,
-}
-
 use crate::{
+    byte_span::ByteSpan,
     scripting::OUTPUT_LANG,
     theme::{AppTheme, ColorTheme, FontTheme},
 };
@@ -126,7 +114,7 @@ impl MarkdownRunningState {
 #[derive(Debug, Clone)]
 pub struct SpanDesc {
     pub kind: SpanKind,
-    pub byte_pos: ByteRange,
+    pub byte_pos: ByteSpan,
     pub parent: SpanIndex,
 }
 
@@ -154,16 +142,8 @@ pub struct TextStructureBuilder<'a> {
 
 pub enum InteractiveTextPart<'a> {
     // byte pos the text, note that it is not the same as char
-    TaskMarker {
-        byte_range: ByteRange,
-        checked: bool,
-    },
+    TaskMarker { byte_range: ByteSpan, checked: bool },
     Link(&'a str),
-}
-
-pub struct SpanSearchResult {
-    pub span_byte_range: Range<usize>,
-    pub content_byte_range: Range<usize>,
 }
 
 impl<'a> TextStructureBuilder<'a> {
@@ -175,7 +155,7 @@ impl<'a> TextStructureBuilder<'a> {
         spans.clear();
         spans.push(SpanDesc {
             kind: SpanKind::Root,
-            byte_pos: ByteRange(0..0),
+            byte_pos: ByteSpan::new(0, 0),
             parent: SpanIndex(0),
         });
         raw_links.clear();
@@ -190,7 +170,7 @@ impl<'a> TextStructureBuilder<'a> {
         }
     }
 
-    fn add(&mut self, kind: SpanKind, pos: ByteRange) -> SpanIndex {
+    fn add(&mut self, kind: SpanKind, pos: ByteSpan) -> SpanIndex {
         let index = SpanIndex(self.spans.len());
         self.spans.push(SpanDesc {
             kind,
@@ -200,7 +180,7 @@ impl<'a> TextStructureBuilder<'a> {
         index
     }
 
-    fn add_with_meta(&mut self, kind: SpanKind, pos: ByteRange, meta: SpanMeta) -> SpanIndex {
+    fn add_with_meta(&mut self, kind: SpanKind, pos: ByteSpan, meta: SpanMeta) -> SpanIndex {
         let index = self.add(kind, pos);
         self.metadata.push((index, meta));
         index
@@ -297,7 +277,7 @@ impl<'a> TextStructureBuilder<'a> {
     }
 }
 
-fn trim_trailing_new_lines(text: &str, pos: ByteRange) -> ByteRange {
+fn trim_trailing_new_lines(text: &str, pos: ByteSpan) -> ByteSpan {
     let (start, mut end) = (pos.start, pos.end);
 
     // TODO optimize it by taking a slice from the string
@@ -305,7 +285,7 @@ fn trim_trailing_new_lines(text: &str, pos: ByteRange) -> ByteRange {
         end -= 1;
     }
 
-    ByteRange(start..end)
+    ByteSpan::new(start, end)
 }
 
 impl TextStructure {
@@ -346,7 +326,7 @@ impl TextStructure {
         for (ev, range) in parser.into_offset_iter() {
             use pulldown_cmark::Event::*;
             use pulldown_cmark::Tag::*;
-            let range = ByteRange(range);
+            let range = ByteSpan::from_range(&range);
             match ev {
                 Start(tag) => {
                     let container = match tag {
@@ -482,12 +462,11 @@ impl TextStructure {
             if state.code_block > 0 && state.text > 0 {
                 // means that we are inside code block body
 
-                let code_block_byte_range = pos..point.str_offset;
                 let code = text.get(pos..point.str_offset).unwrap_or("");
 
                 let lang = match self.find_surrounding_span_with_meta(
                     SpanKind::CodeBlock,
-                    ByteRange(code_block_byte_range),
+                    ByteSpan::new(pos, point.str_offset),
                 ) {
                     Some((_, _, SpanMeta::CodeBlock { lang })) => lang.to_string(),
                     _ => "".to_string(),
@@ -594,7 +573,7 @@ impl TextStructure {
                     },
                 )| match kind {
                     SpanKind::TaskMarker | SpanKind::MdLink
-                        if byte_pos.contains(&byte_cursor_pos) =>
+                        if byte_pos.contains_pos(byte_cursor_pos) =>
                     {
                         find_metadata(SpanIndex(index), &self.metadata).and_then(|meta| {
                             match (kind, meta) {
@@ -628,7 +607,7 @@ impl TextStructure {
     pub fn find_surrounding_span_with_meta(
         &self,
         kind: SpanKind,
-        byte_cursor: ByteRange,
+        byte_cursor: ByteSpan,
     ) -> Option<(SpanIndex, SpanDesc, SpanMeta)> {
         self.find_span_at(kind, byte_cursor).and_then(|(_, index)| {
             let span = &self.spans[index.0];
@@ -639,14 +618,14 @@ impl TextStructure {
     pub fn find_span_at(
         &self,
         span_kind: SpanKind,
-        byte_cursor: ByteRange,
-    ) -> Option<(ByteRange, SpanIndex)> {
+        byte_cursor: ByteSpan,
+    ) -> Option<(ByteSpan, SpanIndex)> {
         self.spans
             .iter()
             .enumerate()
             .rev()
             .find_map(|(i, SpanDesc { kind, byte_pos, .. })| {
-                if *kind == span_kind && is_sub_range(byte_pos, &byte_cursor) {
+                if *kind == span_kind && byte_pos.contains(byte_cursor) {
                     Some((byte_pos.clone(), SpanIndex(i)))
                 } else {
                     None
@@ -711,13 +690,13 @@ impl TextStructure {
             .map(|(i, desc)| (SpanIndex(i), desc))
     }
 
-    pub fn find_any_span_at(&self, byte_cursor: ByteRange) -> Option<(ByteRange, SpanIndex)> {
+    pub fn find_any_span_at(&self, byte_cursor: ByteSpan) -> Option<(ByteSpan, SpanIndex)> {
         self.spans
             .iter()
             .enumerate()
             .rev()
             .find_map(|(i, SpanDesc { byte_pos, .. })| {
-                if is_sub_range(byte_pos, &byte_cursor) {
+                if byte_pos.contains(byte_cursor) {
                     Some((byte_pos.clone(), SpanIndex(i)))
                 } else {
                     None
@@ -725,11 +704,11 @@ impl TextStructure {
             })
     }
 
-    pub fn get_span_inner_content(&self, idx: SpanIndex) -> ByteRange {
+    pub fn get_span_inner_content(&self, idx: SpanIndex) -> ByteSpan {
         let SpanIndex(index) = idx;
         let SpanDesc {
             kind,
-            byte_pos: ByteRange(pos),
+            byte_pos: pos,
             ..
         } = self.spans[index].clone();
         let range = match kind {
@@ -745,7 +724,7 @@ impl TextStructure {
             | SpanKind::TaskMarker
             | SpanKind::MdLink
             | SpanKind::Html
-            | SpanKind::Image => pos,
+            | SpanKind::Image => pos.range(),
 
             // these are all containers, thus we need to enumerate their content
             SpanKind::ListItem
@@ -763,11 +742,11 @@ impl TextStructure {
                 //     Some(area) => {
                 //         Some(area.start.min(desc.byte_pos.start)..area.end.max(desc.byte_pos.end))
                 //     }
-                calc_total_range( iterate_immediate_children_of(idx, &self.spans).map(|(_, desc)| desc)).map(|ByteRange(range)| range)
-                .unwrap_or(pos.start..pos.start),
+                calc_total_range( iterate_immediate_children_of(idx, &self.spans).map(|(_, desc)| &desc.byte_pos)).map(|byte_span| byte_span.range())
+                .unwrap_or( pos.start..pos.start),
         };
 
-        ByteRange(range)
+        ByteSpan::from_range(&range)
     }
 }
 
@@ -788,7 +767,7 @@ fn fill_annotation_points(
     {
         let pos = byte_pos.clone();
         let span_index = SpanIndex(index);
-        let annotations: SmallVec<[(Annotation, ByteRange); 2]> = match kind {
+        let annotations: SmallVec<[(Annotation, ByteSpan); 2]> = match kind {
             SpanKind::Strike => smallvec![(Annotation::Strike, pos)],
             SpanKind::Bold => smallvec![(Annotation::Bold, pos)],
             SpanKind::Emphasis => smallvec![(Annotation::Emphasis, pos)],
@@ -797,9 +776,10 @@ fn fill_annotation_points(
                 Some(SpanMeta::TaskMarker { checked }) => match *checked {
                     true => {
                         let list_item_content = calc_total_range(
-                            iterate_immediate_children_of(*parent, spans).map(|(_, desc)| desc),
+                            iterate_immediate_children_of(*parent, spans)
+                                .map(|(_, desc)| &desc.byte_pos),
                         )
-                        .unwrap_or(pos.clone());
+                        .unwrap_or(pos);
                         smallvec![
                             (Annotation::TaskMarker, pos),
                             (Annotation::Strike, list_item_content)
@@ -897,12 +877,13 @@ fn iterate_children_recursively_of(
         .take_while(move |(_, child)| child.parent.0 > parent_parent)
 }
 
-fn calc_total_range<'a>(spans: impl Iterator<Item = &'a SpanDesc>) -> Option<ByteRange> {
-    spans.fold(None, |range, sibling| match range {
-        Some(range) => Some(ByteRange(
-            range.start.min(sibling.byte_pos.start)..range.end.max(sibling.byte_pos.end),
+fn calc_total_range<'a>(spans: impl Iterator<Item = &'a ByteSpan>) -> Option<ByteSpan> {
+    spans.fold(None, |range, byte_pos| match range {
+        Some(range) => Some(ByteSpan::new(
+            range.start.min(byte_pos.start),
+            range.end.max(byte_pos.end),
         )),
-        None => Some(sibling.byte_pos.clone()),
+        None => Some(*byte_pos),
     })
 }
 
@@ -992,46 +973,10 @@ impl MarkdownRunningState {
     }
 }
 
-impl Deref for ByteRange {
-    type Target = Range<usize>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl ByteRange {
-    pub fn relative_to(&self, other: &Self) -> RangeRelation {
-        let (s_start, s_end) = (self.0.start, self.0.end);
-        let (other_start, other_end) = (other.0.start, other.0.end);
-        assert!(s_start <= s_end, "self: assumes left -> right direction");
-        assert!(
-            other_start <= other_end,
-            "other: assumes left -> right direction"
-        );
-
-        if s_end <= other_start {
-            RangeRelation::Before
-        } else if s_start >= other_end {
-            RangeRelation::After
-        } else if s_start >= other_start && s_end <= other_end {
-            RangeRelation::Inside
-        } else if s_start <= other_start && s_end >= other_end {
-            RangeRelation::Contains
-        }
-        // note strict comparison here, due to range being not inclusive
-        else if s_end > other_start && s_start < other_start {
-            RangeRelation::EndInside
-        } else if s_start < other_end && s_end > other_end {
-            RangeRelation::StartInside
-        } else {
-            panic!("should be exhaustive")
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::byte_span::RangeRelation;
+
     use super::*;
     #[test]
     pub fn test_inner_content() {
@@ -1040,17 +985,17 @@ mod tests {
         let structure = TextStructure::new(md);
 
         let (h2_range, idx) = structure
-            .find_span_at(SpanKind::Heading(HeadingLevel::H2), ByteRange(4..6))
+            .find_span_at(SpanKind::Heading(HeadingLevel::H2), ByteSpan::new(4, 6))
             .unwrap();
 
         println!("{:#?}", structure.spans);
-        assert_eq!(Some("## ti**tle** "), md.get(h2_range.0));
+        assert_eq!(Some("## ti**tle** "), md.get(h2_range.range()));
 
         let content_range = structure.get_span_inner_content(idx);
 
         // note that it skips the first space due to h2 pattern
         // and doesn't capture the trailing space, and neither "\n"
-        assert_eq!(Some("ti**tle**"), md.get(content_range.0));
+        assert_eq!(Some("ti**tle**"), md.get(content_range.range()));
     }
 
     #[test]
@@ -1060,17 +1005,17 @@ mod tests {
         let structure = TextStructure::new(md);
 
         let (a_range, _) = structure
-            .find_span_at(SpanKind::Paragraph, ByteRange(0..0))
+            .find_span_at(SpanKind::Paragraph, ByteSpan::new(0, 0))
             .unwrap();
         let (b_range, _) = structure
-            .find_span_at(SpanKind::Paragraph, ByteRange(3..3))
+            .find_span_at(SpanKind::Paragraph, ByteSpan::new(3, 3))
             .unwrap();
 
         println!("{:#?}", structure.spans);
-        assert_eq!(Some("a"), md.get(a_range.0));
-        assert_eq!(Some("b"), md.get(b_range.0));
+        assert_eq!(Some("a"), md.get(a_range.range()));
+        assert_eq!(Some("b"), md.get(b_range.range()));
 
-        let second_line = structure.find_span_at(SpanKind::Paragraph, ByteRange(2..2));
+        let second_line = structure.find_span_at(SpanKind::Paragraph, ByteSpan::new(2, 2));
         assert_eq!(None, second_line);
     }
 
@@ -1082,18 +1027,18 @@ mod tests {
 
         // println!("{:#?}", structure.spans);
 
-        let res = structure.find_span_at(SpanKind::CodeBlock, ByteRange(0..0));
+        let res = structure.find_span_at(SpanKind::CodeBlock, ByteSpan::new(0, 0));
         assert!(res.is_some());
 
         let (_, _, meta) = structure
-            .find_surrounding_span_with_meta(SpanKind::CodeBlock, ByteRange(0..0))
+            .find_surrounding_span_with_meta(SpanKind::CodeBlock, ByteSpan::new(0, 0))
             .unwrap();
 
         let (code_body, _) = structure
-            .find_span_at(SpanKind::Text, ByteRange(7..7))
+            .find_span_at(SpanKind::Text, ByteSpan::new(7, 7))
             .unwrap();
 
-        assert_eq!(Some("code\n"), md.get(code_body.0));
+        assert_eq!(Some("code\n"), md.get(code_body.range()));
 
         assert_eq!(
             SpanMeta::CodeBlock {
@@ -1116,14 +1061,10 @@ mod tests {
 
         for (a, b, expected) in test_cases {
             assert_eq!(
-                ByteRange(a.clone()).relative_to(&ByteRange(b.clone())),
+                ByteSpan::from_range(&a.clone()).relative_to(ByteSpan::from_range(&b.clone())),
                 expected,
                 "wrong relation {a:?} to {b:?}"
             );
         }
     }
-}
-
-fn is_sub_range(outer: &Range<usize>, inner: &Range<usize>) -> bool {
-    outer.start <= inner.start && outer.end >= inner.end
 }

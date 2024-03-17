@@ -4,8 +4,9 @@ use eframe::egui::KeyboardShortcut;
 
 use crate::{
     app_actions::TextChange,
+    byte_span::ByteSpan,
     commands::EditorCommand,
-    text_structure::{ByteRange, SpanKind, TextStructure},
+    text_structure::{SpanKind, TextStructure},
 };
 
 pub struct MarkdownShortcutCommand {
@@ -112,7 +113,7 @@ impl EditorCommand for MarkdownShortcutCommand {
         &self,
         text_structure: &crate::text_structure::TextStructure,
         text: &str,
-        byte_cursor: ByteRange,
+        byte_cursor: ByteSpan,
     ) -> Option<Vec<crate::app_actions::TextChange>> {
         let span = text_structure
             .find_span_at(self.md_shortcut.target_span, byte_cursor.clone())
@@ -126,7 +127,7 @@ impl EditorCommand for MarkdownShortcutCommand {
                 Some(vec![TextChange::Replace(
                     span_byte_range,
                     TextChange::CURSOR_EDGE.to_string()
-                        + &text[content_byte_range.0]
+                        + &text[content_byte_range.range()]
                         + TextChange::CURSOR_EDGE,
                 )])
             }
@@ -150,8 +151,8 @@ impl EditorCommand for MarkdownShortcutCommand {
 struct ShortcutExecContext<'a> {
     structure: &'a TextStructure,
     text: &'a str,
-    selection_byte_range: ByteRange,
-    replace_range: ByteRange,
+    selection_byte_range: ByteSpan,
+    replace_range: ByteSpan,
 }
 
 impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
@@ -161,37 +162,34 @@ impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
                 if self.selection_byte_range.is_empty() {
                     None
                 } else {
-                    self.text.get(self.selection_byte_range.clone().0)
+                    self.text.get(self.selection_byte_range.range())
                 }
             }
             Source::BeforeSelection => self.text.get(0..self.selection_byte_range.start),
             Source::AfterSelection => self.text.get(self.selection_byte_range.end..),
             Source::SurroundingSpanContent(kind) => self
                 .structure
-                .find_span_at(kind, self.selection_byte_range.clone())
+                .find_span_at(kind, self.selection_byte_range)
                 .map(|(_, index)| self.structure.get_span_inner_content(index))
-                .and_then(|content| self.text.get(content.clone().0)),
+                .and_then(|content| self.text.get(content.range())),
         }
     }
 
     fn is_inside_span(&self, kind: SpanKind) -> bool {
         self.structure
-            .find_span_at(kind, self.selection_byte_range.clone())
+            .find_span_at(kind, self.selection_byte_range)
             .is_some()
     }
 
     fn set_replace_area(&mut self, kind: SpanKind) {
-        if let Some((range, _)) = self
-            .structure
-            .find_span_at(kind, self.selection_byte_range.clone())
-        {
+        if let Some((range, _)) = self.structure.find_span_at(kind, self.selection_byte_range) {
             self.replace_range = range;
         }
     }
 
     fn is_inside_unmarked(&self) -> bool {
         self.structure
-            .find_any_span_at(self.selection_byte_range.clone())
+            .find_any_span_at(self.selection_byte_range)
             .is_none()
     }
 }

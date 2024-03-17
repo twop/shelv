@@ -4,6 +4,7 @@
 use app_actions::{process_app_action, TextChange};
 use app_state::{AppInitData, AppState, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
+use byte_span::UnOrderedByteSpan;
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
     GlobalHotKeyEvent, GlobalHotKeyManager,
@@ -25,7 +26,7 @@ use eframe::{
     get_value, set_value, CreationContext,
 };
 
-use crate::{app_actions::apply_text_changes, text_structure::ByteRange};
+use crate::app_actions::apply_text_changes;
 
 mod app_actions;
 mod app_state;
@@ -116,7 +117,8 @@ impl eframe::App for MyApp {
 
         let app_state = &mut self.state;
         let note = &mut app_state.notes[app_state.selected_note as usize];
-        let mut cursor: Option<ByteRange> = note.cursor.clone();
+        let mut cursor: Option<UnOrderedByteSpan> = note.cursor;
+        let original_cursor: Option<UnOrderedByteSpan> = note.cursor;
 
         let editor_text = &mut note.text;
         let mut text_structure = app_state
@@ -162,28 +164,29 @@ impl eframe::App for MyApp {
 
         // handling commands
         // sych as {tab, enter} inside a list
-        let changes: Option<(Vec<TextChange>, ByteRange)> = cursor.clone().and_then(|byte_range| {
-            ctx.input_mut(|input| {
-                // only one command can be handled at a time
-                app_state.editor_commands.iter().find_map(|editor_command| {
-                    let keyboard_shortcut = editor_command.shortcut();
-                    if is_shortcut_match(input, &keyboard_shortcut) {
-                        let res = editor_command.try_handle(
-                            &text_structure,
-                            &editor_text,
-                            byte_range.clone(),
-                        );
-                        if res.is_some() {
-                            // remove the keys from the input
-                            input.consume_shortcut(&keyboard_shortcut);
+        let changes: Option<(Vec<TextChange>, UnOrderedByteSpan)> =
+            cursor.clone().and_then(|byte_range| {
+                ctx.input_mut(|input| {
+                    // only one command can be handled at a time
+                    app_state.editor_commands.iter().find_map(|editor_command| {
+                        let keyboard_shortcut = editor_command.shortcut();
+                        if is_shortcut_match(input, &keyboard_shortcut) {
+                            let res = editor_command.try_handle(
+                                &text_structure,
+                                &editor_text,
+                                byte_range.ordered(),
+                            );
+                            if res.is_some() {
+                                // remove the keys from the input
+                                input.consume_shortcut(&keyboard_shortcut);
+                            }
+                            res.map(|changes| (changes, byte_range))
+                        } else {
+                            None
                         }
-                        res.map(|changes| (changes, byte_range.clone()))
-                    } else {
-                        None
-                    }
+                    })
                 })
-            })
-        });
+            });
 
         // now apply prepared changes, and update text structure and cursor appropriately
         if let Some((changes, byte_range)) = changes {
@@ -204,7 +207,7 @@ impl eframe::App for MyApp {
             computed_layout: app_state.computed_layout.take(),
         };
 
-        let RenderAppResult(actions, updated_structure, ccursor_range, updated_layout) = render_app(
+        let RenderAppResult(actions, updated_structure, byte_cursor, updated_layout) = render_app(
             text_structure,
             editor_text,
             vis_state,
@@ -215,7 +218,7 @@ impl eframe::App for MyApp {
 
         app_state.text_structure = Some(updated_structure);
         app_state.computed_layout = updated_layout;
-        app_state.notes[app_state.selected_note as usize].cursor = ccursor_range;
+        app_state.notes[app_state.selected_note as usize].cursor = byte_cursor;
 
         for action in actions {
             process_app_action(action, ctx, app_state, text_edit_id)

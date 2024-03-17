@@ -2,23 +2,23 @@ use eframe::{
     egui::{
         self,
         text::CCursor,
-        text_edit::{CCursorRange, TextEditOutput, TextEditState},
-        Context, Id, KeyboardShortcut, Layout, Modifiers, OpenUrl, Painter, RichText, Sense,
-        TopBottomPanel, Ui, Window,
+        text_edit::{CCursorRange, TextEditOutput},
+        Context, Id, KeyboardShortcut, Layout, Painter, RichText, Sense, TopBottomPanel, Ui,
+        Window,
     },
     emath::{Align, Align2},
-    epaint::{pos2, vec2, Color32, FontId, Rect, Stroke, Vec2},
+    epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
 };
 use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    app_actions::{apply_text_changes, process_app_action, AppAction},
-    app_state::{AppShortcuts, AppState, ComputedLayout, LayoutParams, MsgToApp, Note},
-    md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
+    app_actions::{apply_text_changes, AppAction},
+    app_state::{AppShortcuts, ComputedLayout, LayoutParams},
+    byte_span::UnOrderedByteSpan,
     picker::{Picker, PickerItem},
     scripting::execute_live_scripts,
-    text_structure::{self, ByteRange, InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
+    text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme},
 };
 
@@ -26,7 +26,7 @@ pub struct AppRenderData<'a> {
     pub selected_note: u32,
     pub text_edit_id: Id,
     pub font_scale: i32,
-    pub byte_cursor: Option<ByteRange>,
+    pub byte_cursor: Option<UnOrderedByteSpan>,
     pub md_shortcuts: &'a [(String, KeyboardShortcut)],
     pub syntax_set: &'a SyntaxSet,
     pub theme_set: &'a ThemeSet,
@@ -36,7 +36,7 @@ pub struct AppRenderData<'a> {
 pub struct RenderAppResult(
     pub SmallVec<[AppAction; 4]>,
     pub TextStructure,
-    pub Option<ByteRange>,
+    pub Option<UnOrderedByteSpan>,
     pub Option<ComputedLayout>,
 );
 
@@ -110,7 +110,7 @@ pub fn render_app(
         }
     }
 
-    restore_cursor_from_note_state(&editor_text, byte_cursor.clone(), ctx, text_edit_id);
+    restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
 
     let (text_structure, computed_layout, updated_cursor) = egui::CentralPanel::default()
         .show(ctx, |ui| {
@@ -151,7 +151,8 @@ pub fn render_app(
                             .interact(space_below, Id::new("space_below"), Sense::click())
                             .clicked()
                     {
-                        updated_cursor = Some(ByteRange(editor_text.len()..editor_text.len()));
+                        updated_cursor =
+                            Some(UnOrderedByteSpan::new(editor_text.len(), editor_text.len()));
                         ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
                     }
 
@@ -180,7 +181,7 @@ pub fn render_app(
                                             checked,
                                         } => {
                                             editor_text.replace_range(
-                                                byte_range.0,
+                                                byte_range.range(),
                                                 if checked { "[ ]" } else { "[x]" },
                                             );
 
@@ -224,7 +225,7 @@ fn render_editor(
 ) -> (
     Option<ComputedLayout>,
     TextStructure,
-    Option<ByteRange>,
+    Option<UnOrderedByteSpan>,
     egui::Pos2,
 ) {
     let mut structure_wrapper = Some(text_structure);
@@ -284,11 +285,10 @@ fn render_editor(
     use egui::TextBuffer;
 
     let byte_cursor = cursor_range.map(|range| {
-        let [start, end] = range
-            .sorted_cursors()
+        let [start, end] = [range.secondary, range.primary]
             .map(|c| editor_text.byte_index_from_char_index(c.ccursor.index));
 
-        ByteRange(start..end)
+        UnOrderedByteSpan::new(start, end)
     });
 
     let text_structure = structure_wrapper.unwrap();
@@ -353,22 +353,22 @@ fn render_settings_dialog(ctx: &Context, theme: &AppTheme) {
 }
 fn restore_cursor_from_note_state(
     text: &str,
-    byte_cursor: Option<ByteRange>,
+    byte_cursor: Option<UnOrderedByteSpan>,
     ctx: &Context,
     text_state_id: Id,
 ) {
     if let Some(mut text_edit_state) = egui::TextEdit::load_state(ctx, text_state_id) {
-        let ccursor_range = byte_cursor.map(|ByteRange(range)| {
+        let ccursor_range = byte_cursor.map(|unordered_span| {
             CCursorRange::two(
-                CCursor::new(char_index_from_byte_index(&text, range.start)),
-                CCursor::new(char_index_from_byte_index(&text, range.end)),
+                CCursor::new(char_index_from_byte_index(&text, unordered_span.start)),
+                CCursor::new(char_index_from_byte_index(&text, unordered_span.end)),
             )
         });
-        //     egui::text::CCursorRange::one(egui::text::CCursor::new(text.chars().count()))
-        // });
 
-        text_edit_state.set_ccursor_range(ccursor_range);
-        text_edit_state.store(ctx, text_state_id);
+        if ccursor_range != text_edit_state.ccursor_range() {
+            text_edit_state.set_ccursor_range(ccursor_range);
+            text_edit_state.store(ctx, text_state_id);
+        }
     }
 }
 

@@ -12,19 +12,20 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     app_actions::{EnterInsideListCommand, ShiftTabInsideListCommand, TabInsideListCommand},
+    byte_span::UnOrderedByteSpan,
     commands::EditorCommand,
     md_shortcut::{
-        self, Edge, Instruction, InstructionCondition, MarkdownShortcutCommand,
-        MdAnnotationShortcut, Source,
+        Edge, Instruction, InstructionCondition, MarkdownShortcutCommand, MdAnnotationShortcut,
+        Source,
     },
     persistent_state::PersistentState,
-    text_structure::{ByteRange, SpanKind, TextStructure},
+    text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
 };
 
 pub struct Note {
     pub text: String,
-    pub cursor: Option<ByteRange>,
+    pub cursor: Option<UnOrderedByteSpan>,
 }
 
 pub struct AppState {

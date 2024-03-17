@@ -1,5 +1,4 @@
 use boa_engine::{Context, Source};
-use eframe::egui::output;
 use smallvec::SmallVec;
 use std::{
     fmt::format,
@@ -8,7 +7,8 @@ use std::{
 
 use crate::{
     app_actions::TextChange,
-    text_structure::{ByteRange, SpanIndex, SpanKind, TextStructure},
+    byte_span::ByteSpan,
+    text_structure::{SpanIndex, SpanKind, TextStructure},
 };
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -29,8 +29,8 @@ impl SourceHash {
 pub const OUTPUT_LANG: &str = "#";
 
 enum CodeBlock {
-    LiveJS(ByteRange, SourceHash),
-    Output(ByteRange, Option<SourceHash>),
+    LiveJS(ByteSpan, SourceHash),
+    Output(ByteSpan, Option<SourceHash>),
 }
 
 pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Option<Vec<TextChange>> {
@@ -45,7 +45,7 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
                         .iterate_immediate_children_of(index)
                         .find(|(_, desc)| desc.kind == SpanKind::Text)?;
 
-                    let code = &text[code_desc.byte_pos.clone().0];
+                    let code = &text[code_desc.byte_pos.range()];
 
                     match lang.as_str() {
                         "js" => Some((
@@ -77,7 +77,7 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
 
     let mut changes: SmallVec<[TextChange; 4]> = SmallVec::new();
 
-    let mut last_was_js: Option<(SourceHash, ByteRange, &str)> = None;
+    let mut last_was_js: Option<(SourceHash, ByteSpan, &str)> = None;
 
     let needs_re_eval = script_blocks.len() % 2 != 0 ||  script_blocks[..]
         .chunks_exact(2)
@@ -98,7 +98,7 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
                 // this branch means that we are missing an ouput block => add it
                 if let Some((source_hash, block_range, prev_block_body)) = last_was_js.take() {
                     changes.push(TextChange::Replace(
-                        ByteRange(block_range.end..block_range.end),
+                        block_range,
                         "\n".to_string()
                             + &print_output_block(prev_block_body, source_hash, &mut context),
                     ));
@@ -126,7 +126,7 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
 
     if let Some((source_hash, range, body)) = last_was_js {
         changes.push(TextChange::Replace(
-            ByteRange(range.end..range.end),
+            range,
             "\n".to_string() + &print_output_block(body, source_hash, &mut context),
         ));
     };
@@ -291,7 +291,8 @@ Error: yo!
 
             match (changes, expected_output) {
                 (Some(changes), Some(expected_output)) => {
-                    let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+                    let cursor =
+                        apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
                     assert_eq!(
                         TextChange::encode_cursor(&text, cursor),
                         expected_output,
