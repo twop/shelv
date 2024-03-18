@@ -1,7 +1,10 @@
-use std::sync::{mpsc::Receiver, Arc};
+use std::{
+    hash::{DefaultHasher, Hash, Hasher},
+    sync::{mpsc::Receiver, Arc},
+};
 
 use eframe::{
-    egui::{self, text_edit::CCursorRange, Key, KeyboardShortcut, Modifiers, Ui},
+    egui::{self, Key, KeyboardShortcut, Modifiers, Ui},
     epaint::Galley,
 };
 use pulldown_cmark::HeadingLevel;
@@ -9,8 +12,12 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     app_actions::{EnterInsideListCommand, ShiftTabInsideListCommand, TabInsideListCommand},
+    byte_span::UnOrderedByteSpan,
     commands::EditorCommand,
-    md_shortcut::{Edge, Instruction, InstructionCondition, MdAnnotationShortcut, Source},
+    md_shortcut::{
+        Edge, Instruction, InstructionCondition, MarkdownShortcutCommand, MdAnnotationShortcut,
+        Source,
+    },
     persistent_state::PersistentState,
     text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
@@ -18,14 +25,19 @@ use crate::{
 
 pub struct Note {
     pub text: String,
-    pub shortcut: KeyboardShortcut,
-    pub cursor: Option<CCursorRange>,
+    pub cursor: Option<UnOrderedByteSpan>,
 }
 
 pub struct AppState {
+    // -----this is persistent model-------
     pub notes: Vec<Note>,
     pub selected_note: u32,
+    // ------------------------------------
+    // -------- emphemeral state ----------
     pub save_to_storage: bool,
+    pub scheduled_script_run_version: Option<u64>,
+
+    // ------------------------------------
     pub is_settings_opened: bool,
 
     pub theme: AppTheme,
@@ -34,11 +46,12 @@ pub struct AppState {
     pub msg_queue: Receiver<MsgToApp>,
     pub hidden: bool,
     pub prev_focused: bool,
-    pub md_annotation_shortcuts: Vec<MdAnnotationShortcut>,
+    pub md_annotation_shortcuts: Vec<(String, KeyboardShortcut)>,
     pub app_shortcuts: AppShortcuts,
     pub editor_commands: Vec<Box<dyn EditorCommand>>,
 
     pub computed_layout: Option<ComputedLayout>,
+    pub text_structure: Option<TextStructure>,
     pub font_scale: i32,
 }
 
@@ -52,46 +65,64 @@ pub struct AppShortcuts {
     h3: KeyboardShortcut,
     pub increase_font: KeyboardShortcut,
     pub decrease_font: KeyboardShortcut,
+    pub switch_to_note: Vec<KeyboardShortcut>,
     // h4: KeyboardShortcut,
 }
 
 pub struct ComputedLayout {
     pub galley: Arc<Galley>,
-    pub wrap_width: f32,
-    pub text_structure: TextStructure,
-    pub computed_for: String, // maybe use hash not to double store the string content?
-    pub font_size: i32,
+    pub layout_params_hash: u64,
+}
+
+pub struct LayoutParams<'a> {
+    text: &'a str,
+    wrap_width: f32,
+    hash: u64,
+}
+
+impl<'a> LayoutParams<'a> {
+    pub fn new(text: &'a str, wrap_width: f32, font_size: i32) -> Self {
+        Self {
+            text,
+            wrap_width,
+            hash: {
+                let mut s = DefaultHasher::new();
+                text.hash(&mut s);
+                font_size.hash(&mut s);
+                // note that it is OK to round it up
+                ((wrap_width * 100.0) as i64).hash(&mut s);
+                s.finish()
+            },
+        }
+    }
 }
 
 impl ComputedLayout {
-    pub fn should_recompute(&self, text: &str, max_width: f32, font_size: i32) -> bool {
+    pub fn should_recompute(&self, layout_params: &LayoutParams) -> bool {
         // TODO might want to check for any changes to theme, not just font_size
-        self.wrap_width != max_width || self.computed_for != text || self.font_size != font_size
+        self.layout_params_hash != layout_params.hash
     }
 
     pub fn compute(
-        text: &str,
-        wrap_width: f32,
+        text_structure: &TextStructure,
+        layout_params: &LayoutParams,
         ui: &Ui,
-        font_size: i32,
         theme: &AppTheme,
         syntax_set: &SyntaxSet,
         theme_set: &ThemeSet,
     ) -> Self {
-        let text_structure = TextStructure::create_from(text);
+        // let text_structure = TextStructure::create_from(text);
 
-        let mut job = text_structure.create_layout_job(text, theme, syntax_set, theme_set);
+        let mut job =
+            text_structure.create_layout_job(layout_params.text, theme, syntax_set, theme_set);
 
-        job.wrap.max_width = wrap_width;
+        job.wrap.max_width = layout_params.wrap_width;
 
         let galley = ui.fonts(|f| f.layout_job(job));
 
         Self {
             galley,
-            wrap_width,
-            font_size,
-            text_structure,
-            computed_for: text.to_string(),
+            layout_params_hash: layout_params.hash,
         }
     }
 }
@@ -118,6 +149,8 @@ impl AppState {
         use Instruction::*;
         use InstructionCondition::*;
 
+        let notes_count = 4;
+
         let app_shortcuts = AppShortcuts {
             bold: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::B),
             emphasize: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::I),
@@ -132,9 +165,16 @@ impl AppState {
             // h4: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num4),
             increase_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::PlusEquals),
             decrease_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::Minus),
-        };
 
-        let notes_count = 4;
+            switch_to_note: (0..notes_count)
+                .map(|index| {
+                    KeyboardShortcut::new(
+                        Modifiers::COMMAND,
+                        number_to_key(index as u8 + 1).unwrap(),
+                    )
+                })
+                .collect(),
+        };
 
         let (selected_note, mut notes) = persistent_state
             .map(|s| (s.selected_note, s.notes))
@@ -149,39 +189,166 @@ impl AppState {
 
         let notes: Vec<Note> = notes
             .into_iter()
-            .enumerate()
-            .map(|(index, text)| {
-                let key = number_to_key(index as u8 + 1).unwrap();
-                Note {
-                    text,
-                    shortcut: KeyboardShortcut::new(Modifiers::COMMAND, key),
-                    cursor: None,
-                }
-            })
+            .map(|text| Note { text, cursor: None })
             .collect();
 
-        //             note: "# title
-        // - adsd
-        // - fdsf
-        // 	- [ ] fdsf
-        // 	- [x] fdsf
-        // 1. fa
-        // 2. fdsf
-        // 3.
-        // bo**dy**
-        // i*tali*c
-        // https://www.nordtheme.com/docs/colors-and-palettes
-        // ```rs
-        // let a = Some(115);
-        // ```"
-        // .to_string(),
+        let text_structure = TextStructure::new(&notes[selected_note as usize].text);
+
+        let md_annotation_shortcuts: Vec<MdAnnotationShortcut> = [
+            ("Bold", "**", app_shortcuts.bold, SpanKind::Bold),
+            ("Italic", "*", app_shortcuts.emphasize, SpanKind::Emphasis),
+            (
+                "Strikethrough",
+                "~~",
+                app_shortcuts.strikethrough,
+                SpanKind::Strike,
+            ),
+        ]
+        .map(
+            |(name, annotation, shortcut, target_span)| MdAnnotationShortcut {
+                name,
+                shortcut,
+                instruction: Condition {
+                    cond: IsNoneOrEmpty(Source::Selection),
+                    if_true: Box::new(Seq(vec![
+                        Insert(annotation),
+                        PlaceCursor(Edge::Start),
+                        PlaceCursor(Edge::End),
+                        Insert(annotation),
+                    ])),
+                    if_false: Box::new(Seq(vec![
+                        PlaceCursor(Edge::Start),
+                        Insert(annotation),
+                        CopyFrom(Source::Selection),
+                        Insert(annotation),
+                        PlaceCursor(Edge::End),
+                    ])),
+                },
+                target_span,
+            },
+        )
+        .into_iter()
+        .chain(std::iter::once(MdAnnotationShortcut {
+            name: "Code Block",
+            shortcut: app_shortcuts.code_block,
+            instruction: Instruction::sequence([
+                Instruction::condition(
+                    // add new line prior if we start in the middle of the text
+                    Any(vec![
+                        IsNoneOrEmpty(Source::BeforeSelection),
+                        EndsWith(Source::BeforeSelection, "\n"),
+                    ]),
+                    Insert(""),
+                    Insert("\n"),
+                ),
+                Insert("```"),
+                PlaceCursor(Edge::Start),
+                PlaceCursor(Edge::End),
+                Insert("\n"),
+                Instruction::condition(
+                    IsNoneOrEmpty(Source::Selection),
+                    Insert(""),
+                    CopyFrom(Source::Selection),
+                ),
+                Instruction::condition(
+                    Any(vec![
+                        IsNoneOrEmpty(Source::Selection),
+                        EndsWith(Source::Selection, "\n"),
+                    ]),
+                    Insert(""),
+                    Insert("\n"),
+                ),
+                Insert("```"),
+                Instruction::condition(
+                    Any(vec![
+                        IsNoneOrEmpty(Source::AfterSelection),
+                        StartsWith(Source::AfterSelection, "\n"),
+                    ]),
+                    Insert(""),
+                    Insert("\n"),
+                ),
+            ]),
+            target_span: SpanKind::CodeBlock,
+        }))
+        .chain(
+            [
+                ("H1", "#", HeadingLevel::H1, app_shortcuts.h1),
+                ("H2", "##", HeadingLevel::H2, app_shortcuts.h2),
+                ("H3", "###", HeadingLevel::H3, app_shortcuts.h3),
+                // ("H4", "####", HeadingLevel::H4, app_shortcuts.h4),
+            ]
+            .map(|(name, prefix, level, shortcut)| MdAnnotationShortcut {
+                name,
+                shortcut,
+                instruction: MatchFirst(
+                    [
+                        SpanKind::Heading(HeadingLevel::H1),
+                        SpanKind::Heading(HeadingLevel::H2),
+                        SpanKind::Heading(HeadingLevel::H3),
+                        SpanKind::Heading(HeadingLevel::H4),
+                        SpanKind::Heading(HeadingLevel::H5),
+                        SpanKind::Heading(HeadingLevel::H6),
+                        SpanKind::Paragraph,
+                    ]
+                    .into_iter()
+                    .filter(|kind| *kind != SpanKind::Heading(level))
+                    .map(|kind| {
+                        (
+                            InstructionCondition::IsInside(kind),
+                            Seq([
+                                SetReplaceArea(kind),
+                                Insert(prefix),
+                                Insert(" "),
+                                PlaceCursor(Edge::Start),
+                                CopyFrom(Source::SurroundingSpanContent(kind)),
+                                PlaceCursor(Edge::End),
+                            ]
+                            .into()),
+                        )
+                    })
+                    .chain(
+                        [(
+                            InstructionCondition::IsInsideUnmarkedArea,
+                            Seq([
+                                Insert(prefix),
+                                Insert(" "),
+                                PlaceCursor(Edge::Start),
+                                PlaceCursor(Edge::End),
+                            ]
+                            .into()),
+                        )]
+                        .into_iter(),
+                    )
+                    .collect(),
+                ),
+                target_span: SpanKind::Heading(level),
+            }),
+        )
+        .collect();
+
+        let md_shortcut_hints: Vec<(String, KeyboardShortcut)> = md_annotation_shortcuts
+            .iter()
+            .map(|s| (s.name.to_string(), s.shortcut))
+            .collect();
+
+        let mut editor_commands: Vec<Box<dyn EditorCommand>> = vec![
+            Box::new(TabInsideListCommand),
+            Box::new(EnterInsideListCommand),
+            Box::new(ShiftTabInsideListCommand),
+        ];
+
+        for md_shortcut in md_annotation_shortcuts {
+            editor_commands.push(Box::new(MarkdownShortcutCommand::new(md_shortcut)));
+        }
 
         Self {
             is_settings_opened: false,
             save_to_storage: false,
+            scheduled_script_run_version: None,
             theme,
             notes,
             computed_layout: None,
+            text_structure: Some(text_structure),
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
             msg_queue,
@@ -189,142 +356,8 @@ impl AppState {
             hidden: false,
             prev_focused: false,
             font_scale: 0,
-            editor_commands: vec![
-                Box::new(TabInsideListCommand),
-                Box::new(EnterInsideListCommand),
-                Box::new(ShiftTabInsideListCommand),
-            ],
-            md_annotation_shortcuts: [
-                ("Bold", "**", app_shortcuts.bold, SpanKind::Bold),
-                ("Italic", "*", app_shortcuts.emphasize, SpanKind::Emphasis),
-                (
-                    "Strikethrough",
-                    "~~",
-                    app_shortcuts.strikethrough,
-                    SpanKind::Strike,
-                ),
-            ]
-            .map(
-                |(name, annotation, shortcut, target_span)| MdAnnotationShortcut {
-                    name,
-                    shortcut,
-                    instruction: Condition {
-                        cond: IsNoneOrEmpty(Source::Selection),
-                        if_true: Box::new(Seq(vec![
-                            Insert(annotation),
-                            PlaceCursor(Edge::Start),
-                            PlaceCursor(Edge::End),
-                            Insert(annotation),
-                        ])),
-                        if_false: Box::new(Seq(vec![
-                            PlaceCursor(Edge::Start),
-                            Insert(annotation),
-                            CopyFrom(Source::Selection),
-                            Insert(annotation),
-                            PlaceCursor(Edge::End),
-                        ])),
-                    },
-                    target_span,
-                },
-            )
-            .into_iter()
-            .chain(std::iter::once(MdAnnotationShortcut {
-                name: "Code Block",
-                shortcut: app_shortcuts.code_block,
-                instruction: Instruction::sequence([
-                    Instruction::condition(
-                        // add new line prior if we start in the middle of the text
-                        Any(vec![
-                            IsNoneOrEmpty(Source::BeforeSelection),
-                            EndsWith(Source::BeforeSelection, "\n"),
-                        ]),
-                        Insert(""),
-                        Insert("\n"),
-                    ),
-                    Insert("```"),
-                    PlaceCursor(Edge::Start),
-                    PlaceCursor(Edge::End),
-                    Insert("\n"),
-                    Instruction::condition(
-                        IsNoneOrEmpty(Source::Selection),
-                        Insert(""),
-                        CopyFrom(Source::Selection),
-                    ),
-                    Instruction::condition(
-                        Any(vec![
-                            IsNoneOrEmpty(Source::Selection),
-                            EndsWith(Source::Selection, "\n"),
-                        ]),
-                        Insert(""),
-                        Insert("\n"),
-                    ),
-                    Insert("```"),
-                    Instruction::condition(
-                        Any(vec![
-                            IsNoneOrEmpty(Source::AfterSelection),
-                            StartsWith(Source::AfterSelection, "\n"),
-                        ]),
-                        Insert(""),
-                        Insert("\n"),
-                    ),
-                ]),
-                target_span: SpanKind::CodeBlock,
-            }))
-            .chain(
-                [
-                    ("H1", "#", HeadingLevel::H1, app_shortcuts.h1),
-                    ("H2", "##", HeadingLevel::H2, app_shortcuts.h2),
-                    ("H3", "###", HeadingLevel::H3, app_shortcuts.h3),
-                    // ("H4", "####", HeadingLevel::H4, app_shortcuts.h4),
-                ]
-                .map(|(name, prefix, level, shortcut)| MdAnnotationShortcut {
-                    name,
-                    shortcut,
-                    instruction: MatchFirst(
-                        [
-                            SpanKind::Heading(HeadingLevel::H1),
-                            SpanKind::Heading(HeadingLevel::H2),
-                            SpanKind::Heading(HeadingLevel::H3),
-                            SpanKind::Heading(HeadingLevel::H4),
-                            SpanKind::Heading(HeadingLevel::H5),
-                            SpanKind::Heading(HeadingLevel::H6),
-                            SpanKind::Paragraph,
-                        ]
-                        .into_iter()
-                        .filter(|kind| *kind != SpanKind::Heading(level))
-                        .map(|kind| {
-                            (
-                                InstructionCondition::IsInside(kind),
-                                Seq([
-                                    SetReplaceArea(kind),
-                                    Insert(prefix),
-                                    Insert(" "),
-                                    PlaceCursor(Edge::Start),
-                                    CopyFrom(Source::SurroundingSpanContent(kind)),
-                                    PlaceCursor(Edge::End),
-                                ]
-                                .into()),
-                            )
-                        })
-                        .chain(
-                            [(
-                                InstructionCondition::IsInsideUnmarkedArea,
-                                Seq([
-                                    Insert(prefix),
-                                    Insert(" "),
-                                    PlaceCursor(Edge::Start),
-                                    PlaceCursor(Edge::End),
-                                ]
-                                .into()),
-                            )]
-                            .into_iter(),
-                        )
-                        .collect(),
-                    ),
-                    target_span: SpanKind::Heading(level),
-                }),
-            )
-            .collect(),
+            editor_commands,
+            md_annotation_shortcuts: md_shortcut_hints,
             app_shortcuts,
         }
     }
