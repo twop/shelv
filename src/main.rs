@@ -271,7 +271,7 @@ fn main() {
         default_theme: eframe::Theme::Dark,
         initial_window_size: Some(vec2(350.0, 450.0)),
         min_window_size: Some(vec2(350.0, 450.0)),
-        max_window_size: Some(vec2(650.0, 750.0)),
+        // max_window_size: Some(vec2(650.0, 750.0)),
         // fullsize_content: true,
         // decorated: false,
         resizable: true,
