@@ -133,7 +133,7 @@ impl EditorCommand for SpaceAfterTaskMarkersCommand {
         &self,
         text_structure: &TextStructure,
         text: &str,
-        byte_cursor: ByteRange,
+        byte_cursor: ByteSpan,
     ) -> Option<Vec<TextChange>> {
         on_space_after_task_markers(text_structure, text, byte_cursor)
     }
@@ -538,7 +538,7 @@ fn increase_nesting_for_lists(
 fn on_space_after_task_markers(
     structure: &TextStructure,
     text: &str,
-    cursor: ByteRange,
+    cursor: ByteSpan,
 ) -> Option<Vec<TextChange>> {
     let unexpanded_task_markers = &text[..cursor.start].ends_with("[]");
 
@@ -555,25 +555,24 @@ fn on_space_after_task_markers(
     {
         // Ie. "- []{}" -> "- [ ]{}"
         return Some(vec![TextChange::Replace(
-            ByteRange(cursor.start - 2..cursor.start),
+            ByteSpan::new(cursor.start - 2, cursor.start),
             "[ ]".to_string(),
         )]);
     }
 
     if structure
-        .find_span_at(SpanKind::CodeBlock, cursor.clone())
-        .is_none()
+        .find_span_at(SpanKind::Paragraph, cursor.clone())
+        .is_some_and(|(_, _)| {
+            // Start of the file or a new line, so we must add a new list item
+            let text_before_task_markers = &text[..cursor.start - 2];
+            text_before_task_markers.len() == 0 || text_before_task_markers.ends_with("\n")
+        })
     {
-        let text_before_task_markers = &text[..cursor.start - 2];
-
-        // Start of the file or a new line, so we must add a new list item
-        if text_before_task_markers.len() == 0 || text_before_task_markers.ends_with("\n") {
-            // Ie. "[]{}" -> "- []{}"
-            return Some(vec![TextChange::Replace(
-                ByteRange(cursor.start - 2..cursor.start),
-                select_unordered_list_marker(0).to_string() + " [ ]",
-            )]);
-        }
+        // Ie. "[]{}" -> "- []{}"
+        return Some(vec![TextChange::Replace(
+            ByteSpan::new(cursor.start - 2, cursor.start),
+            select_unordered_list_marker(0).to_string() + " [ ]",
+        )]);
     }
 
     None
@@ -989,22 +988,16 @@ mod tests {
     #[test]
     pub fn test_skips_expanding_task_markers_when_not_start_of_line() {
         let (text, cursor) = TextChange::try_extract_cursor("a[]{||}".to_string());
-        let changes = on_space_after_task_markers(
-            &TextStructure::create_from(&text),
-            &text,
-            ByteRange(cursor.unwrap().clone()),
-        );
+        let changes =
+            on_space_after_task_markers(&TextStructure::new(&text), &text, cursor.unwrap().clone());
         assert!(changes.is_none());
     }
 
     #[test]
     pub fn test_skips_expanding_task_markers_when_in_code_block() {
         let (text, cursor) = TextChange::try_extract_cursor("```\n[]{||}```".to_string());
-        let changes = on_space_after_task_markers(
-            &TextStructure::create_from(&text),
-            &text,
-            ByteRange(cursor.unwrap().clone()),
-        );
+        let changes =
+            on_space_after_task_markers(&TextStructure::new(&text), &text, cursor.unwrap().clone());
         assert!(changes.is_none());
     }
 
@@ -1043,12 +1036,11 @@ mod tests {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let structure = TextStructure::create_from(&text);
+            let structure = TextStructure::new(&text);
 
-            let changes =
-                on_space_after_task_markers(&structure, &text, ByteRange(cursor.clone())).unwrap();
+            let changes = on_space_after_task_markers(&structure, &text, cursor.clone()).unwrap();
 
-            let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+            let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
             assert_eq!(
                 TextChange::encode_cursor(&text, cursor),
                 output,
