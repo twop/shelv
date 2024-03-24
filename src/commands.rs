@@ -1,9 +1,6 @@
 use eframe::egui::KeyboardShortcut;
 
-use crate::{
-    app_actions::TextChange,
-    text_structure::{ByteRange, TextStructure},
-};
+use crate::{app_actions::TextChange, byte_span::ByteSpan, text_structure::TextStructure};
 
 pub trait EditorCommand {
     fn name(&self) -> &str;
@@ -12,6 +9,6 @@ pub trait EditorCommand {
         &self,
         text_structure: &TextStructure,
         text: &str,
-        byte_cursor: ByteRange,
+        byte_cursor: ByteSpan,
     ) -> Option<Vec<TextChange>>;
 }

@@ -2,7 +2,23 @@ use std::ops::Range;
 
 use eframe::egui::KeyboardShortcut;
 
-use crate::text_structure::SpanKind;
+use crate::{
+    app_actions::TextChange,
+    byte_span::ByteSpan,
+    commands::EditorCommand,
+    text_structure::{SpanKind, TextStructure},
+};
+
+pub struct MarkdownShortcutCommand {
+    // name: String,
+    md_shortcut: MdAnnotationShortcut,
+}
+
+impl MarkdownShortcutCommand {
+    pub fn new(md_shortcut: MdAnnotationShortcut) -> Self {
+        Self { md_shortcut }
+    }
+}
 
 pub struct MdAnnotationShortcut {
     pub name: &'static str,
@@ -76,15 +92,106 @@ pub trait ShortcutContext<'a> {
 #[derive(Debug, PartialEq)]
 pub struct ShortcutResult {
     pub content: String,
-    pub relative_char_cursor: Range<usize>,
+    // pub relative_byte_cursor: ByteRange,
 }
 
 struct EvalState {
-    cursor_start: usize,
-    cursor_end: usize,
-    chars_inserted: usize,
-    bytes_inserted: usize,
+    // bytes_inserted: usize,
     result: String,
+}
+
+impl EditorCommand for MarkdownShortcutCommand {
+    fn name(&self) -> &str {
+        self.md_shortcut.name
+    }
+
+    fn shortcut(&self) -> KeyboardShortcut {
+        self.md_shortcut.shortcut
+    }
+
+    fn try_handle(
+        &self,
+        text_structure: &crate::text_structure::TextStructure,
+        text: &str,
+        byte_cursor: ByteSpan,
+    ) -> Option<Vec<crate::app_actions::TextChange>> {
+        let span = text_structure
+            .find_span_at(self.md_shortcut.target_span, byte_cursor.clone())
+            .map(|(span_range, idx)| (span_range, text_structure.get_span_inner_content(idx)));
+
+        match span {
+            Some((span_byte_range, content_byte_range)) => {
+                // we need to remove the annotations because it is already annotated
+                // for example: if it is already "bold" then remove "**" on each side
+
+                Some(vec![TextChange::Replace(
+                    span_byte_range,
+                    TextChange::CURSOR_EDGE.to_string()
+                        + &text[content_byte_range.range()]
+                        + TextChange::CURSOR_EDGE,
+                )])
+            }
+            None => {
+                // means that we need to execute instruction for the shortcut, presumably to add annotations
+                let mut cx = ShortcutExecContext {
+                    structure: &text_structure,
+                    text,
+                    selection_byte_range: byte_cursor.clone(),
+                    replace_range: byte_cursor.clone(),
+                };
+
+                execute_instruction(&mut cx, &self.md_shortcut.instruction)
+                    .map(|result| vec![TextChange::Replace(cx.replace_range, result.content)])
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ShortcutExecContext<'a> {
+    structure: &'a TextStructure,
+    text: &'a str,
+    selection_byte_range: ByteSpan,
+    replace_range: ByteSpan,
+}
+
+impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
+    fn get_source(&self, source: Source) -> Option<&'a str> {
+        match source {
+            Source::Selection => {
+                if self.selection_byte_range.is_empty() {
+                    None
+                } else {
+                    self.text.get(self.selection_byte_range.range())
+                }
+            }
+            Source::BeforeSelection => self.text.get(0..self.selection_byte_range.start),
+            Source::AfterSelection => self.text.get(self.selection_byte_range.end..),
+            Source::SurroundingSpanContent(kind) => self
+                .structure
+                .find_span_at(kind, self.selection_byte_range)
+                .map(|(_, index)| self.structure.get_span_inner_content(index))
+                .and_then(|content| self.text.get(content.range())),
+        }
+    }
+
+    fn is_inside_span(&self, kind: SpanKind) -> bool {
+        self.structure
+            .find_span_at(kind, self.selection_byte_range)
+            .is_some()
+    }
+
+    fn set_replace_area(&mut self, kind: SpanKind) {
+        if let Some((range, _)) = self.structure.find_span_at(kind, self.selection_byte_range) {
+            self.replace_range = range;
+        }
+    }
+
+    fn is_inside_unmarked(&self) -> bool {
+        self.structure
+            .find_any_span_at(self.selection_byte_range)
+            .is_none()
+    }
 }
 
 fn eval_instruction<'a>(
@@ -93,29 +200,25 @@ fn eval_instruction<'a>(
     instruction: &Instruction,
 ) -> Option<()> {
     let EvalState {
-        cursor_start,
-        cursor_end,
-        chars_inserted,
-        bytes_inserted,
+        // cursor_start,
+        // cursor_end,
+        // chars_inserted,
+        // bytes_inserted,
         result,
     } = eval_state;
 
     match instruction {
         Instruction::Insert(s) => {
-            result.insert_str(*bytes_inserted, s);
-            *bytes_inserted += s.as_bytes().len();
-            *chars_inserted += s.chars().count()
+            result.push_str(s);
         }
         Instruction::CopyFrom(source) => {
             let source_str = cx.get_source(*source)?;
-
-            result.insert_str(*bytes_inserted, source_str);
-            *bytes_inserted += source_str.as_bytes().len();
-            *chars_inserted += source_str.chars().count()
+            result.push_str(source_str);
         }
         Instruction::PlaceCursor(edge) => match edge {
-            Edge::Start => *cursor_start = *chars_inserted,
-            Edge::End => *cursor_end = *chars_inserted,
+            Edge::Start | Edge::End => {
+                result.push_str(TextChange::CURSOR_EDGE);
+            }
         },
         Instruction::Seq(seq) => {
             for instruction in seq {
@@ -181,10 +284,6 @@ pub fn execute_instruction<'a>(
     instruction: &Instruction,
 ) -> Option<ShortcutResult> {
     let mut eval_state = EvalState {
-        cursor_start: 0,
-        cursor_end: 0,
-        chars_inserted: 0,
-        bytes_inserted: 0,
         result: "".to_string(),
     };
 
@@ -192,7 +291,6 @@ pub fn execute_instruction<'a>(
 
     Some(ShortcutResult {
         content: eval_state.result,
-        relative_char_cursor: eval_state.cursor_start..eval_state.cursor_end,
     })
 }
 
@@ -266,16 +364,14 @@ mod tests {
                 &bold,
             ),
             Some(ShortcutResult {
-                content: "**bold**".to_string(),
-                relative_char_cursor: 0..8
+                content: "{|}**bold**{|}".to_string(),
             }),
         );
 
         assert_eq!(
             execute_instruction(&mut TestShortcutContext::new([]), &bold,),
             Some(ShortcutResult {
-                content: "****".to_string(),
-                relative_char_cursor: 2..2
+                content: "**{|}{|}**".to_string(),
             }),
         );
     }
@@ -297,7 +393,6 @@ mod tests {
             ),
             Some(ShortcutResult {
                 content: "newline".to_string(),
-                relative_char_cursor: 0..0
             }),
         );
 
@@ -308,7 +403,6 @@ mod tests {
             ),
             Some(ShortcutResult {
                 content: "no newline".to_string(),
-                relative_char_cursor: 0..0
             }),
         );
     }

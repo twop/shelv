@@ -1,33 +1,30 @@
-use std::ops::{Deref, Range};
-
-use eframe::egui::{
-    text::CCursor, text_edit::CCursorRange, Context, Id, KeyboardShortcut, Modifiers, OpenUrl,
-};
+use eframe::egui::{Context, Id, KeyboardShortcut, Modifiers, OpenUrl};
 
 use smallvec::SmallVec;
 
 use crate::{
     app_state::AppState,
+    byte_span::{ByteSpan, RangeRelation, UnOrderedByteSpan},
     commands::EditorCommand,
-    text_structure::{ByteRange, ListDesc, RangeRelation, SpanKind, SpanMeta, TextStructure},
+    text_structure::{ListDesc, SpanKind, SpanMeta, TextStructure},
 };
 
 #[derive(Debug)]
 pub enum TextChange {
     // Delete(ByteRange),
-    Replace(ByteRange, String),
+    Replace(ByteSpan, String),
     // Insert { insertion: String, byte_pos: usize },
 }
 
 impl TextChange {
-    const CURSOR_EDGE: &'static str = "{|}";
-    const CURSOR: &'static str = "{||}";
+    pub const CURSOR_EDGE: &'static str = "{|}";
+    pub const CURSOR: &'static str = "{||}";
 
-    pub fn try_extract_cursor(mut text: String) -> (String, Option<ByteRange>) {
+    pub fn try_extract_cursor(mut text: String) -> (String, Option<ByteSpan>) {
         // let mut text = text.to_string();
         if let Some(start) = text.find(TextChange::CURSOR) {
             text.replace_range(start..(start + TextChange::CURSOR.len()), "");
-            (text, Some(ByteRange(start..start)))
+            (text, Some(ByteSpan::new(start, start)))
         } else {
             let Some(start) = text.find(TextChange::CURSOR_EDGE) else {
                 return (text, None);
@@ -39,12 +36,13 @@ impl TextChange {
                 return (text, None);
             };
             text.replace_range(end..(end + TextChange::CURSOR_EDGE.len()), "");
-            (text, Some(ByteRange(start..end)))
+            (text, Some(ByteSpan::new(start, end)))
         }
     }
 
-    pub fn encode_cursor(text: &str, cursor: ByteRange) -> String {
+    pub fn encode_cursor(text: &str, cursor: UnOrderedByteSpan) -> String {
         let mut text = text.to_string();
+        let cursor = cursor.ordered();
         if cursor.is_empty() {
             text.insert_str(cursor.start, TextChange::CURSOR);
         } else {
@@ -83,8 +81,11 @@ pub fn process_app_action(
 
                 if via_shortcut {
                     let note = &mut state.notes[index as usize];
-                    note.cursor = match note.cursor {
-                        None => Some(CCursorRange::one(CCursor::new(note.text.chars().count()))),
+                    note.cursor = match note.cursor.clone() {
+                        None => {
+                            let len = note.text.len();
+                            Some(UnOrderedByteSpan::new(len, len))
+                        }
                         prev => prev,
                     };
 
@@ -99,7 +100,9 @@ pub fn process_app_action(
                     state.notes[index as usize].cursor = None;
                 }
 
+                let text = &state.notes[index as usize].text;
                 state.selected_note = index;
+                state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
             }
         }
         AppAction::OpenLink(url) => ctx.open_url(OpenUrl::new_tab(url)),
@@ -149,7 +152,7 @@ impl EditorCommand for TabInsideListCommand {
         &self,
         text_structure: &TextStructure,
         text: &str,
-        byte_cursor: ByteRange,
+        byte_cursor: ByteSpan,
     ) -> Option<Vec<TextChange>> {
         on_tab_inside_list(text_structure, text, byte_cursor)
     }
@@ -168,7 +171,7 @@ impl EditorCommand for ShiftTabInsideListCommand {
         &self,
         text_structure: &TextStructure,
         text: &str,
-        byte_cursor: ByteRange,
+        byte_cursor: ByteSpan,
     ) -> Option<Vec<TextChange>> {
         on_shift_tab_inside_list(text_structure, text, byte_cursor)
     }
@@ -187,7 +190,7 @@ impl EditorCommand for EnterInsideListCommand {
         &self,
         text_structure: &TextStructure,
         text: &str,
-        byte_cursor: ByteRange,
+        byte_cursor: ByteSpan,
     ) -> Option<Vec<TextChange>> {
         on_enter_inside_list_item(text_structure, text, byte_cursor)
     }
@@ -204,7 +207,7 @@ fn select_unordered_list_marker(depth: usize) -> &'static str {
 fn on_enter_inside_list_item(
     structure: &TextStructure,
     text: &str,
-    cursor: ByteRange,
+    cursor: ByteSpan,
 ) -> Option<Vec<TextChange>> {
     let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
 
@@ -254,7 +257,7 @@ fn on_enter_inside_list_item(
             if is_empty_list_item {
                 // means that we need to remove the current list
                 let mut changes = vec![TextChange::Replace(
-                    ByteRange(span_range),
+                    span_range,
                     format!("{}", TextChange::CURSOR),
                 )];
 
@@ -268,12 +271,15 @@ fn on_enter_inside_list_item(
                     // note that -1 is to take into account item we just removed
                     let intended_number = *starting_index + index as u64 - 1;
 
-                    let item_text = &text[list_item.byte_pos.clone()];
+                    let item_text = &text[list_item.byte_pos.range()];
                     // println!("list_items.enumerate(): item=`{}`", item_text);
 
                     if let Some(dot_pos) = item_text.find(".") {
                         changes.push(TextChange::Replace(
-                            ByteRange(list_item.byte_pos.start..list_item.byte_pos.start + dot_pos),
+                            ByteSpan::new(
+                                list_item.byte_pos.start,
+                                list_item.byte_pos.start + dot_pos,
+                            ),
                             format!("{}", intended_number),
                         ))
                     }
@@ -288,7 +294,7 @@ fn on_enter_inside_list_item(
 
                 // first split the first one in half
                 let mut changes = vec![TextChange::Replace(
-                    ByteRange(cursor.clone()),
+                    cursor.clone(),
                     format!(
                         "\n{dep}{n}. {cur}",
                         dep = "\t".repeat(depth),
@@ -306,10 +312,13 @@ fn on_enter_inside_list_item(
                     };
 
                     // TODO only modify items that actually need adjustments
-                    let item_text = &text[list_item.byte_pos.clone()];
+                    let item_text = &text[list_item.byte_pos.range()];
                     if let Some(dot_pos) = item_text.find(".") {
                         changes.push(TextChange::Replace(
-                            ByteRange(list_item.byte_pos.start..list_item.byte_pos.start + dot_pos),
+                            ByteSpan::new(
+                                list_item.byte_pos.start,
+                                list_item.byte_pos.start + dot_pos,
+                            ),
                             format!("{}", intended_number),
                         ))
                     }
@@ -324,7 +333,7 @@ fn on_enter_inside_list_item(
             if is_empty_list_item {
                 // then we just remove the entire list item and break
                 Some(vec![TextChange::Replace(
-                    ByteRange(span_range),
+                    span_range,
                     format!("{}", TextChange::CURSOR),
                 )])
             } else {
@@ -333,7 +342,7 @@ fn on_enter_inside_list_item(
                     .any(|(_, desc)| desc.kind == SpanKind::TaskMarker);
                 // cond ? the_true : the_false
                 Some(vec![TextChange::Replace(
-                    ByteRange(cursor.clone()),
+                    cursor.clone(),
                     "\n".to_string()
                         + &"\t".repeat(depth)
                         + select_unordered_list_marker(depth)
@@ -348,7 +357,7 @@ fn on_enter_inside_list_item(
 fn on_shift_tab_inside_list(
     structure: &TextStructure,
     text: &str,
-    cursor: ByteRange,
+    cursor: ByteSpan,
 ) -> Option<Vec<TextChange>> {
     let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
 
@@ -384,7 +393,7 @@ fn on_shift_tab_inside_list(
             if depth > 0 && t.ends_with("\t") {
                 // move itself
                 changes.push(TextChange::Replace(
-                    ByteRange(span_range.start - 1..span_range.start + 1), //this is for "-" -> "*" replacement
+                    ByteSpan::new(span_range.start - 1, span_range.start + 1), //this is for "-" -> "*" replacement
                     format!("{}", select_unordered_list_marker(depth - 1)),
                 ));
             } else {
@@ -398,7 +407,7 @@ fn on_shift_tab_inside_list(
 fn on_tab_inside_list(
     structure: &TextStructure,
     text: &str,
-    cursor: ByteRange,
+    cursor: ByteSpan,
 ) -> Option<Vec<TextChange>> {
     let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
 
@@ -444,19 +453,19 @@ fn on_tab_inside_list(
                 let intended_number = *starting_index + *index as u64 - 1;
 
                 // TODO only modify items that actually need adjustments
-                let item_text = &text[list_item.byte_pos.clone()];
+                let item_text = &text[list_item.byte_pos.range()];
                 if let Some(dot_pos) = item_text.find(".") {
                     changes.push(TextChange::Replace(
-                        ByteRange(list_item.byte_pos.start..list_item.byte_pos.start + dot_pos),
+                        ByteSpan::new(list_item.byte_pos.start, list_item.byte_pos.start + dot_pos),
                         format!("{}", intended_number),
                     ))
                 }
             }
 
             // move itself, note that now the index starts with "1"
-            if let Some(dot_pos) = &text[span_range.clone()].find(".") {
+            if let Some(dot_pos) = &text[span_range.range()].find(".") {
                 changes.push(TextChange::Replace(
-                    ByteRange(span_range.start..span_range.start + dot_pos),
+                    ByteSpan::new(span_range.start, span_range.start + dot_pos),
                     format!("\t{}", 1),
                 ))
             }
@@ -474,7 +483,7 @@ fn on_tab_inside_list(
 
             // move itself
             changes.push(TextChange::Replace(
-                ByteRange(span_range.start..span_range.start + 1), //this is for "-" -> "*" replacement
+                ByteSpan::new(span_range.start, span_range.start + 1), //this is for "-" -> "*" replacement
                 format!("\t{}", select_unordered_list_marker(depth + 1)),
             ));
 
@@ -511,14 +520,14 @@ fn increase_nesting_for_lists(
             // numbered lists do not need modifications
             {
                 TextChange::Replace(
-                    ByteRange(nested_item_start..nested_item_start),
+                    ByteSpan::new(nested_item_start, nested_item_start),
                     "\t".to_string(),
                 )
             }
 
             //unordered need "-" -> "*" replacement
             _ => TextChange::Replace(
-                ByteRange(nested_item_start..nested_item_start + 1),
+                ByteSpan::new(nested_item_start, nested_item_start + 1),
                 format!("\t{}", select_unordered_list_marker(parents.len())),
             ),
         });
@@ -578,35 +587,33 @@ pub enum TextChangeError {
 
 pub fn apply_text_changes(
     text: &mut String,
-    prev_cursor: ByteRange,
+    prev_cursor: UnOrderedByteSpan,
     changes: impl IntoIterator<Item = TextChange>,
-) -> Result<ByteRange, TextChangeError> {
+) -> Result<UnOrderedByteSpan, TextChangeError> {
     #[derive(Debug, Clone)]
-    // #[allow(dead_code)]
+
     struct Log {
-        removed: Range<usize>,
+        removed: ByteSpan,
         inserted_len: usize,
     }
     type Logs = SmallVec<[Log; 4]>;
 
-    // None -> there is an overlap
-    // Some -> successfully adjusted
     fn append(
-        range: &ByteRange,
+        range: ByteSpan,
         to_insert: usize,
         logs: &[Log],
-    ) -> Result<(Logs, Range<usize>), TextChangeError> {
+    ) -> Result<(Logs, ByteSpan), TextChangeError> {
         let mut res: Logs = logs.iter().map(Log::clone).collect();
         res.sort_by(|a, b| a.removed.end.cmp(&b.removed.end));
 
-        let mut actual_range: Range<usize> = range.deref().clone();
+        let mut actual_range = range;
 
         let mut split_point: Option<usize> = None;
 
         // find a splitting point in the insertion logs
         for (i, log) in logs.iter().enumerate() {
-            let log_entry_range = ByteRange(log.removed.clone());
-            match log_entry_range.relative_to(&ByteRange(actual_range.clone())) {
+            let log_entry_range = log.removed;
+            match log_entry_range.relative_to(actual_range) {
                 // check for overlaps
                 RangeRelation::StartInside
                 | RangeRelation::EndInside
@@ -620,9 +627,11 @@ pub fn apply_text_changes(
                 RangeRelation::Before => {
                     // that means that the removal happened earlier
                     // thus, we need to adjust starting position
-                    let delta = log.inserted_len as isize - log.removed.len() as isize;
-                    actual_range = (actual_range.start as isize + delta) as usize
-                        ..(actual_range.end as isize + delta) as usize;
+                    let delta = log.inserted_len as isize - log.removed.range().len() as isize;
+                    actual_range = ByteSpan::new(
+                        (actual_range.start as isize + delta) as usize,
+                        (actual_range.end as isize + delta) as usize,
+                    );
                 }
 
                 RangeRelation::After => {
@@ -634,10 +643,12 @@ pub fn apply_text_changes(
         // if we need to insert somewhere in the middle we need to shift spans that come after
         if let Some(split_point) = split_point {
             // we need to move what comes after the split
-            let delta: isize = to_insert as isize - actual_range.len() as isize;
+            let delta: isize = to_insert as isize - actual_range.range().len() as isize;
             for log in res[split_point..].iter_mut() {
-                log.removed = (log.removed.start as isize + delta) as usize
-                    ..(log.removed.end as isize + delta) as usize;
+                log.removed = ByteSpan::new(
+                    (log.removed.start as isize + delta) as usize,
+                    (log.removed.end as isize + delta) as usize,
+                );
             }
         }
 
@@ -657,37 +668,40 @@ pub fn apply_text_changes(
 
     let mut actual_changes: SmallVec<[TextChange; 4]> = SmallVec::new();
 
-    let mut inserted_cursor: Option<ByteRange> = None;
+    let mut inserted_cursor: Option<ByteSpan> = None;
 
     for change in changes.into_iter() {
         match change {
             TextChange::Replace(range, with) => {
                 let (with, extracted_cursor) = TextChange::try_extract_cursor(with);
                 let to_insert = with.len();
-                let (new_logs, target) = append(&range, to_insert, &logs)?;
+                let (new_logs, target) = append(range, to_insert, &logs)?;
                 logs = new_logs;
                 if let Some(extracted_cursor) = extracted_cursor {
-                    inserted_cursor = Some(ByteRange(
-                        target.start + extracted_cursor.start..target.start + extracted_cursor.end,
+                    inserted_cursor = Some(ByteSpan::new(
+                        target.start + extracted_cursor.start,
+                        target.start + extracted_cursor.end,
                     ));
                 }
-                actual_changes.push(TextChange::Replace(ByteRange(target), with));
+                actual_changes.push(TextChange::Replace(target, with));
             }
         }
     }
 
     let adjusted_cursor = match inserted_cursor {
-        Some(cursor) => cursor,
+        Some(cursor) => UnOrderedByteSpan::new(cursor.start, cursor.end),
         None => {
             // let mut cursor_start = prev_cursor.start;
             // let mut cursor_end = prev_cursor.end;
+            let ordered = ByteSpan::new(prev_cursor.start, prev_cursor.end);
             let (cursor_start, cursor_end) = actual_changes.iter().fold(
-                (prev_cursor.start, prev_cursor.end),
+                (ordered.start, ordered.end),
                 |(cursor_start, cursor_end), change| match change {
                     TextChange::Replace(change_range, with) => {
-                        let byte_delta: isize = with.len() as isize - change_range.len() as isize;
+                        let byte_delta: isize =
+                            with.len() as isize - change_range.range().len() as isize;
 
-                        match ByteRange(cursor_start..cursor_end).relative_to(change_range) {
+                        match ByteSpan::new(cursor_start, cursor_end).relative_to(*change_range) {
                             RangeRelation::Before => {
                                 // nothing to do here
                                 (cursor_start, cursor_end)
@@ -743,15 +757,23 @@ pub fn apply_text_changes(
                 },
             );
 
-            ByteRange(cursor_start..cursor_end)
+            // flip the direction if it was flipped before
+            // note that we get ordered results due to algorithm using ByteSpan which assumed order
+            let (cursor_start, cursor_end) = if prev_cursor.start > prev_cursor.end {
+                (cursor_end, cursor_start)
+            } else {
+                (cursor_start, cursor_end)
+            };
+
+            UnOrderedByteSpan::new(cursor_start, cursor_end)
         }
     };
 
     // finally apply all the precomputed changes
     for change in actual_changes.into_iter() {
         match change {
-            TextChange::Replace(range, with) => {
-                text.replace_range(range.0, &with);
+            TextChange::Replace(byte_span, with) => {
+                text.replace_range(byte_span.range(), &with);
             }
         }
     }
@@ -803,14 +825,10 @@ mod tests {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let changes = on_tab_inside_list(
-                &TextStructure::create_from(&text),
-                &text,
-                ByteRange(cursor.clone()),
-            )
-            .unwrap();
+            let changes =
+                on_tab_inside_list(&TextStructure::new(&text), &text, cursor.clone()).unwrap();
 
-            let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+            let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
             assert_eq!(
                 TextChange::encode_cursor(&text, cursor),
                 output,
@@ -832,14 +850,11 @@ mod tests {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let changes = on_shift_tab_inside_list(
-                &TextStructure::create_from(&text),
-                &text,
-                ByteRange(cursor.clone()),
-            )
-            .unwrap();
+            let changes =
+                on_shift_tab_inside_list(&TextStructure::new(&text), &text, cursor.clone())
+                    .unwrap();
 
-            let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+            let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
             assert_eq!(
                 TextChange::encode_cursor(&text, cursor),
                 output,
@@ -906,12 +921,11 @@ mod tests {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let structure = TextStructure::create_from(&text);
+            let structure = TextStructure::new(&text);
 
-            let changes =
-                on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
+            let changes = on_enter_inside_list_item(&structure, &text, cursor.clone()).unwrap();
 
-            let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+            let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
             assert_eq!(
                 TextChange::encode_cursor(&text, cursor),
                 output,
@@ -928,12 +942,11 @@ mod tests {
 
         assert_eq!(text, "- item");
 
-        let structure = TextStructure::create_from(&text);
+        let structure = TextStructure::new(&text);
 
-        let changes =
-            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
+        let changes = on_enter_inside_list_item(&structure, &text, cursor).unwrap();
 
-        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+        let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
         assert_eq!(TextChange::encode_cursor(&text, cursor), "- item\n- {||}");
     }
 
@@ -944,12 +957,11 @@ mod tests {
 
         assert_eq!(text, "- *item*");
 
-        let structure = TextStructure::create_from(&text);
+        let structure = TextStructure::new(&text);
 
-        let changes =
-            on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone())).unwrap();
+        let changes = on_enter_inside_list_item(&structure, &text, cursor.clone()).unwrap();
 
-        let cursor = apply_text_changes(&mut text, cursor, changes).unwrap();
+        let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
         assert_eq!(TextChange::encode_cursor(&text, cursor), "- *item*\n- {||}");
     }
 
@@ -960,20 +972,17 @@ mod tests {
 
         assert_eq!(text, "- item\n");
 
-        let structure = TextStructure::create_from(&text);
+        let structure = TextStructure::new(&text);
 
-        let changes = on_enter_inside_list_item(&structure, &text, ByteRange(cursor.clone()));
+        let changes = on_enter_inside_list_item(&structure, &text, cursor.clone());
         assert!(changes.is_none());
     }
 
     #[test]
     pub fn test_skips_handling_enter_if_cursor_on_markup() {
         let (text, cursor) = TextChange::try_extract_cursor("{||}- a".to_string());
-        let changes = on_enter_inside_list_item(
-            &TextStructure::create_from(&text),
-            &text,
-            ByteRange(cursor.unwrap().clone()),
-        );
+        let changes =
+            on_enter_inside_list_item(&TextStructure::new(&text), &text, cursor.unwrap().clone());
         assert!(changes.is_none());
     }
 
@@ -1055,11 +1064,11 @@ mod tests {
     pub fn test_cursor_extraction_from_string() {
         let (text, cursor) = TextChange::try_extract_cursor("- a{||}b".to_string());
         assert_eq!(text, "- ab");
-        assert_eq!(cursor, Some(ByteRange(3..3)));
+        assert_eq!(cursor, Some(ByteSpan::new(3, 3)));
 
         let (text, cursor) = TextChange::try_extract_cursor("- {|}a{|}b".to_string());
         assert_eq!(text, "- ab");
-        assert_eq!(cursor, Some(ByteRange(2..3)));
+        assert_eq!(cursor, Some(ByteSpan::new(2, 3)));
 
         let (text, cursor) = TextChange::try_extract_cursor("- a{|}b".to_string());
         assert_eq!(text, "- a{|}b");
@@ -1075,12 +1084,12 @@ mod tests {
         let b_pos = text.find("b").unwrap();
 
         let changes = [
-            TextChange::Replace(ByteRange(a_pos..a_pos + 1), "hello".into()),
-            TextChange::Replace(ByteRange(b_pos..b_pos + 1), "world".into()),
-            TextChange::Replace(ByteRange(b_pos + 1..b_pos + 1), "!".into()),
+            TextChange::Replace(ByteSpan::new(a_pos, a_pos + 1), "hello".into()),
+            TextChange::Replace(ByteSpan::new(b_pos, b_pos + 1), "world".into()),
+            TextChange::Replace(ByteSpan::new(b_pos + 1, b_pos + 1), "!".into()),
         ];
 
-        apply_text_changes(&mut text, ByteRange(0..0), changes).unwrap();
+        apply_text_changes(&mut text, UnOrderedByteSpan::new(0, 0), changes).unwrap();
         assert_eq!(text, "hello world!");
     }
 
@@ -1092,12 +1101,12 @@ mod tests {
         let b_pos = text.find("b").unwrap();
 
         let changes = [
-            TextChange::Replace(ByteRange(b_pos + 1..b_pos + 1), "!".into()),
-            TextChange::Replace(ByteRange(b_pos..b_pos + 1), "world".into()),
-            TextChange::Replace(ByteRange(a_pos..a_pos + 1), "hello".into()),
+            TextChange::Replace(ByteSpan::new(b_pos + 1, b_pos + 1), "!".into()),
+            TextChange::Replace(ByteSpan::new(b_pos, b_pos + 1), "world".into()),
+            TextChange::Replace(ByteSpan::new(a_pos, a_pos + 1), "hello".into()),
         ];
 
-        apply_text_changes(&mut text, ByteRange(0..0), changes).unwrap();
+        apply_text_changes(&mut text, UnOrderedByteSpan::new(0, 0), changes).unwrap();
         assert_eq!(text, "hello world!");
     }
 
@@ -1110,12 +1119,12 @@ mod tests {
 
         let changes = [
             // captures "a b"
-            TextChange::Replace(ByteRange(a_pos..b_pos + 1), "hello".into()),
+            TextChange::Replace(ByteSpan::new(a_pos, b_pos + 1), "hello".into()),
             // captures "b"
-            TextChange::Replace(ByteRange(b_pos..b_pos + 1), "world".into()),
+            TextChange::Replace(ByteSpan::new(b_pos, b_pos + 1), "world".into()),
         ];
 
-        let cursor = apply_text_changes(&mut text, ByteRange(0..0), changes);
+        let cursor = apply_text_changes(&mut text, UnOrderedByteSpan::new(0, 0), changes);
         assert!(matches!(cursor, Err(TextChangeError::OverlappingChanges)));
         assert_eq!(text, "a b");
     }
@@ -1133,12 +1142,12 @@ mod tests {
         let end = text.find("d").unwrap();
 
         let changes = [
-            TextChange::Replace(ByteRange(start..end), "oops".into()),
+            TextChange::Replace(ByteSpan::new(start, end), "oops".into()),
             // delete "a", to test out cursor adjecement that are out of range
-            TextChange::Replace(ByteRange(0..1), "".into()),
+            TextChange::Replace(ByteSpan::new(0, 1), "".into()),
         ];
 
-        let cursor = apply_text_changes(&mut text, cursor.unwrap(), changes).unwrap();
+        let cursor = apply_text_changes(&mut text, cursor.unwrap().unordered(), changes).unwrap();
         assert_eq!(TextChange::encode_cursor(&text, cursor), "{|}oops{|}d");
     }
 
@@ -1154,14 +1163,14 @@ mod tests {
 
         let changes = [
             TextChange::Replace(
-                ByteRange(text.find("c").unwrap()..text.find("f").unwrap()),
+                ByteSpan::new(text.find("c").unwrap(), text.find("f").unwrap()),
                 "oops".into(),
             ),
             // delete "a", to test out cursor adjecement that are out of range
-            TextChange::Replace(ByteRange(0..1), "".into()),
+            TextChange::Replace(ByteSpan::new(0, 1), "".into()),
         ];
 
-        let cursor = apply_text_changes(&mut text, cursor.unwrap(), changes).unwrap();
+        let cursor = apply_text_changes(&mut text, cursor.unwrap().unordered(), changes).unwrap();
         assert_eq!(TextChange::encode_cursor(&text, cursor), "{|}boops{|}f");
     }
 
@@ -1177,13 +1186,13 @@ mod tests {
 
         let changes = [
             TextChange::Replace(
-                ByteRange(text.find("b").unwrap()..text.find("d").unwrap()),
+                ByteSpan::new(text.find("b").unwrap(), text.find("d").unwrap()),
                 "oops".into(),
             ),
-            TextChange::Replace(ByteRange(text.len()..text.len()), "!".into()),
+            TextChange::Replace(ByteSpan::new(text.len(), text.len()), "!".into()),
         ];
 
-        let cursor = apply_text_changes(&mut text, cursor.unwrap(), changes).unwrap();
+        let cursor = apply_text_changes(&mut text, cursor.unwrap().unordered(), changes).unwrap();
         assert_eq!(TextChange::encode_cursor(&text, cursor), "a{|}oopsd{|}e!");
     }
 
@@ -1199,13 +1208,13 @@ mod tests {
 
         let changes = [
             TextChange::Replace(
-                ByteRange(text.find("d").unwrap()..text.find("j").unwrap()),
+                ByteSpan::new(text.find("d").unwrap(), text.find("j").unwrap()),
                 "oops".into(),
             ),
-            TextChange::Replace(ByteRange(0..1), "!!".into()),
+            TextChange::Replace(ByteSpan::new(0, 1), "!!".into()),
         ];
 
-        let cursor = apply_text_changes(&mut text, cursor.unwrap(), changes).unwrap();
+        let cursor = apply_text_changes(&mut text, cursor.unwrap().unordered(), changes).unwrap();
         assert_eq!(TextChange::encode_cursor(&text, cursor), "!!b{|}coops{|}j");
     }
 }

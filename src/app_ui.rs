@@ -1,521 +1,286 @@
-use std::ops::Range;
-
 use eframe::{
     egui::{
         self,
         text::CCursor,
-        text_edit::{CCursorRange, TextEditOutput, TextEditState},
-        Context, Id, KeyboardShortcut, Layout, Modifiers, OpenUrl, Painter, RichText, Sense,
-        TopBottomPanel, Ui, Window,
+        text_edit::{CCursorRange, TextEditOutput},
+        Context, Id, KeyboardShortcut, Layout, Painter, RichText, Sense, TopBottomPanel, Ui,
+        Window,
     },
     emath::{Align, Align2},
-    epaint::{pos2, vec2, Color32, FontId, Rect, Stroke, Vec2},
+    epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
 };
 use smallvec::SmallVec;
+use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    app_actions::{apply_text_changes, process_app_action, AppAction},
-    app_state::{AppState, ComputedLayout, MsgToApp, Note},
-    md_shortcut::{execute_instruction, MdAnnotationShortcut, ShortcutContext, Source},
+    app_actions::{apply_text_changes, AppAction},
+    app_state::{AppShortcuts, ComputedLayout, LayoutParams},
+    byte_span::UnOrderedByteSpan,
     picker::{Picker, PickerItem},
-    text_structure::{ByteRange, InteractiveTextPart, SpanKind, SpanMeta, TextStructure},
+    scripting::execute_live_scripts,
+    text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme},
 };
 
-#[derive(Debug)]
-struct ShortcutExecContext<'a> {
-    structure: &'a TextStructure,
-    text: &'a str,
-    selection_byte_range: Range<usize>,
-    replace_range: Range<usize>,
+pub struct AppRenderData<'a> {
+    pub selected_note: u32,
+    pub text_edit_id: Id,
+    pub font_scale: i32,
+    pub byte_cursor: Option<UnOrderedByteSpan>,
+    pub md_shortcuts: &'a [(String, KeyboardShortcut)],
+    pub syntax_set: &'a SyntaxSet,
+    pub theme_set: &'a ThemeSet,
+    pub computed_layout: Option<ComputedLayout>,
 }
 
-impl<'a> ShortcutContext<'a> for ShortcutExecContext<'a> {
-    fn get_source(&self, source: Source) -> Option<&'a str> {
-        match source {
-            Source::Selection => {
-                if self.selection_byte_range.is_empty() {
-                    None
-                } else {
-                    self.text.get(self.selection_byte_range.clone())
-                }
-            }
-            Source::BeforeSelection => self.text.get(0..self.selection_byte_range.start),
-            Source::AfterSelection => self.text.get(self.selection_byte_range.end..),
-            Source::SurroundingSpanContent(kind) => self
-                .structure
-                .find_span_at(kind, self.selection_byte_range.clone())
-                .map(|(_, index)| self.structure.get_span_inner_content(index))
-                .and_then(|content| self.text.get(content.clone())),
-        }
-    }
+pub struct RenderAppResult(
+    pub SmallVec<[AppAction; 4]>,
+    pub TextStructure,
+    pub Option<UnOrderedByteSpan>,
+    pub Option<ComputedLayout>,
+);
 
-    fn is_inside_span(&self, kind: SpanKind) -> bool {
-        self.structure
-            .find_span_at(kind, self.selection_byte_range.clone())
-            .is_some()
-    }
+pub fn render_app(
+    mut text_structure: TextStructure,
+    editor_text: &mut String,
+    visual_state: AppRenderData,
+    shortcuts: &AppShortcuts,
+    theme: &AppTheme,
+    ctx: &egui::Context,
+) -> RenderAppResult {
+    let AppRenderData {
+        selected_note,
+        text_edit_id,
+        font_scale,
+        mut byte_cursor,
+        md_shortcuts,
+        computed_layout,
+        syntax_set,
+        theme_set,
+    } = visual_state;
 
-    fn set_replace_area(&mut self, kind: SpanKind) {
-        if let Some((range, _)) = self
-            .structure
-            .find_span_at(kind, self.selection_byte_range.clone())
-        {
-            self.replace_range = range;
-        }
-    }
+    let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
 
-    fn is_inside_unmarked(&self) -> bool {
-        self.structure
-            .find_any_span_at(self.selection_byte_range.clone())
-            .is_none()
-    }
-}
-
-pub fn render_app(state: &mut AppState, ctx: &egui::Context, frame: &mut eframe::Frame) {
-    // let text_edit_id = Id::new(("text_edit", state.selected_note));
-    let text_edit_id = Id::new("text_edit");
-
-    // if (state.hacky_render_count == 1) {
-    //     state.hacky_render_count = 2;
-    //     frame.focus();
-    //     ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-    //     println!("focus again");
-    // }
-
-    while let Ok(msg) = state.msg_queue.try_recv() {
-        println!("got in render: {msg:?}");
-        match msg {
-            MsgToApp::ToggleVisibility => {
-                state.hidden = !state.hidden;
-
-                if state.hidden {
-                    hide_app();
-                } else {
-                    frame.set_visible(!state.hidden);
-                }
-
-                if !state.hidden {
-                    frame.focus();
-                    // // frame.request_user_attention(egui::UserAttentionType::Reset);
-                    ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-                    println!(
-                        "after: focus, has_focus = {:?}",
-                        frame.info().window_info.focused
-                    );
-                }
-            }
-        }
-    }
-
-    let cur_focus = frame.info().window_info.focused;
-    if state.prev_focused != cur_focus {
-        if cur_focus {
-            println!("gained focus");
-            ctx.memory_mut(|mem| mem.request_focus(text_edit_id))
-        } else {
-            println!("lost focus");
-            state.hidden = true;
-            // frame.set_visible(!state.hidden);
-            hide_app();
-        }
-        state.prev_focused = cur_focus;
-    }
-
-    if !state.hidden && !cur_focus {
-        // println!("restore focus");
-        frame.request_user_attention(egui::UserAttentionType::Informational);
-        frame.focus()
-    }
-
-    // handling commands
-    // sych as {tab, enter} inside a list
-    ctx.input_mut(|input| {
-        for editor_command in state.editor_commands.iter() {
-            let keyboard_shortcut = editor_command.shortcut();
-            if is_shortcut_match(input, &keyboard_shortcut) {
-                let current_note = &mut state.notes[state.selected_note as usize];
-
-                if let (Some(text_cursor_range), Some(computed_layout)) =
-                    (current_note.cursor, &state.computed_layout)
-                {
-                    use egui::TextBuffer as _;
-
-                    let [char_range_start, char_range_end] =
-                        text_cursor_range.sorted().map(|c| c.index);
-
-                    let [byte_start, byte_end] = [char_range_start, char_range_end]
-                        .map(|char_idx| current_note.text.byte_index_from_char_index(char_idx));
-
-                    if let Some(changes) = editor_command.try_handle(
-                        &computed_layout.text_structure,
-                        &current_note.text,
-                        ByteRange(byte_start..byte_end),
-                    ) {
-                        if let Ok(ByteRange(byte_cursor)) = apply_text_changes(
-                            &mut current_note.text,
-                            ByteRange(byte_start..byte_end),
-                            changes,
-                        ) {
-                            current_note.cursor = Some(CCursorRange::two(
-                                CCursor::new(char_index_from_byte_index(
-                                    &current_note.text,
-                                    byte_cursor.start,
-                                )),
-                                CCursor::new(char_index_from_byte_index(
-                                    &current_note.text,
-                                    byte_cursor.end,
-                                )),
-                            ));
-
-                            input.consume_shortcut(&keyboard_shortcut);
-
-                            // only one command can be handled at a time
-                            break;
-                        }
-                    };
-                }
-            }
-        }
-    });
-
-    let mut actions = render_footer_panel(
-        state.selected_note,
-        state.font_scale,
-        state
-            .notes
+    let footer_actions = render_footer_panel(
+        selected_note,
+        font_scale,
+        shortcuts
+            .switch_to_note
             .iter()
-            .map(|n| format!("Shelf {}", ctx.format_shortcut(&n.shortcut)))
+            .map(|shortcut| format!("Shelf {}", ctx.format_shortcut(&shortcut)))
             .collect(),
         ctx,
-        &state.theme,
+        &theme,
     );
 
+    output_actions.extend(footer_actions);
+
+    // TODO migrate these to be commands
+    // note that it is possible that commands might need to be more generalized
+    // for example you should be able to switch to a note even withtout having a focus
     ctx.input_mut(|input| {
-        for (index, shortcut) in state.notes.iter().map(|n| n.shortcut).enumerate() {
+        for (index, shortcut) in shortcuts.switch_to_note.iter().enumerate() {
             if input.consume_shortcut(&shortcut) {
-                actions.push(AppAction::SwitchToNote {
+                output_actions.push(AppAction::SwitchToNote {
                     index: index as u32,
                     via_shortcut: true,
                 })
             }
         }
 
-        if input.consume_shortcut(&state.app_shortcuts.increase_font) {
-            actions.push(AppAction::IncreaseFontSize);
+        if input.consume_shortcut(&shortcuts.increase_font) {
+            output_actions.push(AppAction::IncreaseFontSize);
         }
-        if input.consume_shortcut(&state.app_shortcuts.decrease_font) {
-            actions.push(AppAction::DecreaseFontSize);
+        if input.consume_shortcut(&shortcuts.decrease_font) {
+            output_actions.push(AppAction::DecreaseFontSize);
         }
     });
 
-    render_header_panel(ctx, &state.theme);
+    render_header_panel(ctx, theme);
 
-    for action in actions {
-        process_app_action(action, ctx, state, text_edit_id);
-    }
+    restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
 
-    let current_note = &mut state.notes[state.selected_note as usize];
-    restore_cursor_from_note_state(&current_note, ctx, text_edit_id);
+    let (text_structure, computed_layout, updated_cursor) = egui::CentralPanel::default()
+        .show(ctx, |ui| {
+            let avail_space = ui.available_rect_before_wrap();
 
-    egui::CentralPanel::default().show(ctx, |ui| {
-        let avail_space = ui.available_rect_before_wrap();
+            render_hints(
+                &format!("{}", selected_note + 1),
+                editor_text.is_empty().then(|| md_shortcuts),
+                avail_space,
+                ui.painter(),
+                ctx,
+                &theme,
+            );
 
-        render_hints(
-            &format!("{}", state.selected_note + 1),
-            current_note
-                .text
-                .is_empty()
-                .then(|| state.md_annotation_shortcuts.as_slice()),
-            avail_space,
-            ui.painter(),
-            ctx,
-            &state.theme,
-        );
+            egui::ScrollArea::vertical()
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                    let (layout, mut text_structure, mut updated_cursor, text_draw_pos) =
+                        render_editor(
+                            ui,
+                            editor_text,
+                            text_structure,
+                            font_scale,
+                            computed_layout,
+                            theme,
+                            syntax_set,
+                            theme_set,
+                            text_edit_id,
+                        );
 
-            let scaled_theme = state.theme.scaled(f32::powi(1.2, state.font_scale));
+                    let space_below = ui.available_rect_before_wrap();
 
-            let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                let computed_layout = match state.computed_layout.take() {
-                    Some(layout)
-                        if !layout.should_recompute(text, wrap_width, state.font_scale) =>
+                    // ---- CLICKING ON EMPTY AREA FOCUSES ON TEXT EDIT ----
+                    // TODO migrate to use app actions
+                    if space_below.height() > 0.
+                        && ui
+                            .interact(space_below, Id::new("space_below"), Sense::click())
+                            .clicked()
                     {
-                        layout
+                        updated_cursor =
+                            Some(UnOrderedByteSpan::new(editor_text.len(), editor_text.len()));
+                        ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
                     }
 
-                    // TODO reuse the prev computed layout
-                    _ => ComputedLayout::compute(
-                        text,
-                        wrap_width,
-                        ui,
-                        state.font_scale,
-                        &scaled_theme,
-                        &state.syntax_set,
-                        &state.theme_set,
-                    ),
-                };
-
-                let res = computed_layout.galley.clone();
-                state.computed_layout = Some(computed_layout);
-
-                res
-            };
-
-            // let mut edited_text = state.markdown.clone();
-
-            let TextEditOutput {
-                response: text_edit_response,
-                galley,
-                text_draw_pos,
-                text_clip_rect: _,
-                state: mut text_edit_state,
-                mut cursor_range,
-            } = egui::TextEdit::multiline(&mut current_note.text)
-                .font(egui::TextStyle::Monospace) // for cursor height
-                .code_editor()
-                .id(text_edit_id)
-                .lock_focus(true)
-                .desired_width(f32::INFINITY)
-                .frame(false)
-                .layouter(&mut layouter)
-                .show(ui);
-
-            if text_edit_response.changed() {
-                state.save_to_storage = true;
-            }
-
-            let space_below = ui.available_rect_before_wrap();
-
-            // ---- CLICKING ON EMPTY AREA FOCUSES ON TEXT EDIT ----
-            if space_below.height() > 0.
-                && ui
-                    .interact(space_below, Id::new("space_below"), Sense::click())
-                    .clicked()
-            {
-                text_edit_state.set_ccursor_range(Some(egui::text::CCursorRange::one(
-                    egui::text::CCursor::new(current_note.text.chars().count()),
-                )));
-
-                ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-            }
-
-            // ---- SHORTCUTS FOR MAKING BOLD/ITALIC/STRIKETHROUGH ----
-            if let (Some(text_cursor_range), Some(computed_layout)) =
-                (cursor_range, &state.computed_layout)
-            {
-                for md_shortcut in state.md_annotation_shortcuts.iter() {
-                    if ui.input_mut(|input| input.consume_shortcut(&md_shortcut.shortcut)) {
-                        use egui::TextBuffer as _;
-
-                        let selected_char_range = text_cursor_range.as_sorted_char_range();
-
-                        let byte_start = current_note
-                            .text
-                            .byte_index_from_char_index(selected_char_range.start);
-
-                        let byte_end = current_note
-                            .text
-                            .byte_index_from_char_index(selected_char_range.end);
-
-                        let span = computed_layout
-                            .text_structure
-                            .find_span_at(md_shortcut.target_span, byte_start..byte_end)
-                            .map(|(span_range, idx)| {
-                                (
-                                    span_range,
-                                    computed_layout.text_structure.get_span_inner_content(idx),
-                                )
-                            });
-
-                        let [cursor_start, cursor_end] = match span {
-                            Some((span_byte_range, content_byte_range)) => {
-                                // we need to remove the annotations because it is already annotated
-                                // for example: if it is already "bold" then remove "**" on each side
-
-                                match (
-                                    current_note
-                                        .text
-                                        .get(content_byte_range)
-                                        .map(|s| s.to_string()),
-                                    current_note
-                                        .text
-                                        .get(0..span_byte_range.start)
-                                        .map(|s| s.chars().count()),
-                                ) {
-                                    (Some(inner_content), Some(span_char_offset)) => {
-                                        current_note
-                                            .text
-                                            .replace_range(span_byte_range, &inner_content);
-
-                                        let cursor_start = CCursor::new(span_char_offset);
-
-                                        [cursor_start, cursor_start + inner_content.chars().count()]
-                                    }
-                                    _ => text_cursor_range.as_ccursor_range().sorted(),
-                                }
-                            }
-                            None => {
-                                // means that we need to execute instruction for the shortcut, presumably to add annotations
-                                let mut cx = ShortcutExecContext {
-                                    structure: &computed_layout.text_structure,
-                                    text: &current_note.text,
-                                    selection_byte_range: byte_start..byte_end,
-                                    replace_range: byte_start..byte_end,
-                                };
-
-                                // println!("!! md shortcut:\n{:#?}", cx);
-                                match execute_instruction(&mut cx, &md_shortcut.instruction) {
-                                    Some(result) => {
-                                        let cursor_start = CCursor::new(
-                                            current_note.text[..cx.replace_range.start]
-                                                .chars()
-                                                .count(),
-                                        );
-
-                                        current_note.text.replace_range(
-                                            cx.replace_range.clone(),
-                                            &result.content,
-                                        );
-
-                                        [
-                                            cursor_start + result.relative_char_cursor.start,
-                                            cursor_start + result.relative_char_cursor.end,
-                                        ]
-                                    }
-                                    None => text_cursor_range.as_ccursor_range().sorted(),
-                                }
-                            }
-                        };
-
-                        text_edit_state
-                            .set_ccursor_range(Some(CCursorRange::two(cursor_start, cursor_end)));
-
-                        cursor_range = text_edit_state.cursor_range(&galley);
-                    }
-                }
-            }
-
-            // ---- INTERACTIVE TEXT PARTS (TODO + LINKS) ----
-            if let (Some(pointer_pos), Some(computed_layout)) =
-                (ui.ctx().pointer_interact_pos(), &state.computed_layout)
-            {
-                let cursor = galley.cursor_from_pos(pointer_pos - text_draw_pos);
-                use egui::TextBuffer;
-
-                let byte_cursor = galley
-                    .text()
-                    .byte_index_from_char_index(cursor.ccursor.index);
-
-                if let Some(interactive) = computed_layout
-                    .text_structure
-                    .find_interactive_text_part(byte_cursor)
-                {
-                    // if ui.input(|i| i.modifiers.command)
+                    // ---- INTERACTIVE TEXT PARTS (TODO + LINKS) ----
+                    if let (Some(layout), Some(pointer_pos)) =
+                        (&layout, ui.ctx().pointer_interact_pos())
                     {
-                        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-                        if ui.input(|i| i.pointer.primary_clicked()) {
-                            match interactive {
-                                InteractiveTextPart::TaskMarker {
-                                    byte_range,
-                                    checked,
-                                } => {
-                                    current_note.text.replace_range(
-                                        byte_range,
-                                        if checked { "[ ]" } else { "[x]" },
-                                    );
-                                }
-                                InteractiveTextPart::Link(url) => {
-                                    println!("open url {url:}");
-                                    ctx.output_mut(|output| output.open_url(url));
+                        let cursor = layout.galley.cursor_from_pos(pointer_pos - text_draw_pos);
+
+                        use eframe::egui::TextBuffer as _;
+                        let byte_cursor = layout
+                            .galley
+                            .text()
+                            .byte_index_from_char_index(cursor.ccursor.index);
+
+                        if let Some(interactive) =
+                            text_structure.find_interactive_text_part(byte_cursor)
+                        {
+                            // if ui.input(|i| i.modifiers.command)
+                            {
+                                ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                                if ui.input(|i| i.pointer.primary_clicked()) {
+                                    match interactive {
+                                        InteractiveTextPart::TaskMarker {
+                                            byte_range,
+                                            checked,
+                                        } => {
+                                            editor_text.replace_range(
+                                                byte_range.range(),
+                                                if checked { "[ ]" } else { "[x]" },
+                                            );
+
+                                            text_structure = text_structure.recycle(&editor_text);
+                                        }
+                                        InteractiveTextPart::Link(url) => {
+                                            println!("open url {url:}");
+                                            output_actions
+                                                .push(AppAction::OpenLink(url.to_string()));
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            // ---- AUTO INDENT LISTS ----
-            //     if ui.input_mut(|input| input.key_pressed(egui::Key::Enter)) {
-            //         if let (Some(text_cursor_range), Some(computed_layout)) =
-            //             (cursor_range, &state.computed_layout)
-            //         {
-            //             use egui::TextBuffer;
+                    (text_structure, layout, updated_cursor)
+                })
+                .inner
+        })
+        .inner;
 
-            //             let char_range = text_cursor_range.as_sorted_char_range();
-            //             let byte_start = current_note
-            //                 .text
-            //                 .byte_index_from_char_index(char_range.start);
-            //             let byte_end = current_note.text.byte_index_from_char_index(char_range.end);
-
-            //             let inside_item = computed_layout.text_structure.find_surrounding_list_item(
-            //                 // note that "\n" was already inserted,
-            //                 //thus we need to just look for "cursor_start -1" to detect a list item
-            //                 if current_note.text[..byte_start].ends_with("\n") {
-            //                     (byte_start - 1)..(byte_start - 1)
-            //                 } else {
-            //                     byte_start..byte_end
-            //                 },
-            //             );
-
-            //             println!(
-            //                 "\nnewline\nbefore_cursor='{}'\ncursor='{}'\nafter='{}'",
-            //                 &current_note.text[0..byte_start],
-            //                 &current_note.text[byte_start..byte_end],
-            //                 &current_note.text[byte_end..]
-            //             );
-
-            //             if let Some(inside_list_item) = inside_item {
-            //                 use egui::TextBuffer as _;
-
-            //                 let text_to_insert = match inside_list_item.started_numbered_index {
-            //                     Some(starting_index) => format!(
-            //                         "{}{}. ",
-            //                         "\t".repeat(inside_list_item.depth as usize),
-            //                         starting_index + inside_list_item.item_index as u64 + 1
-            //                     ),
-            //                     None => {
-            //                         format!("{}- ", "\t".repeat(inside_list_item.depth as usize))
-            //                     }
-            //                 };
-
-            //                 current_note
-            //                     .text
-            //                     .insert_text(text_to_insert.as_str(), char_range.start);
-
-            //                 let [min, max] = text_cursor_range.as_ccursor_range().sorted();
-
-            //                 // that byte size and char size of insertion are te same in this case
-            //                 text_edit_state.set_ccursor_range(Some(CCursorRange::two(
-            //                     min + text_to_insert.len(),
-            //                     max + text_to_insert.len(),
-            //                 )));
-            //             }
-            //         }
-            //     }
-
-            current_note.cursor = text_edit_state.ccursor_range();
-            text_edit_state.store(ui.ctx(), text_edit_id);
-        });
-    });
-
-    if state.is_settings_opened {
-        render_settings_dialog(ctx, &state.theme);
-    }
+    RenderAppResult(
+        output_actions,
+        text_structure,
+        updated_cursor,
+        computed_layout,
+    )
 }
 
-fn hide_app() {
-    // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
-    use objc2::rc::{Id, Shared};
-    use objc2::runtime::Object;
-    use objc2::{class, msg_send, msg_send_id};
-    unsafe {
-        let app: Id<Object, Shared> = msg_send_id![class!(NSApplication), sharedApplication];
-        let arg = app.as_ref();
-        let _: () = msg_send![&app, hide:arg];
-    }
+fn render_editor(
+    ui: &mut Ui,
+    editor_text: &mut String,
+    text_structure: TextStructure,
+    font_scale: i32,
+    mut computed_layout: Option<ComputedLayout>,
+    theme: &AppTheme,
+    syntax_set: &SyntaxSet,
+    theme_set: &ThemeSet,
+    text_edit_id: Id,
+) -> (
+    Option<ComputedLayout>,
+    TextStructure,
+    Option<UnOrderedByteSpan>,
+    egui::Pos2,
+) {
+    let mut structure_wrapper = Some(text_structure);
+
+    let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+        let layout_cache_params = LayoutParams::new(text, wrap_width, font_scale);
+
+        let layout = match computed_layout.take() {
+            Some(layout) if !layout.should_recompute(&layout_cache_params) => layout,
+
+            _ => {
+                let scaled_theme = theme.scaled(f32::powi(1.2, font_scale));
+
+                let structure = structure_wrapper.take().unwrap().recycle(text);
+
+                // println!("### updated structure {structure:#?}");
+                // println!("### rerender with {text}");
+                let layout = ComputedLayout::compute(
+                    &structure,
+                    &layout_cache_params,
+                    ui,
+                    &scaled_theme,
+                    syntax_set,
+                    theme_set,
+                );
+
+                structure_wrapper = Some(structure);
+
+                layout
+            }
+        };
+
+        let res = layout.galley.clone();
+        computed_layout = Some(layout);
+        res
+    };
+
+    // let mut edited_text = state.markdown.clone();
+
+    let TextEditOutput {
+        response: text_edit_response,
+        galley,
+        text_draw_pos,
+        text_clip_rect: _,
+        state: _,
+        cursor_range,
+    } = egui::TextEdit::multiline(editor_text)
+        .font(egui::TextStyle::Monospace) // for cursor height
+        .code_editor()
+        .id(text_edit_id)
+        .lock_focus(true)
+        .desired_width(f32::INFINITY)
+        .frame(false)
+        .layouter(&mut layouter)
+        .show(ui);
+
+    use egui::TextBuffer;
+
+    let byte_cursor = cursor_range.map(|range| {
+        let [start, end] = [range.secondary, range.primary]
+            .map(|c| editor_text.byte_index_from_char_index(c.ccursor.index));
+
+        UnOrderedByteSpan::new(start, end)
+    });
+
+    let text_structure = structure_wrapper.unwrap();
+    (computed_layout, text_structure, byte_cursor, text_draw_pos)
 }
 
 fn render_settings_dialog(ctx: &Context, theme: &AppTheme) {
@@ -574,19 +339,24 @@ fn render_settings_dialog(ctx: &Context, theme: &AppTheme) {
         });
     });
 }
-fn restore_cursor_from_note_state(note: &Note, ctx: &Context, text_state_id: Id) {
+fn restore_cursor_from_note_state(
+    text: &str,
+    byte_cursor: Option<UnOrderedByteSpan>,
+    ctx: &Context,
+    text_state_id: Id,
+) {
     if let Some(mut text_edit_state) = egui::TextEdit::load_state(ctx, text_state_id) {
-        // println!(
-        //     "\nswitched\nnote_cursor='{:?}'\nstate_cursor='{:?}'",
-        //     &note.cursor,
-        //     &text_edit_state.ccursor_range(),
-        // );
-        let ccursor = note.cursor.unwrap_or_else(|| {
-            egui::text::CCursorRange::one(egui::text::CCursor::new(note.text.chars().count()))
+        let ccursor_range = byte_cursor.map(|unordered_span| {
+            CCursorRange::two(
+                CCursor::new(char_index_from_byte_index(&text, unordered_span.start)),
+                CCursor::new(char_index_from_byte_index(&text, unordered_span.end)),
+            )
         });
 
-        text_edit_state.set_ccursor_range(Some(ccursor));
-        text_edit_state.store(ctx, text_state_id);
+        if ccursor_range != text_edit_state.ccursor_range() {
+            text_edit_state.set_ccursor_range(ccursor_range);
+            text_edit_state.store(ctx, text_state_id);
+        }
     }
 }
 
@@ -638,12 +408,21 @@ fn render_footer_panel(
                     let font_animation_id = ui.id().with("font_size");
                     let color_animation_id = ui.id().with("message_color");
 
-                    let font_size_value = ctx.animate_value_with_time(font_animation_id, font_size as f32, 2.0);
+                    let font_size_value =
+                        ctx.animate_value_with_time(font_animation_id, font_size as f32, 2.0);
                     let show_font_message = font_size_value != font_size as f32;
-                    
-                    let show_hide_value = ctx.animate_value_with_time(color_animation_id, if show_font_message { 1.0 } else { 0.0 }, 0.2);
-                    let interpolated_font_color = interpolate_color(Color32::TRANSPARENT, theme.colors.subtle_text_color, show_hide_value);
-                    
+
+                    let show_hide_value = ctx.animate_value_with_time(
+                        color_animation_id,
+                        if show_font_message { 1.0 } else { 0.0 },
+                        0.2,
+                    );
+                    let interpolated_font_color = interpolate_color(
+                        Color32::TRANSPARENT,
+                        theme.colors.subtle_text_color,
+                        show_hide_value,
+                    );
+
                     ui.add_space(theme.sizes.xl);
                     ui.label(
                         RichText::new(format!("Font scaling set to {}", font_size))
@@ -651,7 +430,7 @@ fn render_footer_panel(
                             .font(FontId {
                                 size: theme.fonts.size.normal,
                                 family: theme.fonts.family.bold.clone(),
-                            }) 
+                            }),
                     );
                 });
 
@@ -805,7 +584,7 @@ fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) {
 
 fn render_hints(
     title: &str,
-    shortcuts: Option<&[MdAnnotationShortcut]>,
+    shortcuts: Option<&[(String, KeyboardShortcut)]>,
     available_space: Rect,
     painter: &Painter,
     cx: &egui::Context,
@@ -843,11 +622,11 @@ fn render_hints(
                     ((2 * shortcuts.len() - 1) as f32) / 2.0 * fonts.size.normal,
                 );
 
-            for (i, md_shortcut) in shortcuts.iter().enumerate() {
+            for (i, (name, shortcut)) in shortcuts.iter().enumerate() {
                 painter.text(
                     starting_point + vec2(0., (i as f32) * 2.0 * fonts.size.normal),
                     Align2::RIGHT_CENTER,
-                    format!("{}  ", md_shortcut.name,),
+                    format!("{}  ", name,),
                     hints_font_id.clone(),
                     hint_color,
                 );
@@ -861,7 +640,7 @@ fn render_hints(
                 painter.text(
                     starting_point + vec2(0., (i as f32) * 2.0 * fonts.size.normal),
                     Align2::LEFT_CENTER,
-                    format!("  {}", cx.format_shortcut(&md_shortcut.shortcut)),
+                    format!("  {}", cx.format_shortcut(shortcut)),
                     hints_font_id.clone(),
                     hint_color,
                 );
@@ -890,7 +669,7 @@ pub fn is_shortcut_match(input: &egui::InputState, shortcut: &KeyboardShortcut) 
     })
 }
 
-fn char_index_from_byte_index(s: &str, byte_index: usize) -> usize {
+pub fn char_index_from_byte_index(s: &str, byte_index: usize) -> usize {
     for (ci, (bi, _)) in s.char_indices().enumerate() {
         if bi == byte_index {
             return ci;

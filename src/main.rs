@@ -1,8 +1,10 @@
 #![feature(iter_intersperse)]
 #![feature(let_chains)]
 
+use app_actions::{process_app_action, TextChange};
 use app_state::{AppInitData, AppState, MsgToApp};
-use app_ui::render_app;
+use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
+use byte_span::UnOrderedByteSpan;
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
     GlobalHotKeyEvent, GlobalHotKeyManager,
@@ -11,6 +13,8 @@ use global_hotkey::{
 use image::ImageFormat;
 
 use persistent_state::PersistentState;
+use scripting::execute_live_scripts;
+use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 // use tray_item::TrayItem;
@@ -18,20 +22,24 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use std::sync::mpsc::{sync_channel, SyncSender};
 
 use eframe::{
-    egui::{self},
+    egui::{self, Id},
     epaint::vec2,
     get_value, set_value, CreationContext,
 };
 
+use crate::app_actions::apply_text_changes;
+
 mod app_actions;
 mod app_state;
 mod app_ui;
+mod byte_span;
 mod commands;
 mod egui_hotkey;
 mod md_shortcut;
 mod nord;
 mod persistent_state;
 mod picker;
+mod scripting;
 mod text_structure;
 mod theme;
 
@@ -47,7 +55,7 @@ impl MyApp {
         let theme = Default::default();
         configure_styles(&cc.egui_ctx, &theme);
 
-        let mut fonts = get_font_definitions();
+        let fonts = get_font_definitions();
 
         cc.egui_ctx.set_fonts(fonts);
 
@@ -106,12 +114,149 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        render_app(&mut self.state, ctx, frame);
+        let text_edit_id = Id::new("text_edit");
+
+        let app_state = &mut self.state;
+        let note = &mut app_state.notes[app_state.selected_note as usize];
+        let mut cursor: Option<UnOrderedByteSpan> = note.cursor;
+
+        let editor_text = &mut note.text;
+        let mut text_structure = app_state
+            .text_structure
+            .take()
+            .unwrap_or_else(|| TextStructure::new(editor_text));
+
+        let orignal_text_version = text_structure.opaque_version();
+
+        // handling message queue
+        while let Ok(msg) = app_state.msg_queue.try_recv() {
+            match msg {
+                MsgToApp::ToggleVisibility => {
+                    app_state.hidden = !app_state.hidden;
+
+                    if app_state.hidden {
+                        hide_app();
+                    } else {
+                        frame.set_visible(!app_state.hidden);
+                        frame.focus();
+                        ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+                    }
+                }
+            }
+        }
+
+        // handling focus lost
+        let is_frame_actually_focused = frame.info().window_info.focused;
+        if app_state.prev_focused != is_frame_actually_focused {
+            if is_frame_actually_focused {
+                println!("gained focus");
+                ctx.memory_mut(|mem| mem.request_focus(text_edit_id))
+            } else {
+                println!("lost focus");
+                app_state.hidden = true;
+                hide_app();
+            }
+            app_state.prev_focused = is_frame_actually_focused;
+        }
+
+        // restore focus, it seems that there is a lag
+        if !app_state.hidden && !is_frame_actually_focused {
+            frame.focus()
+        }
+
+        // handling commands
+        // sych as {tab, enter} inside a list
+        let changes: Option<(Vec<TextChange>, UnOrderedByteSpan)> =
+            cursor.clone().and_then(|byte_range| {
+                ctx.input_mut(|input| {
+                    // only one command can be handled at a time
+                    app_state.editor_commands.iter().find_map(|editor_command| {
+                        let keyboard_shortcut = editor_command.shortcut();
+                        if is_shortcut_match(input, &keyboard_shortcut) {
+                            let res = editor_command.try_handle(
+                                &text_structure,
+                                &editor_text,
+                                byte_range.ordered(),
+                            );
+                            if res.is_some() {
+                                // remove the keys from the input
+                                input.consume_shortcut(&keyboard_shortcut);
+                            }
+                            res.map(|changes| (changes, byte_range))
+                        } else {
+                            None
+                        }
+                    })
+                })
+            });
+
+        // now apply prepared changes, and update text structure and cursor appropriately
+        if let Some((changes, byte_range)) = changes {
+            if let Ok(updated_cursor) = apply_text_changes(editor_text, byte_range, changes) {
+                text_structure = text_structure.recycle(&editor_text);
+                cursor = Some(updated_cursor);
+            }
+        };
+
+        // handling scheduled JS execution
+        if let (Some(text_cursor_range), Some(scheduled_version)) =
+            (cursor, app_state.scheduled_script_run_version.take())
+        {
+            // println!("executing live scripts for version = {scheduled_version}",);
+            let script_changes = execute_live_scripts(&text_structure, &editor_text);
+            if let Some(changes) = script_changes {
+                // println!("detected changes from: js\n{changes:?}\n\n");
+                if let Ok(updated_cursor) =
+                    apply_text_changes(editor_text, text_cursor_range, changes)
+                {
+                    text_structure = text_structure.recycle(&editor_text);
+                    cursor = Some(updated_cursor);
+                }
+            }
+        }
+
+        let vis_state = AppRenderData {
+            selected_note: app_state.selected_note,
+            text_edit_id,
+            font_scale: app_state.font_scale,
+            byte_cursor: cursor,
+            md_shortcuts: &app_state.md_annotation_shortcuts,
+            syntax_set: &app_state.syntax_set,
+            theme_set: &app_state.theme_set,
+            computed_layout: app_state.computed_layout.take(),
+        };
+
+        let RenderAppResult(actions, updated_structure, byte_cursor, updated_layout) = render_app(
+            text_structure,
+            editor_text,
+            vis_state,
+            &app_state.app_shortcuts,
+            &app_state.theme,
+            ctx,
+        );
+
+        app_state.text_structure = Some(updated_structure);
+        app_state.computed_layout = updated_layout;
+        app_state.notes[app_state.selected_note as usize].cursor = byte_cursor;
+
+        for action in actions {
+            process_app_action(action, ctx, app_state, text_edit_id);
+        }
+
+        let updated_structure_version = app_state
+            .text_structure
+            .as_ref()
+            .map(|s| s.opaque_version());
+
+        if updated_structure_version != Some(orignal_text_version) {
+            app_state.save_to_storage = true;
+            app_state.scheduled_script_run_version = updated_structure_version;
+        }
     }
 
     fn on_close_event(&mut self) -> bool {
         self.msg_queue.send(MsgToApp::ToggleVisibility).unwrap();
-        return false;
+        false
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
@@ -134,13 +279,14 @@ fn main() {
         run_and_return: true,
         window_builder: Some(Box::new(|builder| {
             #[cfg(target_os = "macos")]
-            use winit::platform::macos::WindowBuilderExtMacOS;
-            #[cfg(target_os = "macos")]
-            return builder
-                .with_fullsize_content_view(true)
-                .with_titlebar_buttons_hidden(true)
-                .with_title_hidden(true)
-                .with_titlebar_transparent(true);
+            {
+                use winit::platform::macos::WindowBuilderExtMacOS;
+                return builder
+                    .with_fullsize_content_view(true)
+                    .with_titlebar_buttons_hidden(true)
+                    .with_title_hidden(true)
+                    .with_titlebar_transparent(true);
+            }
 
             builder
         })),
@@ -156,4 +302,16 @@ fn main() {
     };
 
     eframe::run_native("Shelv", options, Box::new(|cc| Box::new(MyApp::new(cc)))).unwrap();
+}
+
+fn hide_app() {
+    // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
+    use objc2::rc::{Id, Shared};
+    use objc2::runtime::Object;
+    use objc2::{class, msg_send, msg_send_id};
+    unsafe {
+        let app: Id<Object, Shared> = msg_send_id![class!(NSApplication), sharedApplication];
+        let arg = app.as_ref();
+        let _: () = msg_send![&app, hide:arg];
+    }
 }
