@@ -14,16 +14,16 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     app_actions::{apply_text_changes, AppAction},
-    app_state::{AppShortcuts, ComputedLayout, LayoutParams},
+    app_state::{AppShortcuts, ComputedLayout, LayoutParams, NoteSelection},
     byte_span::UnOrderedByteSpan,
-    picker::{Picker, PickerItem},
+    picker::{Picker, PickerItem, PickerSelection},
     scripting::execute_live_scripts,
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme},
 };
 
 pub struct AppRenderData<'a> {
-    pub selected_note: u32,
+    pub selected_note: &'a NoteSelection,
     pub text_edit_id: Id,
     pub font_scale: i32,
     pub byte_cursor: Option<UnOrderedByteSpan>,
@@ -62,7 +62,7 @@ pub fn render_app(
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
 
     let footer_actions = render_footer_panel(
-        selected_note,
+        &selected_note,
         font_scale,
         shortcuts
             .switch_to_note
@@ -96,16 +96,23 @@ pub fn render_app(
         }
     });
 
-    render_header_panel(ctx, theme);
+    let header_actions = render_header_panel(ctx, theme);
+
+    output_actions.extend(header_actions);
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
+
+    let title = match selected_note {
+        NoteSelection::Note(note) => format!("{}", note + 1),
+        NoteSelection::Settings { .. } => format!("Settings"),
+    };
 
     let (text_structure, computed_layout, updated_cursor) = egui::CentralPanel::default()
         .show(ctx, |ui| {
             let avail_space = ui.available_rect_before_wrap();
 
             render_hints(
-                &format!("{}", selected_note + 1),
+                &title,
                 editor_text.is_empty().then(|| md_shortcuts),
                 avail_space,
                 ui.painter(),
@@ -361,13 +368,16 @@ fn restore_cursor_from_note_state(
 }
 
 fn render_footer_panel(
-    selected: u32,
+    selected: &NoteSelection,
     font_size: i32,
     tooltips: Vec<String>,
     ctx: &Context,
     theme: &AppTheme,
 ) -> SmallVec<[AppAction; 1]> {
-    let mut current_selection = selected;
+    let mut current_selection = match selected {
+        NoteSelection::Note(n) => PickerSelection::Selected(*n),
+        NoteSelection::Settings { prev_note } => PickerSelection::Deselected(*prev_note),
+    };
     let mut actions = SmallVec::new();
     TopBottomPanel::bottom("footer")
         // .exact_height(32.)
@@ -377,6 +387,7 @@ fn render_footer_panel(
                 let sizes = &theme.sizes;
                 let avail_width = ui.available_width();
                 ui.set_min_size(vec2(avail_width, sizes.header_footer));
+                let icon_block_width = sizes.xl * 2.;
 
                 set_menu_bar_style(ui);
 
@@ -435,61 +446,50 @@ fn render_footer_panel(
                 });
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    for item in [
-                        (
-                            &AppIcon::Twitter,
-                            "tweet us @shelvdotapp",
-                            "https://twitter.com/shelvdotapp",
-                        ),
-                        (&AppIcon::Discord, "join our discrod", "https://shelv.app"),
-                        (
-                            &AppIcon::HomeSite,
-                            "visit https://shelv.app",
-                            "https://shelv.app",
-                        ),
-                        // (
-                        //     &icons.at,
-                        //     "e-mail us at hi@shelv.app",
-                        //     "mailto:hi@shelv.app",
-                        // ),
-                    ]
-                    .into_iter()
-                    .map(Some)
-                    .intersperse(None)
-                    {
-                        match item {
-                            Some((icon, tooltip, url)) => {
-                                let resp =
-                                    ui.button(icon.render(
-                                        sizes.toolbar_icon,
-                                        theme.colors.subtle_text_color,
-                                    ))
-                                    .on_hover_ui(|ui| {
-                                        ui.label(
-                                            RichText::new(tooltip)
-                                                .color(theme.colors.subtle_text_color),
-                                        );
-                                    });
+                    ui.set_width(icon_block_width);
 
-                                if resp.clicked() {
-                                    actions.push(AppAction::OpenLink(url.to_owned()));
-                                    // ctx.open_url(OpenUrl::new_tab(url));
-                                }
-                            }
-                            None => {
-                                ui.add_space(theme.sizes.s);
-                            }
-                        }
+                    let button_color = match current_selection {
+                        PickerSelection::Selected(_) => theme.colors.subtle_text_color,
+                        PickerSelection::Deselected(_) => theme.colors.button_pressed_fg,
+                    };
+
+                    let settings =
+                        ui.button(AppIcon::Settings.render(sizes.toolbar_icon, button_color));
+                    // TODO do we still want this hover UI? didn't seem all that useful.
+                    // .on_hover_ui(|ui| {
+                    //     ui.label(
+                    //         RichText::new("open app settings")
+                    //             .color(theme.colors.subtle_text_color),
+                    //     );
+                    // });
+
+                    if settings.clicked() {
+                        actions.push(match current_selection {
+                            PickerSelection::Selected(_) => AppAction::OpenSettings,
+                            PickerSelection::Deselected(_) => AppAction::CloseSettings,
+                        });
+
+                        println!("clicked on settings");
                     }
                 });
             });
         });
 
-    if current_selection != selected {
-        actions.push(AppAction::SwitchToNote {
-            index: current_selection,
-            via_shortcut: false,
-        });
+    // TODO I am hoping there is a cleaner way of expressing this logic.
+    if let PickerSelection::Selected(current_selection) = current_selection {
+        if let NoteSelection::Note(selected) = selected {
+            if current_selection != *selected {
+                actions.push(AppAction::SwitchToNote {
+                    index: current_selection,
+                    via_shortcut: false,
+                });
+            }
+        } else {
+            actions.push(AppAction::SwitchToNote {
+                index: current_selection,
+                via_shortcut: false,
+            });
+        }
     }
 
     actions
@@ -505,7 +505,8 @@ fn set_menu_bar_style(ui: &mut egui::Ui) {
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
-fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) {
+fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) -> SmallVec<[AppAction; 1]> {
+    let mut actions = SmallVec::new();
     TopBottomPanel::top("top_panel")
         .show_separator_line(false)
         .show(ctx, |ui| {
@@ -559,27 +560,56 @@ fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) {
                 // println!("before help {:?}", ui.available_size());
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.set_width(icon_block_width);
+                    for item in [
+                        (
+                            &AppIcon::Twitter,
+                            "tweet us @shelvdotapp",
+                            "https://twitter.com/shelvdotapp",
+                        ),
+                        (&AppIcon::Discord, "join our discrod", "https://shelv.app"),
+                        (
+                            &AppIcon::HomeSite,
+                            "visit https://shelv.app",
+                            "https://shelv.app",
+                        ),
+                        // (
+                        //     &icons.at,
+                        //     "e-mail us at hi@shelv.app",
+                        //     "mailto:hi@shelv.app",
+                        // ),
+                    ]
+                    .into_iter()
+                    .map(Some)
+                    .intersperse(None)
+                    {
+                        match item {
+                            Some((icon, tooltip, url)) => {
+                                let resp =
+                                    ui.button(icon.render(
+                                        sizes.toolbar_icon,
+                                        theme.colors.subtle_text_color,
+                                    ))
+                                    .on_hover_ui(|ui| {
+                                        ui.label(
+                                            RichText::new(tooltip)
+                                                .color(theme.colors.subtle_text_color),
+                                        );
+                                    });
 
-                    // Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
-
-                    let settings = ui
-                        .button(
-                            AppIcon::Settings.render(sizes.toolbar_icon, theme.colors.button_fg),
-                        )
-                        .on_hover_ui(|ui| {
-                            ui.label(
-                                RichText::new("open app settings")
-                                    .color(theme.colors.subtle_text_color),
-                            );
-                        });
-
-                    if settings.clicked() {
-                        println!("clicked on settings");
+                                if resp.clicked() {
+                                    actions.push(AppAction::OpenLink(url.to_owned()));
+                                    // ctx.open_url(OpenUrl::new_tab(url));
+                                }
+                            }
+                            None => {
+                                ui.add_space(theme.sizes.s);
+                            }
+                        }
                     }
                 });
             });
         });
+    actions
 }
 
 fn render_hints(

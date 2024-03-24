@@ -28,18 +28,23 @@ pub struct Note {
     pub cursor: Option<UnOrderedByteSpan>,
 }
 
+#[derive(PartialEq, Eq)]
+pub enum NoteSelection {
+    Note(u32),
+    Settings { prev_note: u32 },
+}
+
 pub struct AppState {
     // -----this is persistent model-------
     pub notes: Vec<Note>,
-    pub selected_note: u32,
+    pub settings_note: Note,
+    pub selected_note: NoteSelection,
     // ------------------------------------
     // -------- emphemeral state ----------
     pub save_to_storage: bool,
     pub scheduled_script_run_version: Option<u64>,
 
     // ------------------------------------
-    pub is_settings_opened: bool,
-
     pub theme: AppTheme,
     pub syntax_set: SyntaxSet,
     pub theme_set: ThemeSet,
@@ -176,9 +181,15 @@ impl AppState {
                 .collect(),
         };
 
-        let (selected_note, mut notes) = persistent_state
-            .map(|s| (s.selected_note, s.notes))
-            .unwrap_or_else(|| (0, (0..notes_count).map(|i| format!("{i}")).collect()));
+        let (selected_note, mut notes, settings_note) = persistent_state
+            .map(|s| (s.selected_note, s.notes, s.settings_note))
+            .unwrap_or_else(|| {
+                (
+                    0,
+                    (0..notes_count).map(|i| format!("{i}")).collect(),
+                    "# settings".to_string(),
+                )
+            });
 
         let restored_notes_count = notes.len();
         if restored_notes_count != notes_count {
@@ -191,6 +202,11 @@ impl AppState {
             .into_iter()
             .map(|text| Note { text, cursor: None })
             .collect();
+
+        let settings_note = Note {
+            text: settings_note,
+            cursor: None,
+        };
 
         let text_structure = TextStructure::new(&notes[selected_note as usize].text);
 
@@ -342,17 +358,17 @@ impl AppState {
         }
 
         Self {
-            is_settings_opened: false,
             save_to_storage: false,
             scheduled_script_run_version: None,
             theme,
             notes,
+            settings_note,
             computed_layout: None,
             text_structure: Some(text_structure),
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
             msg_queue,
-            selected_note,
+            selected_note: NoteSelection::Note(selected_note),
             hidden: false,
             prev_focused: false,
             font_scale: 0,
@@ -367,7 +383,11 @@ impl AppState {
             self.save_to_storage = false;
             Some(PersistentState {
                 notes: self.notes.iter().map(|n| n.text.clone()).collect(),
-                selected_note: self.selected_note,
+                selected_note: match self.selected_note {
+                    NoteSelection::Note(i) => i,
+                    NoteSelection::Settings { prev_note } => prev_note,
+                },
+                settings_note: self.settings_note.text.clone(),
             })
         } else {
             None

@@ -116,8 +116,11 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let text_edit_id = Id::new("text_edit");
 
-        let app_state = &mut self.state;
-        let note = &mut app_state.notes[app_state.selected_note as usize];
+        let app_state: &mut AppState = &mut self.state;
+        let note = match app_state.selected_note {
+            app_state::NoteSelection::Note(index) => &mut app_state.notes[index as usize],
+            app_state::NoteSelection::Settings { .. } => &mut app_state.settings_note,
+        };
         let mut cursor: Option<UnOrderedByteSpan> = note.cursor;
 
         let editor_text = &mut note.text;
@@ -216,7 +219,7 @@ impl eframe::App for MyApp {
         }
 
         let vis_state = AppRenderData {
-            selected_note: app_state.selected_note,
+            selected_note: &app_state.selected_note,
             text_edit_id,
             font_scale: app_state.font_scale,
             byte_cursor: cursor,
@@ -237,7 +240,7 @@ impl eframe::App for MyApp {
 
         app_state.text_structure = Some(updated_structure);
         app_state.computed_layout = updated_layout;
-        app_state.notes[app_state.selected_note as usize].cursor = byte_cursor;
+        note.cursor = byte_cursor;
 
         for action in actions {
             process_app_action(action, ctx, app_state, text_edit_id);

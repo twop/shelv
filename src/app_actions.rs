@@ -3,7 +3,7 @@ use eframe::egui::{Context, Id, KeyboardShortcut, Modifiers, OpenUrl};
 use smallvec::SmallVec;
 
 use crate::{
-    app_state::AppState,
+    app_state::{AppState, NoteSelection},
     byte_span::{ByteSpan, RangeRelation, UnOrderedByteSpan},
     commands::EditorCommand,
     text_structure::{ListDesc, SpanKind, SpanMeta, TextStructure},
@@ -63,6 +63,8 @@ pub enum AppAction {
     OpenLink(String),
     IncreaseFontSize,
     DecreaseFontSize,
+    OpenSettings,
+    CloseSettings,
 }
 
 pub fn process_app_action(
@@ -76,7 +78,7 @@ pub fn process_app_action(
             index,
             via_shortcut,
         } => {
-            if index != state.selected_note {
+            if NoteSelection::Note(index) != state.selected_note {
                 state.save_to_storage = true;
 
                 if via_shortcut {
@@ -96,12 +98,12 @@ pub fn process_app_action(
                     // means that we reselected via UI
 
                     // if that is the case then reset cursors from both of the notes
-                    state.notes[state.selected_note as usize].cursor = None;
+                    //TODO state.notes[state.selected_note as usize].cursor = None;
                     state.notes[index as usize].cursor = None;
                 }
 
                 let text = &state.notes[index as usize].text;
-                state.selected_note = index;
+                state.selected_note = NoteSelection::Note(index);
                 state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
             }
         }
@@ -112,6 +114,21 @@ pub fn process_app_action(
         AppAction::DecreaseFontSize => {
             state.font_scale -= 1;
         }
+        AppAction::OpenSettings => {
+            match state.selected_note {
+                NoteSelection::Note(index) => state.selected_note = NoteSelection::Settings { prev_note: index },
+                _ => {},
+            }
+        } 
+        AppAction::CloseSettings => {
+             match state.selected_note {
+                NoteSelection::Settings { prev_note } => state.selected_note = NoteSelection::Note(prev_note ),
+                _ => {},
+            }
+        }
+        // AppAction::CloseSettings => {
+          //     state.is_settings_opened = false;
+          // }
     }
 }
 
