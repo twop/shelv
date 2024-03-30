@@ -11,7 +11,10 @@ use pulldown_cmark::HeadingLevel;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    app_actions::{EnterInsideListCommand, ShiftTabInsideListCommand, TabInsideListCommand},
+    app_actions::{
+        EnterInsideListCommand, ShiftTabInsideListCommand, SpaceAfterTaskMarkersCommand,
+        TabInsideListCommand,
+    },
     byte_span::UnOrderedByteSpan,
     commands::EditorCommand,
     md_shortcut::{
@@ -335,6 +338,7 @@ impl AppState {
             Box::new(TabInsideListCommand),
             Box::new(EnterInsideListCommand),
             Box::new(ShiftTabInsideListCommand),
+            Box::new(SpaceAfterTaskMarkersCommand),
         ];
 
         for md_shortcut in md_annotation_shortcuts {
