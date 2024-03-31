@@ -31,6 +31,10 @@ pub struct Note {
     pub cursor: Option<UnOrderedByteSpan>,
 }
 
+pub struct CmdPalette {
+    pub text: String,
+}
+
 pub struct AppState {
     // -----this is persistent model-------
     pub notes: Vec<Note>,
@@ -41,6 +45,7 @@ pub struct AppState {
     pub scheduled_script_run_version: Option<u64>,
 
     // ------------------------------------
+    pub cmd_palette: Option<CmdPalette>,
     pub is_settings_opened: bool,
 
     pub theme: AppTheme,
@@ -363,6 +368,7 @@ impl AppState {
             editor_commands,
             md_annotation_shortcuts: md_shortcut_hints,
             app_shortcuts,
+            cmd_palette: None,
         }
     }
 

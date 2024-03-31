@@ -2,7 +2,7 @@
 #![feature(let_chains)]
 
 use app_actions::{process_app_action, TextChange};
-use app_state::{AppInitData, AppState, MsgToApp};
+use app_state::{AppInitData, AppState, CmdPalette, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
 use byte_span::UnOrderedByteSpan;
 use global_hotkey::{
@@ -22,7 +22,7 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use std::sync::mpsc::{sync_channel, SyncSender};
 
 use eframe::{
-    egui::{self, Id},
+    egui::{self, Id, KeyboardShortcut},
     epaint::vec2,
     get_value, set_value, CreationContext,
 };
@@ -215,6 +215,32 @@ impl eframe::App for MyApp {
             }
         }
 
+        let should_refocus = ctx.input_mut(|input| {
+            if input.consume_shortcut(&KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::P,
+            )) {
+                if app_state.cmd_palette.is_none() {
+                    println!("showing cmd palette");
+                    app_state.cmd_palette = Some(CmdPalette {
+                        text: "".to_string(),
+                    });
+                    false
+                } else {
+                    println!("hiding cmd palette");
+                    app_state.cmd_palette = None;
+                    true
+                }
+            } else {
+                false
+            }
+        });
+
+        if should_refocus {
+            ctx.memory_mut(|m| m.request_focus(text_edit_id));
+            println!("after requesting focus");
+        }
+
         let vis_state = AppRenderData {
             selected_note: app_state.selected_note,
             text_edit_id,
@@ -229,6 +255,7 @@ impl eframe::App for MyApp {
         let RenderAppResult(actions, updated_structure, byte_cursor, updated_layout) = render_app(
             text_structure,
             editor_text,
+            &mut app_state.cmd_palette,
             vis_state,
             &app_state.app_shortcuts,
             &app_state.theme,

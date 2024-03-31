@@ -1,6 +1,6 @@
 use eframe::{
     egui::{
-        self,
+        self, popup_below_widget,
         text::CCursor,
         text_edit::{CCursorRange, TextEditOutput},
         Context, Id, KeyboardShortcut, Layout, Painter, RichText, Sense, TopBottomPanel, Ui,
@@ -14,7 +14,7 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     app_actions::{apply_text_changes, AppAction},
-    app_state::{AppShortcuts, ComputedLayout, LayoutParams},
+    app_state::{AppShortcuts, CmdPalette, ComputedLayout, LayoutParams},
     byte_span::UnOrderedByteSpan,
     picker::{Picker, PickerItem},
     scripting::execute_live_scripts,
@@ -41,8 +41,9 @@ pub struct RenderAppResult(
 );
 
 pub fn render_app(
-    mut text_structure: TextStructure,
+    text_structure: TextStructure,
     editor_text: &mut String,
+    cmd_pallete: &mut Option<CmdPalette>,
     visual_state: AppRenderData,
     shortcuts: &AppShortcuts,
     theme: &AppTheme,
@@ -52,7 +53,7 @@ pub fn render_app(
         selected_note,
         text_edit_id,
         font_scale,
-        mut byte_cursor,
+        byte_cursor,
         md_shortcuts,
         computed_layout,
         syntax_set,
@@ -113,6 +114,28 @@ pub fn render_app(
                 &theme,
             );
 
+            let mut window = egui::Window::new("cmd_palette")
+                // .id(egui::Id::new("demo_window_options")) // required since we change the title
+                .resizable(false)
+                // .constrain(constrain)
+                .collapsible(false)
+                .title_bar(false)
+                .scroll2([false, false])
+                // .scroll(scroll2)
+                .enabled(true);
+
+            let mut is_opened = cmd_pallete.is_some();
+            window = window.open(&mut is_opened);
+
+            window = window.anchor(Align2::CENTER_TOP, [0.0, 10.]);
+
+            window.show(ctx, |ui| {
+                if let Some(cmd_pallete) = cmd_pallete {
+                    let resp = ui.text_edit_singleline(&mut cmd_pallete.text);
+                    resp.request_focus();
+                }
+            });
+
             egui::ScrollArea::vertical()
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
@@ -131,6 +154,10 @@ pub fn render_app(
                         );
 
                     let space_below = ui.available_rect_before_wrap();
+
+                    // popup_below_widget
+                    //ui.bel
+                    // is_cmd_palette_opened
 
                     // ---- CLICKING ON EMPTY AREA FOCUSES ON TEXT EDIT ----
                     // TODO migrate to use app actions
