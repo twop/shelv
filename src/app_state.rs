@@ -32,7 +32,8 @@ pub struct Note {
 }
 
 pub struct CmdPalette {
-    pub text: String,
+    pub search: String,
+    pub restoration_cursor: Option<UnOrderedByteSpan>,
 }
 
 pub struct AppState {

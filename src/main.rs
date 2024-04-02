@@ -215,30 +215,43 @@ impl eframe::App for MyApp {
             }
         }
 
-        let should_refocus = ctx.input_mut(|input| {
+        let refocus_on_editor = ctx.input_mut(|input| {
             if input.consume_shortcut(&KeyboardShortcut::new(
                 egui::Modifiers::COMMAND,
                 egui::Key::P,
             )) {
-                if app_state.cmd_palette.is_none() {
-                    println!("showing cmd palette");
-                    app_state.cmd_palette = Some(CmdPalette {
-                        text: "".to_string(),
-                    });
-                    false
-                } else {
-                    println!("hiding cmd palette");
-                    app_state.cmd_palette = None;
-                    true
+                match app_state.cmd_palette.take() {
+                    None => {
+                        println!("showing cmd palette");
+                        app_state.cmd_palette = Some(CmdPalette {
+                            search: "".to_string(),
+                            restoration_cursor: cursor,
+                        });
+                        Some(false)
+                    }
+                    Some(palette) => {
+                        println!("hiding cmd palette");
+                        app_state.cmd_palette = None;
+                        cursor = palette.restoration_cursor;
+                        Some(true)
+                    }
                 }
             } else {
-                false
+                None
             }
         });
 
-        if should_refocus {
-            ctx.memory_mut(|m| m.request_focus(text_edit_id));
-            println!("after requesting focus");
+        match refocus_on_editor {
+            Some(true) => {
+                ctx.memory_mut(|m| m.request_focus(text_edit_id));
+                println!("cmd_palette: focus on editor");
+            }
+
+            Some(false) => {
+                ctx.memory_mut(|m| m.request_focus(Id::new("cmd_palette_text_edit")));
+                println!("cmd_palette: focus on command_palette");
+            }
+            None => (),
         }
 
         let vis_state = AppRenderData {

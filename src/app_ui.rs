@@ -3,8 +3,8 @@ use eframe::{
         self, popup_below_widget,
         text::CCursor,
         text_edit::{CCursorRange, TextEditOutput},
-        Context, Id, KeyboardShortcut, Layout, Painter, RichText, Sense, TopBottomPanel, Ui,
-        Window,
+        Context, Id, KeyboardShortcut, Layout, Painter, RichText, Sense, TextEdit, TopBottomPanel,
+        Ui, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
@@ -13,7 +13,7 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    app_actions::{apply_text_changes, AppAction},
+    app_actions::{apply_text_changes, AppAction, CommandPaletteAction},
     app_state::{AppShortcuts, CmdPalette, ComputedLayout, LayoutParams},
     byte_span::UnOrderedByteSpan,
     picker::{Picker, PickerItem},
@@ -115,7 +115,7 @@ pub fn render_app(
             );
 
             let mut window = egui::Window::new("cmd_palette")
-                // .id(egui::Id::new("demo_window_options")) // required since we change the title
+                // .id(palette_id) // required since we change the title
                 .resizable(false)
                 // .constrain(constrain)
                 .collapsible(false)
@@ -131,8 +131,21 @@ pub fn render_app(
 
             window.show(ctx, |ui| {
                 if let Some(cmd_pallete) = cmd_pallete {
-                    let resp = ui.text_edit_singleline(&mut cmd_pallete.text);
-                    resp.request_focus();
+                    let palette_id = Id::new("cmd_palette_text_edit");
+                    let search_term = TextEdit::singleline(&mut cmd_pallete.search).id(palette_id);
+                    let resp = search_term.show(ui);
+
+                    if resp.response.changed() {
+                        output_actions.push(AppAction::PaletteAction(
+                            CommandPaletteAction::SearchTermChanged(cmd_pallete.search.to_string()),
+                        ))
+                    }
+
+                    if resp.response.lost_focus() {
+                        output_actions
+                            .push(AppAction::PaletteAction(CommandPaletteAction::LostFocus))
+                    }
+                    // resp.request_focus();
                 }
             });
 

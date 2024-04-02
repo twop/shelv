@@ -63,6 +63,12 @@ pub enum AppAction {
     OpenLink(String),
     IncreaseFontSize,
     DecreaseFontSize,
+    PaletteAction(CommandPaletteAction),
+}
+
+pub enum CommandPaletteAction {
+    LostFocus,
+    SearchTermChanged(String),
 }
 
 pub fn process_app_action(
@@ -112,6 +118,21 @@ pub fn process_app_action(
         AppAction::DecreaseFontSize => {
             state.font_scale -= 1;
         }
+        AppAction::PaletteAction(pallete_action) => match pallete_action {
+            CommandPaletteAction::LostFocus => {
+                state.notes[state.selected_note as usize].cursor = state
+                    .cmd_palette
+                    .as_ref()
+                    .and_then(|p| p.restoration_cursor);
+
+                state.cmd_palette = None;
+                ctx.memory_mut(|m| m.request_focus(text_edit_id));
+                println!("cmd palette lost focus");
+            }
+            CommandPaletteAction::SearchTermChanged(term) => {
+                println!("detected term change: {term}");
+            }
+        },
     }
 }
 
