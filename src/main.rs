@@ -2,7 +2,7 @@
 #![feature(let_chains)]
 
 use app_actions::{process_app_action, TextChange};
-use app_state::{AppInitData, AppState, MsgToApp};
+use app_state::{AppInitData, AppState, CmdPalette, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
 use byte_span::UnOrderedByteSpan;
 use global_hotkey::{
@@ -22,7 +22,7 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use std::sync::mpsc::{sync_channel, SyncSender};
 
 use eframe::{
-    egui::{self, Id},
+    egui::{self, Id, KeyboardShortcut},
     epaint::vec2,
     get_value, set_value, CreationContext,
 };
@@ -215,6 +215,45 @@ impl eframe::App for MyApp {
             }
         }
 
+        let refocus_on_editor = ctx.input_mut(|input| {
+            if input.consume_shortcut(&KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::P,
+            )) {
+                match app_state.cmd_palette.take() {
+                    None => {
+                        println!("showing cmd palette");
+                        app_state.cmd_palette = Some(CmdPalette {
+                            search: "".to_string(),
+                            restoration_cursor: cursor,
+                        });
+                        Some(false)
+                    }
+                    Some(palette) => {
+                        println!("hiding cmd palette");
+                        app_state.cmd_palette = None;
+                        cursor = palette.restoration_cursor;
+                        Some(true)
+                    }
+                }
+            } else {
+                None
+            }
+        });
+
+        match refocus_on_editor {
+            Some(true) => {
+                ctx.memory_mut(|m| m.request_focus(text_edit_id));
+                println!("cmd_palette: focus on editor");
+            }
+
+            Some(false) => {
+                ctx.memory_mut(|m| m.request_focus(Id::new("cmd_palette_text_edit")));
+                println!("cmd_palette: focus on command_palette");
+            }
+            None => (),
+        }
+
         let vis_state = AppRenderData {
             selected_note: app_state.selected_note,
             text_edit_id,
@@ -229,6 +268,7 @@ impl eframe::App for MyApp {
         let RenderAppResult(actions, updated_structure, byte_cursor, updated_layout) = render_app(
             text_structure,
             editor_text,
+            &mut app_state.cmd_palette,
             vis_state,
             &app_state.app_shortcuts,
             &app_state.theme,
