@@ -47,6 +47,16 @@ Date: 2024/Apr/4
   - update selected note
   - save back all notes (if needed) + save `state.json` to reflect the latest
 
+### Algorithm
+
+1. read the folder where all files should be located
+2. if not there then read in `eframe::Storage` then dump the persistent model on disk
+3. if some of the files are missing regenerate them, note that we should not clean up files and move to archive folder (yet)
+4. do migration based on `state.json` `version` field
+5. populate hydration model (persistent model)
+6. load the app with it
+7. now on `save` call from egui dump stuff on disk in the desired format
+
 ---
 
 ## Version 2 (next)
