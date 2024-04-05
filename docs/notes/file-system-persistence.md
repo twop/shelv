@@ -4,23 +4,74 @@ Date: 2024/Apr/4
 
 # File system persistence
 
-## Folder structure example:
+## Version 1 (mvp/first release)
+
+### Folder structure example:
+
+- notes
+  - `note-1.md`
+  - `note-2.md`
+  - `note-3.md`
+  - `note-4.md`
+- `state.json`
+- `settings.md`
+
+### `state.json`
+
+```json
+{
+  // important for data migrations
+  "version": 1,
+
+  // timestamp, needed for bi-directional syncing of notes
+  "lastSaved": 63245436,
+
+  // note that it is zero based
+  // and potentially can select other things like "selected": "settings"
+  // TODO possibly encode it as `"selected": "note:1"`
+  "selected": { "note": 0 }
+
+  // TODO think about cursor positions within notes
+}
+```
+
+### How it works
+
+- we don't have sync nor collaboration yet, and no archiving, so `id`s are not needed (yet?)
+- so there is no need to refer to actual notes inside `notes` in `state.json`
+- if there we are missing `note-{1-4}.md` create them at the start, assuming we are still on `"version": 1`
+- TBD if we want to have `selected` field in `state.json` to be able to refer to settings
+- TBD if just a flat folder structure with 6 files is more that enough (e.g. no nesting)
+- when we detect a file change in shelv via a deamon of some sort
+  - refresh content for all notes including settings, note that it may result in re-running live scripts and refreshing settings
+  - update selected note
+  - save back all notes (if needed) + save `state.json` to reflect the latest
+
+---
+
+## Version 2 (next)
+
+### Folder structure example:
 
 - notes
   - `note-1-aty4dsaf.md`
   - `note-2-yu435ga.md`
   - `note-3-fsdffzf23.md`
   - `note-4-fdsxdfbs.md`
+- `settings.md`
 - `state.json`
 - archive
   - `2024-Apr-04-Shelv Technology-osfi7rtps.md`
 
-## `state.json`
+### `state.json`
 
 ```json
 {
   // important for data migrations
-  "version": 1,
+  "version": 2,
+
+  // timestamp, needed for bi-directional syncing of notes
+  "lastSaved": 63245436,
 
   // note that order here matters
   // and potentially can be different from `note-1-{...}`
@@ -36,7 +87,7 @@ Date: 2024/Apr/4
 }
 ```
 
-## Logic
+### Logic
 
 - at the start we generate empty files for each note slot
   - note that we can generate notes on demand as well, for example when we "unlock" more notes
@@ -53,10 +104,9 @@ Date: 2024/Apr/4
   1.  generate a new `id`
   2.  create a file `note-{index}-{id}.md`
   3.  move the archived file to `archive` folder
-      - all archiving rules apply
   4.  modify `state.json`
 
-## Bidirectional sync
+### Bidirectional sync
 
 You should be able to edit `.md` files from VSCode (or via other means) and Shelv should be able to pick them up, including reevaluating `js` code blocks and writing it back.
 
@@ -65,6 +115,6 @@ TBD
 - write confilcts
 - what tools to use for watching files
 
-## Interop with Sync and collaboration
+### Interop with Sync and collaboration
 
 TBD
