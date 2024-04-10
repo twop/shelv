@@ -1,27 +1,27 @@
 use std::{
     fs, io,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 const CURRENT_VERSION: i32 = 2;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-enum NoteFile {
+#[derive(Debug, Clone, PartialEq, Copy, Deserialize, Serialize)]
+pub enum NoteFile {
     Note(u32),
     Settings,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct State {
+pub struct SaveState {
     version: i32,
     last_saved: u128,
-    selected: NoteFile,
+    pub selected: NoteFile,
 }
 
 pub struct RestoredData {
-    pub state: State,
+    pub state: SaveState,
     pub notes: Vec<String>,
     pub settings: String,
 }
@@ -32,38 +32,140 @@ pub struct DataToSave<'a> {
 }
 
 #[derive(Debug)]
-pub enum SaveError {
+pub enum LoadSaveError {
     FileError(io::Error),
     StateSaveError(serde_json::Error),
 }
 
-impl From<io::Error> for SaveError {
+impl From<io::Error> for LoadSaveError {
     fn from(value: io::Error) -> Self {
-        SaveError::FileError(value)
+        LoadSaveError::FileError(value)
     }
 }
 
-impl From<serde_json::Error> for SaveError {
+impl From<serde_json::Error> for LoadSaveError {
     fn from(value: serde_json::Error) -> Self {
-        SaveError::StateSaveError(value)
+        LoadSaveError::StateSaveError(value)
     }
 }
 
 pub enum HydrationResult {
     FolderIsMissing,
     Success(RestoredData),
+    Partial(RestoredData, DataToSave<'static>),
 }
 
-pub fn try_hydrate(number_of_notes: u32, folder: PathBuf) -> Result<HydrationResult, SaveError> {
-    todo!()
+pub fn load_and_migrate<'s>(
+    number_of_notes: u32,
+    v1_save: Option<v1::PersistentState>,
+    folder: &PathBuf,
+) -> RestoredData {
+    let load_result = try_hydrate(number_of_notes, &folder);
+
+    match (load_result, v1_save) {
+        (Ok(HydrationResult::Success(data)), _) => data,
+        (Ok(HydrationResult::FolderIsMissing) | Err(_), v1_save) => {
+            let (to_save, data) = match &v1_save {
+                Some(v1_save) => fn_migrate_from_v1(&v1_save),
+                None => bootstrap(number_of_notes),
+            };
+            try_save(to_save, &folder).unwrap();
+            data
+        }
+        (Ok(HydrationResult::Partial(data, to_save)), _) => {
+            try_save(to_save, &folder).unwrap();
+            data
+        }
+    }
 }
 
-pub fn try_save<'a>(data: DataToSave<'a>, folder: PathBuf) -> Result<State, SaveError> {
+fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult, LoadSaveError> {
+    let true = Path::new(&folder).try_exists()? else {
+        return Ok(HydrationResult::FolderIsMissing);
+    };
+
+    let mut retrieved_files: Vec<(NoteFile, String)> = vec![];
+
+    let mut state: Option<SaveState> = None;
+
+    for entry in fs::read_dir(&folder)? {
+        let entry = entry?;
+        let meta = entry.metadata()?;
+
+        if let (true, Some(file_name)) = (meta.is_file(), entry.file_name().to_str()) {
+            let note_file = match file_name {
+                "settings.md" => Some((NoteFile::Settings, "settings.md")),
+                note if note.starts_with("note-") && note.ends_with(".md") => {
+                    let index: Option<u32> = note["note-".len()..].parse().ok();
+                    index.map(|i| (NoteFile::Note(i), note))
+                }
+                _ => None,
+            };
+
+            if let Some((note_file, file_name)) = note_file {
+                let content = fs::read_to_string(folder.join(file_name))?;
+                retrieved_files.push((note_file, content));
+            }
+
+            if file_name == "state.json" {
+                state = serde_json::from_str(&fs::read_to_string(folder.join(file_name))?).ok();
+            }
+        }
+    }
+
+    let mut missing_notes = vec![];
+
+    let mut notes = vec![];
+
+    for index in 0..number_of_notes {
+        let searched_note_file = NoteFile::Note(index + 1);
+        if let Some((_, note_content)) = retrieved_files
+            .iter()
+            .find(|(note_file, _)| *note_file == searched_note_file)
+        {
+            notes.push(note_content.to_string());
+        } else {
+            notes.push(get_default_note_content(index).to_string());
+            missing_notes.push((searched_note_file, get_default_note_content(index)))
+        }
+    }
+
+    let state_parsed = state.is_some();
+
+    // NOTE that we don't do any version checks yet
+    let state = state.unwrap_or_else(|| SaveState {
+        version: CURRENT_VERSION,
+        last_saved: get_current_utc_timestamp(),
+        selected: NoteFile::Note(0),
+    });
+
+    let selected = state.selected;
+
+    let restored = RestoredData {
+        state,
+        notes,
+        settings: "".to_string(),
+    };
+
+    if !state_parsed || !missing_notes.is_empty() {
+        Ok(HydrationResult::Partial(
+            restored,
+            DataToSave {
+                files: missing_notes,
+                selected,
+            },
+        ))
+    } else {
+        Ok(HydrationResult::Success(restored))
+    }
+}
+
+pub fn try_save<'a>(data: DataToSave<'a>, folder: &PathBuf) -> Result<SaveState, LoadSaveError> {
     let DataToSave { files, selected } = data;
 
     fs::create_dir_all(folder)?;
 
-    let state = State {
+    let state = SaveState {
         version: CURRENT_VERSION,
         last_saved: get_current_utc_timestamp(),
         selected,
@@ -95,7 +197,9 @@ fn get_current_utc_timestamp() -> u128 {
     now
 }
 
-pub fn fn_migrate_from_v1(old_state: &v1::PersistentState) -> (DataToSave, RestoredData) {
+pub fn fn_migrate_from_v1<'s>(
+    old_state: &'s v1::PersistentState,
+) -> (DataToSave<'s>, RestoredData) {
     let selected = NoteFile::Note(old_state.selected_note);
     let to_save = DataToSave {
         files: old_state
@@ -110,7 +214,7 @@ pub fn fn_migrate_from_v1(old_state: &v1::PersistentState) -> (DataToSave, Resto
     };
 
     let restored_data = RestoredData {
-        state: State {
+        state: SaveState {
             version: CURRENT_VERSION,
             last_saved: get_current_utc_timestamp(),
             selected,
@@ -129,7 +233,12 @@ pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
         // TODO fill out welcome notes
         files: (0..number_of_notes)
             .into_iter()
-            .map(|index| (NoteFile::Note(index as u32), ""))
+            .map(|index| {
+                (
+                    NoteFile::Note(index as u32),
+                    get_default_note_content(index),
+                )
+            })
             // TODO settings note
             // .chain([(NoteFile::Settings, "")])
             .collect(),
@@ -138,14 +247,15 @@ pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
 
     // TODO fill out welcome notes
     let restored_data = RestoredData {
-        state: State {
+        state: SaveState {
             version: CURRENT_VERSION,
             last_saved: get_current_utc_timestamp(),
             selected,
         },
         notes: (0..number_of_notes)
             .into_iter()
-            .map(|_| "".to_owned())
+            .map(get_default_note_content)
+            .map(|s| s.to_string())
             .collect(),
         // TODO settings note
         settings: "".to_string(),
@@ -154,8 +264,12 @@ pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
     (to_save, restored_data)
 }
 
+fn get_default_note_content(note_index: u32) -> &'static str {
+    ""
+}
+
 // ---------------------- older versions --------------
-mod v1 {
+pub mod v1 {
     use serde::{Deserialize, Serialize};
     #[derive(Debug, Deserialize, Serialize)]
     pub struct PersistentState {

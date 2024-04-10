@@ -21,7 +21,7 @@ use crate::{
         Edge, Instruction, InstructionCondition, MarkdownShortcutCommand, MdAnnotationShortcut,
         Source,
     },
-    persistent_state::PersistentState,
+    persistent_state::{DataToSave, NoteFile, RestoredData},
     text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
 };
@@ -149,10 +149,24 @@ impl AppState {
             persistent_state,
         } = init_data;
 
+        let RestoredData {
+            state: saved_state,
+            notes,
+            settings: _,
+        } = persistent_state;
+
+        let notes: Vec<Note> = notes
+            .into_iter()
+            .map(|text| Note { text, cursor: None })
+            .collect();
+
+        let selected_note = match saved_state.selected {
+            NoteFile::Note(index) => index,
+            NoteFile::Settings => 0,
+        };
+
         use Instruction::*;
         use InstructionCondition::*;
-
-        let notes_count = 4;
 
         let app_shortcuts = AppShortcuts {
             bold: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::B),
@@ -169,7 +183,7 @@ impl AppState {
             increase_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::PlusEquals),
             decrease_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::Minus),
 
-            switch_to_note: (0..notes_count)
+            switch_to_note: (0..notes.len())
                 .map(|index| {
                     KeyboardShortcut::new(
                         Modifiers::COMMAND,
@@ -178,22 +192,6 @@ impl AppState {
                 })
                 .collect(),
         };
-
-        let (selected_note, mut notes) = persistent_state
-            .map(|s| (s.selected_note, s.notes))
-            .unwrap_or_else(|| (0, (0..notes_count).map(|i| format!("{i}")).collect()));
-
-        let restored_notes_count = notes.len();
-        if restored_notes_count != notes_count {
-            for i in restored_notes_count..notes_count {
-                notes.push(format!("{i}"));
-            }
-        }
-
-        let notes: Vec<Note> = notes
-            .into_iter()
-            .map(|text| Note { text, cursor: None })
-            .collect();
 
         let text_structure = TextStructure::new(&notes[selected_note as usize].text);
 
@@ -366,12 +364,19 @@ impl AppState {
         }
     }
 
-    pub fn should_persist(&mut self) -> Option<PersistentState> {
+    pub fn should_persist<'s>(&'s mut self) -> Option<DataToSave> {
         if self.save_to_storage {
             self.save_to_storage = false;
-            Some(PersistentState {
-                notes: self.notes.iter().map(|n| n.text.clone()).collect(),
-                selected_note: self.selected_note,
+            Some(DataToSave {
+                // notes: self.notes.iter().map(|n| n.text.clone()).collect(),
+                // selected_note: self.selected_note,
+                files: self
+                    .notes
+                    .iter()
+                    .enumerate()
+                    .map(|(i, n)| (NoteFile::Note(i as u32), n.text.as_str()))
+                    .collect(),
+                selected: NoteFile::Note(self.selected_note),
             })
         } else {
             None
@@ -382,7 +387,7 @@ impl AppState {
 pub struct AppInitData {
     pub theme: AppTheme,
     pub msg_queue: Receiver<MsgToApp>,
-    pub persistent_state: Option<PersistentState>,
+    pub persistent_state: RestoredData,
 }
 
 fn number_to_key(key: u8) -> Option<Key> {

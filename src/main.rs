@@ -12,14 +12,17 @@ use global_hotkey::{
 
 use image::ImageFormat;
 
-use persistent_state::PersistentState;
+use persistent_state::{load_and_migrate, try_save, v1};
 use scripting::execute_live_scripts;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 // use tray_item::TrayItem;
 
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::{
+    path::PathBuf,
+    sync::mpsc::{sync_channel, SyncSender},
+};
 
 use eframe::{
     egui::{self, Id},
@@ -48,6 +51,7 @@ pub struct MyApp {
     hotkeys_manager: GlobalHotKeyManager,
     tray: TrayIcon,
     msg_queue: SyncSender<MsgToApp>,
+    persistence_folder: PathBuf,
 }
 
 impl MyApp {
@@ -96,8 +100,15 @@ impl MyApp {
             .build()
             .unwrap();
 
-        let persistent_state: Option<PersistentState> =
+        let v1_save: Option<v1::PersistentState> =
             cc.storage.and_then(|s| get_value(s, "persistent_state"));
+
+        let persistence_folder = directories_next::ProjectDirs::from("app", "", "Shelv")
+            .map(|proj_dirs| proj_dirs.data_dir().to_path_buf())
+            .unwrap();
+
+        let number_of_notes = 4;
+        let persistent_state = load_and_migrate(number_of_notes, v1_save, &persistence_folder);
 
         Self {
             state: AppState::new(AppInitData {
@@ -108,6 +119,7 @@ impl MyApp {
             hotkeys_manager,
             tray: tray_icon,
             msg_queue: msg_queue_tx,
+            persistence_folder,
         }
     }
 }
@@ -135,7 +147,7 @@ impl eframe::App for MyApp {
                     app_state.hidden = !app_state.hidden;
 
                     if app_state.hidden {
-                        hide_app();
+                        hide_app_on_macos();
                     } else {
                         frame.set_visible(!app_state.hidden);
                         frame.focus();
@@ -154,7 +166,7 @@ impl eframe::App for MyApp {
             } else {
                 println!("lost focus");
                 app_state.hidden = true;
-                hide_app();
+                hide_app_on_macos();
             }
             app_state.prev_focused = is_frame_actually_focused;
         }
@@ -259,9 +271,11 @@ impl eframe::App for MyApp {
         false
     }
 
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+    fn save(&mut self, _torage: &mut dyn eframe::Storage) {
         if let Some(persistent_state) = self.state.should_persist() {
-            set_value(storage, "persistent_state", &persistent_state);
+            // set_value(storage, "persistent_state", &persistent_state);
+
+            try_save(persistent_state, &self.persistence_folder).unwrap();
         }
     }
 }
@@ -304,7 +318,7 @@ fn main() {
     eframe::run_native("Shelv", options, Box::new(|cc| Box::new(MyApp::new(cc)))).unwrap();
 }
 
-fn hide_app() {
+fn hide_app_on_macos() {
     // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
     use objc2::rc::{Id, Shared};
     use objc2::runtime::Object;
