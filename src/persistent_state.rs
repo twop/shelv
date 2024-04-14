@@ -16,7 +16,7 @@ pub enum NoteFile {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SaveState {
     version: i32,
-    last_saved: u128,
+    pub last_saved: u128,
     pub selected: NoteFile,
 }
 
@@ -26,6 +26,7 @@ pub struct RestoredData {
     pub settings: String,
 }
 
+#[derive(Debug)]
 pub struct DataToSave<'a> {
     pub files: Vec<(NoteFile, &'a str)>,
     pub selected: NoteFile,
@@ -81,6 +82,7 @@ pub fn load_and_migrate<'s>(
 
 fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult, LoadSaveError> {
     let true = Path::new(&folder).try_exists()? else {
+        println!("try_hydrate: {} is missing", folder.to_string_lossy());
         return Ok(HydrationResult::FolderIsMissing);
     };
 
@@ -93,22 +95,19 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
         let meta = entry.metadata()?;
 
         if let (true, Some(file_name)) = (meta.is_file(), entry.file_name().to_str()) {
-            let note_file = match file_name {
-                "settings.md" => Some((NoteFile::Settings, "settings.md")),
-                note if note.starts_with("note-") && note.ends_with(".md") => {
-                    let index: Option<u32> = note["note-".len()..].parse().ok();
-                    index.map(|i| (NoteFile::Note(i), note))
-                }
-                _ => None,
-            };
+            println!("try_hydrate: processing {file_name}");
+
+            let note_file = extract_note_file(file_name);
 
             if let Some((note_file, file_name)) = note_file {
                 let content = fs::read_to_string(folder.join(file_name))?;
+                println!("try_hydrate: detected file {file_name} as {note_file:?}");
                 retrieved_files.push((note_file, content));
             }
 
             if file_name == "state.json" {
                 state = serde_json::from_str(&fs::read_to_string(folder.join(file_name))?).ok();
+                println!("try_hydrate: read and parsed state.json");
             }
         }
     }
@@ -118,7 +117,7 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
     let mut notes = vec![];
 
     for index in 0..number_of_notes {
-        let searched_note_file = NoteFile::Note(index + 1);
+        let searched_note_file = NoteFile::Note(index);
         if let Some((_, note_content)) = retrieved_files
             .iter()
             .find(|(note_file, _)| *note_file == searched_note_file)
@@ -126,6 +125,7 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
             notes.push(note_content.to_string());
         } else {
             notes.push(get_default_note_content(index).to_string());
+            println!("try_hydrate: detected missing {searched_note_file:?}");
             missing_notes.push((searched_note_file, get_default_note_content(index)))
         }
     }
@@ -148,6 +148,10 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
     };
 
     if !state_parsed || !missing_notes.is_empty() {
+        println!(
+            "try_hydrate: partial restoration, state_parsed={state_parsed}, missing_notes={}",
+            !missing_notes.is_empty()
+        );
         Ok(HydrationResult::Partial(
             restored,
             DataToSave {
@@ -156,7 +160,20 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
             },
         ))
     } else {
+        println!("try_hydrate: restored in full");
         Ok(HydrationResult::Success(restored))
+    }
+}
+
+pub fn extract_note_file(file_name: &str) -> Option<(NoteFile, &str)> {
+    match file_name {
+        "settings.md" => Some((NoteFile::Settings, "settings.md")),
+        note if note.starts_with("note-") && note.ends_with(".md") => note
+            .strip_prefix("note-")
+            .and_then(|s| s.strip_suffix(".md"))
+            .and_then(|s| s.parse().ok())
+            .map(|i: u32| (NoteFile::Note(i - 1), note)),
+        _ => None,
     }
 }
 
@@ -190,11 +207,14 @@ pub fn try_save<'a>(data: DataToSave<'a>, folder: &PathBuf) -> Result<SaveState,
 
 fn get_current_utc_timestamp() -> u128 {
     let start = SystemTime::now();
-    let now = start
+    get_utc_timestamp(start)
+}
+
+pub fn get_utc_timestamp(start: SystemTime) -> u128 {
+    start
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
-        .unwrap_or(0);
-    now
+        .unwrap_or(0)
 }
 
 pub fn fn_migrate_from_v1<'s>(

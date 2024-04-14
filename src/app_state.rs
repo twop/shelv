@@ -1,5 +1,6 @@
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
+    path::PathBuf,
     sync::{mpsc::Receiver, Arc},
 };
 
@@ -8,6 +9,7 @@ use eframe::{
     epaint::Galley,
 };
 use pulldown_cmark::HeadingLevel;
+use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
@@ -31,13 +33,19 @@ pub struct Note {
     pub cursor: Option<UnOrderedByteSpan>,
 }
 
+pub enum UnsavedChange {
+    NoteContentChanged(NoteFile),
+    SelectionChanged,
+    LastUpdated,
+}
+
 pub struct AppState {
     // -----this is persistent model-------
     pub notes: Vec<Note>,
     pub selected_note: u32,
     // ------------------------------------
     // -------- emphemeral state ----------
-    pub save_to_storage: bool,
+    pub unsaved_changes: SmallVec<[UnsavedChange; 2]>,
     pub scheduled_script_run_version: Option<u64>,
 
     // ------------------------------------
@@ -133,6 +141,7 @@ impl ComputedLayout {
 #[derive(Debug)]
 pub enum MsgToApp {
     ToggleVisibility,
+    NoteFileChanged(NoteFile, PathBuf),
 }
 
 // struct MdAnnotationShortcut {
@@ -345,7 +354,7 @@ impl AppState {
 
         Self {
             is_settings_opened: false,
-            save_to_storage: false,
+            unsaved_changes: Default::default(),
             scheduled_script_run_version: None,
             theme,
             notes,
@@ -365,16 +374,18 @@ impl AppState {
     }
 
     pub fn should_persist<'s>(&'s mut self) -> Option<DataToSave> {
-        if self.save_to_storage {
-            self.save_to_storage = false;
+        if !self.unsaved_changes.is_empty() {
+            let changes: SmallVec<[_; 4]> = self.unsaved_changes.drain(..).collect();
             Some(DataToSave {
-                // notes: self.notes.iter().map(|n| n.text.clone()).collect(),
-                // selected_note: self.selected_note,
-                files: self
-                    .notes
-                    .iter()
-                    .enumerate()
-                    .map(|(i, n)| (NoteFile::Note(i as u32), n.text.as_str()))
+                files: changes
+                    .into_iter()
+                    .filter_map(|change| match change {
+                        UnsavedChange::NoteContentChanged(NoteFile::Note(index)) => self
+                            .notes
+                            .get(index as usize)
+                            .map(|n| (NoteFile::Note(index), n.text.as_str())),
+                        _ => None,
+                    })
                     .collect(),
                 selected: NoteFile::Note(self.selected_note),
             })
