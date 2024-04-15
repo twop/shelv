@@ -127,7 +127,7 @@ impl MyApp {
         let mut hotwatch = Hotwatch::new().expect("hotwatch failed to initialize!");
         hotwatch
             .watch(&persistence_folder, move |event: Event| {
-                println!("\nhotwatch event\n{:#?}\n", event);
+                // println!("\nhotwatch event\n{:#?}\n", event);
                 if let EventKind::Modify(ModifyKind::Data(DataChange::Content)) = event.kind {
                     let filter_map: SmallVec<[_; 4]> = event
                         .paths
