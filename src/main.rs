@@ -21,11 +21,11 @@ use smallvec::SmallVec;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
-// use tray_item::TrayItem;
+// use tray_item::TrayItem;G1
 
 use std::{
     fs::{self, File},
-    io::Read,
+    io::{self, Read},
     path::PathBuf,
     sync::mpsc::{sync_channel, SyncSender},
 };
@@ -190,20 +190,21 @@ impl eframe::App for MyApp {
                 }
                 MsgToApp::NoteFileChanged(note_file, path) => {
                     if let NoteFile::Note(index) = &note_file {
-                        println!("change detected, {note_file:?} at {path:?}");
-                        let mut file = File::open(path).unwrap();
-                        let meta = file.metadata().unwrap();
-                        let modified_at = meta.modified().unwrap();
-                        if get_utc_timestamp(modified_at) > self.last_saved + 10 {
-                            println!(
-                                "updating note {note_file:?}, \nlast_saved={}\nmodified_at={}",
-                                self.last_saved,
-                                get_utc_timestamp(modified_at)
-                            );
-                            let mut content = String::new();
-                            file.read_to_string(&mut content).unwrap();
-                            app_state.notes[*index as usize].text = content;
-                            app_state.unsaved_changes.push(UnsavedChange::LastUpdated);
+                        // println!("change detected, {note_file:?} at {path:?}");
+                        let last_saved = self.last_saved;
+
+                        match try_read_note_if_newer(path, last_saved) {
+                            Ok(Some(note_content)) => {
+                                app_state.notes[*index as usize].text = note_content;
+                                app_state.unsaved_changes.push(UnsavedChange::LastUpdated);
+                            }
+                            Ok(None) => {
+                                // no updates needed we already have the newest version
+                            }
+                            Err(err) => {
+                                // failed to read note file
+                                println!("failed to read {path:#?}, err={err:#?}");
+                            }
                         }
                     }
                 }
@@ -350,9 +351,35 @@ impl eframe::App for MyApp {
             //
             println!("\npersisted state: {persistent_state:#?}\n");
 
-            let save_state = try_save(persistent_state, &self.persistence_folder).unwrap();
-            self.last_saved = save_state.last_saved;
+            match try_save(persistent_state, &self.persistence_folder) {
+                Ok(save_state) => {
+                    self.last_saved = save_state.last_saved;
+                }
+                Err(err) => {
+                    println!("failed to persist state with err={err:#?}")
+                }
+            };
         }
+    }
+}
+
+fn try_read_note_if_newer(path: PathBuf, last_saved: u128) -> Result<Option<String>, io::Error> {
+    let mut file = File::open(path)?;
+    let meta = file.metadata()?;
+    let modified_at = meta.modified()?;
+
+    if get_utc_timestamp(modified_at) > last_saved + 10 {
+        // println!(
+        //     "updating note {note_file:?}, \nlast_saved={}\nmodified_at={}",
+        //     self.last_saved,
+        //     get_utc_timestamp(modified_at)
+        // );
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+
+        Ok(Some(content))
+    } else {
+        Ok(None)
     }
 }
 

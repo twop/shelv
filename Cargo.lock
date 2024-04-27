@@ -3781,6 +3781,7 @@ dependencies = [
  "global-hotkey",
  "hotwatch",
  "image",
+ "itertools",
  "linkify",
  "objc2",
  "pulldown-cmark",

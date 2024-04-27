@@ -7,7 +7,7 @@ const CURRENT_VERSION: i32 = 2;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Copy, Deserialize, Serialize)]
+#[derive(Debug, Hash, Clone, PartialEq, Eq, Copy, Deserialize, Serialize)]
 pub enum NoteFile {
     Note(u32),
     Settings,

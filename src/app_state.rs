@@ -8,6 +8,7 @@ use eframe::{
     egui::{self, Key, KeyboardShortcut, Modifiers, Ui},
     epaint::Galley,
 };
+use itertools::Itertools;
 use pulldown_cmark::HeadingLevel;
 use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
@@ -33,6 +34,7 @@ pub struct Note {
     pub cursor: Option<UnOrderedByteSpan>,
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum UnsavedChange {
     NoteContentChanged(NoteFile),
     SelectionChanged,
@@ -375,7 +377,7 @@ impl AppState {
 
     pub fn should_persist<'s>(&'s mut self) -> Option<DataToSave> {
         if !self.unsaved_changes.is_empty() {
-            let changes: SmallVec<[_; 4]> = self.unsaved_changes.drain(..).collect();
+            let changes: SmallVec<[_; 4]> = self.unsaved_changes.drain(..).unique().collect();
             Some(DataToSave {
                 files: changes
                     .into_iter()
