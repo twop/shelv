@@ -57,9 +57,14 @@ Date: 2024/Apr/4
 6. load the app with it
 7. now on `save` call from egui dump stuff on disk in the desired format
 
+### Links
+
+- https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html#//apple_ref/doc/uid/TP40010672-CH2-SW1
+- https://docs.rs/directories-next/2.0.0/directories_next/struct.ProjectDirs.html#method.data_dir
+
 ---
 
-## Version 2 (next)
+## Version 2 (next/future)
 
 ### Folder structure example:
 
