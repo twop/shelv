@@ -147,7 +147,10 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
         settings: "".to_string(),
     };
 
-    if !state_parsed || !missing_notes.is_empty() {
+    if state_parsed && missing_notes.is_empty() {
+        println!("try_hydrate: restored in full");
+        Ok(HydrationResult::Success(restored))
+    } else {
         println!(
             "try_hydrate: partial restoration, state_parsed={state_parsed}, missing_notes={}",
             !missing_notes.is_empty()
@@ -159,9 +162,6 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
                 selected,
             },
         ))
-    } else {
-        println!("try_hydrate: restored in full");
-        Ok(HydrationResult::Success(restored))
     }
 }
 

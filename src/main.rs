@@ -193,7 +193,7 @@ impl eframe::App for MyApp {
                         // println!("change detected, {note_file:?} at {path:?}");
                         let last_saved = self.last_saved;
 
-                        match try_read_note_if_newer(path, last_saved) {
+                        match try_read_note_if_newer(&path, last_saved) {
                             Ok(Some(note_content)) => {
                                 app_state.notes[*index as usize].text = note_content;
                                 app_state.unsaved_changes.push(UnsavedChange::LastUpdated);
@@ -345,7 +345,7 @@ impl eframe::App for MyApp {
         std::time::Duration::from_secs(1)
     }
 
-    fn save(&mut self, _torage: &mut dyn eframe::Storage) {
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
         if let Some(persistent_state) = self.state.should_persist() {
             // set_value(storage, "persistent_state", &persistent_state);
             //
@@ -363,7 +363,7 @@ impl eframe::App for MyApp {
     }
 }
 
-fn try_read_note_if_newer(path: PathBuf, last_saved: u128) -> Result<Option<String>, io::Error> {
+fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<String>, io::Error> {
     let mut file = File::open(path)?;
     let meta = file.metadata()?;
     let modified_at = meta.modified()?;
