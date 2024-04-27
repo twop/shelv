@@ -1,5 +1,6 @@
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
+    path::PathBuf,
     sync::{mpsc::Receiver, Arc},
 };
 
@@ -7,7 +8,9 @@ use eframe::{
     egui::{self, Key, KeyboardShortcut, Modifiers, Ui},
     epaint::Galley,
 };
+use itertools::Itertools;
 use pulldown_cmark::HeadingLevel;
+use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
@@ -21,7 +24,7 @@ use crate::{
         Edge, Instruction, InstructionCondition, MarkdownShortcutCommand, MdAnnotationShortcut,
         Source,
     },
-    persistent_state::PersistentState,
+    persistent_state::{DataToSave, NoteFile, RestoredData},
     text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
 };
@@ -31,13 +34,20 @@ pub struct Note {
     pub cursor: Option<UnOrderedByteSpan>,
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum UnsavedChange {
+    NoteContentChanged(NoteFile),
+    SelectionChanged,
+    LastUpdated,
+}
+
 pub struct AppState {
     // -----this is persistent model-------
     pub notes: Vec<Note>,
     pub selected_note: u32,
     // ------------------------------------
     // -------- emphemeral state ----------
-    pub save_to_storage: bool,
+    pub unsaved_changes: SmallVec<[UnsavedChange; 2]>,
     pub scheduled_script_run_version: Option<u64>,
 
     // ------------------------------------
@@ -133,6 +143,7 @@ impl ComputedLayout {
 #[derive(Debug)]
 pub enum MsgToApp {
     ToggleVisibility,
+    NoteFileChanged(NoteFile, PathBuf),
 }
 
 // struct MdAnnotationShortcut {
@@ -149,10 +160,24 @@ impl AppState {
             persistent_state,
         } = init_data;
 
+        let RestoredData {
+            state: saved_state,
+            notes,
+            settings: _,
+        } = persistent_state;
+
+        let notes: Vec<Note> = notes
+            .into_iter()
+            .map(|text| Note { text, cursor: None })
+            .collect();
+
+        let selected_note = match saved_state.selected {
+            NoteFile::Note(index) => index,
+            NoteFile::Settings => 0,
+        };
+
         use Instruction::*;
         use InstructionCondition::*;
-
-        let notes_count = 4;
 
         let app_shortcuts = AppShortcuts {
             bold: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::B),
@@ -169,7 +194,7 @@ impl AppState {
             increase_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::PlusEquals),
             decrease_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::Minus),
 
-            switch_to_note: (0..notes_count)
+            switch_to_note: (0..notes.len())
                 .map(|index| {
                     KeyboardShortcut::new(
                         Modifiers::COMMAND,
@@ -178,22 +203,6 @@ impl AppState {
                 })
                 .collect(),
         };
-
-        let (selected_note, mut notes) = persistent_state
-            .map(|s| (s.selected_note, s.notes))
-            .unwrap_or_else(|| (0, (0..notes_count).map(|i| format!("{i}")).collect()));
-
-        let restored_notes_count = notes.len();
-        if restored_notes_count != notes_count {
-            for i in restored_notes_count..notes_count {
-                notes.push(format!("{i}"));
-            }
-        }
-
-        let notes: Vec<Note> = notes
-            .into_iter()
-            .map(|text| Note { text, cursor: None })
-            .collect();
 
         let text_structure = TextStructure::new(&notes[selected_note as usize].text);
 
@@ -347,7 +356,7 @@ impl AppState {
 
         Self {
             is_settings_opened: false,
-            save_to_storage: false,
+            unsaved_changes: Default::default(),
             scheduled_script_run_version: None,
             theme,
             notes,
@@ -366,12 +375,21 @@ impl AppState {
         }
     }
 
-    pub fn should_persist(&mut self) -> Option<PersistentState> {
-        if self.save_to_storage {
-            self.save_to_storage = false;
-            Some(PersistentState {
-                notes: self.notes.iter().map(|n| n.text.clone()).collect(),
-                selected_note: self.selected_note,
+    pub fn should_persist<'s>(&'s mut self) -> Option<DataToSave> {
+        if !self.unsaved_changes.is_empty() {
+            let changes: SmallVec<[_; 4]> = self.unsaved_changes.drain(..).unique().collect();
+            Some(DataToSave {
+                files: changes
+                    .into_iter()
+                    .filter_map(|change| match change {
+                        UnsavedChange::NoteContentChanged(NoteFile::Note(index)) => self
+                            .notes
+                            .get(index as usize)
+                            .map(|n| (NoteFile::Note(index), n.text.as_str())),
+                        _ => None,
+                    })
+                    .collect(),
+                selected: NoteFile::Note(self.selected_note),
             })
         } else {
             None
@@ -382,7 +400,7 @@ impl AppState {
 pub struct AppInitData {
     pub theme: AppTheme,
     pub msg_queue: Receiver<MsgToApp>,
-    pub persistent_state: Option<PersistentState>,
+    pub persistent_state: RestoredData,
 }
 
 fn number_to_key(key: u8) -> Option<Key> {

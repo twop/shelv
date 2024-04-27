@@ -3,7 +3,7 @@ use eframe::egui::{Context, Id, KeyboardShortcut, Modifiers, OpenUrl};
 use smallvec::SmallVec;
 
 use crate::{
-    app_state::AppState,
+    app_state::{AppState, UnsavedChange},
     byte_span::{ByteSpan, RangeRelation, UnOrderedByteSpan},
     commands::EditorCommand,
     text_structure::{ListDesc, SpanKind, SpanMeta, TextStructure},
@@ -77,7 +77,7 @@ pub fn process_app_action(
             via_shortcut,
         } => {
             if index != state.selected_note {
-                state.save_to_storage = true;
+                state.unsaved_changes.push(UnsavedChange::SelectionChanged);
 
                 if via_shortcut {
                     let note = &mut state.notes[index as usize];

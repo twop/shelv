@@ -10,16 +10,25 @@ use global_hotkey::{
     GlobalHotKeyEvent, GlobalHotKeyManager,
 };
 
+use hotwatch::{
+    notify::event::{DataChange, ModifyKind},
+    Event, EventKind, Hotwatch,
+};
 use image::ImageFormat;
-
-use persistent_state::PersistentState;
+use persistent_state::{load_and_migrate, try_save, v1, NoteFile};
 use scripting::execute_live_scripts;
+use smallvec::SmallVec;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
-// use tray_item::TrayItem;
+// use tray_item::TrayItem;G1
 
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::{
+    fs::{self, File},
+    io::{self, Read},
+    path::PathBuf,
+    sync::mpsc::{sync_channel, SyncSender},
+};
 
 use eframe::{
     egui::{self, Id},
@@ -27,7 +36,11 @@ use eframe::{
     get_value, set_value, CreationContext,
 };
 
-use crate::app_actions::apply_text_changes;
+use crate::{
+    app_actions::apply_text_changes,
+    app_state::UnsavedChange,
+    persistent_state::{extract_note_file, get_utc_timestamp},
+};
 
 mod app_actions;
 mod app_state;
@@ -45,9 +58,12 @@ mod theme;
 
 pub struct MyApp {
     state: AppState,
+    last_saved: u128,
+    hotwatch: Hotwatch,
     hotkeys_manager: GlobalHotKeyManager,
     tray: TrayIcon,
     msg_queue: SyncSender<MsgToApp>,
+    persistence_folder: PathBuf,
 }
 
 impl MyApp {
@@ -96,10 +112,49 @@ impl MyApp {
             .build()
             .unwrap();
 
-        let persistent_state: Option<PersistentState> =
+        let v1_save: Option<v1::PersistentState> =
             cc.storage.and_then(|s| get_value(s, "persistent_state"));
 
+        let persistence_folder = directories_next::ProjectDirs::from("app", "", "Shelv")
+            .map(|proj_dirs| proj_dirs.data_dir().to_path_buf())
+            .unwrap();
+
+        let number_of_notes = 4;
+        let persistent_state = load_and_migrate(number_of_notes, v1_save, &persistence_folder);
+
+        let sender = msg_queue_tx.clone();
+        let ctx = cc.egui_ctx.clone();
+        let mut hotwatch = Hotwatch::new().expect("hotwatch failed to initialize!");
+        hotwatch
+            .watch(&persistence_folder, move |event: Event| {
+                // println!("\nhotwatch event\n{:#?}\n", event);
+                if let EventKind::Modify(ModifyKind::Data(DataChange::Content)) = event.kind {
+                    let filter_map: SmallVec<[_; 4]> = event
+                        .paths
+                        .iter()
+                        .filter_map(|p| {
+                            p.file_name()
+                                .and_then(|f| f.to_str())
+                                .and_then(extract_note_file)
+                                .map(|(note_file, _)| (note_file, p))
+                        })
+                        .collect();
+
+                    let has_updates = !filter_map.is_empty();
+                    for (note_file, path) in filter_map {
+                        sender
+                            .send(MsgToApp::NoteFileChanged(note_file, path.clone()))
+                            .unwrap();
+                    }
+                    if has_updates {
+                        ctx.request_repaint();
+                    }
+                }
+            })
+            .expect("failed to watch file!");
+
         Self {
+            last_saved: persistent_state.state.last_saved,
             state: AppState::new(AppInitData {
                 theme,
                 msg_queue: msg_queue_rx,
@@ -108,6 +163,8 @@ impl MyApp {
             hotkeys_manager,
             tray: tray_icon,
             msg_queue: msg_queue_tx,
+            persistence_folder,
+            hotwatch,
         }
     }
 }
@@ -117,6 +174,43 @@ impl eframe::App for MyApp {
         let text_edit_id = Id::new("text_edit");
 
         let app_state = &mut self.state;
+        // handling message queue
+        while let Ok(msg) = app_state.msg_queue.try_recv() {
+            match msg {
+                MsgToApp::ToggleVisibility => {
+                    app_state.hidden = !app_state.hidden;
+
+                    if app_state.hidden {
+                        hide_app_on_macos();
+                    } else {
+                        frame.set_visible(!app_state.hidden);
+                        frame.focus();
+                        ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+                    }
+                }
+                MsgToApp::NoteFileChanged(note_file, path) => {
+                    if let NoteFile::Note(index) = &note_file {
+                        // println!("change detected, {note_file:?} at {path:?}");
+                        let last_saved = self.last_saved;
+
+                        match try_read_note_if_newer(&path, last_saved) {
+                            Ok(Some(note_content)) => {
+                                app_state.notes[*index as usize].text = note_content;
+                                app_state.unsaved_changes.push(UnsavedChange::LastUpdated);
+                            }
+                            Ok(None) => {
+                                // no updates needed we already have the newest version
+                            }
+                            Err(err) => {
+                                // failed to read note file
+                                println!("failed to read {path:#?}, err={err:#?}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let note = &mut app_state.notes[app_state.selected_note as usize];
         let mut cursor: Option<UnOrderedByteSpan> = note.cursor;
 
@@ -128,23 +222,6 @@ impl eframe::App for MyApp {
 
         let orignal_text_version = text_structure.opaque_version();
 
-        // handling message queue
-        while let Ok(msg) = app_state.msg_queue.try_recv() {
-            match msg {
-                MsgToApp::ToggleVisibility => {
-                    app_state.hidden = !app_state.hidden;
-
-                    if app_state.hidden {
-                        hide_app();
-                    } else {
-                        frame.set_visible(!app_state.hidden);
-                        frame.focus();
-                        ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-                    }
-                }
-            }
-        }
-
         // handling focus lost
         let is_frame_actually_focused = frame.info().window_info.focused;
         if app_state.prev_focused != is_frame_actually_focused {
@@ -154,7 +231,7 @@ impl eframe::App for MyApp {
             } else {
                 println!("lost focus");
                 app_state.hidden = true;
-                hide_app();
+                hide_app_on_macos();
             }
             app_state.prev_focused = is_frame_actually_focused;
         }
@@ -249,7 +326,12 @@ impl eframe::App for MyApp {
             .map(|s| s.opaque_version());
 
         if updated_structure_version != Some(orignal_text_version) {
-            app_state.save_to_storage = true;
+            app_state
+                .unsaved_changes
+                .push(UnsavedChange::NoteContentChanged(NoteFile::Note(
+                    app_state.selected_note,
+                )));
+
             app_state.scheduled_script_run_version = updated_structure_version;
         }
     }
@@ -259,10 +341,45 @@ impl eframe::App for MyApp {
         false
     }
 
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+    fn auto_save_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(1)
+    }
+
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
         if let Some(persistent_state) = self.state.should_persist() {
-            set_value(storage, "persistent_state", &persistent_state);
+            // set_value(storage, "persistent_state", &persistent_state);
+            //
+            println!("\npersisted state: {persistent_state:#?}\n");
+
+            match try_save(persistent_state, &self.persistence_folder) {
+                Ok(save_state) => {
+                    self.last_saved = save_state.last_saved;
+                }
+                Err(err) => {
+                    println!("failed to persist state with err={err:#?}")
+                }
+            };
         }
+    }
+}
+
+fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<String>, io::Error> {
+    let mut file = File::open(path)?;
+    let meta = file.metadata()?;
+    let modified_at = meta.modified()?;
+
+    if get_utc_timestamp(modified_at) > last_saved + 10 {
+        // println!(
+        //     "updating note {note_file:?}, \nlast_saved={}\nmodified_at={}",
+        //     self.last_saved,
+        //     get_utc_timestamp(modified_at)
+        // );
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+
+        Ok(Some(content))
+    } else {
+        Ok(None)
     }
 }
 
@@ -304,7 +421,7 @@ fn main() {
     eframe::run_native("Shelv", options, Box::new(|cc| Box::new(MyApp::new(cc)))).unwrap();
 }
 
-fn hide_app() {
+fn hide_app_on_macos() {
     // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
     use objc2::rc::{Id, Shared};
     use objc2::runtime::Object;
