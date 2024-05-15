@@ -361,6 +361,10 @@ fn on_shift_tab_inside_list(
 ) -> Option<Vec<TextChange>> {
     let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
 
+    if text.get(span_range.start..cursor.start)?.contains("\n") {
+        return None;
+    }
+
     let parents: SmallVec<[_; 4]> = structure
         .iterate_parents_of(item_index)
         .filter(|(_, desc)| desc.kind == SpanKind::List)
@@ -410,6 +414,10 @@ fn on_tab_inside_list(
     cursor: ByteSpan,
 ) -> Option<Vec<TextChange>> {
     let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
+
+    if text.get(span_range.start..cursor.start)?.contains("\n") {
+        return None;
+    }
 
     let parents: SmallVec<[_; 4]> = structure
         .iterate_parents_of(item_index)
@@ -791,17 +799,22 @@ mod tests {
             (
                 "-- tabs in ordered lists modify numbers --",
                 "1. a\n2. b{||}\n\t- c\n\t\t 1. d\n4. d",
-                "1. a\n\t1. b{||}\n\t\t* c\n\t\t\t 1. d\n2. d",
+                Some("1. a\n\t1. b{||}\n\t\t* c\n\t\t\t 1. d\n2. d"),
             ),
             (
                 "-- tabbing inside nested unordered list --",
                 "- a\n\t* b\n\t* c{||}\n- d \n",
-                "- a\n\t* b\n\t\t* c{||}\n- d \n",
+                Some("- a\n\t* b\n\t\t* c{||}\n- d \n"),
             ),
             (
                 "-- tabbing inside unordered list picks proper list item marker --",
                 "- a\n- b{||}\n\t- c\n\t\t 1. d",
-                "- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d",
+                Some("- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d"),
+            ),
+            (
+                "-- tabbing inside list item not on the same line when it starts => goes to default beh --",
+                "- a\n\ta{||}",
+                None,
             ),
             //             (
             //                 "-- identing numbered lists honors nested indicies --",
@@ -820,46 +833,78 @@ mod tests {
             //             ),
         ];
 
-        for (desc, input, output) in test_cases {
+        for (desc, input, expected_output) in test_cases {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let changes =
-                on_tab_inside_list(&TextStructure::new(&text), &text, cursor.clone()).unwrap();
+            let changes = on_tab_inside_list(&TextStructure::new(&text), &text, cursor.clone());
 
-            let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
-            assert_eq!(
-                TextChange::encode_cursor(&text, cursor),
-                output,
-                "test case: {}",
-                desc
-            );
+            match (changes, expected_output) {
+                (None, None) => (),
+                (Some(changes), Some(expected_output)) => {
+                    let cursor =
+                        apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
+                    assert_eq!(
+                        TextChange::encode_cursor(&text, cursor),
+                        expected_output,
+                        "test case: {}",
+                        desc
+                    );
+                }
+                (changes, expected_output) => {
+                    assert!(
+                        false,
+                        "unexpected matching, text case:{desc} \nchanges = {changes:#?}\nexpected = {expected_output:#?}",
+                        // changes, expected_output
+                    );
+                }
+            }
         }
     }
 
     #[test]
     pub fn test_shift_tabs_cases() {
-        let test_cases = [(
-            "-- shift left unordered list item --",
-            "- a\n\t* b{||}",
-            "- a\n- b{||}",
-        )];
+        let test_cases = [
+            (
+                "-- shift left unordered list item --",
+                "- a\n\t* b{||}",
+                Some("- a\n- b{||}"),
+            ),
+            (
+                "-- shift tab bails out if the list item is not on the same line as cursor --",
+                "- a\n\t* b\n\t\t*{||}",
+                None,
+            ),
+        ];
 
-        for (desc, input, output) in test_cases {
+        for (desc, input, expected_output) in test_cases {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
             let changes =
-                on_shift_tab_inside_list(&TextStructure::new(&text), &text, cursor.clone())
-                    .unwrap();
+                on_shift_tab_inside_list(&TextStructure::new(&text), &text, cursor.clone());
 
-            let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
-            assert_eq!(
-                TextChange::encode_cursor(&text, cursor),
-                output,
-                "test case: {}",
-                desc
-            );
+            match (changes, expected_output) {
+                (None, None) => (),
+                (Some(changes), Some(expected_output)) => {
+                    let cursor =
+                        apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
+
+                    assert_eq!(
+                        TextChange::encode_cursor(&text, cursor),
+                        expected_output,
+                        "test case: {}",
+                        desc
+                    );
+                }
+                (changes, expected_output) => {
+                    assert!(
+                        false,
+                        "unexpected matching, text case:{desc} \nchanges = {changes:#?}\nexpected = {expected_output:#?}",
+                        // changes, expected_output
+                    );
+                }
+            }
         }
     }
 
