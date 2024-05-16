@@ -224,8 +224,8 @@ fn on_enter_inside_list_item(
     let parents: SmallVec<[_; 4]> = structure
         .iterate_parents_of(item_index)
         .filter(|(_, desc)| desc.kind == SpanKind::List)
-        .filter_map(|(idx, _)| match structure.find_meta(idx) {
-            Some(SpanMeta::List(list_desc)) => Some((idx, list_desc)),
+        .filter_map(|(idx, desc)| match structure.find_meta(idx) {
+            Some(SpanMeta::List(list_desc)) => Some((idx, list_desc, desc.byte_pos)),
             _ => None,
         })
         .collect();
@@ -238,6 +238,7 @@ fn on_enter_inside_list_item(
         .count()
         == 0;
 
+    let (_, _, outer_parent_pos) = parents.last().unwrap();
     // first parent is the immediate parent
     match parents[0] {
         (
@@ -246,6 +247,7 @@ fn on_enter_inside_list_item(
                 starting_index: Some(starting_index),
                 ..
             },
+            _,
         ) => {
             // means that is a numbered list
             let list_items: SmallVec<[_; 6]> = structure
@@ -254,10 +256,21 @@ fn on_enter_inside_list_item(
                 .enumerate()
                 .collect();
 
+            // "\n".trim_end_matches(|c: char| c.is_whitespace() && c != '\n');
             if is_empty_list_item {
                 // means that we need to remove the current list
+
+                // this removed any "\t" or spaces on the same line
+                let parent_text_before_span = &text[outer_parent_pos.start..span_range.start];
+                let trimmed_to_new_line = parent_text_before_span
+                    .trim_end_matches(|c: char| c.is_whitespace() && c != '\n');
+
                 let mut changes = vec![TextChange::Replace(
-                    span_range,
+                    ByteSpan::new(
+                        span_range.start + trimmed_to_new_line.len()
+                            - parent_text_before_span.len(),
+                        span_range.end,
+                    ),
                     format!("{}", TextChange::CURSOR),
                 )];
 
@@ -332,8 +345,19 @@ fn on_enter_inside_list_item(
 
             if is_empty_list_item {
                 // then we just remove the entire list item and break
+
+                // this removed any "\t" or spaces on the same line
+                let parent_text_before_span = &text[outer_parent_pos.start..span_range.start];
+                let trimmed_to_new_line = parent_text_before_span
+                    .trim_end_matches(|c: char| c.is_whitespace() && c != '\n');
+                // println!("$$ {trimmed_to_new_line}\n##{parent_text_before_span}");
+
                 Some(vec![TextChange::Replace(
-                    span_range,
+                    ByteSpan::new(
+                        span_range.start + trimmed_to_new_line.len()
+                            - parent_text_before_span.len(),
+                        span_range.end,
+                    ),
                     format!("{}", TextChange::CURSOR),
                 )])
             } else {
@@ -930,13 +954,15 @@ mod tests {
             ),
             (
                 "## Enter on empty list item removes it ##",
-                "- a\n- {||}",
-                "- a\n{||}",
+                "- a\n\t* {||}\n\t* b",
+                // "- a\n\t* {||}\n\t* b",
+                // "- a\n\t{||}\n\t* b"
+                "- a\n{||}\n\t* b",
             ),
             (
                 "## Removing empty item in a numbered list adjusts indicies ##",
-                "1. a\n2. {||}\n3. c",
-                "1. a\n{||}\n2. c",
+                "1. a\n\t1. {||}\n\t2. c",
+                "1. a\n{||}\n\t1. c",
             ),
             (
                 "## Splitting a numbered list with selection ##",
