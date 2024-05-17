@@ -19,6 +19,8 @@ pub enum AppIcon {
     Twitter,
     HomeSite,
     Discord,
+    Pin,
+    VerticalSeparator,
 }
 
 impl AppIcon {
@@ -31,6 +33,8 @@ impl AppIcon {
             AppIcon::Twitter => P::TWITTER_LOGO,
             AppIcon::HomeSite => P::HOUSE_SIMPLE,
             AppIcon::Discord => P::DISCORD_LOGO,
+            AppIcon::Pin => P::PUSH_PIN,
+            AppIcon::VerticalSeparator => P::ARROWS_VERTICAL,
         })
         .family(eframe::epaint::FontFamily::Proportional)
         .color(color)

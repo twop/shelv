@@ -63,6 +63,7 @@ pub enum AppAction {
     OpenLink(String),
     IncreaseFontSize,
     DecreaseFontSize,
+    SetWindowPinned(bool),
 }
 
 pub fn process_app_action(
@@ -111,6 +112,10 @@ pub fn process_app_action(
         }
         AppAction::DecreaseFontSize => {
             state.font_scale -= 1;
+        }
+
+        AppAction::SetWindowPinned(is_pinned) => {
+            state.is_pinned = is_pinned;
         }
     }
 }

@@ -222,23 +222,28 @@ impl eframe::App for MyApp {
 
         let orignal_text_version = text_structure.opaque_version();
 
-        // handling focus lost
-        let is_frame_actually_focused = frame.info().window_info.focused;
-        if app_state.prev_focused != is_frame_actually_focused {
-            if is_frame_actually_focused {
-                println!("gained focus");
-                ctx.memory_mut(|mem| mem.request_focus(text_edit_id))
-            } else {
-                println!("lost focus");
-                app_state.hidden = true;
-                hide_app_on_macos();
-            }
-            app_state.prev_focused = is_frame_actually_focused;
-        }
+        // if the app is pinned it is OK not re-requesting focus
+        // neither hiding if focus lost
+        if !app_state.is_pinned {
+            let is_frame_actually_focused = frame.info().window_info.focused;
 
-        // restore focus, it seems that there is a lag
-        if !app_state.hidden && !is_frame_actually_focused {
-            frame.focus()
+            // handling focus lost
+            if app_state.prev_focused != is_frame_actually_focused {
+                if is_frame_actually_focused {
+                    println!("gained focus");
+                    ctx.memory_mut(|mem| mem.request_focus(text_edit_id))
+                } else {
+                    println!("lost focus");
+                    app_state.hidden = true;
+                    hide_app_on_macos();
+                }
+                app_state.prev_focused = is_frame_actually_focused;
+            }
+
+            // restore focus, it seems that there is a lag
+            if !app_state.hidden && !is_frame_actually_focused {
+                frame.focus()
+            }
         }
 
         // handling commands
@@ -294,6 +299,7 @@ impl eframe::App for MyApp {
 
         let vis_state = AppRenderData {
             selected_note: app_state.selected_note,
+            is_window_pinned: app_state.is_pinned,
             text_edit_id,
             font_scale: app_state.font_scale,
             byte_cursor: cursor,

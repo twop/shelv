@@ -52,6 +52,7 @@ pub struct AppState {
 
     // ------------------------------------
     pub is_settings_opened: bool,
+    pub is_pinned: bool,
 
     pub theme: AppTheme,
     pub syntax_set: SyntaxSet,
@@ -356,6 +357,7 @@ impl AppState {
 
         Self {
             is_settings_opened: false,
+            is_pinned: false,
             unsaved_changes: Default::default(),
             scheduled_script_run_version: None,
             theme,
