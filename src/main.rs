@@ -236,9 +236,9 @@ impl eframe::App for MyApp {
                 println!("lost focus");
                 app_state.hidden = true;
                 hide_app_on_macos();
-
-                app_state.prev_focused = is_frame_actually_focused;
             }
+
+            app_state.prev_focused = is_frame_actually_focused;
         }
 
         // handling commands
