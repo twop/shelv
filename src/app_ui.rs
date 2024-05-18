@@ -31,6 +31,7 @@ pub struct AppRenderData<'a> {
     pub syntax_set: &'a SyntaxSet,
     pub theme_set: &'a ThemeSet,
     pub computed_layout: Option<ComputedLayout>,
+    pub is_window_pinned: bool,
 }
 
 pub struct RenderAppResult(
@@ -57,6 +58,7 @@ pub fn render_app(
         computed_layout,
         syntax_set,
         theme_set,
+        is_window_pinned,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
@@ -69,6 +71,7 @@ pub fn render_app(
             .iter()
             .map(|shortcut| format!("Shelf {}", ctx.format_shortcut(&shortcut)))
             .collect(),
+        is_window_pinned,
         ctx,
         &theme,
     );
@@ -364,6 +367,7 @@ fn render_footer_panel(
     selected: u32,
     font_size: i32,
     tooltips: Vec<String>,
+    is_window_pinned: bool,
     ctx: &Context,
     theme: &AppTheme,
 ) -> SmallVec<[AppAction; 1]> {
@@ -480,6 +484,42 @@ fn render_footer_panel(
                                 ui.add_space(theme.sizes.s);
                             }
                         }
+                    }
+
+                    // pin button
+                    ui.add_space(theme.sizes.s);
+
+                    // TODO either wait or fork egui-phosphor to update to phosphor 2.1
+                    // which has "|" as a separator
+                    ui.label(
+                        AppIcon::VerticalSeparator
+                            .render(sizes.toolbar_icon, theme.colors.subtle_text_color),
+                    );
+                    ui.add_space(theme.sizes.s);
+
+                    let resp = ui
+                        .button(AppIcon::Pin.render(
+                            sizes.toolbar_icon,
+                            if is_window_pinned {
+                                theme.colors.button_fg
+                            } else {
+                                theme.colors.subtle_text_color
+                            },
+                        ))
+                        .on_hover_ui(|ui| {
+                            ui.label(
+                                RichText::new(if is_window_pinned {
+                                    "unpin window"
+                                } else {
+                                    "pin window"
+                                })
+                                .color(theme.colors.subtle_text_color),
+                            );
+                        });
+
+                    // TODO handle that with shortcuts
+                    if resp.clicked() {
+                        actions.push(AppAction::SetWindowPinned(!is_window_pinned));
                     }
                 });
             });
