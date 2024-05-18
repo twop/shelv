@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use eframe::{
     egui::{
         self,
-        style::{Selection, WidgetVisuals, Widgets},
-        FontDefinitions, Margin, RichText, TextStyle, Visuals,
+        style::{NumericColorSpace, Selection, WidgetVisuals, Widgets},
+        vec2, FontDefinitions, Margin, RichText, TextStyle, Visuals,
     },
     epaint::{Color32, FontFamily, FontId, Rounding, Shadow, Stroke},
 };
@@ -537,6 +537,7 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         },
         active: WidgetVisuals {
             weak_bg_fill: button_pressed_bg,
+
             bg_fill: button_pressed_bg,
             bg_stroke: Stroke::new(1.0, button_pressed_bg_stroke),
             fg_stroke: Stroke::new(2.0, button_pressed_fg),
@@ -564,7 +565,12 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         warn_fg_color,
         error_fg_color,
         window_rounding: rounding_window,
-        window_shadow: Shadow::small_dark(),
+        window_shadow: Shadow {
+            offset: vec2(10.0, 20.0),
+            blur: 15.0,
+            spread: 0.0,
+            color: Color32::from_black_alpha(96),
+        },
         window_fill: main_bg,
         window_stroke: Stroke {
             width: 0.5,
@@ -572,7 +578,12 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         },
         menu_rounding: rounding_window,
         panel_fill: main_bg,
-        popup_shadow: Shadow::small_dark(),
+        popup_shadow: Shadow {
+            offset: vec2(6.0, 10.0),
+            blur: 8.0,
+            spread: 0.0,
+            color: Color32::from_black_alpha(96),
+        },
         resize_corner_size: 12.,
         text_cursor_preview: false,
         clip_rect_margin: 3.,
@@ -585,5 +596,8 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         text_cursor: Stroke::new(2.0, normal_text_color),
         interact_cursor: Some(egui::CursorIcon::PointingHand),
         image_loading_spinners: true,
+        window_highlight_topmost: true,
+        handle_shape: egui::style::HandleShape::Circle,
+        numeric_color_space: NumericColorSpace::GammaByte,
     }
 }

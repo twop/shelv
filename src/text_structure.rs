@@ -333,10 +333,10 @@ impl TextStructure {
 
         for (ev, range) in parser.into_offset_iter() {
             use pulldown_cmark::Event::*;
-            use pulldown_cmark::Tag::*;
             let range = ByteSpan::from_range(&range);
             match ev {
                 Start(tag) => {
+                    use pulldown_cmark::Tag::*;
                     let container = match tag {
                         Strong => Some(builder.add(SpanKind::Bold, range)),
                         Emphasis => Some(builder.add(SpanKind::Emphasis, range)),
@@ -350,10 +350,18 @@ impl TextStructure {
                             },
                         )),
 
+                        CodeBlock(CodeBlockKind::Indented) => Some(builder.add_with_meta(
+                            SpanKind::CodeBlock,
+                            range.clone(),
+                            SpanMeta::CodeBlock {
+                                lang: "".to_string(),
+                            },
+                        )),
+
                         Item => Some(
                             builder.add(SpanKind::ListItem, trim_trailing_new_lines(&text, range)),
                         ),
-                        Heading(level, _, _) => Some(builder.add(
+                        Heading { level, .. } => Some(builder.add(
                             SpanKind::Heading(level),
                             trim_trailing_new_lines(&text, range),
                         )),
@@ -365,23 +373,24 @@ impl TextStructure {
                         Paragraph => Some(
                             builder.add(SpanKind::Paragraph, trim_trailing_new_lines(&text, range)),
                         ),
-                        Link(_, url, _) => Some(builder.add_with_meta(
+                        Link { dest_url, .. } => Some(builder.add_with_meta(
                             SpanKind::MdLink,
                             range,
                             SpanMeta::Link {
-                                url: url.to_string(),
+                                url: dest_url.to_string(),
                             },
                         )),
-                        Image(_, _, _) => Some(builder.add(SpanKind::Image, range)),
+                        Image { .. } => Some(builder.add(SpanKind::Image, range)),
 
                         // We explicitly don't support these containers
                         Table(_)
                         | TableHead
-                        | CodeBlock(CodeBlockKind::Indented)
                         | TableRow
                         | TableCell
                         | FootnoteDefinition(_)
-                        | BlockQuote => None,
+                        | HtmlBlock
+                        | MetadataBlock(_)
+                        | BlockQuote(_) => None,
                     };
 
                     if let Some(container_index) = container {
@@ -390,28 +399,30 @@ impl TextStructure {
                 }
 
                 End(tag) => {
+                    use pulldown_cmark::TagEnd as T;
                     let is_supported_container = match tag {
                         // We explicitly don't support these containers
                         // note that it needs to match "Start" variant
-                        Table(_)
-                        | TableHead
-                        | CodeBlock(CodeBlockKind::Indented)
-                        | TableRow
-                        | TableCell
-                        | FootnoteDefinition(_)
-                        | BlockQuote => false,
+                        T::Table
+                        | T::TableHead
+                        | T::TableRow
+                        | T::TableCell
+                        | T::FootnoteDefinition
+                        | T::HtmlBlock
+                        | T::MetadataBlock(_)
+                        | T::BlockQuote => false,
 
                         // supported containers. Note that it needs to match "Start" variant
-                        Paragraph
-                        | CodeBlock(CodeBlockKind::Fenced(_))
-                        | Heading(_, _, _)
-                        | List(_)
-                        | Item
-                        | Emphasis
-                        | Strong
-                        | Strikethrough
-                        | Link(_, _, _)
-                        | Image(_, _, _) => true,
+                        T::Paragraph
+                        | T::CodeBlock
+                        | T::Heading { .. }
+                        | T::List(_)
+                        | T::Item
+                        | T::Emphasis
+                        | T::Strong
+                        | T::Strikethrough
+                        | T::Link { .. }
+                        | T::Image => true,
                     };
 
                     if is_supported_container {
@@ -439,7 +450,8 @@ impl TextStructure {
                     builder.add(SpanKind::Html, range);
                 }
 
-                FootnoteReference(_) | SoftBreak | HardBreak | Rule => (),
+                FootnoteReference(_) | DisplayMath(_) | InlineHtml(_) | InlineMath(_)
+                | SoftBreak | HardBreak | Rule => (),
             }
         }
 

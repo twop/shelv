@@ -24,28 +24,32 @@ description = "Note taking app optimized for capturing phase."
 #   "svg",
 # ] }
 
-eframe = { version = "0.23.0", features = ["wgpu", "persistence", "ron"] }
-egui_extras = { version = "0.23.0", features = ["svg"] }
+eframe = { version = "0.27.2", default-features = false, features = [
+    "wgpu",
+    "persistence",
+    "ron",
+] }
+egui_extras = { version = "0.27.2", features = ["svg"] }
 serde = { version = "1.0.197", features = ["derive"] }
 ron = "0.8"
-global-hotkey = "0.3.0"
-image = "0.24.5"
-pulldown-cmark = "0.9.3"
+global-hotkey = "0.5.3"
+image = "0.25.1"
+pulldown-cmark = "0.11.0"
 syntect = { version = "5.0.0", default-features = false, features = [
     "default-fancy",
 ] }
 smallvec = "1.10.0"
-tray-icon = "0.11.2"
-egui-phosphor = { version = "0.3.0", features = ["light"] }
+tray-icon = "0.14.0"
+egui-phosphor = { version = "0.5.0", features = ["light"] }
 # tray-item = "0.7.1"
-winit = "0.28.1"
+winit = "0.29.4"
 linkify = "0.10.0"
-objc2 = "0.3.0-beta.3"
-boa_engine = { git = "https://github.com/boa-dev/boa.git", rev = "8d857ab5bd296a69e0ab1a40b6b074ea3bd16128" }
+objc2 = "0.5.1"
+boa_engine = "0.18.0"
 serde_json = "1.0.115"
 directories-next = "2.0.0"
 hotwatch = "0.5.0"
-itertools = "0.12.1"
+itertools = "0.13.0"
 
 
 [package.metadata.bundle]

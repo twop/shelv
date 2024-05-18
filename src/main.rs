@@ -1,5 +1,6 @@
 #![feature(iter_intersperse)]
 #![feature(let_chains)]
+#![feature(offset_of)]
 
 use app_actions::{process_app_action, TextChange};
 use app_state::{AppInitData, AppState, MsgToApp};
@@ -7,7 +8,7 @@ use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
 use byte_span::UnOrderedByteSpan;
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
-    GlobalHotKeyEvent, GlobalHotKeyManager,
+    GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
 };
 
 use hotwatch::{
@@ -31,7 +32,7 @@ use std::{
 };
 
 use eframe::{
-    egui::{self, Id},
+    egui::{self, Id, ViewportCommand},
     epaint::vec2,
     get_value, set_value, CreationContext,
 };
@@ -85,10 +86,10 @@ impl MyApp {
         let ctx = cc.egui_ctx.clone();
         let sender = msg_queue_tx.clone();
         GlobalHotKeyEvent::set_event_handler(Some(move |ev: GlobalHotKeyEvent| {
-            if ev.id == open_hotkey.id() {
+            if ev.id == open_hotkey.id() && ev.state() == HotKeyState::Pressed {
                 sender.send(MsgToApp::ToggleVisibility).unwrap();
                 ctx.request_repaint();
-                println!("handler: {:?}", open_hotkey);
+                println!("handler for ToggleVisibility: {open_hotkey:?}, ev = {ev:#?}");
             }
         }));
 
@@ -176,16 +177,19 @@ impl eframe::App for MyApp {
         let app_state = &mut self.state;
         // handling message queue
         while let Ok(msg) = app_state.msg_queue.try_recv() {
+            // println!("App message: {msg:#?}");
             match msg {
                 MsgToApp::ToggleVisibility => {
                     app_state.hidden = !app_state.hidden;
 
                     if app_state.hidden {
+                        println!("Toggle visibility: hide");
                         hide_app_on_macos();
                     } else {
-                        frame.set_visible(!app_state.hidden);
-                        frame.focus();
+                        ctx.send_viewport_cmd(ViewportCommand::Visible(!app_state.hidden));
+                        ctx.send_viewport_cmd(ViewportCommand::Focus);
                         ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+                        println!("Toggle visibility: show + focus");
                     }
                 }
                 MsgToApp::NoteFileChanged(note_file, path) => {
@@ -225,24 +229,15 @@ impl eframe::App for MyApp {
         // if the app is pinned it is OK not re-requesting focus
         // neither hiding if focus lost
         if !app_state.is_pinned {
-            let is_frame_actually_focused = frame.info().window_info.focused;
+            let is_frame_actually_focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
 
             // handling focus lost
-            if app_state.prev_focused != is_frame_actually_focused {
-                if is_frame_actually_focused {
-                    println!("gained focus");
-                    ctx.memory_mut(|mem| mem.request_focus(text_edit_id))
-                } else {
-                    println!("lost focus");
-                    app_state.hidden = true;
-                    hide_app_on_macos();
-                }
-                app_state.prev_focused = is_frame_actually_focused;
-            }
+            if app_state.prev_focused != is_frame_actually_focused && !is_frame_actually_focused {
+                println!("lost focus");
+                app_state.hidden = true;
+                hide_app_on_macos();
 
-            // restore focus, it seems that there is a lag
-            if !app_state.hidden && !is_frame_actually_focused {
-                frame.focus()
+                app_state.prev_focused = is_frame_actually_focused;
             }
         }
 
@@ -342,10 +337,17 @@ impl eframe::App for MyApp {
         }
     }
 
-    fn on_close_event(&mut self) -> bool {
-        self.msg_queue.send(MsgToApp::ToggleVisibility).unwrap();
-        false
+    fn on_exit(&mut self) {
+
+        // If you need to abort an exit check `ctx.input(|i| i.viewport().close_requested())`
+        // and respond with [`egui::ViewportCommand::CancelClose`].
+        //
     }
+
+    // fn on_close_event(&mut self) -> bool {
+    //     self.msg_queue.send(MsgToApp::ToggleVisibility).unwrap();
+    //     false
+    // }
 
     fn auto_save_interval(&self) -> std::time::Duration {
         std::time::Duration::from_secs(1)
@@ -392,23 +394,26 @@ fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<Str
 fn main() {
     let options = eframe::NativeOptions {
         default_theme: eframe::Theme::Dark,
-        initial_window_size: Some(vec2(350.0, 450.0)),
-        min_window_size: Some(vec2(350.0, 450.0)),
+        viewport: egui::ViewportBuilder::default()
+            .with_resizable(true)
+            .with_always_on_top()
+            .with_min_inner_size(vec2(350.0, 450.0))
+            .with_inner_size(vec2(350.0, 450.0)),
+
         // max_window_size: Some(vec2(650.0, 750.0)),
         // fullsize_content: true,
         // decorated: false,
-        resizable: true,
-        always_on_top: true,
         run_and_return: true,
         window_builder: Some(Box::new(|builder| {
             #[cfg(target_os = "macos")]
             {
-                use winit::platform::macos::WindowBuilderExtMacOS;
+                // use winit::platform::macos::WindowAttributesExtMacOS;
                 return builder
                     .with_fullsize_content_view(true)
-                    .with_titlebar_buttons_hidden(true)
-                    .with_title_hidden(true)
-                    .with_titlebar_transparent(true);
+                    .with_titlebar_buttons_shown(false)
+                    .with_title_shown(false)
+                    .with_titlebar_shown(false);
+                //.with_tr(true);
             }
 
             builder
@@ -417,6 +422,10 @@ fn main() {
             #[cfg(target_os = "macos")]
             {
                 use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+                // EventLoopBuilderExtMacOS::with_activation_policy(
+                //     builder,
+                //     ActivationPolicy::Accessory,
+                // );
                 builder.with_activation_policy(ActivationPolicy::Accessory);
             }
         })),
@@ -429,11 +438,11 @@ fn main() {
 
 fn hide_app_on_macos() {
     // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
-    use objc2::rc::{Id, Shared};
+    use objc2::rc::Id;
     use objc2::runtime::Object;
     use objc2::{class, msg_send, msg_send_id};
     unsafe {
-        let app: Id<Object, Shared> = msg_send_id![class!(NSApplication), sharedApplication];
+        let app: Id<Object> = msg_send_id![class!(NSApplication), sharedApplication];
         let arg = app.as_ref();
         let _: () = msg_send![&app, hide:arg];
     }
