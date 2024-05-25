@@ -192,7 +192,7 @@ impl AppState {
             h2: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num2),
             h3: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num3),
             // h4: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num4),
-            increase_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::PlusEquals),
+            increase_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::Plus),
             decrease_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::Minus),
 
             switch_to_note: (0..notes.len())

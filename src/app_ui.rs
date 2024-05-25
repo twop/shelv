@@ -1,8 +1,8 @@
 use eframe::{
     egui::{
         self,
-        text::CCursor,
-        text_edit::{CCursorRange, TextEditOutput},
+        text::{CCursor, CCursorRange},
+        text_edit::TextEditOutput,
         Context, Id, KeyboardShortcut, Layout, Painter, RichText, Sense, TopBottomPanel, Ui,
         Window,
     },
@@ -259,7 +259,7 @@ fn render_editor(
     let TextEditOutput {
         response: text_edit_response,
         galley,
-        text_draw_pos,
+        galley_pos,
         text_clip_rect: _,
         state: _,
         cursor_range,
@@ -283,7 +283,7 @@ fn render_editor(
     });
 
     let text_structure = structure_wrapper.unwrap();
-    (computed_layout, text_structure, byte_cursor, text_draw_pos)
+    (computed_layout, text_structure, byte_cursor, galley_pos)
 }
 
 fn render_settings_dialog(ctx: &Context, theme: &AppTheme) {
@@ -493,7 +493,7 @@ fn render_footer_panel(
                     // which has "|" as a separator
                     ui.label(
                         AppIcon::VerticalSeparator
-                            .render(sizes.toolbar_icon, theme.colors.subtle_text_color),
+                            .render(sizes.toolbar_icon, theme.colors.outline_fg),
                     );
                     ui.add_space(theme.sizes.s);
 
@@ -694,7 +694,10 @@ fn render_hints(
 ///
 /// Includes key-repeat events.
 pub fn is_shortcut_match(input: &egui::InputState, shortcut: &KeyboardShortcut) -> bool {
-    let KeyboardShortcut { modifiers, key } = shortcut.clone();
+    let KeyboardShortcut {
+        modifiers,
+        logical_key,
+    } = shortcut.clone();
 
     input.events.iter().any(|event| {
         matches!(
@@ -704,7 +707,7 @@ pub fn is_shortcut_match(input: &egui::InputState, shortcut: &KeyboardShortcut) 
                 modifiers: ev_mods,
                 pressed: true,
                 ..
-            } if *ev_key == key && ev_mods.matches(modifiers)
+            } if *ev_key == logical_key && ev_mods.matches(modifiers)
         )
     })
 }
