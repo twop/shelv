@@ -1,11 +1,14 @@
-use eframe::egui::{Context, Id, KeyboardShortcut, Modifiers, OpenUrl};
+use eframe::{
+    egui::{Context, Id, KeyboardShortcut, Modifiers, OpenUrl},
+    epaint::text::cursor,
+};
 
 use smallvec::SmallVec;
 
 use crate::{
     app_state::{AppState, UnsavedChange},
     byte_span::{ByteSpan, RangeRelation, UnOrderedByteSpan},
-    commands::EditorCommand,
+    commands::{EditorCommand, EditorCommandContext},
     text_structure::{ListDesc, SpanKind, SpanMeta, TextStructure},
 };
 
@@ -120,87 +123,6 @@ pub fn process_app_action(
     }
 }
 
-pub struct TabInsideListCommand;
-pub struct ShiftTabInsideListCommand;
-pub struct EnterInsideListCommand;
-pub struct SpaceAfterTaskMarkersCommand;
-
-impl EditorCommand for SpaceAfterTaskMarkersCommand {
-    fn name(&self) -> &str {
-        "SpaceAfterTaskMarker"
-    }
-
-    fn shortcut(&self) -> KeyboardShortcut {
-        KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Space)
-    }
-
-    fn try_handle(
-        &self,
-        text_structure: &TextStructure,
-        text: &str,
-        byte_cursor: ByteSpan,
-    ) -> Option<Vec<TextChange>> {
-        on_space_after_task_markers(text_structure, text, byte_cursor)
-    }
-}
-
-impl EditorCommand for TabInsideListCommand {
-    fn name(&self) -> &str {
-        "TabInsideList"
-    }
-
-    fn shortcut(&self) -> KeyboardShortcut {
-        KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Tab)
-    }
-
-    fn try_handle(
-        &self,
-        text_structure: &TextStructure,
-        text: &str,
-        byte_cursor: ByteSpan,
-    ) -> Option<Vec<TextChange>> {
-        on_tab_inside_list(text_structure, text, byte_cursor)
-    }
-}
-
-impl EditorCommand for ShiftTabInsideListCommand {
-    fn name(&self) -> &str {
-        "ShiftTabInsideList"
-    }
-
-    fn shortcut(&self) -> KeyboardShortcut {
-        KeyboardShortcut::new(Modifiers::SHIFT, eframe::egui::Key::Tab)
-    }
-
-    fn try_handle(
-        &self,
-        text_structure: &TextStructure,
-        text: &str,
-        byte_cursor: ByteSpan,
-    ) -> Option<Vec<TextChange>> {
-        on_shift_tab_inside_list(text_structure, text, byte_cursor)
-    }
-}
-
-impl EditorCommand for EnterInsideListCommand {
-    fn name(&self) -> &str {
-        "EnterInsideList"
-    }
-
-    fn shortcut(&self) -> KeyboardShortcut {
-        KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Enter)
-    }
-
-    fn try_handle(
-        &self,
-        text_structure: &TextStructure,
-        text: &str,
-        byte_cursor: ByteSpan,
-    ) -> Option<Vec<TextChange>> {
-        on_enter_inside_list_item(text_structure, text, byte_cursor)
-    }
-}
-
 fn select_unordered_list_marker(depth: usize) -> &'static str {
     match depth {
         0 => "-",
@@ -209,11 +131,13 @@ fn select_unordered_list_marker(depth: usize) -> &'static str {
 }
 
 // handler on ENTER
-fn on_enter_inside_list_item(
-    structure: &TextStructure,
-    text: &str,
-    cursor: ByteSpan,
-) -> Option<Vec<TextChange>> {
+pub fn on_enter_inside_list_item(context: EditorCommandContext) -> Option<Vec<TextChange>> {
+    let EditorCommandContext {
+        text_structure: structure,
+        text,
+        byte_cursor: cursor,
+    } = context;
+
     let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
 
     // TODO actually check if the cursor inside a symbol
@@ -383,11 +307,13 @@ fn on_enter_inside_list_item(
     }
 }
 
-fn on_shift_tab_inside_list(
-    structure: &TextStructure,
-    text: &str,
-    cursor: ByteSpan,
-) -> Option<Vec<TextChange>> {
+pub fn on_shift_tab_inside_list(context: EditorCommandContext) -> Option<Vec<TextChange>> {
+    let EditorCommandContext {
+        text_structure: structure,
+        text,
+        byte_cursor: cursor,
+    } = context;
+
     let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
 
     if text.get(span_range.start..cursor.start)?.contains("\n") {
@@ -437,11 +363,13 @@ fn on_shift_tab_inside_list(
     }
 }
 
-fn on_tab_inside_list(
-    structure: &TextStructure,
-    text: &str,
-    cursor: ByteSpan,
-) -> Option<Vec<TextChange>> {
+pub fn on_tab_inside_list(context: EditorCommandContext) -> Option<Vec<TextChange>> {
+    let EditorCommandContext {
+        text_structure: structure,
+        text,
+        byte_cursor: cursor,
+    } = context;
+
     let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
 
     if text.get(span_range.start..cursor.start)?.contains("\n") {
@@ -572,11 +500,13 @@ fn increase_nesting_for_lists(
     changes
 }
 
-fn on_space_after_task_markers(
-    structure: &TextStructure,
-    text: &str,
-    cursor: ByteSpan,
-) -> Option<Vec<TextChange>> {
+pub fn on_space_after_task_markers(context: EditorCommandContext) -> Option<Vec<TextChange>> {
+    let EditorCommandContext {
+        text_structure: structure,
+        text,
+        byte_cursor: cursor,
+    } = context;
+
     let unexpanded_task_markers = &text[..cursor.start].ends_with("[]");
 
     if !unexpanded_task_markers {
@@ -866,7 +796,11 @@ mod tests {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let changes = on_tab_inside_list(&TextStructure::new(&text), &text, cursor.clone());
+            let changes = on_tab_inside_list(EditorCommandContext::new(
+                &TextStructure::new(&text),
+                &text,
+                cursor.clone(),
+            ));
 
             match (changes, expected_output) {
                 (None, None) => (),
@@ -910,8 +844,11 @@ mod tests {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let changes =
-                on_shift_tab_inside_list(&TextStructure::new(&text), &text, cursor.clone());
+            let changes = on_shift_tab_inside_list(EditorCommandContext::new(
+                &TextStructure::new(&text),
+                &text,
+                cursor.clone(),
+            ));
 
             match (changes, expected_output) {
                 (None, None) => (),
@@ -998,7 +935,12 @@ mod tests {
 
             let structure = TextStructure::new(&text);
 
-            let changes = on_enter_inside_list_item(&structure, &text, cursor.clone()).unwrap();
+            let changes = on_enter_inside_list_item(EditorCommandContext::new(
+                &structure,
+                &text,
+                cursor.clone(),
+            ))
+            .unwrap();
 
             let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
             assert_eq!(
@@ -1019,7 +961,9 @@ mod tests {
 
         let structure = TextStructure::new(&text);
 
-        let changes = on_enter_inside_list_item(&structure, &text, cursor).unwrap();
+        let changes =
+            on_enter_inside_list_item(EditorCommandContext::new(&structure, &text, cursor))
+                .unwrap();
 
         let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
         assert_eq!(TextChange::encode_cursor(&text, cursor), "- item\n- {||}");
@@ -1034,7 +978,9 @@ mod tests {
 
         let structure = TextStructure::new(&text);
 
-        let changes = on_enter_inside_list_item(&structure, &text, cursor.clone()).unwrap();
+        let changes =
+            on_enter_inside_list_item(EditorCommandContext::new(&structure, &text, cursor.clone()))
+                .unwrap();
 
         let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
         assert_eq!(TextChange::encode_cursor(&text, cursor), "- *item*\n- {||}");
@@ -1049,31 +995,41 @@ mod tests {
 
         let structure = TextStructure::new(&text);
 
-        let changes = on_enter_inside_list_item(&structure, &text, cursor.clone());
+        let changes =
+            on_enter_inside_list_item(EditorCommandContext::new(&structure, &text, cursor.clone()));
         assert!(changes.is_none());
     }
 
     #[test]
     pub fn test_skips_handling_enter_if_cursor_on_markup() {
         let (text, cursor) = TextChange::try_extract_cursor("{||}- a".to_string());
-        let changes =
-            on_enter_inside_list_item(&TextStructure::new(&text), &text, cursor.unwrap().clone());
+        let changes = on_enter_inside_list_item(EditorCommandContext::new(
+            &TextStructure::new(&text),
+            &text,
+            cursor.unwrap().clone(),
+        ));
         assert!(changes.is_none());
     }
 
     #[test]
     pub fn test_skips_expanding_task_markers_when_not_start_of_line() {
         let (text, cursor) = TextChange::try_extract_cursor("a[]{||}".to_string());
-        let changes =
-            on_space_after_task_markers(&TextStructure::new(&text), &text, cursor.unwrap().clone());
+        let changes = on_space_after_task_markers(EditorCommandContext::new(
+            &TextStructure::new(&text),
+            &text,
+            cursor.unwrap().clone(),
+        ));
         assert!(changes.is_none());
     }
 
     #[test]
     pub fn test_skips_expanding_task_markers_when_in_code_block() {
         let (text, cursor) = TextChange::try_extract_cursor("```\n[]{||}```".to_string());
-        let changes =
-            on_space_after_task_markers(&TextStructure::new(&text), &text, cursor.unwrap().clone());
+        let changes = on_space_after_task_markers(EditorCommandContext::new(
+            &TextStructure::new(&text),
+            &text,
+            cursor.unwrap().clone(),
+        ));
         assert!(changes.is_none());
     }
 
@@ -1114,7 +1070,12 @@ mod tests {
 
             let structure = TextStructure::new(&text);
 
-            let changes = on_space_after_task_markers(&structure, &text, cursor.clone()).unwrap();
+            let changes = on_space_after_task_markers(EditorCommandContext::new(
+                &structure,
+                &text,
+                cursor.clone(),
+            ))
+            .unwrap();
 
             let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
             assert_eq!(

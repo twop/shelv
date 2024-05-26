@@ -6,6 +6,7 @@ use app_actions::{process_app_action, TextChange};
 use app_state::{AppInitData, AppState, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
 use byte_span::UnOrderedByteSpan;
+use commands::EditorCommandContext;
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
     GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
@@ -248,20 +249,22 @@ impl eframe::App for MyApp {
                 ctx.input_mut(|input| {
                     // only one command can be handled at a time
                     app_state.editor_commands.iter().find_map(|editor_command| {
-                        let keyboard_shortcut = editor_command.shortcut();
-                        if is_shortcut_match(input, &keyboard_shortcut) {
-                            let res = editor_command.try_handle(
-                                &text_structure,
-                                &editor_text,
-                                byte_range.ordered(),
-                            );
-                            if res.is_some() {
-                                // remove the keys from the input
-                                input.consume_shortcut(&keyboard_shortcut);
+                        match &editor_command.shortcut {
+                            Some(keyboard_shortcut)
+                                if is_shortcut_match(input, &keyboard_shortcut) =>
+                            {
+                                let res = (editor_command.try_handle)(EditorCommandContext::new(
+                                    &text_structure,
+                                    &editor_text,
+                                    byte_range.ordered(),
+                                ));
+                                if res.is_some() {
+                                    // remove the keys from the input
+                                    input.consume_shortcut(&keyboard_shortcut);
+                                }
+                                res.map(|changes| (changes, byte_range))
                             }
-                            res.map(|changes| (changes, byte_range))
-                        } else {
-                            None
+                            _ => None,
                         }
                     })
                 })
