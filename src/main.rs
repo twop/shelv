@@ -2,11 +2,12 @@
 #![feature(let_chains)]
 #![feature(offset_of)]
 
-use app_actions::{process_app_action, TextChange};
+use app_actions::process_app_action;
 use app_state::{AppInitData, AppState, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
 use byte_span::UnOrderedByteSpan;
-use commands::EditorCommandContext;
+use command::EditorCommandContext;
+use effects::text_change_effect::{apply_text_changes, TextChange};
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
     GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
@@ -39,7 +40,6 @@ use eframe::{
 };
 
 use crate::{
-    app_actions::apply_text_changes,
     app_state::UnsavedChange,
     persistent_state::{extract_note_file, get_utc_timestamp},
 };
@@ -48,7 +48,9 @@ mod app_actions;
 mod app_state;
 mod app_ui;
 mod byte_span;
+mod command;
 mod commands;
+mod effects;
 mod egui_hotkey;
 mod md_shortcut;
 mod nord;

@@ -1,6 +1,8 @@
 use eframe::egui::KeyboardShortcut;
 
-use crate::{app_actions::TextChange, byte_span::ByteSpan, text_structure::TextStructure};
+use crate::{
+    byte_span::ByteSpan, effects::text_change_effect::TextChange, text_structure::TextStructure,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct EditorCommandContext<'a> {

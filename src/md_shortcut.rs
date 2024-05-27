@@ -3,9 +3,9 @@ use std::ops::Range;
 use eframe::egui::KeyboardShortcut;
 
 use crate::{
-    app_actions::TextChange,
     byte_span::ByteSpan,
-    commands::{EditorCommand, EditorCommandContext},
+    command::{EditorCommand, EditorCommandContext},
+    effects::text_change_effect::TextChange,
     text_structure::{SpanKind, TextStructure},
 };
 
@@ -92,7 +92,7 @@ struct EvalState {
 pub fn handle_md_annotation_command(
     md_shortcut: &MdAnnotationShortcut,
     context: EditorCommandContext,
-) -> Option<Vec<crate::app_actions::TextChange>> {
+) -> Option<Vec<TextChange>> {
     let EditorCommandContext {
         text_structure,
         text,

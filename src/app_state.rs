@@ -14,12 +14,14 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    app_actions::{
-        on_enter_inside_list_item, on_shift_tab_inside_list, on_space_after_task_markers,
-        on_tab_inside_list, TextChange,
-    },
     byte_span::UnOrderedByteSpan,
-    commands::{EditorCommand, EditorCommandContext},
+    command::{EditorCommand, EditorCommandContext},
+    commands::{
+        enter_in_list::on_enter_inside_list_item,
+        space_after_task_markers::on_space_after_task_markers,
+        tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
+    },
+    effects::text_change_effect::TextChange,
     md_shortcut::{
         handle_md_annotation_command, Edge, Instruction, InstructionCondition,
         MdAnnotationShortcut, Source,

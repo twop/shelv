@@ -13,11 +13,10 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    app_actions::{apply_text_changes, AppAction},
+    app_actions::AppAction,
     app_state::{AppShortcuts, ComputedLayout, LayoutParams},
     byte_span::UnOrderedByteSpan,
     picker::{Picker, PickerItem},
-    scripting::execute_live_scripts,
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme},
 };
@@ -42,7 +41,7 @@ pub struct RenderAppResult(
 );
 
 pub fn render_app(
-    mut text_structure: TextStructure,
+    text_structure: TextStructure,
     editor_text: &mut String,
     visual_state: AppRenderData,
     shortcuts: &AppShortcuts,
@@ -53,7 +52,7 @@ pub fn render_app(
         selected_note,
         text_edit_id,
         font_scale,
-        mut byte_cursor,
+        byte_cursor,
         md_shortcuts,
         computed_layout,
         syntax_set,

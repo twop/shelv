@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    app_actions::TextChange,
     byte_span::ByteSpan,
+    effects::text_change_effect::TextChange,
     text_structure::{SpanIndex, SpanKind, TextStructure},
 };
 
@@ -159,7 +159,8 @@ fn print_output_block(body: &str, hash: SourceHash, context: &mut Context) -> St
 
 #[cfg(test)]
 mod tests {
-    use crate::app_actions::apply_text_changes;
+
+    use crate::effects::text_change_effect::apply_text_changes;
 
     use super::*;
     #[test]
