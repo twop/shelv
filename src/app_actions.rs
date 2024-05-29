@@ -1,10 +1,14 @@
-use eframe::egui::{Context, Id, OpenUrl};
+use eframe::{
+    egui::{Context, Id, OpenUrl},
+    epaint::text::cursor,
+};
 
 use smallvec::SmallVec;
 
 use crate::{
     app_state::{AppState, UnsavedChange},
     byte_span::UnOrderedByteSpan,
+    effects::text_change_effect::{apply_text_changes, TextChange},
 };
 
 pub enum AppAction {
@@ -15,6 +19,7 @@ pub enum AppAction {
     IncreaseFontSize,
     DecreaseFontSize,
     SetWindowPinned(bool),
+    ApplyTextChanges(Vec<TextChange>),
 }
 
 pub fn process_app_action(
@@ -67,6 +72,20 @@ pub fn process_app_action(
 
         AppAction::SetWindowPinned(is_pinned) => {
             state.is_pinned = is_pinned;
+        }
+
+        AppAction::ApplyTextChanges(changes) => {
+            // TODO make sure that changes is for that note
+            let index = state.selected_note as usize;
+            let note = &mut state.notes[index];
+            let text = &mut note.text;
+            let cursor = note.cursor;
+            if let Some(byte_range) = cursor {
+                if let Ok(updated_cursor) = apply_text_changes(text, byte_range, changes) {
+                    state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
+                    state.notes[state.selected_note as usize].cursor = Some(updated_cursor);
+                }
+            }
         }
     }
 }

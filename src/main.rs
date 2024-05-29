@@ -2,11 +2,11 @@
 #![feature(let_chains)]
 #![feature(offset_of)]
 
-use app_actions::process_app_action;
+use app_actions::{process_app_action, AppAction};
 use app_state::{AppInitData, AppState, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
 use byte_span::UnOrderedByteSpan;
-use command::EditorCommandContext;
+use command::{EditorCommandContext, EditorCommandOutput};
 use effects::text_change_effect::{apply_text_changes, TextChange};
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
@@ -218,10 +218,10 @@ impl eframe::App for MyApp {
             }
         }
 
-        let note = &mut app_state.notes[app_state.selected_note as usize];
+        let note = &app_state.notes[app_state.selected_note as usize];
         let mut cursor: Option<UnOrderedByteSpan> = note.cursor;
 
-        let editor_text = &mut note.text;
+        let editor_text = &note.text;
         let mut text_structure = app_state
             .text_structure
             .take()
@@ -246,7 +246,7 @@ impl eframe::App for MyApp {
 
         // handling commands
         // sych as {tab, enter} inside a list
-        let changes: Option<(Vec<TextChange>, UnOrderedByteSpan)> =
+        let actions_from_keyboard_commands: Option<(EditorCommandOutput, UnOrderedByteSpan)> =
             cursor.clone().and_then(|byte_range| {
                 ctx.input_mut(|input| {
                     // only one command can be handled at a time
@@ -260,11 +260,13 @@ impl eframe::App for MyApp {
                                     &editor_text,
                                     byte_range.ordered(),
                                 ));
-                                if res.is_some() {
+
+                                if !res.is_empty() {
                                     // remove the keys from the input
                                     input.consume_shortcut(&keyboard_shortcut);
                                 }
-                                res.map(|changes| (changes, byte_range))
+
+                                Some((res, byte_range))
                             }
                             _ => None,
                         }
@@ -273,12 +275,15 @@ impl eframe::App for MyApp {
             });
 
         // now apply prepared changes, and update text structure and cursor appropriately
-        if let Some((changes, byte_range)) = changes {
-            if let Ok(updated_cursor) = apply_text_changes(editor_text, byte_range, changes) {
-                text_structure = text_structure.recycle(&editor_text);
-                cursor = Some(updated_cursor);
+        if let Some((changes, byte_range)) = actions_from_keyboard_commands {
+            for action in changes {
+                process_app_action(action, ctx, app_state, text_edit_id);
             }
+
+            cursor = app_state.notes[app_state.selected_note as usize].cursor;
         };
+
+        let editor_text = &mut app_state.notes[app_state.selected_note as usize].text;
 
         // handling scheduled JS execution
         if let (Some(text_cursor_range), Some(scheduled_version)) =

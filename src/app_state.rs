@@ -14,8 +14,9 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
+    app_actions::AppAction,
     byte_span::UnOrderedByteSpan,
-    command::{EditorCommand, EditorCommandContext},
+    command::{EditorCommand, EditorCommandContext, EditorCommandOutput},
     commands::{
         enter_in_list::on_enter_inside_list_item,
         space_after_task_markers::on_space_after_task_markers,
@@ -347,7 +348,7 @@ impl AppState {
             .collect();
 
         let box_fn =
-            |f: fn(EditorCommandContext) -> Option<Vec<TextChange>>| -> Box<dyn Fn(EditorCommandContext) -> Option<Vec<TextChange>>> { Box::new(f) };
+            |f: fn(EditorCommandContext) -> Option<Vec<TextChange>>| -> Box<dyn Fn(EditorCommandContext) -> EditorCommandOutput> { Box::new(move |ctx| f(ctx).map(|changes|  SmallVec::from([AppAction::ApplyTextChanges(changes)])).unwrap_or_default()) };
 
         let mut editor_commands: Vec<EditorCommand> = [
             (
@@ -385,6 +386,8 @@ impl AppState {
                 shortcut: Some(md_shortcut.shortcut.clone()),
                 try_handle: Box::new(move |context| {
                     handle_md_annotation_command(&md_shortcut, context)
+                        .map(|changes| SmallVec::from([AppAction::ApplyTextChanges(changes)]))
+                        .unwrap_or_default()
                 }),
             });
         }

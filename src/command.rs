@@ -1,8 +1,7 @@
 use eframe::egui::KeyboardShortcut;
+use smallvec::SmallVec;
 
-use crate::{
-    byte_span::ByteSpan, effects::text_change_effect::TextChange, text_structure::TextStructure,
-};
+use crate::{app_actions::AppAction, byte_span::ByteSpan, text_structure::TextStructure};
 
 #[derive(Debug, Clone, Copy)]
 pub struct EditorCommandContext<'a> {
@@ -21,8 +20,9 @@ impl<'a> EditorCommandContext<'a> {
     }
 }
 
+pub type EditorCommandOutput = SmallVec<[AppAction; 1]>;
 pub struct EditorCommand {
     pub name: String,
     pub shortcut: Option<KeyboardShortcut>,
-    pub try_handle: Box<dyn Fn(EditorCommandContext) -> Option<Vec<TextChange>>>,
+    pub try_handle: Box<dyn Fn(EditorCommandContext) -> EditorCommandOutput>,
 }
