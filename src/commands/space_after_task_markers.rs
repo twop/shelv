@@ -1,12 +1,12 @@
 use crate::{
-    byte_span::ByteSpan, command::EditorCommandContext, effects::text_change_effect::TextChange,
+    byte_span::ByteSpan, command::TextCommandContext, effects::text_change_effect::TextChange,
     text_structure::SpanKind,
 };
 
 use super::select_unordered_list_marker;
 
-pub fn on_space_after_task_markers(context: EditorCommandContext) -> Option<Vec<TextChange>> {
-    let EditorCommandContext {
+pub fn on_space_after_task_markers(context: TextCommandContext) -> Option<Vec<TextChange>> {
+    let TextCommandContext {
         text_structure: structure,
         text,
         byte_cursor: cursor,
@@ -58,7 +58,7 @@ mod tests {
     #[test]
     pub fn test_skips_expanding_task_markers_when_not_start_of_line() {
         let (text, cursor) = TextChange::try_extract_cursor("a[]{||}".to_string());
-        let changes = on_space_after_task_markers(EditorCommandContext::new(
+        let changes = on_space_after_task_markers(TextCommandContext::new(
             &TextStructure::new(&text),
             &text,
             cursor.unwrap().clone(),
@@ -69,7 +69,7 @@ mod tests {
     #[test]
     pub fn test_skips_expanding_task_markers_when_in_code_block() {
         let (text, cursor) = TextChange::try_extract_cursor("```\n[]{||}```".to_string());
-        let changes = on_space_after_task_markers(EditorCommandContext::new(
+        let changes = on_space_after_task_markers(TextCommandContext::new(
             &TextStructure::new(&text),
             &text,
             cursor.unwrap().clone(),
@@ -114,7 +114,7 @@ mod tests {
 
             let structure = TextStructure::new(&text);
 
-            let changes = on_space_after_task_markers(EditorCommandContext::new(
+            let changes = on_space_after_task_markers(TextCommandContext::new(
                 &structure,
                 &text,
                 cursor.clone(),

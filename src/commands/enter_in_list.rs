@@ -2,7 +2,7 @@ use smallvec::SmallVec;
 
 use crate::{
     byte_span::ByteSpan,
-    command::EditorCommandContext,
+    command::TextCommandContext,
     effects::text_change_effect::TextChange,
     text_structure::{ListDesc, SpanKind, SpanMeta},
 };
@@ -10,8 +10,8 @@ use crate::{
 use super::select_unordered_list_marker;
 
 // handler on ENTER
-pub fn on_enter_inside_list_item(context: EditorCommandContext) -> Option<Vec<TextChange>> {
-    let EditorCommandContext {
+pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<TextChange>> {
+    let TextCommandContext {
         text_structure: structure,
         text,
         byte_cursor: cursor,
@@ -253,7 +253,7 @@ mod tests {
 
             let structure = TextStructure::new(&text);
 
-            let changes = on_enter_inside_list_item(EditorCommandContext::new(
+            let changes = on_enter_inside_list_item(TextCommandContext::new(
                 &structure,
                 &text,
                 cursor.clone(),
@@ -280,8 +280,7 @@ mod tests {
         let structure = TextStructure::new(&text);
 
         let changes =
-            on_enter_inside_list_item(EditorCommandContext::new(&structure, &text, cursor))
-                .unwrap();
+            on_enter_inside_list_item(TextCommandContext::new(&structure, &text, cursor)).unwrap();
 
         let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
         assert_eq!(TextChange::encode_cursor(&text, cursor), "- item\n- {||}");
@@ -297,7 +296,7 @@ mod tests {
         let structure = TextStructure::new(&text);
 
         let changes =
-            on_enter_inside_list_item(EditorCommandContext::new(&structure, &text, cursor.clone()))
+            on_enter_inside_list_item(TextCommandContext::new(&structure, &text, cursor.clone()))
                 .unwrap();
 
         let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
@@ -314,14 +313,14 @@ mod tests {
         let structure = TextStructure::new(&text);
 
         let changes =
-            on_enter_inside_list_item(EditorCommandContext::new(&structure, &text, cursor.clone()));
+            on_enter_inside_list_item(TextCommandContext::new(&structure, &text, cursor.clone()));
         assert!(changes.is_none());
     }
 
     #[test]
     pub fn test_skips_handling_enter_if_cursor_on_markup() {
         let (text, cursor) = TextChange::try_extract_cursor("{||}- a".to_string());
-        let changes = on_enter_inside_list_item(EditorCommandContext::new(
+        let changes = on_enter_inside_list_item(TextCommandContext::new(
             &TextStructure::new(&text),
             &text,
             cursor.unwrap().clone(),

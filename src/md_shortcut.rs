@@ -4,7 +4,7 @@ use eframe::egui::KeyboardShortcut;
 
 use crate::{
     byte_span::ByteSpan,
-    command::{EditorCommand, EditorCommandContext},
+    command::{EditorCommand, TextCommandContext},
     effects::text_change_effect::TextChange,
     text_structure::{SpanKind, TextStructure},
 };
@@ -91,9 +91,9 @@ struct EvalState {
 
 pub fn handle_md_annotation_command(
     md_shortcut: &MdAnnotationShortcut,
-    context: EditorCommandContext,
+    context: TextCommandContext,
 ) -> Option<Vec<TextChange>> {
-    let EditorCommandContext {
+    let TextCommandContext {
         text_structure,
         text,
         byte_cursor,

@@ -16,7 +16,7 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 use crate::{
     app_actions::AppAction,
     byte_span::UnOrderedByteSpan,
-    command::{EditorCommand, EditorCommandContext, EditorCommandOutput},
+    command::{CommandContext, EditorCommand, EditorCommandOutput, TextCommandContext},
     commands::{
         enter_in_list::on_enter_inside_list_item,
         space_after_task_markers::on_space_after_task_markers,
@@ -32,6 +32,7 @@ use crate::{
     theme::AppTheme,
 };
 
+#[derive(Debug)]
 pub struct Note {
     pub text: String,
     pub cursor: Option<UnOrderedByteSpan>,
@@ -72,6 +73,7 @@ pub struct AppState {
     pub font_scale: i32,
 }
 
+#[derive(Debug)]
 pub struct AppShortcuts {
     bold: KeyboardShortcut,
     emphasize: KeyboardShortcut,
@@ -347,29 +349,56 @@ impl AppState {
             .map(|s| (s.name.to_string(), s.shortcut))
             .collect();
 
-        let box_fn =
-            |f: fn(EditorCommandContext) -> Option<Vec<TextChange>>| -> Box<dyn Fn(EditorCommandContext) -> EditorCommandOutput> { Box::new(move |ctx| f(ctx).map(|changes|  SmallVec::from([AppAction::ApplyTextChanges(changes)])).unwrap_or_default()) };
+        fn map_text_command_to_command_handler(
+            f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
+        ) -> Box<dyn Fn(CommandContext) -> EditorCommandOutput> {
+            Box::new(move |CommandContext { app_state }| {
+                let note = &app_state.notes[app_state.selected_note as usize];
+
+                let Some(cursor) = note.cursor else {
+                    return SmallVec::new();
+                };
+
+                let Some(text_structure) = app_state.text_structure.as_ref() else {
+                    return SmallVec::new();
+                };
+
+                let text_command_ctx = TextCommandContext {
+                    text_structure,
+                    text: &note.text,
+                    byte_cursor: cursor.ordered(),
+                };
+
+                let note_file = NoteFile::Note(app_state.selected_note);
+
+                f(text_command_ctx)
+                    .map(|changes| {
+                        SmallVec::from([AppAction::ApplyTextChanges(note_file, changes)])
+                    })
+                    .unwrap_or_default()
+            })
+        }
 
         let mut editor_commands: Vec<EditorCommand> = [
             (
                 "SpaceAfterTaskMarker",
                 KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Space),
-                box_fn(on_space_after_task_markers),
+                map_text_command_to_command_handler(on_space_after_task_markers),
             ),
             (
                 "TabInsideList",
                 KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Tab),
-                box_fn(on_tab_inside_list),
+                map_text_command_to_command_handler(on_tab_inside_list),
             ),
             (
                 "ShiftTabInsideList",
                 KeyboardShortcut::new(Modifiers::SHIFT, eframe::egui::Key::Tab),
-                box_fn(on_shift_tab_inside_list),
+                map_text_command_to_command_handler(on_shift_tab_inside_list),
             ),
             (
                 "EnterInsideList",
                 KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Enter),
-                box_fn(on_enter_inside_list_item),
+                map_text_command_to_command_handler(on_enter_inside_list_item),
             ),
         ]
         .map(|(name, shortcut, handler)| EditorCommand {
@@ -384,10 +413,8 @@ impl AppState {
             editor_commands.push(EditorCommand {
                 name: md_shortcut.name.to_string(),
                 shortcut: Some(md_shortcut.shortcut.clone()),
-                try_handle: Box::new(move |context| {
+                try_handle: map_text_command_to_command_handler(move |context| {
                     handle_md_annotation_command(&md_shortcut, context)
-                        .map(|changes| SmallVec::from([AppAction::ApplyTextChanges(changes)]))
-                        .unwrap_or_default()
                 }),
             });
         }

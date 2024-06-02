@@ -9,8 +9,10 @@ use crate::{
     app_state::{AppState, UnsavedChange},
     byte_span::UnOrderedByteSpan,
     effects::text_change_effect::{apply_text_changes, TextChange},
+    persistent_state::NoteFile,
 };
 
+#[derive(Debug)]
 pub enum AppAction {
     SwitchToNote { index: u32, via_shortcut: bool },
     // HideApp,
@@ -19,7 +21,7 @@ pub enum AppAction {
     IncreaseFontSize,
     DecreaseFontSize,
     SetWindowPinned(bool),
-    ApplyTextChanges(Vec<TextChange>),
+    ApplyTextChanges(NoteFile, Vec<TextChange>),
 }
 
 pub fn process_app_action(
@@ -74,16 +76,22 @@ pub fn process_app_action(
             state.is_pinned = is_pinned;
         }
 
-        AppAction::ApplyTextChanges(changes) => {
-            // TODO make sure that changes is for that note
-            let index = state.selected_note as usize;
+        AppAction::ApplyTextChanges(note_file, changes) => {
+            let NoteFile::Note(note_index) = note_file else {
+                return;
+            };
+
+            let index = note_index as usize;
             let note = &mut state.notes[index];
             let text = &mut note.text;
             let cursor = note.cursor;
             if let Some(byte_range) = cursor {
                 if let Ok(updated_cursor) = apply_text_changes(text, byte_range, changes) {
-                    state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
-                    state.notes[state.selected_note as usize].cursor = Some(updated_cursor);
+                    if note_index == state.selected_note {
+                        // if the changes are for the selected note we need to recompute TextStructure
+                        state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
+                    }
+                    state.notes[index].cursor = Some(updated_cursor);
                 }
             }
         }

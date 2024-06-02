@@ -6,7 +6,7 @@ use app_actions::{process_app_action, AppAction};
 use app_state::{AppInitData, AppState, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
 use byte_span::UnOrderedByteSpan;
-use command::{EditorCommandContext, EditorCommandOutput};
+use command::{CommandContext, EditorCommandOutput, TextCommandContext};
 use effects::text_change_effect::{apply_text_changes, TextChange};
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
@@ -246,37 +246,30 @@ impl eframe::App for MyApp {
 
         // handling commands
         // sych as {tab, enter} inside a list
-        let actions_from_keyboard_commands: Option<(EditorCommandOutput, UnOrderedByteSpan)> =
-            cursor.clone().and_then(|byte_range| {
-                ctx.input_mut(|input| {
-                    // only one command can be handled at a time
-                    app_state.editor_commands.iter().find_map(|editor_command| {
-                        match &editor_command.shortcut {
-                            Some(keyboard_shortcut)
-                                if is_shortcut_match(input, &keyboard_shortcut) =>
-                            {
-                                let res = (editor_command.try_handle)(EditorCommandContext::new(
-                                    &text_structure,
-                                    &editor_text,
-                                    byte_range.ordered(),
-                                ));
+        let actions_from_keyboard_commands: Option<EditorCommandOutput> = {
+            ctx.input_mut(|input| {
+                // only one command can be handled at a time
+                app_state.editor_commands.iter().find_map(|editor_command| {
+                    match &editor_command.shortcut {
+                        Some(keyboard_shortcut) if is_shortcut_match(input, &keyboard_shortcut) => {
+                            let res = (editor_command.try_handle)(CommandContext { app_state });
 
-                                if !res.is_empty() {
-                                    // remove the keys from the input
-                                    input.consume_shortcut(&keyboard_shortcut);
-                                }
-
-                                Some((res, byte_range))
+                            if !res.is_empty() {
+                                // remove the keys from the input
+                                input.consume_shortcut(&keyboard_shortcut);
                             }
-                            _ => None,
+
+                            Some(res)
                         }
-                    })
+                        _ => None,
+                    }
                 })
-            });
+            })
+        };
 
         // now apply prepared changes, and update text structure and cursor appropriately
-        if let Some((changes, byte_range)) = actions_from_keyboard_commands {
-            for action in changes {
+        if let Some(app_actions) = actions_from_keyboard_commands {
+            for action in app_actions {
                 process_app_action(action, ctx, app_state, text_edit_id);
             }
 

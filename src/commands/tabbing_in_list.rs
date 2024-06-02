@@ -2,15 +2,15 @@ use smallvec::SmallVec;
 
 use crate::{
     byte_span::ByteSpan,
-    command::EditorCommandContext,
+    command::TextCommandContext,
     effects::text_change_effect::TextChange,
     text_structure::{ListDesc, SpanKind, SpanMeta, TextStructure},
 };
 
 use super::select_unordered_list_marker;
 
-pub fn on_shift_tab_inside_list(context: EditorCommandContext) -> Option<Vec<TextChange>> {
-    let EditorCommandContext {
+pub fn on_shift_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>> {
+    let TextCommandContext {
         text_structure: structure,
         text,
         byte_cursor: cursor,
@@ -65,8 +65,8 @@ pub fn on_shift_tab_inside_list(context: EditorCommandContext) -> Option<Vec<Tex
     }
 }
 
-pub fn on_tab_inside_list(context: EditorCommandContext) -> Option<Vec<TextChange>> {
-    let EditorCommandContext {
+pub fn on_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>> {
+    let TextCommandContext {
         text_structure: structure,
         text,
         byte_cursor: cursor,
@@ -253,7 +253,7 @@ mod tests {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let changes = on_tab_inside_list(EditorCommandContext::new(
+            let changes = on_tab_inside_list(TextCommandContext::new(
                 &TextStructure::new(&text),
                 &text,
                 cursor.clone(),
@@ -301,7 +301,7 @@ mod tests {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
-            let changes = on_shift_tab_inside_list(EditorCommandContext::new(
+            let changes = on_shift_tab_inside_list(TextCommandContext::new(
                 &TextStructure::new(&text),
                 &text,
                 cursor.clone(),

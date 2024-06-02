@@ -42,6 +42,7 @@ impl AppIcon {
     }
 }
 
+#[derive(Debug)]
 // #[derive(Debug, Clone, Copy)]
 pub struct Sizes {
     pub xs: f32,
