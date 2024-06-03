@@ -13,8 +13,6 @@ pub enum AppAction {
     // HideApp,
     // ShowApp,
     OpenLink(String),
-    IncreaseFontSize,
-    DecreaseFontSize,
     SetWindowPinned(bool),
     ApplyTextChanges(NoteFile, Vec<TextChange>),
 }
@@ -60,12 +58,6 @@ pub fn process_app_action(
             }
         }
         AppAction::OpenLink(url) => ctx.open_url(OpenUrl::new_tab(url)),
-        AppAction::IncreaseFontSize => {
-            state.font_scale += 1;
-        }
-        AppAction::DecreaseFontSize => {
-            state.font_scale -= 1;
-        }
 
         AppAction::SetWindowPinned(is_pinned) => {
             state.is_pinned = is_pinned;

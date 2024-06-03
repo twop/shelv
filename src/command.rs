@@ -71,15 +71,13 @@ impl CommandList {
     // others
     pub fn switch_to_note(note_index: u8) -> CowStr<'static> {
         match note_index {
-            0 => "Shelv 1".into(),
-            1 => "Shelv 2".into(),
-            2 => "Shelv 3".into(),
-            3 => "Shelv 4".into(),
-            n => format!("Shelv {}", n + 1).into(),
+            0 => "Shelf 1".into(),
+            1 => "Shelf 2".into(),
+            2 => "Shelf 3".into(),
+            3 => "Shelf 4".into(),
+            n => format!("Shelf {}", n + 1).into(),
         }
     }
 
-    pub const INCREASE_FONT_SIZE: &'static str = "Increase Font Size";
-    pub const DECREASE_FONT_SIZE: &'static str = "Decrease Font Size";
     pub const PIN_WINDOW: &'static str = "Pin/Unpin Window";
 }

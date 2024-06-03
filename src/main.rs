@@ -308,7 +308,6 @@ impl eframe::App for MyApp {
             is_window_pinned: app_state.is_pinned,
             note_count,
             text_edit_id,
-            font_scale: app_state.font_scale,
             command_list: &app_state.editor_commands,
             byte_cursor: cursor,
             syntax_set: &app_state.syntax_set,

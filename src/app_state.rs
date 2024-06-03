@@ -70,7 +70,6 @@ pub struct AppState {
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
-    pub font_scale: i32,
 }
 
 pub struct ComputedLayout {
@@ -85,14 +84,13 @@ pub struct LayoutParams<'a> {
 }
 
 impl<'a> LayoutParams<'a> {
-    pub fn new(text: &'a str, wrap_width: f32, font_size: i32) -> Self {
+    pub fn new(text: &'a str, wrap_width: f32) -> Self {
         Self {
             text,
             wrap_width,
             hash: {
                 let mut s = DefaultHasher::new();
                 text.hash(&mut s);
-                font_size.hash(&mut s);
                 // note that it is OK to round it up
                 ((wrap_width * 100.0) as i64).hash(&mut s);
                 s.finish()
@@ -343,19 +341,15 @@ impl AppState {
                     return SmallVec::new();
                 };
 
-                let text_command_ctx = TextCommandContext {
-                    text_structure,
-                    text: &note.text,
-                    byte_cursor: cursor.ordered(),
-                };
-
                 let note_file = NoteFile::Note(app_state.selected_note);
 
-                f(text_command_ctx)
-                    .map(|changes| {
-                        SmallVec::from([AppAction::ApplyTextChanges(note_file, changes)])
-                    })
-                    .unwrap_or_default()
+                f(TextCommandContext::new(
+                    text_structure,
+                    &note.text,
+                    cursor.ordered(),
+                ))
+                .map(|changes| SmallVec::from([AppAction::ApplyTextChanges(note_file, changes)]))
+                .unwrap_or_default()
             })
         }
 
@@ -417,18 +411,6 @@ impl AppState {
         }
 
         editor_commands.push(EditorCommand {
-            name: CommandList::INCREASE_FONT_SIZE.to_string(),
-            shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::Plus)),
-            try_handle: Box::new(|_| [AppAction::IncreaseFontSize].into()),
-        });
-
-        editor_commands.push(EditorCommand {
-            name: CommandList::DECREASE_FONT_SIZE.to_string(),
-            shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::Minus)),
-            try_handle: Box::new(|_| [AppAction::DecreaseFontSize].into()),
-        });
-
-        editor_commands.push(EditorCommand {
             name: CommandList::PIN_WINDOW.to_string(),
             shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::P)),
             try_handle: Box::new(|ctx| {
@@ -451,7 +433,6 @@ impl AppState {
             selected_note,
             hidden: false,
             prev_focused: false,
-            font_scale: 0,
             editor_commands: CommandList::new(editor_commands),
         }
     }

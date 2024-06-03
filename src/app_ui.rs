@@ -27,7 +27,6 @@ pub struct AppRenderData<'a> {
     pub selected_note: u32,
     pub note_count: usize,
     pub text_edit_id: Id,
-    pub font_scale: i32,
     pub byte_cursor: Option<UnOrderedByteSpan>,
     pub command_list: &'a CommandList,
     pub syntax_set: &'a SyntaxSet,
@@ -54,7 +53,6 @@ pub fn render_app(
         selected_note,
         text_edit_id,
         note_count,
-        font_scale,
         byte_cursor,
         command_list,
         computed_layout,
@@ -67,7 +65,6 @@ pub fn render_app(
 
     let footer_actions = render_footer_panel(
         selected_note,
-        font_scale,
         note_count,
         command_list,
         is_window_pinned,
@@ -103,7 +100,6 @@ pub fn render_app(
                 });
 
             render_hints(
-                &format!("{}", selected_note + 1),
                 hints.as_ref().map(|hints| hints.as_slice()),
                 avail_space,
                 ui.painter(),
@@ -120,7 +116,6 @@ pub fn render_app(
                             ui,
                             editor_text,
                             text_structure,
-                            font_scale,
                             computed_layout,
                             theme,
                             syntax_set,
@@ -202,7 +197,6 @@ fn render_editor(
     ui: &mut Ui,
     editor_text: &mut String,
     text_structure: TextStructure,
-    font_scale: i32,
     mut computed_layout: Option<ComputedLayout>,
     theme: &AppTheme,
     syntax_set: &SyntaxSet,
@@ -217,14 +211,12 @@ fn render_editor(
     let mut structure_wrapper = Some(text_structure);
 
     let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-        let layout_cache_params = LayoutParams::new(text, wrap_width, font_scale);
+        let layout_cache_params = LayoutParams::new(text, wrap_width);
 
         let layout = match computed_layout.take() {
             Some(layout) if !layout.should_recompute(&layout_cache_params) => layout,
 
             _ => {
-                let scaled_theme = theme.scaled(f32::powi(1.2, font_scale));
-
                 let structure = structure_wrapper.take().unwrap().recycle(text);
 
                 // println!("### updated structure {structure:#?}");
@@ -233,7 +225,7 @@ fn render_editor(
                     &structure,
                     &layout_cache_params,
                     ui,
-                    &scaled_theme,
+                    theme,
                     syntax_set,
                     theme_set,
                 );
@@ -360,7 +352,6 @@ fn restore_cursor_from_note_state(
 
 fn render_footer_panel(
     selected: u32,
-    font_size: i32,
     note_count: usize,
     command_list: &CommandList,
     is_window_pinned: bool,
@@ -414,35 +405,35 @@ fn render_footer_panel(
                 });
 
                 // TODO Maybe this should be a global notification/toast UI instead of just font size.
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    let font_animation_id = ui.id().with("font_size");
-                    let color_animation_id = ui.id().with("message_color");
+                // ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                //     let font_animation_id = ui.id().with("font_size");
+                //     let color_animation_id = ui.id().with("message_color");
 
-                    let font_size_value =
-                        ctx.animate_value_with_time(font_animation_id, font_size as f32, 2.0);
-                    let show_font_message = font_size_value != font_size as f32;
+                //     let font_size_value =
+                //         ctx.animate_value_with_time(font_animation_id, font_size as f32, 2.0);
+                //     let show_font_message = font_size_value != font_size as f32;
 
-                    let show_hide_value = ctx.animate_value_with_time(
-                        color_animation_id,
-                        if show_font_message { 1.0 } else { 0.0 },
-                        0.2,
-                    );
-                    let interpolated_font_color = interpolate_color(
-                        Color32::TRANSPARENT,
-                        theme.colors.subtle_text_color,
-                        show_hide_value,
-                    );
+                //     let show_hide_value = ctx.animate_value_with_time(
+                //         color_animation_id,
+                //         if show_font_message { 1.0 } else { 0.0 },
+                //         0.2,
+                //     );
+                //     let interpolated_font_color = interpolate_color(
+                //         Color32::TRANSPARENT,
+                //         theme.colors.subtle_text_color,
+                //         show_hide_value,
+                //     );
 
-                    ui.add_space(theme.sizes.xl);
-                    ui.label(
-                        RichText::new(format!("Font scaling set to {}", font_size))
-                            .color(interpolated_font_color)
-                            .font(FontId {
-                                size: theme.fonts.size.normal,
-                                family: theme.fonts.family.bold.clone(),
-                            }),
-                    );
-                });
+                //     ui.add_space(theme.sizes.xl);
+                //     ui.label(
+                //         RichText::new(format!("Font scaling set to {}", font_size))
+                //             .color(interpolated_font_color)
+                //             .font(FontId {
+                //                 size: theme.fonts.size.normal,
+                //                 family: theme.fonts.family.bold.clone(),
+                //             }),
+                //     );
+                // });
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     for item in [
@@ -638,7 +629,6 @@ fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) {
 }
 
 fn render_hints(
-    title: &str,
     shortcuts: Option<&[(&str, KeyboardShortcut)]>,
     available_space: Rect,
     painter: &Painter,
