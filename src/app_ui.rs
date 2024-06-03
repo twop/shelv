@@ -9,13 +9,15 @@ use eframe::{
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
 };
+// use itertools::Itertools;
 use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     app_actions::AppAction,
-    app_state::{AppShortcuts, ComputedLayout, LayoutParams},
+    app_state::{ComputedLayout, LayoutParams},
     byte_span::UnOrderedByteSpan,
+    command::CommandList,
     picker::{Picker, PickerItem},
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme},
@@ -23,10 +25,11 @@ use crate::{
 
 pub struct AppRenderData<'a> {
     pub selected_note: u32,
+    pub note_count: usize,
     pub text_edit_id: Id,
     pub font_scale: i32,
     pub byte_cursor: Option<UnOrderedByteSpan>,
-    pub md_shortcuts: &'a [(String, KeyboardShortcut)],
+    pub command_list: &'a CommandList,
     pub syntax_set: &'a SyntaxSet,
     pub theme_set: &'a ThemeSet,
     pub computed_layout: Option<ComputedLayout>,
@@ -44,16 +47,16 @@ pub fn render_app(
     text_structure: TextStructure,
     editor_text: &mut String,
     visual_state: AppRenderData,
-    shortcuts: &AppShortcuts,
     theme: &AppTheme,
     ctx: &egui::Context,
 ) -> RenderAppResult {
     let AppRenderData {
         selected_note,
         text_edit_id,
+        note_count,
         font_scale,
         byte_cursor,
-        md_shortcuts,
+        command_list,
         computed_layout,
         syntax_set,
         theme_set,
@@ -65,11 +68,8 @@ pub fn render_app(
     let footer_actions = render_footer_panel(
         selected_note,
         font_scale,
-        shortcuts
-            .switch_to_note
-            .iter()
-            .map(|shortcut| format!("Shelf {}", ctx.format_shortcut(&shortcut)))
-            .collect(),
+        note_count,
+        command_list,
         is_window_pinned,
         ctx,
         &theme,
@@ -85,9 +85,26 @@ pub fn render_app(
         .show(ctx, |ui| {
             let avail_space = ui.available_rect_before_wrap();
 
+            let hints: Option<SmallVec<[(&str, KeyboardShortcut); 8]>> =
+                editor_text.is_empty().then(|| {
+                    [
+                        CommandList::MARKDOWN_BOLD,
+                        CommandList::MARKDOWN_ITALIC,
+                        CommandList::MARKDOWN_STRIKETHROUGH,
+                        CommandList::MARKDOWN_CODEBLOCK,
+                        CommandList::MARKDOWN_H1,
+                        CommandList::MARKDOWN_H2,
+                        CommandList::MARKDOWN_H3,
+                    ]
+                    .into_iter()
+                    .filter_map(|name| command_list.find_by_name(name.as_ref()))
+                    .filter_map(|cmd| cmd.shortcut.map(|shortcut| (cmd.name.as_str(), shortcut)))
+                    .collect()
+                });
+
             render_hints(
                 &format!("{}", selected_note + 1),
-                editor_text.is_empty().then(|| md_shortcuts),
+                hints.as_ref().map(|hints| hints.as_slice()),
                 avail_space,
                 ui.painter(),
                 ctx,
@@ -344,11 +361,22 @@ fn restore_cursor_from_note_state(
 fn render_footer_panel(
     selected: u32,
     font_size: i32,
-    tooltips: Vec<String>,
+    note_count: usize,
+    command_list: &CommandList,
     is_window_pinned: bool,
     ctx: &Context,
     theme: &AppTheme,
 ) -> SmallVec<[AppAction; 1]> {
+    let tooltips: SmallVec<[String; 6]> = (0..note_count)
+        .map(|note_index| CommandList::switch_to_note(note_index as u8))
+        .map(|name| command_list.find_by_name(name.as_ref()))
+        .enumerate()
+        .map(|(note_index, cmd)| match cmd.and_then(|cmd| cmd.shortcut) {
+            Some(shortcut) => format!("Shelf {}", ctx.format_shortcut(&shortcut)),
+            None => format!("Shelf {}", note_index + 1),
+        })
+        .collect();
+
     let mut current_selection = selected;
     let mut actions = SmallVec::new();
     TopBottomPanel::bottom("footer")
@@ -485,13 +513,22 @@ fn render_footer_panel(
                             },
                         ))
                         .on_hover_ui(|ui| {
-                            ui.label(
-                                RichText::new(if is_window_pinned {
-                                    "unpin window"
-                                } else {
-                                    "pin window"
+                            let tooltip_text = if is_window_pinned {
+                                "unpin window"
+                            } else {
+                                "pin window"
+                            };
+
+                            let tooltip_text = command_list
+                                .find_by_name(CommandList::PIN_WINDOW)
+                                .and_then(|cmd| cmd.shortcut)
+                                .map(|shortcut| {
+                                    format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
                                 })
-                                .color(theme.colors.subtle_text_color),
+                                .unwrap_or_else(|| tooltip_text.to_string());
+
+                            ui.label(
+                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
                             );
                         });
 
@@ -602,7 +639,7 @@ fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) {
 
 fn render_hints(
     title: &str,
-    shortcuts: Option<&[(String, KeyboardShortcut)]>,
+    shortcuts: Option<&[(&str, KeyboardShortcut)]>,
     available_space: Rect,
     painter: &Painter,
     cx: &egui::Context,

@@ -218,6 +218,8 @@ impl eframe::App for MyApp {
             }
         }
 
+        let note_count = app_state.notes.len();
+
         let note = &app_state.notes[app_state.selected_note as usize];
         let mut cursor: Option<UnOrderedByteSpan> = note.cursor;
 
@@ -249,21 +251,27 @@ impl eframe::App for MyApp {
         let actions_from_keyboard_commands: Option<EditorCommandOutput> = {
             ctx.input_mut(|input| {
                 // only one command can be handled at a time
-                app_state.editor_commands.iter().find_map(|editor_command| {
-                    match &editor_command.shortcut {
-                        Some(keyboard_shortcut) if is_shortcut_match(input, &keyboard_shortcut) => {
-                            let res = (editor_command.try_handle)(CommandContext { app_state });
+                app_state
+                    .editor_commands
+                    .slice()
+                    .iter()
+                    .find_map(|editor_command| {
+                        match &editor_command.shortcut {
+                            Some(keyboard_shortcut)
+                                if is_shortcut_match(input, &keyboard_shortcut) =>
+                            {
+                                let res = (editor_command.try_handle)(CommandContext { app_state });
 
-                            if !res.is_empty() {
-                                // remove the keys from the input
-                                input.consume_shortcut(&keyboard_shortcut);
+                                if !res.is_empty() {
+                                    // remove the keys from the input
+                                    input.consume_shortcut(&keyboard_shortcut);
+                                }
+
+                                Some(res)
                             }
-
-                            Some(res)
+                            _ => None,
                         }
-                        _ => None,
-                    }
-                })
+                    })
             })
         };
 
@@ -298,10 +306,11 @@ impl eframe::App for MyApp {
         let vis_state = AppRenderData {
             selected_note: app_state.selected_note,
             is_window_pinned: app_state.is_pinned,
+            note_count,
             text_edit_id,
             font_scale: app_state.font_scale,
+            command_list: &app_state.editor_commands,
             byte_cursor: cursor,
-            md_shortcuts: &app_state.md_annotation_shortcuts,
             syntax_set: &app_state.syntax_set,
             theme_set: &app_state.theme_set,
             computed_layout: app_state.computed_layout.take(),
@@ -311,7 +320,6 @@ impl eframe::App for MyApp {
             text_structure,
             editor_text,
             vis_state,
-            &app_state.app_shortcuts,
             &app_state.theme,
             ctx,
         );
@@ -442,8 +450,7 @@ fn main() {
 fn hide_app_on_macos() {
     // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
     use objc2::rc::Id;
-    use objc2::runtime::Object;
-    use objc2::{class, msg_send, msg_send_id};
+    use objc2::{class, msg_send, msg_send_id, runtime::Object};
     unsafe {
         let app: Id<Object> = msg_send_id![class!(NSApplication), sharedApplication];
         let arg = app.as_ref();

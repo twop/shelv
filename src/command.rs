@@ -36,8 +36,23 @@ pub struct EditorCommand {
     pub try_handle: Box<dyn Fn(CommandContext) -> EditorCommandOutput>,
 }
 
-pub struct BuiltinCommands;
-impl BuiltinCommands {
+pub struct CommandList(Vec<EditorCommand>);
+
+impl CommandList {
+    pub fn new(list: Vec<EditorCommand>) -> Self {
+        // TODO: ensure uniqness of names
+        // that is going to be even more critical with settings note
+        Self(list)
+    }
+
+    pub fn slice(&self) -> &[EditorCommand] {
+        &self.0
+    }
+
+    pub fn find_by_name(&self, name: &str) -> Option<&EditorCommand> {
+        self.slice().iter().find(|c| c.name == name)
+    }
+
     // autocomplete/convinience
     pub const EXPAND_TASK_MARKER: &'static str = "Expand Task Marker";
     pub const INDENT_LIST_ITEM: &'static str = "Increase List Item identation";
@@ -66,4 +81,5 @@ impl BuiltinCommands {
 
     pub const INCREASE_FONT_SIZE: &'static str = "Increase Font Size";
     pub const DECREASE_FONT_SIZE: &'static str = "Decrease Font Size";
+    pub const PIN_WINDOW: &'static str = "Pin/Unpin Window";
 }
