@@ -77,27 +77,6 @@ pub fn render_app(
 
     output_actions.extend(footer_actions);
 
-    // TODO migrate these to be commands
-    // note that it is possible that commands might need to be more generalized
-    // for example you should be able to switch to a note even withtout having a focus
-    ctx.input_mut(|input| {
-        for (index, shortcut) in shortcuts.switch_to_note.iter().enumerate() {
-            if input.consume_shortcut(&shortcut) {
-                output_actions.push(AppAction::SwitchToNote {
-                    index: index as u32,
-                    via_shortcut: true,
-                })
-            }
-        }
-
-        if input.consume_shortcut(&shortcuts.increase_font) {
-            output_actions.push(AppAction::IncreaseFontSize);
-        }
-        if input.consume_shortcut(&shortcuts.decrease_font) {
-            output_actions.push(AppAction::DecreaseFontSize);
-        }
-    });
-
     render_header_panel(ctx, theme);
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);

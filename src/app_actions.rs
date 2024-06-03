@@ -1,9 +1,4 @@
-use eframe::{
-    egui::{Context, Id, OpenUrl},
-    epaint::text::cursor,
-};
-
-use smallvec::SmallVec;
+use eframe::egui::{Context, Id, OpenUrl};
 
 use crate::{
     app_state::{AppState, UnsavedChange},
@@ -91,7 +86,7 @@ pub fn process_app_action(
                         // if the changes are for the selected note we need to recompute TextStructure
                         state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
                     }
-                    state.notes[index].cursor = Some(updated_cursor);
+                    note.cursor = Some(updated_cursor);
                 }
             }
         }
