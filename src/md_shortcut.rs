@@ -3,22 +3,11 @@ use std::ops::Range;
 use eframe::egui::KeyboardShortcut;
 
 use crate::{
-    app_actions::TextChange,
     byte_span::ByteSpan,
-    commands::EditorCommand,
+    command::{EditorCommand, TextCommandContext},
+    effects::text_change_effect::TextChange,
     text_structure::{SpanKind, TextStructure},
 };
-
-pub struct MarkdownShortcutCommand {
-    // name: String,
-    md_shortcut: MdAnnotationShortcut,
-}
-
-impl MarkdownShortcutCommand {
-    pub fn new(md_shortcut: MdAnnotationShortcut) -> Self {
-        Self { md_shortcut }
-    }
-}
 
 pub struct MdAnnotationShortcut {
     pub name: &'static str,
@@ -100,49 +89,43 @@ struct EvalState {
     result: String,
 }
 
-impl EditorCommand for MarkdownShortcutCommand {
-    fn name(&self) -> &str {
-        self.md_shortcut.name
-    }
+pub fn handle_md_annotation_command(
+    md_shortcut: &MdAnnotationShortcut,
+    context: TextCommandContext,
+) -> Option<Vec<TextChange>> {
+    let TextCommandContext {
+        text_structure,
+        text,
+        byte_cursor,
+    } = context;
 
-    fn shortcut(&self) -> KeyboardShortcut {
-        self.md_shortcut.shortcut
-    }
+    let span = text_structure
+        .find_span_at(md_shortcut.target_span, byte_cursor.clone())
+        .map(|(span_range, idx)| (span_range, text_structure.get_span_inner_content(idx)));
 
-    fn try_handle(
-        &self,
-        text_structure: &crate::text_structure::TextStructure,
-        text: &str,
-        byte_cursor: ByteSpan,
-    ) -> Option<Vec<crate::app_actions::TextChange>> {
-        let span = text_structure
-            .find_span_at(self.md_shortcut.target_span, byte_cursor.clone())
-            .map(|(span_range, idx)| (span_range, text_structure.get_span_inner_content(idx)));
+    match span {
+        Some((span_byte_range, content_byte_range)) => {
+            // we need to remove the annotations because it is already annotated
+            // for example: if it is already "bold" then remove "**" on each side
 
-        match span {
-            Some((span_byte_range, content_byte_range)) => {
-                // we need to remove the annotations because it is already annotated
-                // for example: if it is already "bold" then remove "**" on each side
+            Some(vec![TextChange::Replace(
+                span_byte_range,
+                TextChange::CURSOR_EDGE.to_string()
+                    + &text[content_byte_range.range()]
+                    + TextChange::CURSOR_EDGE,
+            )])
+        }
+        None => {
+            // means that we need to execute instruction for the shortcut, presumably to add annotations
+            let mut cx = ShortcutExecContext {
+                structure: &text_structure,
+                text,
+                selection_byte_range: byte_cursor.clone(),
+                replace_range: byte_cursor.clone(),
+            };
 
-                Some(vec![TextChange::Replace(
-                    span_byte_range,
-                    TextChange::CURSOR_EDGE.to_string()
-                        + &text[content_byte_range.range()]
-                        + TextChange::CURSOR_EDGE,
-                )])
-            }
-            None => {
-                // means that we need to execute instruction for the shortcut, presumably to add annotations
-                let mut cx = ShortcutExecContext {
-                    structure: &text_structure,
-                    text,
-                    selection_byte_range: byte_cursor.clone(),
-                    replace_range: byte_cursor.clone(),
-                };
-
-                execute_instruction(&mut cx, &self.md_shortcut.instruction)
-                    .map(|result| vec![TextChange::Replace(cx.replace_range, result.content)])
-            }
+            execute_instruction(&mut cx, &md_shortcut.instruction)
+                .map(|result| vec![TextChange::Replace(cx.replace_range, result.content)])
         }
     }
 }

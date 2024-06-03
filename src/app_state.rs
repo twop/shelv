@@ -14,21 +14,25 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    app_actions::{
-        EnterInsideListCommand, ShiftTabInsideListCommand, SpaceAfterTaskMarkersCommand,
-        TabInsideListCommand,
-    },
+    app_actions::AppAction,
     byte_span::UnOrderedByteSpan,
-    commands::EditorCommand,
+    command::{CommandContext, EditorCommand, EditorCommandOutput, TextCommandContext},
+    commands::{
+        enter_in_list::on_enter_inside_list_item,
+        space_after_task_markers::on_space_after_task_markers,
+        tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
+    },
+    effects::text_change_effect::TextChange,
     md_shortcut::{
-        Edge, Instruction, InstructionCondition, MarkdownShortcutCommand, MdAnnotationShortcut,
-        Source,
+        handle_md_annotation_command, Edge, Instruction, InstructionCondition,
+        MdAnnotationShortcut, Source,
     },
     persistent_state::{DataToSave, NoteFile, RestoredData},
     text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
 };
 
+#[derive(Debug)]
 pub struct Note {
     pub text: String,
     pub cursor: Option<UnOrderedByteSpan>,
@@ -62,13 +66,14 @@ pub struct AppState {
     pub prev_focused: bool,
     pub md_annotation_shortcuts: Vec<(String, KeyboardShortcut)>,
     pub app_shortcuts: AppShortcuts,
-    pub editor_commands: Vec<Box<dyn EditorCommand>>,
+    pub editor_commands: Vec<EditorCommand>,
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
     pub font_scale: i32,
 }
 
+#[derive(Debug)]
 pub struct AppShortcuts {
     bold: KeyboardShortcut,
     emphasize: KeyboardShortcut,
@@ -344,15 +349,74 @@ impl AppState {
             .map(|s| (s.name.to_string(), s.shortcut))
             .collect();
 
-        let mut editor_commands: Vec<Box<dyn EditorCommand>> = vec![
-            Box::new(TabInsideListCommand),
-            Box::new(EnterInsideListCommand),
-            Box::new(ShiftTabInsideListCommand),
-            Box::new(SpaceAfterTaskMarkersCommand),
-        ];
+        fn map_text_command_to_command_handler(
+            f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
+        ) -> Box<dyn Fn(CommandContext) -> EditorCommandOutput> {
+            Box::new(move |CommandContext { app_state }| {
+                let note = &app_state.notes[app_state.selected_note as usize];
+
+                let Some(cursor) = note.cursor else {
+                    return SmallVec::new();
+                };
+
+                let Some(text_structure) = app_state.text_structure.as_ref() else {
+                    return SmallVec::new();
+                };
+
+                let text_command_ctx = TextCommandContext {
+                    text_structure,
+                    text: &note.text,
+                    byte_cursor: cursor.ordered(),
+                };
+
+                let note_file = NoteFile::Note(app_state.selected_note);
+
+                f(text_command_ctx)
+                    .map(|changes| {
+                        SmallVec::from([AppAction::ApplyTextChanges(note_file, changes)])
+                    })
+                    .unwrap_or_default()
+            })
+        }
+
+        let mut editor_commands: Vec<EditorCommand> = [
+            (
+                "SpaceAfterTaskMarker",
+                KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Space),
+                map_text_command_to_command_handler(on_space_after_task_markers),
+            ),
+            (
+                "TabInsideList",
+                KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Tab),
+                map_text_command_to_command_handler(on_tab_inside_list),
+            ),
+            (
+                "ShiftTabInsideList",
+                KeyboardShortcut::new(Modifiers::SHIFT, eframe::egui::Key::Tab),
+                map_text_command_to_command_handler(on_shift_tab_inside_list),
+            ),
+            (
+                "EnterInsideList",
+                KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Enter),
+                map_text_command_to_command_handler(on_enter_inside_list_item),
+            ),
+        ]
+        .map(|(name, shortcut, handler)| EditorCommand {
+            name: name.to_string(),
+            shortcut: Some(shortcut),
+            try_handle: handler,
+        })
+        .into_iter()
+        .collect();
 
         for md_shortcut in md_annotation_shortcuts {
-            editor_commands.push(Box::new(MarkdownShortcutCommand::new(md_shortcut)));
+            editor_commands.push(EditorCommand {
+                name: md_shortcut.name.to_string(),
+                shortcut: Some(md_shortcut.shortcut.clone()),
+                try_handle: map_text_command_to_command_handler(move |context| {
+                    handle_md_annotation_command(&md_shortcut, context)
+                }),
+            });
         }
 
         Self {
