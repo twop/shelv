@@ -16,7 +16,9 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 use crate::{
     app_actions::AppAction,
     byte_span::UnOrderedByteSpan,
-    command::{CommandContext, EditorCommand, EditorCommandOutput, TextCommandContext},
+    command::{
+        CommandContext, CommandList, EditorCommand, EditorCommandOutput, TextCommandContext,
+    },
     commands::{
         enter_in_list::on_enter_inside_list_item,
         space_after_task_markers::on_space_after_task_markers,
@@ -64,28 +66,10 @@ pub struct AppState {
     pub msg_queue: Receiver<MsgToApp>,
     pub hidden: bool,
     pub prev_focused: bool,
-    pub md_annotation_shortcuts: Vec<(String, KeyboardShortcut)>,
-    pub app_shortcuts: AppShortcuts,
-    pub editor_commands: Vec<EditorCommand>,
+    pub editor_commands: CommandList,
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
-    pub font_scale: i32,
-}
-
-#[derive(Debug)]
-pub struct AppShortcuts {
-    bold: KeyboardShortcut,
-    emphasize: KeyboardShortcut,
-    strikethrough: KeyboardShortcut,
-    code_block: KeyboardShortcut,
-    h1: KeyboardShortcut,
-    h2: KeyboardShortcut,
-    h3: KeyboardShortcut,
-    pub increase_font: KeyboardShortcut,
-    pub decrease_font: KeyboardShortcut,
-    pub switch_to_note: Vec<KeyboardShortcut>,
-    // h4: KeyboardShortcut,
 }
 
 pub struct ComputedLayout {
@@ -100,14 +84,13 @@ pub struct LayoutParams<'a> {
 }
 
 impl<'a> LayoutParams<'a> {
-    pub fn new(text: &'a str, wrap_width: f32, font_size: i32) -> Self {
+    pub fn new(text: &'a str, wrap_width: f32) -> Self {
         Self {
             text,
             wrap_width,
             hash: {
                 let mut s = DefaultHasher::new();
                 text.hash(&mut s);
-                font_size.hash(&mut s);
                 // note that it is OK to round it up
                 ((wrap_width * 100.0) as i64).hash(&mut s);
                 s.finish()
@@ -185,40 +168,25 @@ impl AppState {
         use Instruction::*;
         use InstructionCondition::*;
 
-        let app_shortcuts = AppShortcuts {
-            bold: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::B),
-            emphasize: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::I),
-            strikethrough: KeyboardShortcut::new(
-                Modifiers::COMMAND | Modifiers::SHIFT,
-                egui::Key::E,
-            ),
-            code_block: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::C),
-            h1: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num1),
-            h2: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num2),
-            h3: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num3),
-            // h4: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num4),
-            increase_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::Plus),
-            decrease_font: KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::Minus),
-
-            switch_to_note: (0..notes.len())
-                .map(|index| {
-                    KeyboardShortcut::new(
-                        Modifiers::COMMAND,
-                        number_to_key(index as u8 + 1).unwrap(),
-                    )
-                })
-                .collect(),
-        };
-
         let text_structure = TextStructure::new(&notes[selected_note as usize].text);
 
         let md_annotation_shortcuts: Vec<MdAnnotationShortcut> = [
-            ("Bold", "**", app_shortcuts.bold, SpanKind::Bold),
-            ("Italic", "*", app_shortcuts.emphasize, SpanKind::Emphasis),
             (
-                "Strikethrough",
+                CommandList::MARKDOWN_BOLD,
+                "**",
+                KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::B),
+                SpanKind::Bold,
+            ),
+            (
+                CommandList::MARKDOWN_ITALIC,
+                "*",
+                KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::I),
+                SpanKind::Emphasis,
+            ),
+            (
+                CommandList::MARKDOWN_STRIKETHROUGH,
                 "~~",
-                app_shortcuts.strikethrough,
+                KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, egui::Key::E),
                 SpanKind::Strike,
             ),
         ]
@@ -247,8 +215,8 @@ impl AppState {
         )
         .into_iter()
         .chain(std::iter::once(MdAnnotationShortcut {
-            name: "Code Block",
-            shortcut: app_shortcuts.code_block,
+            name: CommandList::MARKDOWN_CODEBLOCK,
+            shortcut: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::C),
             instruction: Instruction::sequence([
                 Instruction::condition(
                     // add new line prior if we start in the middle of the text
@@ -290,9 +258,24 @@ impl AppState {
         }))
         .chain(
             [
-                ("H1", "#", HeadingLevel::H1, app_shortcuts.h1),
-                ("H2", "##", HeadingLevel::H2, app_shortcuts.h2),
-                ("H3", "###", HeadingLevel::H3, app_shortcuts.h3),
+                (
+                    CommandList::MARKDOWN_H1,
+                    "#",
+                    HeadingLevel::H1,
+                    KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num1),
+                ),
+                (
+                    CommandList::MARKDOWN_H2,
+                    "##",
+                    HeadingLevel::H2,
+                    KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num2),
+                ),
+                (
+                    CommandList::MARKDOWN_H3,
+                    "###",
+                    HeadingLevel::H3,
+                    KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num3),
+                ),
                 // ("H4", "####", HeadingLevel::H4, app_shortcuts.h4),
             ]
             .map(|(name, prefix, level, shortcut)| MdAnnotationShortcut {
@@ -344,11 +327,6 @@ impl AppState {
         )
         .collect();
 
-        let md_shortcut_hints: Vec<(String, KeyboardShortcut)> = md_annotation_shortcuts
-            .iter()
-            .map(|s| (s.name.to_string(), s.shortcut))
-            .collect();
-
         fn map_text_command_to_command_handler(
             f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
         ) -> Box<dyn Fn(CommandContext) -> EditorCommandOutput> {
@@ -363,40 +341,36 @@ impl AppState {
                     return SmallVec::new();
                 };
 
-                let text_command_ctx = TextCommandContext {
-                    text_structure,
-                    text: &note.text,
-                    byte_cursor: cursor.ordered(),
-                };
-
                 let note_file = NoteFile::Note(app_state.selected_note);
 
-                f(text_command_ctx)
-                    .map(|changes| {
-                        SmallVec::from([AppAction::ApplyTextChanges(note_file, changes)])
-                    })
-                    .unwrap_or_default()
+                f(TextCommandContext::new(
+                    text_structure,
+                    &note.text,
+                    cursor.ordered(),
+                ))
+                .map(|changes| SmallVec::from([AppAction::ApplyTextChanges(note_file, changes)]))
+                .unwrap_or_default()
             })
         }
 
         let mut editor_commands: Vec<EditorCommand> = [
             (
-                "SpaceAfterTaskMarker",
+                CommandList::EXPAND_TASK_MARKER,
                 KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Space),
                 map_text_command_to_command_handler(on_space_after_task_markers),
             ),
             (
-                "TabInsideList",
+                CommandList::INDENT_LIST_ITEM,
                 KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Tab),
                 map_text_command_to_command_handler(on_tab_inside_list),
             ),
             (
-                "ShiftTabInsideList",
+                CommandList::UNINDENT_LIST_ITEM,
                 KeyboardShortcut::new(Modifiers::SHIFT, eframe::egui::Key::Tab),
                 map_text_command_to_command_handler(on_shift_tab_inside_list),
             ),
             (
-                "EnterInsideList",
+                CommandList::SPLIT_LIST_ITEM,
                 KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Enter),
                 map_text_command_to_command_handler(on_enter_inside_list_item),
             ),
@@ -419,6 +393,31 @@ impl AppState {
             });
         }
 
+        for note_index in 0..notes.len() {
+            editor_commands.push(EditorCommand {
+                name: CommandList::switch_to_note(note_index as u8).to_string(),
+                shortcut: Some(KeyboardShortcut::new(
+                    Modifiers::COMMAND,
+                    number_to_key(note_index as u8 + 1).unwrap(),
+                )),
+                try_handle: Box::new(move |_| {
+                    [AppAction::SwitchToNote {
+                        index: note_index as u32,
+                        via_shortcut: true,
+                    }]
+                    .into()
+                }),
+            })
+        }
+
+        editor_commands.push(EditorCommand {
+            name: CommandList::PIN_WINDOW.to_string(),
+            shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::P)),
+            try_handle: Box::new(|ctx| {
+                [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into()
+            }),
+        });
+
         Self {
             is_settings_opened: false,
             is_pinned: false,
@@ -434,10 +433,7 @@ impl AppState {
             selected_note,
             hidden: false,
             prev_focused: false,
-            font_scale: 0,
-            editor_commands,
-            md_annotation_shortcuts: md_shortcut_hints,
-            app_shortcuts,
+            editor_commands: CommandList::new(editor_commands),
         }
     }
 

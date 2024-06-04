@@ -1,4 +1,5 @@
 use eframe::egui::KeyboardShortcut;
+use pulldown_cmark::CowStr;
 use smallvec::SmallVec;
 
 use crate::{
@@ -33,4 +34,50 @@ pub struct EditorCommand {
     pub name: String,
     pub shortcut: Option<KeyboardShortcut>,
     pub try_handle: Box<dyn Fn(CommandContext) -> EditorCommandOutput>,
+}
+
+pub struct CommandList(Vec<EditorCommand>);
+
+impl CommandList {
+    pub fn new(list: Vec<EditorCommand>) -> Self {
+        // TODO: ensure uniqness of names
+        // that is going to be even more critical with settings note
+        Self(list)
+    }
+
+    pub fn slice(&self) -> &[EditorCommand] {
+        &self.0
+    }
+
+    pub fn find_by_name(&self, name: &str) -> Option<&EditorCommand> {
+        self.slice().iter().find(|c| c.name == name)
+    }
+
+    // autocomplete/convinience
+    pub const EXPAND_TASK_MARKER: &'static str = "Expand Task Marker";
+    pub const INDENT_LIST_ITEM: &'static str = "Increase List Item identation";
+    pub const UNINDENT_LIST_ITEM: &'static str = "Decrease List Item identation";
+    pub const SPLIT_LIST_ITEM: &'static str = "Split List item at cursor position";
+
+    // markdown
+    pub const MARKDOWN_BOLD: &'static str = "Toggle Bold";
+    pub const MARKDOWN_ITALIC: &'static str = "Toggle Italic";
+    pub const MARKDOWN_STRIKETHROUGH: &'static str = "Toggle Strikethrough";
+    pub const MARKDOWN_CODEBLOCK: &'static str = "Toggle Code Block";
+    pub const MARKDOWN_H1: &'static str = "Heading 1";
+    pub const MARKDOWN_H2: &'static str = "Heading 2";
+    pub const MARKDOWN_H3: &'static str = "Heading 3";
+
+    // others
+    pub fn switch_to_note(note_index: u8) -> CowStr<'static> {
+        match note_index {
+            0 => "Shelf 1".into(),
+            1 => "Shelf 2".into(),
+            2 => "Shelf 3".into(),
+            3 => "Shelf 4".into(),
+            n => format!("Shelf {}", n + 1).into(),
+        }
+    }
+
+    pub const PIN_WINDOW: &'static str = "Pin/Unpin Window";
 }
