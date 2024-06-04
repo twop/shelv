@@ -2,7 +2,7 @@
 #![feature(let_chains)]
 #![feature(offset_of)]
 
-use app_actions::{process_app_action, AppAction};
+use app_actions::{process_app_action, AppAction, AppIO};
 use app_state::{AppInitData, AppState, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
 use byte_span::UnOrderedByteSpan;
@@ -62,12 +62,27 @@ mod theme;
 
 pub struct MyApp {
     state: AppState,
-    last_saved: u128,
     hotwatch: Hotwatch,
     hotkeys_manager: GlobalHotKeyManager,
     tray: TrayIcon,
     msg_queue: SyncSender<MsgToApp>,
     persistence_folder: PathBuf,
+}
+
+struct RealAppIO;
+
+impl AppIO for RealAppIO {
+    fn hide_app(&self) {
+        hide_app_on_macos();
+    }
+
+    fn try_read_note_if_newer(
+        &self,
+        path: &PathBuf,
+        last_saved: u128,
+    ) -> Result<Option<String>, io::Error> {
+        try_read_note_if_newer(path, last_saved)
+    }
 }
 
 impl MyApp {
@@ -157,12 +172,14 @@ impl MyApp {
             })
             .expect("failed to watch file!");
 
+        let last_saved = persistent_state.state.last_saved;
+
         Self {
-            last_saved: persistent_state.state.last_saved,
             state: AppState::new(AppInitData {
                 theme,
                 msg_queue: msg_queue_rx,
                 persistent_state,
+                last_saved,
             }),
             hotkeys_manager,
             tray: tray_icon,
@@ -179,49 +196,57 @@ impl eframe::App for MyApp {
 
         let app_state = &mut self.state;
         // handling message queue
-        while let Ok(msg) = app_state.msg_queue.try_recv() {
-            // println!("App message: {msg:#?}");
-            match msg {
-                MsgToApp::ToggleVisibility => {
-                    app_state.hidden = !app_state.hidden;
+        let mut action_list = EditorCommandOutput::from_iter(
+            app_state
+                .msg_queue
+                .try_iter()
+                .map(AppAction::HandleMsgToApp),
+        );
 
-                    if app_state.hidden {
-                        println!("Toggle visibility: hide");
-                        hide_app_on_macos();
-                    } else {
-                        ctx.send_viewport_cmd(ViewportCommand::Visible(!app_state.hidden));
-                        ctx.send_viewport_cmd(ViewportCommand::Focus);
-                        ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-                        println!("Toggle visibility: show + focus");
-                    }
-                }
-                MsgToApp::NoteFileChanged(note_file, path) => {
-                    if let NoteFile::Note(index) = &note_file {
-                        // println!("change detected, {note_file:?} at {path:?}");
-                        let last_saved = self.last_saved;
+        // handling commands
+        // sych as {tab, enter} inside a list
+        let actions_from_keyboard_commands = ctx
+            .input_mut(|input| {
+                // only one command can be handled at a time
+                app_state
+                    .editor_commands
+                    .slice()
+                    .iter()
+                    .find_map(|editor_command| {
+                        match &editor_command.shortcut {
+                            Some(keyboard_shortcut)
+                                if is_shortcut_match(input, &keyboard_shortcut) =>
+                            {
+                                let res = (editor_command.try_handle)(CommandContext { app_state });
 
-                        match try_read_note_if_newer(&path, last_saved) {
-                            Ok(Some(note_content)) => {
-                                app_state.notes[*index as usize].text = note_content;
-                                app_state.unsaved_changes.push(UnsavedChange::LastUpdated);
+                                if !res.is_empty() {
+                                    // remove the keys from the input
+                                    input.consume_shortcut(&keyboard_shortcut);
+                                }
+
+                                Some(res)
                             }
-                            Ok(None) => {
-                                // no updates needed we already have the newest version
-                            }
-                            Err(err) => {
-                                // failed to read note file
-                                println!("failed to read {path:#?}, err={err:#?}");
-                            }
+                            _ => None,
                         }
-                    }
-                }
-            }
+                    })
+            })
+            .unwrap_or_default();
+
+        action_list.extend(actions_from_keyboard_commands.into_iter());
+
+        // let actions_from_keyboard_commands: Option<EditorCommandOutput> = {
+
+        // };
+
+        // now apply prepared changes, and update text structure and cursor appropriately
+        for action in action_list {
+            process_app_action(action, ctx, app_state, text_edit_id, &RealAppIO);
         }
 
         let note_count = app_state.notes.len();
 
         let note = &app_state.notes[app_state.selected_note as usize];
-        let mut cursor: Option<UnOrderedByteSpan> = note.cursor;
+        let mut cursor = note.cursor;
 
         let editor_text = &note.text;
         let mut text_structure = app_state
@@ -246,50 +271,13 @@ impl eframe::App for MyApp {
             app_state.prev_focused = is_frame_actually_focused;
         }
 
-        // handling commands
-        // sych as {tab, enter} inside a list
-        let actions_from_keyboard_commands: Option<EditorCommandOutput> = {
-            ctx.input_mut(|input| {
-                // only one command can be handled at a time
-                app_state
-                    .editor_commands
-                    .slice()
-                    .iter()
-                    .find_map(|editor_command| {
-                        match &editor_command.shortcut {
-                            Some(keyboard_shortcut)
-                                if is_shortcut_match(input, &keyboard_shortcut) =>
-                            {
-                                let res = (editor_command.try_handle)(CommandContext { app_state });
-
-                                if !res.is_empty() {
-                                    // remove the keys from the input
-                                    input.consume_shortcut(&keyboard_shortcut);
-                                }
-
-                                Some(res)
-                            }
-                            _ => None,
-                        }
-                    })
-            })
-        };
-
-        // now apply prepared changes, and update text structure and cursor appropriately
-        if let Some(app_actions) = actions_from_keyboard_commands {
-            for action in app_actions {
-                process_app_action(action, ctx, app_state, text_edit_id);
-            }
-
-            cursor = app_state.notes[app_state.selected_note as usize].cursor;
-        };
-
         let editor_text = &mut app_state.notes[app_state.selected_note as usize].text;
 
         // handling scheduled JS execution
         if let (Some(text_cursor_range), Some(scheduled_version)) =
             (cursor, app_state.scheduled_script_run_version.take())
         {
+            // TODO refactor this block as an AppAction
             // println!("executing live scripts for version = {scheduled_version}",);
             let script_changes = execute_live_scripts(&text_structure, &editor_text);
             if let Some(changes) = script_changes {
@@ -328,7 +316,7 @@ impl eframe::App for MyApp {
         app_state.notes[app_state.selected_note as usize].cursor = byte_cursor;
 
         for action in actions {
-            process_app_action(action, ctx, app_state, text_edit_id);
+            process_app_action(action, ctx, app_state, text_edit_id, &RealAppIO);
         }
 
         let updated_structure_version = app_state
@@ -371,7 +359,7 @@ impl eframe::App for MyApp {
 
             match try_save(persistent_state, &self.persistence_folder) {
                 Ok(save_state) => {
-                    self.last_saved = save_state.last_saved;
+                    self.state.last_saved = save_state.last_saved;
                 }
                 Err(err) => {
                     println!("failed to persist state with err={err:#?}")

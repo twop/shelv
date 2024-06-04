@@ -15,7 +15,7 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     app_actions::AppAction,
-    app_state::{ComputedLayout, LayoutParams},
+    app_state::{ComputedLayout, LayoutParams, MsgToApp},
     byte_span::UnOrderedByteSpan,
     command::CommandList,
     picker::{Picker, PickerItem},
@@ -71,10 +71,10 @@ pub fn render_app(
         ctx,
         &theme,
     );
-
     output_actions.extend(footer_actions);
 
-    render_header_panel(ctx, theme);
+    let header_actions = render_header_panel(ctx, theme);
+    output_actions.extend(header_actions);
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
 
@@ -551,10 +551,11 @@ fn set_menu_bar_style(ui: &mut egui::Ui) {
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
-fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) {
+fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) -> SmallVec<[AppAction; 1]> {
     TopBottomPanel::top("top_panel")
         .show_separator_line(false)
         .show(ctx, |ui| {
+            let mut resulting_actions: SmallVec<[AppAction; 1]> = Default::default();
             // println!("-----");
             // println!("before menu {:?}", ui.available_size());
             ui.horizontal(|ui| {
@@ -579,8 +580,16 @@ fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) {
 
                     if ui
                         .button(AppIcon::Close.render(sizes.toolbar_icon, theme.colors.button_fg))
+                        .on_hover_ui(|ui| {
+                            ui.label({
+                                RichText::new("Hide Shelv").color(theme.colors.subtle_text_color)
+                            });
+                        })
                         .clicked()
-                    {}
+                    {
+                        resulting_actions
+                            .push(AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility))
+                    }
                 });
 
                 // println!("before title {:?}", ui.available_size());
@@ -625,7 +634,10 @@ fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) {
                     }
                 });
             });
-        });
+
+            resulting_actions
+        })
+        .inner
 }
 
 fn render_hints(
