@@ -53,6 +53,7 @@ pub struct AppState {
     pub selected_note: u32,
     // ------------------------------------
     // -------- emphemeral state ----------
+    pub last_saved: u128,
     pub unsaved_changes: SmallVec<[UnsavedChange; 2]>,
     pub scheduled_script_run_version: Option<u64>,
 
@@ -147,6 +148,7 @@ impl AppState {
             theme,
             msg_queue,
             persistent_state,
+            last_saved,
         } = init_data;
 
         let RestoredData {
@@ -418,6 +420,14 @@ impl AppState {
             }),
         });
 
+        editor_commands.push(EditorCommand {
+            name: CommandList::HIDE_WINDOW.to_string(),
+            shortcut: Some(KeyboardShortcut::new(Modifiers::NONE, egui::Key::Escape)),
+            try_handle: Box::new(|_| {
+                [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
+            }),
+        });
+
         Self {
             is_settings_opened: false,
             is_pinned: false,
@@ -433,6 +443,7 @@ impl AppState {
             selected_note,
             hidden: false,
             prev_focused: false,
+            last_saved,
             editor_commands: CommandList::new(editor_commands),
         }
     }
@@ -463,6 +474,7 @@ pub struct AppInitData {
     pub theme: AppTheme,
     pub msg_queue: Receiver<MsgToApp>,
     pub persistent_state: RestoredData,
+    pub last_saved: u128,
 }
 
 fn number_to_key(key: u8) -> Option<Key> {
