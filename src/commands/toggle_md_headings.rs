@@ -27,7 +27,14 @@ pub fn toggle_md_heading(
     }: TextCommandContext,
     level: HeadingLevel,
 ) -> Option<Vec<TextChange>> {
-    let (span_range, span_kind, span_index) = text_structure.find_any_span_at(byte_cursor)?;
+    let Some((span_range, span_kind, span_index)) = text_structure.find_any_span_at(byte_cursor)
+    else {
+        // that means that there is nothing in the doc just yet
+        return Some(Vec::from([TextChange::Replace(
+            ByteSpan::point(0),
+            format!("{} ", heading_level_to_annotation(level)),
+        )]));
+    };
 
     let parents: SmallVec<[_; 6]> = text_structure.iterate_parents_of(span_index).collect();
 
@@ -52,7 +59,21 @@ pub fn toggle_md_heading(
             )]))
         }
 
-        _ => None,
+        None => {
+            // try find a paragraph to add heading annotations
+            parents
+                .iter()
+                .find_map(|(_, pdesc)| match pdesc.kind {
+                    SpanKind::Paragraph => Some(pdesc.byte_pos),
+                    _ => None,
+                })
+                .map(|paragraph_byte_span| {
+                    Vec::from([TextChange::Replace(
+                        ByteSpan::point(paragraph_byte_span.start),
+                        format!("{} ", heading_level_to_annotation(level)),
+                    )])
+                })
+        }
     }
 }
 
@@ -76,6 +97,24 @@ mod tests {
                 "## **bold{||}** heading",
                 "### **bold{||}** heading",
                 HeadingLevel::H3,
+            ),
+            (
+                "## makes paragraph a heading ##",
+                "first paragraph\n\nsecond paragraph with **bo{||}ld**",
+                "first paragraph\n\n# second paragraph with **bo{||}ld**",
+                HeadingLevel::H1,
+            ),
+            // (
+            //     "## if there is no elements besides root insert annotations in the begining ##",
+            //     "  \n{||}",
+            //     "#   \n{||}",
+            //     HeadingLevel::H1,
+            // ),
+            (
+                "## if the content is empty adds annotations ##",
+                "{||}",
+                "# {||}",
+                HeadingLevel::H1,
             ),
         ];
 

@@ -719,7 +719,7 @@ impl TextStructure {
             .enumerate()
             .rev()
             .find_map(|(i, SpanDesc { byte_pos, kind, .. })| {
-                if byte_pos.contains(byte_cursor) {
+                if byte_pos.contains(byte_cursor) && *kind != SpanKind::Root {
                     Some((*byte_pos, *kind, SpanIndex(i)))
                 } else {
                     None
