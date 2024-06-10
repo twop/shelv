@@ -23,6 +23,8 @@ use crate::{
         enter_in_list::on_enter_inside_list_item,
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
+        toggle_code_block::toggle_code_block,
+        toggle_simple_md_annotations::toggle_simple_md_annotations,
     },
     effects::text_change_effect::TextChange,
     md_shortcut::{
@@ -172,162 +174,78 @@ impl AppState {
 
         let text_structure = TextStructure::new(&notes[selected_note as usize].text);
 
-        let md_annotation_shortcuts: Vec<MdAnnotationShortcut> = [
-            (
-                CommandList::MARKDOWN_BOLD,
-                "**",
-                KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::B),
-                SpanKind::Bold,
-            ),
-            (
-                CommandList::MARKDOWN_ITALIC,
-                "*",
-                KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::I),
-                SpanKind::Emphasis,
-            ),
-            (
-                CommandList::MARKDOWN_STRIKETHROUGH,
-                "~~",
-                KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, egui::Key::E),
-                SpanKind::Strike,
-            ),
-        ]
-        .map(
-            |(name, annotation, shortcut, target_span)| MdAnnotationShortcut {
-                name,
-                shortcut,
-                instruction: Condition {
-                    cond: IsNoneOrEmpty(Source::Selection),
-                    if_true: Box::new(Seq(vec![
-                        Insert(annotation),
-                        PlaceCursor(Edge::Start),
-                        PlaceCursor(Edge::End),
-                        Insert(annotation),
-                    ])),
-                    if_false: Box::new(Seq(vec![
-                        PlaceCursor(Edge::Start),
-                        Insert(annotation),
-                        CopyFrom(Source::Selection),
-                        Insert(annotation),
-                        PlaceCursor(Edge::End),
-                    ])),
-                },
-                target_span,
-            },
-        )
-        .into_iter()
-        .chain(std::iter::once(MdAnnotationShortcut {
-            name: CommandList::MARKDOWN_CODEBLOCK,
-            shortcut: KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::C),
-            instruction: Instruction::sequence([
-                Instruction::condition(
-                    // add new line prior if we start in the middle of the text
-                    Any(vec![
-                        IsNoneOrEmpty(Source::BeforeSelection),
-                        EndsWith(Source::BeforeSelection, "\n"),
-                    ]),
-                    Insert(""),
-                    Insert("\n"),
-                ),
-                Insert("```"),
-                PlaceCursor(Edge::Start),
-                PlaceCursor(Edge::End),
-                Insert("\n"),
-                Instruction::condition(
-                    IsNoneOrEmpty(Source::Selection),
-                    Insert(""),
-                    CopyFrom(Source::Selection),
-                ),
-                Instruction::condition(
-                    Any(vec![
-                        IsNoneOrEmpty(Source::Selection),
-                        EndsWith(Source::Selection, "\n"),
-                    ]),
-                    Insert(""),
-                    Insert("\n"),
-                ),
-                Insert("```"),
-                Instruction::condition(
-                    Any(vec![
-                        IsNoneOrEmpty(Source::AfterSelection),
-                        StartsWith(Source::AfterSelection, "\n"),
-                    ]),
-                    Insert(""),
-                    Insert("\n"),
-                ),
-            ]),
-            target_span: SpanKind::CodeBlock,
-        }))
-        .chain(
-            [
-                (
-                    CommandList::MARKDOWN_H1,
-                    "#",
-                    HeadingLevel::H1,
-                    KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num1),
-                ),
-                (
-                    CommandList::MARKDOWN_H2,
-                    "##",
-                    HeadingLevel::H2,
-                    KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num2),
-                ),
-                (
-                    CommandList::MARKDOWN_H3,
-                    "###",
-                    HeadingLevel::H3,
-                    KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num3),
-                ),
-                // ("H4", "####", HeadingLevel::H4, app_shortcuts.h4),
-            ]
-            .map(|(name, prefix, level, shortcut)| MdAnnotationShortcut {
-                name,
-                shortcut,
-                instruction: MatchFirst(
-                    [
-                        SpanKind::Heading(HeadingLevel::H1),
-                        SpanKind::Heading(HeadingLevel::H2),
-                        SpanKind::Heading(HeadingLevel::H3),
-                        SpanKind::Heading(HeadingLevel::H4),
-                        SpanKind::Heading(HeadingLevel::H5),
-                        SpanKind::Heading(HeadingLevel::H6),
-                        SpanKind::Paragraph,
-                    ]
-                    .into_iter()
-                    .filter(|kind| *kind != SpanKind::Heading(level))
-                    .map(|kind| {
-                        (
-                            InstructionCondition::IsInside(kind),
-                            Seq([
-                                SetReplaceArea(kind),
-                                Insert(prefix),
-                                Insert(" "),
-                                PlaceCursor(Edge::Start),
-                                CopyFrom(Source::SurroundingSpanContent(kind)),
-                                PlaceCursor(Edge::End),
-                            ]
-                            .into()),
+        let md_annotation_shortcuts: Vec<MdAnnotationShortcut> = []
+            .into_iter()
+            .chain(
+                [
+                    (
+                        CommandList::MARKDOWN_H1,
+                        "#",
+                        HeadingLevel::H1,
+                        KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num1),
+                    ),
+                    (
+                        CommandList::MARKDOWN_H2,
+                        "##",
+                        HeadingLevel::H2,
+                        KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num2),
+                    ),
+                    (
+                        CommandList::MARKDOWN_H3,
+                        "###",
+                        HeadingLevel::H3,
+                        KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num3),
+                    ),
+                    // ("H4", "####", HeadingLevel::H4, app_shortcuts.h4),
+                ]
+                .map(|(name, prefix, level, shortcut)| MdAnnotationShortcut {
+                    name,
+                    shortcut,
+                    instruction: MatchFirst(
+                        [
+                            SpanKind::Heading(HeadingLevel::H1),
+                            SpanKind::Heading(HeadingLevel::H2),
+                            SpanKind::Heading(HeadingLevel::H3),
+                            SpanKind::Heading(HeadingLevel::H4),
+                            SpanKind::Heading(HeadingLevel::H5),
+                            SpanKind::Heading(HeadingLevel::H6),
+                            SpanKind::Paragraph,
+                        ]
+                        .into_iter()
+                        .filter(|kind| *kind != SpanKind::Heading(level))
+                        .map(|kind| {
+                            (
+                                InstructionCondition::IsInside(kind),
+                                Seq([
+                                    SetReplaceArea(kind),
+                                    Insert(prefix),
+                                    Insert(" "),
+                                    PlaceCursor(Edge::Start),
+                                    CopyFrom(Source::SurroundingSpanContent(kind)),
+                                    PlaceCursor(Edge::End),
+                                ]
+                                .into()),
+                            )
+                        })
+                        .chain(
+                            [(
+                                InstructionCondition::IsInsideUnmarkedArea,
+                                Seq([
+                                    Insert(prefix),
+                                    Insert(" "),
+                                    PlaceCursor(Edge::Start),
+                                    PlaceCursor(Edge::End),
+                                ]
+                                .into()),
+                            )]
+                            .into_iter(),
                         )
-                    })
-                    .chain(
-                        [(
-                            InstructionCondition::IsInsideUnmarkedArea,
-                            Seq([
-                                Insert(prefix),
-                                Insert(" "),
-                                PlaceCursor(Edge::Start),
-                                PlaceCursor(Edge::End),
-                            ]
-                            .into()),
-                        )]
-                        .into_iter(),
-                    )
-                    .collect(),
-                ),
-                target_span: SpanKind::Heading(level),
-            }),
-        )
-        .collect();
+                        .collect(),
+                    ),
+                    target_span: SpanKind::Heading(level),
+                }),
+            )
+            .collect();
 
         fn map_text_command_to_command_handler(
             f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
@@ -363,18 +281,44 @@ impl AppState {
             ),
             (
                 CommandList::INDENT_LIST_ITEM,
-                KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Tab),
+                KeyboardShortcut::new(Modifiers::NONE, egui::Key::Tab),
                 map_text_command_to_command_handler(on_tab_inside_list),
             ),
             (
                 CommandList::UNINDENT_LIST_ITEM,
-                KeyboardShortcut::new(Modifiers::SHIFT, eframe::egui::Key::Tab),
+                KeyboardShortcut::new(Modifiers::SHIFT, egui::Key::Tab),
                 map_text_command_to_command_handler(on_shift_tab_inside_list),
             ),
             (
                 CommandList::SPLIT_LIST_ITEM,
-                KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Enter),
+                KeyboardShortcut::new(Modifiers::NONE, egui::Key::Enter),
                 map_text_command_to_command_handler(on_enter_inside_list_item),
+            ),
+            (
+                CommandList::MARKDOWN_CODEBLOCK,
+                KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), egui::Key::B),
+                map_text_command_to_command_handler(toggle_code_block),
+            ),
+            (
+                CommandList::MARKDOWN_BOLD,
+                KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::B),
+                map_text_command_to_command_handler(|text_context| {
+                    toggle_simple_md_annotations(text_context, SpanKind::Bold, "**")
+                }),
+            ),
+            (
+                CommandList::MARKDOWN_ITALIC,
+                KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::I),
+                map_text_command_to_command_handler(|text_context| {
+                    toggle_simple_md_annotations(text_context, SpanKind::Emphasis, "*")
+                }),
+            ),
+            (
+                CommandList::MARKDOWN_STRIKETHROUGH,
+                KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), egui::Key::E),
+                map_text_command_to_command_handler(|text_context| {
+                    toggle_simple_md_annotations(text_context, SpanKind::Strike, "~~")
+                }),
             ),
         ]
         .map(|(name, shortcut, handler)| EditorCommand {

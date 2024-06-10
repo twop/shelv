@@ -148,7 +148,7 @@ pub enum InteractiveTextPart<'a> {
 }
 
 impl<'a> TextStructureBuilder<'a> {
-    pub fn start(
+    fn start(
         text: &'a str,
         recycled: (Vec<SpanDesc>, Vec<RawLink>, Vec<(SpanIndex, SpanMeta)>),
     ) -> Self {
@@ -710,14 +710,17 @@ impl TextStructure {
             .map(|(i, desc)| (SpanIndex(i), desc))
     }
 
-    pub fn find_any_span_at(&self, byte_cursor: ByteSpan) -> Option<(ByteSpan, SpanIndex)> {
+    pub fn find_any_span_at(
+        &self,
+        byte_cursor: ByteSpan,
+    ) -> Option<(ByteSpan, SpanKind, SpanIndex)> {
         self.spans
             .iter()
             .enumerate()
             .rev()
-            .find_map(|(i, SpanDesc { byte_pos, .. })| {
+            .find_map(|(i, SpanDesc { byte_pos, kind, .. })| {
                 if byte_pos.contains(byte_cursor) {
-                    Some((byte_pos.clone(), SpanIndex(i)))
+                    Some((*byte_pos, *kind, SpanIndex(i)))
                 } else {
                     None
                 }

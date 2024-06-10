@@ -724,7 +724,7 @@ pub fn is_shortcut_match(input: &egui::InputState, shortcut: &KeyboardShortcut) 
                 modifiers: ev_mods,
                 pressed: true,
                 ..
-            } if *ev_key == logical_key && ev_mods.matches(modifiers)
+            } if *ev_key == logical_key && ev_mods.matches_exact(modifiers)
         )
     })
 }

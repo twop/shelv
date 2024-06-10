@@ -33,6 +33,14 @@ impl ByteSpan {
         }
     }
 
+    pub fn point(start_and_end: usize) -> Self {
+        Self {
+            start: start_and_end,
+            end: start_and_end,
+            marker: PhantomData,
+        }
+    }
+
     pub fn from_range(range: &Range<usize>) -> Self {
         Self::new(range.start, range.end)
     }
