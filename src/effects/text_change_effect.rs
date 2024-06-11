@@ -88,6 +88,7 @@ pub fn apply_text_changes(
                 RangeRelation::StartInside
                 | RangeRelation::EndInside
                 | RangeRelation::Inside
+                | RangeRelation::Equal
                 | RangeRelation::Contains => {
                     // it means that we have overlapping ranges for removal
                     // that is not allowed
@@ -222,6 +223,21 @@ pub fn apply_text_changes(
                                 // => selecte the entire replacement
                                 (cursor_start, (cursor_end as isize + byte_delta) as usize)
                             }
+
+                            RangeRelation::Equal => match cursor_start == cursor_end {
+                                // means empty span, eg "{||}" is being replaced with "some text"
+                                // so we CHOOSE to replace it with "some text{||}", e.g. replacement is before the cursor
+                                // same as  RangeRelation::After
+                                true => (
+                                    (cursor_start as isize + byte_delta) as usize,
+                                    (cursor_end as isize + byte_delta) as usize,
+                                ),
+                                // now if we are replacing the entire region of the selection we essentially just do the same as
+                                // RangeRelation::Contains
+                                false => {
+                                    (cursor_start, (cursor_end as isize + byte_delta) as usize)
+                                }
+                            },
                         }
                     }
                 },

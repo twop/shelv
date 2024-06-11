@@ -95,6 +95,7 @@ pub enum RangeRelation {
     EndInside,
     Inside,
     Contains,
+    Equal,
 }
 
 impl ByteSpan {
@@ -107,7 +108,9 @@ impl ByteSpan {
             "other: assumes left -> right direction"
         );
 
-        if s_end <= other_start {
+        if s_start == other_start && s_end == other_end {
+            RangeRelation::Equal
+        } else if s_end <= other_start {
             RangeRelation::Before
         } else if s_start >= other_end {
             RangeRelation::After

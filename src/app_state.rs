@@ -24,13 +24,10 @@ use crate::{
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
         toggle_code_block::toggle_code_block,
+        toggle_md_headings::toggle_md_heading,
         toggle_simple_md_annotations::toggle_simple_md_annotations,
     },
     effects::text_change_effect::TextChange,
-    md_shortcut::{
-        handle_md_annotation_command, Edge, Instruction, InstructionCondition,
-        MdAnnotationShortcut, Source,
-    },
     persistent_state::{DataToSave, NoteFile, RestoredData},
     text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
@@ -169,83 +166,7 @@ impl AppState {
             NoteFile::Settings => 0,
         };
 
-        use Instruction::*;
-        use InstructionCondition::*;
-
         let text_structure = TextStructure::new(&notes[selected_note as usize].text);
-
-        let md_annotation_shortcuts: Vec<MdAnnotationShortcut> = []
-            .into_iter()
-            .chain(
-                [
-                    (
-                        CommandList::MARKDOWN_H1,
-                        "#",
-                        HeadingLevel::H1,
-                        KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num1),
-                    ),
-                    (
-                        CommandList::MARKDOWN_H2,
-                        "##",
-                        HeadingLevel::H2,
-                        KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num2),
-                    ),
-                    (
-                        CommandList::MARKDOWN_H3,
-                        "###",
-                        HeadingLevel::H3,
-                        KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num3),
-                    ),
-                    // ("H4", "####", HeadingLevel::H4, app_shortcuts.h4),
-                ]
-                .map(|(name, prefix, level, shortcut)| MdAnnotationShortcut {
-                    name,
-                    shortcut,
-                    instruction: MatchFirst(
-                        [
-                            SpanKind::Heading(HeadingLevel::H1),
-                            SpanKind::Heading(HeadingLevel::H2),
-                            SpanKind::Heading(HeadingLevel::H3),
-                            SpanKind::Heading(HeadingLevel::H4),
-                            SpanKind::Heading(HeadingLevel::H5),
-                            SpanKind::Heading(HeadingLevel::H6),
-                            SpanKind::Paragraph,
-                        ]
-                        .into_iter()
-                        .filter(|kind| *kind != SpanKind::Heading(level))
-                        .map(|kind| {
-                            (
-                                InstructionCondition::IsInside(kind),
-                                Seq([
-                                    SetReplaceArea(kind),
-                                    Insert(prefix),
-                                    Insert(" "),
-                                    PlaceCursor(Edge::Start),
-                                    CopyFrom(Source::SurroundingSpanContent(kind)),
-                                    PlaceCursor(Edge::End),
-                                ]
-                                .into()),
-                            )
-                        })
-                        .chain(
-                            [(
-                                InstructionCondition::IsInsideUnmarkedArea,
-                                Seq([
-                                    Insert(prefix),
-                                    Insert(" "),
-                                    PlaceCursor(Edge::Start),
-                                    PlaceCursor(Edge::End),
-                                ]
-                                .into()),
-                            )]
-                            .into_iter(),
-                        )
-                        .collect(),
-                    ),
-                    target_span: SpanKind::Heading(level),
-                }),
-            )
-            .collect();
 
         fn map_text_command_to_command_handler(
             f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
@@ -320,24 +241,35 @@ impl AppState {
                     toggle_simple_md_annotations(text_context, SpanKind::Strike, "~~")
                 }),
             ),
+            (
+                CommandList::MARKDOWN_H1,
+                KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num1),
+                map_text_command_to_command_handler(|text_context| {
+                    toggle_md_heading(text_context, HeadingLevel::H1)
+                }),
+            ),
+            (
+                CommandList::MARKDOWN_H2,
+                KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num2),
+                map_text_command_to_command_handler(|text_context| {
+                    toggle_md_heading(text_context, HeadingLevel::H2)
+                }),
+            ),
+            (
+                CommandList::MARKDOWN_H3,
+                KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num3),
+                map_text_command_to_command_handler(|text_context| {
+                    toggle_md_heading(text_context, HeadingLevel::H3)
+                }),
+            ),
         ]
+        .into_iter()
         .map(|(name, shortcut, handler)| EditorCommand {
             name: name.to_string(),
             shortcut: Some(shortcut),
             try_handle: handler,
         })
-        .into_iter()
         .collect();
-
-        for md_shortcut in md_annotation_shortcuts {
-            editor_commands.push(EditorCommand {
-                name: md_shortcut.name.to_string(),
-                shortcut: Some(md_shortcut.shortcut.clone()),
-                try_handle: map_text_command_to_command_handler(move |context| {
-                    handle_md_annotation_command(&md_shortcut, context)
-                }),
-            });
-        }
 
         for note_index in 0..notes.len() {
             editor_commands.push(EditorCommand {

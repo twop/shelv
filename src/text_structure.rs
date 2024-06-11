@@ -1074,6 +1074,7 @@ mod tests {
     #[test]
     pub fn test_byte_range_relation() {
         let test_cases = [
+            (0..0, 0..0, RangeRelation::Equal),
             (0..1, 1..3, RangeRelation::Before),
             (2..4, 1..2, RangeRelation::After),
             (0..3, 1..2, RangeRelation::Contains),

@@ -53,7 +53,7 @@ mod command;
 mod commands;
 mod effects;
 mod egui_hotkey;
-mod md_shortcut;
+
 mod nord;
 mod persistent_state;
 mod picker;
@@ -208,25 +208,10 @@ impl eframe::App for MyApp {
         // sych as {tab, enter} inside a list
         let actions_from_keyboard_commands = ctx
             .input_mut(|input| {
-                if !input.keys_down.is_empty() || input.modifiers.any() {
-                    println!("### keys={:?}, mods={:?}", input.keys_down, input.modifiers);
-                }
-
-                // for key_ev in input.events.iter()
-                // //     .filter(|event| {
-                // //     matches!(
-                // //         event,
-                // //         egui::Event::Key {
-                // //             key: ev_key,
-                // //             modifiers: ev_mods,
-                // //             pressed: true,
-                // //             ..
-                // //         }
-                // //     )
-                // // })
-                // {
-                //     println!("### {key_ev:?}")
+                // if !input.keys_down.is_empty() || input.modifiers.any() {
+                //     println!("### keys={:?}, mods={:?}", input.keys_down, input.modifiers);
                 // }
+
                 // only one command can be handled at a time
                 app_state
                     .editor_commands
@@ -254,10 +239,6 @@ impl eframe::App for MyApp {
             .unwrap_or_default();
 
         action_list.extend(actions_from_keyboard_commands.into_iter());
-
-        // let actions_from_keyboard_commands: Option<EditorCommandOutput> = {
-
-        // };
 
         // now apply prepared changes, and update text structure and cursor appropriately
         for action in action_list {
