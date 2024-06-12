@@ -42,7 +42,10 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
 
     let is_empty_list_item = structure
         .iterate_immediate_children_of(item_index)
-        .filter(|(_, desc)| desc.kind != SpanKind::TaskMarker)
+        .filter(|(_, desc)| {
+            // println!("$${desc:#?}");
+            desc.kind != SpanKind::TaskMarker
+        })
         .count()
         == 0;
 
@@ -212,11 +215,11 @@ mod tests {
                 "- {||}\n- a",
                 "{||}\n- a",
             ),
+            // TODO the parsing doesn't recognize empty list in that case as empty
             (
+                // thus we need a better parser
                 "## Enter on empty list item removes it ##",
                 "- a\n\t* {||}\n\t* b",
-                // "- a\n\t* {||}\n\t* b",
-                // "- a\n\t{||}\n\t* b"
                 "- a\n{||}\n\t* b",
             ),
             (

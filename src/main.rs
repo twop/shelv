@@ -1,6 +1,7 @@
 #![feature(iter_intersperse)]
 #![feature(let_chains)]
 #![feature(offset_of)]
+#![feature(generic_const_exprs)]
 
 use app_actions::{process_app_action, AppAction, AppIO};
 use app_state::{AppInitData, AppState, MsgToApp};
@@ -52,7 +53,7 @@ mod command;
 mod commands;
 mod effects;
 mod egui_hotkey;
-mod md_shortcut;
+
 mod nord;
 mod persistent_state;
 mod picker;
@@ -207,6 +208,10 @@ impl eframe::App for MyApp {
         // sych as {tab, enter} inside a list
         let actions_from_keyboard_commands = ctx
             .input_mut(|input| {
+                // if !input.keys_down.is_empty() || input.modifiers.any() {
+                //     println!("### keys={:?}, mods={:?}", input.keys_down, input.modifiers);
+                // }
+
                 // only one command can be handled at a time
                 app_state
                     .editor_commands
@@ -217,6 +222,7 @@ impl eframe::App for MyApp {
                             Some(keyboard_shortcut)
                                 if is_shortcut_match(input, &keyboard_shortcut) =>
                             {
+                                println!("---Found a match for {}", editor_command.name);
                                 let res = (editor_command.try_handle)(CommandContext { app_state });
 
                                 if !res.is_empty() {
@@ -233,10 +239,6 @@ impl eframe::App for MyApp {
             .unwrap_or_default();
 
         action_list.extend(actions_from_keyboard_commands.into_iter());
-
-        // let actions_from_keyboard_commands: Option<EditorCommandOutput> = {
-
-        // };
 
         // now apply prepared changes, and update text structure and cursor appropriately
         for action in action_list {

@@ -148,7 +148,7 @@ pub enum InteractiveTextPart<'a> {
 }
 
 impl<'a> TextStructureBuilder<'a> {
-    pub fn start(
+    fn start(
         text: &'a str,
         recycled: (Vec<SpanDesc>, Vec<RawLink>, Vec<(SpanIndex, SpanMeta)>),
     ) -> Self {
@@ -710,14 +710,17 @@ impl TextStructure {
             .map(|(i, desc)| (SpanIndex(i), desc))
     }
 
-    pub fn find_any_span_at(&self, byte_cursor: ByteSpan) -> Option<(ByteSpan, SpanIndex)> {
+    pub fn find_any_span_at(
+        &self,
+        byte_cursor: ByteSpan,
+    ) -> Option<(ByteSpan, SpanKind, SpanIndex)> {
         self.spans
             .iter()
             .enumerate()
             .rev()
-            .find_map(|(i, SpanDesc { byte_pos, .. })| {
-                if byte_pos.contains(byte_cursor) {
-                    Some((byte_pos.clone(), SpanIndex(i)))
+            .find_map(|(i, SpanDesc { byte_pos, kind, .. })| {
+                if byte_pos.contains(byte_cursor) && *kind != SpanKind::Root {
+                    Some((*byte_pos, *kind, SpanIndex(i)))
                 } else {
                     None
                 }
@@ -1071,6 +1074,7 @@ mod tests {
     #[test]
     pub fn test_byte_range_relation() {
         let test_cases = [
+            (0..0, 0..0, RangeRelation::Equal),
             (0..1, 1..3, RangeRelation::Before),
             (2..4, 1..2, RangeRelation::After),
             (0..3, 1..2, RangeRelation::Contains),

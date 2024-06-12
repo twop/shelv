@@ -177,10 +177,10 @@ mod tests {
                     r#"
 ```js
 'hello world' + '!'
-```{||}
+```
 ```#da0b
 "hello world!"
-```
+```{||}
 "#,
                 ),
             ),
@@ -279,10 +279,10 @@ throw new Error("yo!")
                     r#"
 ```js
 throw new Error("yo!")
-```{||}
+```
 ```#b511
 Error: yo!
-```
+```{||}
 "#,
                 ),
             ),
