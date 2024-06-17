@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     hash::{DefaultHasher, Hash, Hasher},
     path::PathBuf,
     sync::{mpsc::Receiver, Arc},
@@ -48,8 +49,8 @@ pub enum UnsavedChange {
 
 pub struct AppState {
     // -----this is persistent model-------
-    pub notes: Vec<Note>,
-    pub selected_note: u32,
+    pub notes: BTreeMap<NoteFile, Note>,
+    pub selected_note: NoteFile,
     // ------------------------------------
     // -------- emphemeral state ----------
     pub last_saved: u128,
@@ -153,26 +154,33 @@ impl AppState {
         let RestoredData {
             state: saved_state,
             notes,
-            settings: _,
+            settings,
         } = persistent_state;
 
-        let notes: Vec<Note> = notes
+        let shelf_count = notes.len();
+
+        let notes: BTreeMap<NoteFile, Note> = notes
             .into_iter()
-            .map(|text| Note { text, cursor: None })
+            .enumerate()
+            .map(|(i, text)| (NoteFile::Note(i as u32), Note { text, cursor: None }))
+            .chain([(
+                NoteFile::Settings,
+                Note {
+                    text: settings,
+                    cursor: None,
+                },
+            )])
             .collect();
 
-        let selected_note = match saved_state.selected {
-            NoteFile::Note(index) => index,
-            NoteFile::Settings => 0,
-        };
+        let selected_note = saved_state.selected;
 
-        let text_structure = TextStructure::new(&notes[selected_note as usize].text);
+        let text_structure = TextStructure::new(&notes.get(&selected_note).unwrap().text);
 
         fn map_text_command_to_command_handler(
             f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
         ) -> Box<dyn Fn(CommandContext) -> EditorCommandOutput> {
             Box::new(move |CommandContext { app_state }| {
-                let note = &app_state.notes[app_state.selected_note as usize];
+                let note = app_state.notes.get(&app_state.selected_note).unwrap();
 
                 let Some(cursor) = note.cursor else {
                     return SmallVec::new();
@@ -182,14 +190,17 @@ impl AppState {
                     return SmallVec::new();
                 };
 
-                let note_file = NoteFile::Note(app_state.selected_note);
-
                 f(TextCommandContext::new(
                     text_structure,
                     &note.text,
                     cursor.ordered(),
                 ))
-                .map(|changes| SmallVec::from([AppAction::ApplyTextChanges(note_file, changes)]))
+                .map(|changes| {
+                    SmallVec::from([AppAction::ApplyTextChanges(
+                        app_state.selected_note,
+                        changes,
+                    )])
+                })
                 .unwrap_or_default()
             })
         }
@@ -271,7 +282,7 @@ impl AppState {
         })
         .collect();
 
-        for note_index in 0..notes.len() {
+        for note_index in 0..shelf_count {
             editor_commands.push(EditorCommand {
                 name: CommandList::switch_to_note(note_index as u8).to_string(),
                 shortcut: Some(KeyboardShortcut::new(
@@ -280,7 +291,7 @@ impl AppState {
                 )),
                 try_handle: Box::new(move |_| {
                     [AppAction::SwitchToNote {
-                        index: note_index as u32,
+                        note_file: NoteFile::Note(note_index as u32),
                         via_shortcut: true,
                     }]
                     .into()
@@ -331,14 +342,14 @@ impl AppState {
                 files: changes
                     .into_iter()
                     .filter_map(|change| match change {
-                        UnsavedChange::NoteContentChanged(NoteFile::Note(index)) => self
+                        UnsavedChange::NoteContentChanged(note_file) => self
                             .notes
-                            .get(index as usize)
-                            .map(|n| (NoteFile::Note(index), n.text.as_str())),
+                            .get(&note_file)
+                            .map(|n| (note_file, n.text.as_str())),
                         _ => None,
                     })
                     .collect(),
-                selected: NoteFile::Note(self.selected_note),
+                selected: self.selected_note,
             })
         } else {
             None

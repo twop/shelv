@@ -21,12 +21,23 @@ pub enum AppIcon {
     Discord,
     Pin,
     VerticalSeparator,
+    One,
+    Two,
+    Three,
+    Four,
 }
 
 impl AppIcon {
     pub fn render(&self, size: f32, color: Color32) -> RichText {
+        RichText::new(self.to_icon_str())
+            .family(eframe::epaint::FontFamily::Proportional)
+            .color(color)
+            .size(size)
+    }
+
+    pub fn to_icon_str(&self) -> &'static str {
         use egui_phosphor::light as P;
-        RichText::new(match self {
+        match self {
             AppIcon::More => P::DOTS_THREE_OUTLINE,
             AppIcon::Settings => P::GEAR_FINE,
             AppIcon::Close => P::X,
@@ -35,10 +46,11 @@ impl AppIcon {
             AppIcon::Discord => P::DISCORD_LOGO,
             AppIcon::Pin => P::PUSH_PIN,
             AppIcon::VerticalSeparator => P::ARROWS_VERTICAL,
-        })
-        .family(eframe::epaint::FontFamily::Proportional)
-        .color(color)
-        .size(size)
+            AppIcon::One => P::NUMBER_ONE,
+            AppIcon::Two => P::NUMBER_TWO,
+            AppIcon::Three => P::NUMBER_THREE,
+            AppIcon::Four => P::NUMBER_FOUR,
+        }
     }
 }
 
@@ -70,14 +82,6 @@ impl AppTheme {
             sizes: Sizes::new(),
         }
     }
-
-    pub fn scaled(&self, scaling: f32) -> Self {
-        Self {
-            fonts: self.fonts.scaled(scaling),
-            colors: self.colors.clone(),
-            sizes: self.sizes.scaled(scaling),
-        }
-    }
 }
 
 impl Default for AppTheme {
@@ -106,17 +110,6 @@ impl FontSizes {
             small: 8.,
         }
     }
-
-    pub fn scaled(&self, scaled: f32) -> Self {
-        Self {
-            h1: self.h1 * scaled,
-            h2: self.h2 * scaled,
-            h3: self.h3 * scaled,
-            h4: self.h4 * scaled,
-            normal: self.normal * scaled,
-            small: self.small * scaled,
-        }
-    }
 }
 
 impl Sizes {
@@ -135,18 +128,6 @@ impl Sizes {
             xl,
             header_footer: xl + xs,
             toolbar_icon: l + xs / 2.,
-        }
-    }
-
-    pub fn scaled(&self, scaling: f32) -> Self {
-        Self {
-            xs: self.xs * scaling,
-            s: self.s * scaling,
-            m: self.m * scaling,
-            l: self.l * scaling,
-            xl: self.xl * scaling,
-            header_footer: self.header_footer * scaling,
-            toolbar_icon: self.toolbar_icon * scaling,
         }
     }
 }
@@ -177,15 +158,6 @@ pub struct FontTheme {
 
     // families
     pub family: FontFamilies,
-}
-
-impl FontTheme {
-    pub fn scaled(&self, scaling: f32) -> Self {
-        Self {
-            size: self.size.scaled(scaling),
-            family: self.family.clone(),
-        }
-    }
 }
 
 impl Default for FontTheme {

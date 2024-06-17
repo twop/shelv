@@ -245,9 +245,10 @@ impl eframe::App for MyApp {
             process_app_action(action, ctx, app_state, text_edit_id, &RealAppIO);
         }
 
-        let note_count = app_state.notes.len();
+        // note that we have a settings note amoung them
+        let note_count = app_state.notes.len() - 1;
 
-        let note = &app_state.notes[app_state.selected_note as usize];
+        let note = &app_state.notes.get(&app_state.selected_note).unwrap();
         let mut cursor = note.cursor;
 
         let editor_text = &note.text;
@@ -273,7 +274,11 @@ impl eframe::App for MyApp {
             app_state.prev_focused = is_frame_actually_focused;
         }
 
-        let editor_text = &mut app_state.notes[app_state.selected_note as usize].text;
+        let editor_text = &mut app_state
+            .notes
+            .get_mut(&app_state.selected_note)
+            .unwrap()
+            .text;
 
         // handling scheduled JS execution
         if let (Some(text_cursor_range), Some(scheduled_version)) =
@@ -315,7 +320,11 @@ impl eframe::App for MyApp {
 
         app_state.text_structure = Some(updated_structure);
         app_state.computed_layout = updated_layout;
-        app_state.notes[app_state.selected_note as usize].cursor = byte_cursor;
+        app_state
+            .notes
+            .get_mut(&app_state.selected_note)
+            .unwrap()
+            .cursor = byte_cursor;
 
         for action in actions {
             process_app_action(action, ctx, app_state, text_edit_id, &RealAppIO);
@@ -329,9 +338,7 @@ impl eframe::App for MyApp {
         if updated_structure_version != Some(orignal_text_version) {
             app_state
                 .unsaved_changes
-                .push(UnsavedChange::NoteContentChanged(NoteFile::Note(
-                    app_state.selected_note,
-                )));
+                .push(UnsavedChange::NoteContentChanged(app_state.selected_note));
 
             app_state.scheduled_script_run_version = updated_structure_version;
         }

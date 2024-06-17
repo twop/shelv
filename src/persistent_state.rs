@@ -7,7 +7,7 @@ const CURRENT_VERSION: i32 = 2;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Hash, Clone, PartialEq, Eq, Copy, Deserialize, Serialize)]
+#[derive(Debug, Hash, Clone, PartialEq, Ord, PartialOrd, Eq, Copy, Deserialize, Serialize)]
 pub enum NoteFile {
     Note(u32),
     Settings,
@@ -227,8 +227,8 @@ pub fn fn_migrate_from_v1<'s>(
             .iter()
             .enumerate()
             .map(|(index, note)| (NoteFile::Note(index as u32), note.as_ref()))
-            // TODO settings note
-            // .chain([(NoteFile::Settings, "")])
+            // TODO settings default content
+            .chain([(NoteFile::Settings, "")])
             .collect(),
         selected,
     };
@@ -260,7 +260,7 @@ pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
                 )
             })
             // TODO settings note
-            // .chain([(NoteFile::Settings, "")])
+            .chain([(NoteFile::Settings, "")])
             .collect(),
         selected,
     };

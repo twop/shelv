@@ -3,8 +3,8 @@ use eframe::{
         self,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Context, Id, KeyboardShortcut, Layout, Painter, RichText, Sense, TopBottomPanel, Ui,
-        Window,
+        Context, FontFamily, Id, KeyboardShortcut, Layout, Painter, RichText, Sense,
+        TopBottomPanel, Ui, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
@@ -18,13 +18,14 @@ use crate::{
     app_state::{ComputedLayout, LayoutParams, MsgToApp},
     byte_span::UnOrderedByteSpan,
     command::CommandList,
-    picker::{Picker, PickerItem},
+    persistent_state::NoteFile,
+    picker::{Picker, PickerItem, PickerItemKind},
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme},
 };
 
 pub struct AppRenderData<'a> {
-    pub selected_note: u32,
+    pub selected_note: NoteFile,
     pub note_count: usize,
     pub text_edit_id: Id,
     pub byte_cursor: Option<UnOrderedByteSpan>,
@@ -63,17 +64,10 @@ pub fn render_app(
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
 
-    let footer_actions = render_footer_panel(
-        selected_note,
-        note_count,
-        command_list,
-        is_window_pinned,
-        ctx,
-        &theme,
-    );
+    let footer_actions = render_footer_panel(selected_note, note_count, command_list, ctx, &theme);
     output_actions.extend(footer_actions);
 
-    let header_actions = render_header_panel(ctx, theme);
+    let header_actions = render_header_panel(ctx, theme, command_list, is_window_pinned);
     output_actions.extend(header_actions);
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
@@ -351,10 +345,9 @@ fn restore_cursor_from_note_state(
 }
 
 fn render_footer_panel(
-    selected: u32,
+    selected: NoteFile,
     note_count: usize,
     command_list: &CommandList,
-    is_window_pinned: bool,
     ctx: &Context,
     theme: &AppTheme,
 ) -> SmallVec<[AppAction; 1]> {
@@ -368,7 +361,6 @@ fn render_footer_panel(
         })
         .collect();
 
-    let mut current_selection = selected;
     let mut actions = SmallVec::new();
     TopBottomPanel::bottom("footer")
         // .exact_height(32.)
@@ -382,26 +374,60 @@ fn render_footer_panel(
                 set_menu_bar_style(ui);
 
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.add(Picker {
-                        current: &mut current_selection,
-                        items: tooltips
-                            .into_iter()
-                            .map(|tooltip| PickerItem {
-                                tooltip,
-                                // tooltip: format!("Shelf {}", ctx.format_shortcut(&n.shortcut)),
-                            })
-                            .collect::<Vec<_>>()
-                            .as_slice(),
+                    let items = tooltips
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, tooltip)| PickerItem {
+                            tooltip,
+                            kind: PickerItemKind::FontIcon(
+                                match index {
+                                    0 => AppIcon::One,
+                                    1 => AppIcon::Two,
+                                    2 => AppIcon::Three,
+                                    3 => AppIcon::Four,
+                                    // should not be reachable
+                                    _ => AppIcon::More,
+                                }
+                                .to_icon_str(),
+                                FontFamily::Proportional,
+                            ),
+                            data: NoteFile::Note(index as u32),
+                        })
+                        .chain([PickerItem {
+                            // TODO
+                            tooltip: "Settings".to_string(),
+                            kind: PickerItemKind::FontIcon(
+                                AppIcon::Settings.to_icon_str(),
+                                FontFamily::Proportional,
+                            ),
+                            data: NoteFile::Settings,
+                        }])
+                        .collect::<Vec<_>>();
+
+                    let picker = Picker {
+                        current: match selected {
+                            NoteFile::Note(i) => i as usize,
+                            NoteFile::Settings => note_count,
+                        },
+                        items: &items,
                         gap: sizes.s,
-                        radius: sizes.s,
-                        inactive: theme.colors.outline_fg,
-                        hover: theme.colors.button_hover_bg_stroke,
-                        pressed: theme.colors.button_pressed_fg,
-                        selected_stroke: theme.colors.button_fg,
-                        selected_fill: theme.colors.button_bg,
+                        // TODO why the button icons are rendered with h3 font size?
+                        item_size: theme.fonts.size.h3,
+                        inactive_color: theme.colors.outline_fg,
+                        hover_color: theme.colors.button_hover_bg_stroke,
+                        pressed_color: theme.colors.button_pressed_fg,
+                        selected_stroke_color: theme.colors.button_fg,
+                        selected_fill_color: theme.colors.button_bg,
                         outline: Stroke::new(1.0, theme.colors.outline_fg),
-                        tooltip_text: theme.colors.subtle_text_color,
-                    });
+                        tooltip_text_color: theme.colors.subtle_text_color,
+                    };
+
+                    if let Some(&note_file) = picker.show(ui).inner {
+                        actions.push(AppAction::SwitchToNote {
+                            note_file,
+                            via_shortcut: false,
+                        });
+                    }
                 });
 
                 // TODO Maybe this should be a global notification/toast UI instead of just font size.
@@ -435,108 +461,30 @@ fn render_footer_panel(
                 //     );
                 // });
 
+                let icon_block_width = sizes.xl * 2.;
+
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    for item in [
-                        (
-                            &AppIcon::Twitter,
-                            "tweet us @shelvdotapp",
-                            "https://twitter.com/shelvdotapp",
-                        ),
-                        (&AppIcon::Discord, "join our discrod", "https://shelv.app"),
-                        (
-                            &AppIcon::HomeSite,
-                            "visit https://shelv.app",
-                            "https://shelv.app",
-                        ),
-                        // (
-                        //     &icons.at,
-                        //     "e-mail us at hi@shelv.app",
-                        //     "mailto:hi@shelv.app",
-                        // ),
-                    ]
-                    .into_iter()
-                    .map(Some)
-                    .intersperse(None)
-                    {
-                        match item {
-                            Some((icon, tooltip, url)) => {
-                                let resp =
-                                    ui.button(icon.render(
-                                        sizes.toolbar_icon,
-                                        theme.colors.subtle_text_color,
-                                    ))
-                                    .on_hover_ui(|ui| {
-                                        ui.label(
-                                            RichText::new(tooltip)
-                                                .color(theme.colors.subtle_text_color),
-                                        );
-                                    });
+                    ui.set_width(icon_block_width);
 
-                                if resp.clicked() {
-                                    actions.push(AppAction::OpenLink(url.to_owned()));
-                                    // ctx.open_url(OpenUrl::new_tab(url));
-                                }
-                            }
-                            None => {
-                                ui.add_space(theme.sizes.s);
-                            }
-                        }
-                    }
+                    // Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
 
-                    // pin button
-                    ui.add_space(theme.sizes.s);
-
-                    // TODO either wait or fork egui-phosphor to update to phosphor 2.1
-                    // which has "|" as a separator
-                    ui.label(
-                        AppIcon::VerticalSeparator
-                            .render(sizes.toolbar_icon, theme.colors.outline_fg),
-                    );
-                    ui.add_space(theme.sizes.s);
-
-                    let resp = ui
-                        .button(AppIcon::Pin.render(
-                            sizes.toolbar_icon,
-                            if is_window_pinned {
-                                theme.colors.button_fg
-                            } else {
-                                theme.colors.subtle_text_color
-                            },
-                        ))
+                    let settings = ui
+                        .button(
+                            AppIcon::Settings.render(sizes.toolbar_icon, theme.colors.button_fg),
+                        )
                         .on_hover_ui(|ui| {
-                            let tooltip_text = if is_window_pinned {
-                                "unpin window"
-                            } else {
-                                "pin window"
-                            };
-
-                            let tooltip_text = command_list
-                                .find_by_name(CommandList::PIN_WINDOW)
-                                .and_then(|cmd| cmd.shortcut)
-                                .map(|shortcut| {
-                                    format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
-                                })
-                                .unwrap_or_else(|| tooltip_text.to_string());
-
                             ui.label(
-                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
+                                RichText::new("open app settings")
+                                    .color(theme.colors.subtle_text_color),
                             );
                         });
 
-                    // TODO handle that with shortcuts
-                    if resp.clicked() {
-                        actions.push(AppAction::SetWindowPinned(!is_window_pinned));
+                    if settings.clicked() {
+                        println!("clicked on settings");
                     }
                 });
             });
         });
-
-    if current_selection != selected {
-        actions.push(AppAction::SwitchToNote {
-            index: current_selection,
-            via_shortcut: false,
-        });
-    }
 
     actions
 }
@@ -551,7 +499,12 @@ fn set_menu_bar_style(ui: &mut egui::Ui) {
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
-fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) -> SmallVec<[AppAction; 1]> {
+fn render_header_panel(
+    ctx: &egui::Context,
+    theme: &AppTheme,
+    command_list: &CommandList,
+    is_window_pinned: bool,
+) -> SmallVec<[AppAction; 1]> {
     TopBottomPanel::top("top_panel")
         .show_separator_line(false)
         .show(ctx, |ui| {
@@ -611,28 +564,101 @@ fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) -> SmallVec<[AppAc
                     );
                 });
 
-                // println!("before help {:?}", ui.available_size());
-
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.set_width(icon_block_width);
+                    for item in [
+                        (
+                            &AppIcon::Twitter,
+                            "tweet us @shelvdotapp",
+                            "https://twitter.com/shelvdotapp",
+                        ),
+                        (&AppIcon::Discord, "join our discrod", "https://shelv.app"),
+                        (
+                            &AppIcon::HomeSite,
+                            "visit https://shelv.app",
+                            "https://shelv.app",
+                        ),
+                        // (
+                        //     &icons.at,
+                        //     "e-mail us at hi@shelv.app",
+                        //     "mailto:hi@shelv.app",
+                        // ),
+                    ]
+                    .into_iter()
+                    .map(Some)
+                    .intersperse(None)
+                    {
+                        match item {
+                            Some((icon, tooltip, url)) => {
+                                let resp =
+                                    ui.button(icon.render(
+                                        sizes.toolbar_icon,
+                                        theme.colors.subtle_text_color,
+                                    ))
+                                    .on_hover_ui(|ui| {
+                                        ui.label(
+                                            RichText::new(tooltip)
+                                                .color(theme.colors.subtle_text_color),
+                                        );
+                                    });
 
-                    // Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
+                                if resp.clicked() {
+                                    resulting_actions.push(AppAction::OpenLink(url.to_owned()));
+                                    // ctx.open_url(OpenUrl::new_tab(url));
+                                }
+                            }
+                            None => {
+                                ui.add_space(theme.sizes.s);
+                            }
+                        }
+                    }
 
-                    let settings = ui
-                        .button(
-                            AppIcon::Settings.render(sizes.toolbar_icon, theme.colors.button_fg),
-                        )
+                    // pin button
+                    ui.add_space(theme.sizes.s);
+
+                    // TODO either wait or fork egui-phosphor to update to phosphor 2.1
+                    // which has "|" as a separator
+                    ui.label(
+                        AppIcon::VerticalSeparator
+                            .render(sizes.toolbar_icon, theme.colors.outline_fg),
+                    );
+                    ui.add_space(theme.sizes.s);
+
+                    let resp = ui
+                        .button(AppIcon::Pin.render(
+                            sizes.toolbar_icon,
+                            if is_window_pinned {
+                                theme.colors.button_fg
+                            } else {
+                                theme.colors.subtle_text_color
+                            },
+                        ))
                         .on_hover_ui(|ui| {
+                            let tooltip_text = if is_window_pinned {
+                                "unpin window"
+                            } else {
+                                "pin window"
+                            };
+
+                            let tooltip_text = command_list
+                                .find_by_name(CommandList::PIN_WINDOW)
+                                .and_then(|cmd| cmd.shortcut)
+                                .map(|shortcut| {
+                                    format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
+                                })
+                                .unwrap_or_else(|| tooltip_text.to_string());
+
                             ui.label(
-                                RichText::new("open app settings")
-                                    .color(theme.colors.subtle_text_color),
+                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
                             );
                         });
 
-                    if settings.clicked() {
-                        println!("clicked on settings");
+                    // TODO handle that with shortcuts
+                    if resp.clicked() {
+                        resulting_actions.push(AppAction::SetWindowPinned(!is_window_pinned));
                     }
                 });
+
+                // println!("before help {:?}", ui.available_size());
             });
 
             resulting_actions
