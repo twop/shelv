@@ -7,7 +7,7 @@ const CURRENT_VERSION: i32 = 2;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Hash, Clone, PartialEq, Eq, Copy, Deserialize, Serialize)]
+#[derive(Debug, Hash, Clone, PartialEq, Ord, PartialOrd, Eq, Copy, Deserialize, Serialize)]
 pub enum NoteFile {
     Note(u32),
     Settings,
@@ -144,7 +144,11 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
     let restored = RestoredData {
         state,
         notes,
-        settings: "".to_string(),
+        settings: retrieved_files
+            .into_iter()
+            .find(|(note_file, _)| *note_file == NoteFile::Settings)
+            .map(|(_, content)| content)
+            .unwrap_or_else(|| "".to_string()),
     };
 
     if state_parsed && missing_notes.is_empty() {
@@ -227,8 +231,8 @@ pub fn fn_migrate_from_v1<'s>(
             .iter()
             .enumerate()
             .map(|(index, note)| (NoteFile::Note(index as u32), note.as_ref()))
-            // TODO settings note
-            // .chain([(NoteFile::Settings, "")])
+            // TODO settings default content
+            .chain([(NoteFile::Settings, "")])
             .collect(),
         selected,
     };
@@ -260,7 +264,7 @@ pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
                 )
             })
             // TODO settings note
-            // .chain([(NoteFile::Settings, "")])
+            .chain([(NoteFile::Settings, "")])
             .collect(),
         selected,
     };

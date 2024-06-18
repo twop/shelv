@@ -11,7 +11,10 @@ use crate::{
 
 #[derive(Debug)]
 pub enum AppAction {
-    SwitchToNote { index: u32, via_shortcut: bool },
+    SwitchToNote {
+        note_file: NoteFile,
+        via_shortcut: bool,
+    },
     // HideApp,
     // ShowApp,
     OpenLink(String),
@@ -39,14 +42,14 @@ pub fn process_app_action(
 ) {
     match action {
         AppAction::SwitchToNote {
-            index,
+            note_file,
             via_shortcut,
         } => {
-            if index != state.selected_note {
+            if note_file != state.selected_note {
                 state.unsaved_changes.push(UnsavedChange::SelectionChanged);
 
                 if via_shortcut {
-                    let note = &mut state.notes[index as usize];
+                    let note = &mut state.notes.get_mut(&note_file).unwrap();
                     note.cursor = match note.cursor.clone() {
                         None => {
                             let len = note.text.len();
@@ -62,13 +65,20 @@ pub fn process_app_action(
                     // means that we reselected via UI
 
                     // if that is the case then reset cursors from both of the notes
-                    state.notes[state.selected_note as usize].cursor = None;
-                    state.notes[index as usize].cursor = None;
+                    if let Some(prev_note) = state.notes.get_mut(&state.selected_note) {
+                        prev_note.cursor = None;
+                    }
+
+                    if let Some(cur_note) = state.notes.get_mut(&note_file) {
+                        cur_note.cursor = None;
+                    }
                 }
 
-                let text = &state.notes[index as usize].text;
-                state.selected_note = index;
-                state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
+                if let Some(cur_note) = state.notes.get(&note_file) {
+                    let text = &cur_note.text;
+                    state.selected_note = note_file;
+                    state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
+                };
             }
         }
         AppAction::OpenLink(url) => ctx.open_url(OpenUrl::new_tab(url)),
@@ -78,17 +88,12 @@ pub fn process_app_action(
         }
 
         AppAction::ApplyTextChanges(note_file, changes) => {
-            let NoteFile::Note(note_index) = note_file else {
-                return;
-            };
-
-            let index = note_index as usize;
-            let note = &mut state.notes[index];
+            let note = &mut state.notes.get_mut(&note_file).unwrap();
             let text = &mut note.text;
             let cursor = note.cursor;
             if let Some(byte_range) = cursor {
                 if let Ok(updated_cursor) = apply_text_changes(text, byte_range, changes) {
-                    if note_index == state.selected_note {
+                    if note_file == state.selected_note {
                         // if the changes are for the selected note we need to recompute TextStructure
                         state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
                     }
@@ -112,20 +117,21 @@ pub fn process_app_action(
                     }
                 }
                 MsgToApp::NoteFileChanged(note_file, path) => {
-                    if let NoteFile::Note(index) = &note_file {
-                        // println!("change detected, {note_file:?} at {path:?}");
-                        match app_io.try_read_note_if_newer(&path, state.last_saved) {
-                            Ok(Some(note_content)) => {
-                                state.notes[*index as usize].text = note_content;
+                    match app_io.try_read_note_if_newer(&path, state.last_saved) {
+                        Ok(Some(note_content)) => {
+                            if let Some(note) = state.notes.get_mut(&note_file) {
+                                note.text = note_content;
+                                // TODO don't reset the cursor
+                                note.cursor = None;
                                 state.unsaved_changes.push(UnsavedChange::LastUpdated);
                             }
-                            Ok(None) => {
-                                // no updates needed we already have the newest version
-                            }
-                            Err(err) => {
-                                // failed to read note file
-                                println!("failed to read {path:#?}, err={err:#?}");
-                            }
+                        }
+                        Ok(None) => {
+                            // no updates needed we already have the newest version
+                        }
+                        Err(err) => {
+                            // failed to read note file
+                            println!("failed to read {path:#?}, err={err:#?}");
                         }
                     }
                 }

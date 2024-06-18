@@ -3,8 +3,8 @@ use eframe::{
         self,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Context, Id, KeyboardShortcut, Layout, Painter, RichText, Sense, TopBottomPanel, Ui,
-        Window,
+        Context, FontFamily, Id, KeyboardShortcut, Layout, Painter, RichText, Sense,
+        TopBottomPanel, Ui, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
@@ -18,13 +18,14 @@ use crate::{
     app_state::{ComputedLayout, LayoutParams, MsgToApp},
     byte_span::UnOrderedByteSpan,
     command::CommandList,
-    picker::{Picker, PickerItem},
+    persistent_state::NoteFile,
+    picker::{Picker, PickerItem, PickerItemKind},
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme},
 };
 
 pub struct AppRenderData<'a> {
-    pub selected_note: u32,
+    pub selected_note: NoteFile,
     pub note_count: usize,
     pub text_edit_id: Id,
     pub byte_cursor: Option<UnOrderedByteSpan>,
@@ -63,17 +64,11 @@ pub fn render_app(
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
 
-    let footer_actions = render_footer_panel(
-        selected_note,
-        note_count,
-        command_list,
-        is_window_pinned,
-        ctx,
-        &theme,
-    );
+    let footer_actions = render_footer_panel(selected_note, note_count, command_list, ctx, &theme);
     output_actions.extend(footer_actions);
 
-    let header_actions = render_header_panel(ctx, theme);
+    let header_actions =
+        render_header_panel(ctx, theme, command_list, selected_note, is_window_pinned);
     output_actions.extend(header_actions);
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
@@ -351,10 +346,9 @@ fn restore_cursor_from_note_state(
 }
 
 fn render_footer_panel(
-    selected: u32,
+    selected: NoteFile,
     note_count: usize,
     command_list: &CommandList,
-    is_window_pinned: bool,
     ctx: &Context,
     theme: &AppTheme,
 ) -> SmallVec<[AppAction; 1]> {
@@ -368,7 +362,6 @@ fn render_footer_panel(
         })
         .collect();
 
-    let mut current_selection = selected;
     let mut actions = SmallVec::new();
     TopBottomPanel::bottom("footer")
         // .exact_height(32.)
@@ -382,26 +375,72 @@ fn render_footer_panel(
                 set_menu_bar_style(ui);
 
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.add(Picker {
-                        current: &mut current_selection,
-                        items: tooltips
-                            .into_iter()
-                            .map(|tooltip| PickerItem {
-                                tooltip,
-                                // tooltip: format!("Shelf {}", ctx.format_shortcut(&n.shortcut)),
-                            })
-                            .collect::<Vec<_>>()
-                            .as_slice(),
+                    let items = tooltips
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, tooltip)| PickerItem {
+                            tooltip,
+                            kind: PickerItemKind::FontIcon(
+                                match index {
+                                    0 => AppIcon::One,
+                                    1 => AppIcon::Two,
+                                    2 => AppIcon::Three,
+                                    3 => AppIcon::Four,
+                                    // should not be reachable
+                                    _ => AppIcon::More,
+                                }
+                                .to_icon_str(),
+                                FontFamily::Proportional,
+                            ),
+                            data: NoteFile::Note(index as u32),
+                        })
+                        .chain([PickerItem {
+                            tooltip: {
+                                let tooltip_text = "Settings";
+                                command_list
+                                    .find_by_name(CommandList::OPEN_SETTIGS)
+                                    .and_then(|cmd| cmd.shortcut)
+                                    .map(|shortcut| {
+                                        format!(
+                                            "{} {}",
+                                            tooltip_text,
+                                            ctx.format_shortcut(&shortcut)
+                                        )
+                                    })
+                                    .unwrap_or_else(|| tooltip_text.to_string())
+                            },
+                            kind: PickerItemKind::FontIcon(
+                                AppIcon::Settings.to_icon_str(),
+                                FontFamily::Proportional,
+                            ),
+                            data: NoteFile::Settings,
+                        }])
+                        .collect::<Vec<_>>();
+
+                    let picker = Picker {
+                        current: match selected {
+                            NoteFile::Note(i) => i as usize,
+                            NoteFile::Settings => note_count,
+                        },
+                        items: &items,
                         gap: sizes.s,
-                        radius: sizes.s,
-                        inactive: theme.colors.outline_fg,
-                        hover: theme.colors.button_hover_bg_stroke,
-                        pressed: theme.colors.button_pressed_fg,
-                        selected_stroke: theme.colors.button_fg,
-                        selected_fill: theme.colors.button_bg,
+                        // TODO why the button icons are rendered with h3 font size?
+                        item_size: theme.fonts.size.h3,
+                        inactive_color: theme.colors.subtle_text_color,
+                        hover_color: theme.colors.button_hover_bg_stroke,
+                        pressed_color: theme.colors.button_pressed_fg,
+                        selected_stroke_color: theme.colors.button_fg,
+                        selected_fill_color: theme.colors.button_bg,
                         outline: Stroke::new(1.0, theme.colors.outline_fg),
-                        tooltip_text: theme.colors.subtle_text_color,
-                    });
+                        tooltip_text_color: theme.colors.subtle_text_color,
+                    };
+
+                    if let Some(&note_file) = picker.show(ui).inner {
+                        actions.push(AppAction::SwitchToNote {
+                            note_file,
+                            via_shortcut: false,
+                        });
+                    }
                 });
 
                 // TODO Maybe this should be a global notification/toast UI instead of just font size.
@@ -434,6 +473,109 @@ fn render_footer_panel(
                 //             }),
                 //     );
                 // });
+
+                let icon_block_width = sizes.xl * 2.;
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.set_width(icon_block_width);
+
+                    let share_btn = ui
+                        .button(AppIcon::Share.render(sizes.toolbar_icon, theme.colors.button_fg))
+                        .on_hover_ui(|ui| {
+                            ui.label(RichText::new("Share").color(theme.colors.subtle_text_color));
+                        });
+
+                    if share_btn.clicked() {
+                        println!("clicked on shared");
+                    }
+                });
+            });
+        });
+
+    actions
+}
+
+fn set_menu_bar_style(ui: &mut egui::Ui) {
+    let style = ui.style_mut();
+    style.spacing.button_padding = vec2(0.0, 0.0);
+    style.spacing.item_spacing = vec2(0.0, 0.0);
+    style.visuals.widgets.active.bg_stroke = Stroke::NONE;
+    style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
+    style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+    style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
+}
+
+fn render_header_panel(
+    ctx: &egui::Context,
+    theme: &AppTheme,
+    command_list: &CommandList,
+    selected_note: NoteFile,
+    is_window_pinned: bool,
+) -> SmallVec<[AppAction; 1]> {
+    TopBottomPanel::top("top_panel")
+        .show_separator_line(false)
+        .show(ctx, |ui| {
+            let mut resulting_actions: SmallVec<[AppAction; 1]> = Default::default();
+            // println!("-----");
+            // println!("before menu {:?}", ui.available_size());
+            ui.horizontal(|ui| {
+                let sizes = &theme.sizes;
+
+                let avail_width = ui.available_width();
+                let avail_rect = ui.available_rect_before_wrap();
+                ui.painter().line_segment(
+                    [avail_rect.left(), avail_rect.right()]
+                        .map(|x| pos2(x, avail_rect.top() + sizes.header_footer)),
+                    Stroke::new(1.0, theme.colors.outline_fg),
+                );
+                ui.set_min_size(vec2(avail_width, sizes.header_footer));
+                let icon_block_width = sizes.xl * 2.;
+
+                set_menu_bar_style(ui);
+
+                // println!("before x {:?}", ui.available_size());
+
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    ui.set_width(icon_block_width);
+
+                    if ui
+                        .button(AppIcon::Close.render(sizes.toolbar_icon, theme.colors.button_fg))
+                        .on_hover_ui(|ui| {
+                            ui.label({
+                                RichText::new("Hide Shelv").color(theme.colors.subtle_text_color)
+                            });
+                        })
+                        .clicked()
+                    {
+                        resulting_actions
+                            .push(AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility))
+                    }
+                });
+
+                // println!("before title {:?}", ui.available_size());
+
+                ui.scope(|ui| {
+                    ui.set_width(avail_width - 2. * icon_block_width);
+                    ui.with_layout(
+                        Layout::centered_and_justified(egui::Direction::LeftToRight),
+                        |ui| {
+                            ui.label(
+                                RichText::new(format!(
+                                    "Shelv - {}",
+                                    match selected_note {
+                                        NoteFile::Note(index) => format!("note {}", index + 1),
+                                        NoteFile::Settings => "settings".to_string(),
+                                    }
+                                ))
+                                .color(theme.colors.subtle_text_color)
+                                .font(FontId {
+                                    size: theme.fonts.size.normal,
+                                    family: theme.fonts.family.bold.clone(),
+                                }),
+                            );
+                        },
+                    );
+                });
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     for item in [
@@ -473,7 +615,7 @@ fn render_footer_panel(
                                     });
 
                                 if resp.clicked() {
-                                    actions.push(AppAction::OpenLink(url.to_owned()));
+                                    resulting_actions.push(AppAction::OpenLink(url.to_owned()));
                                     // ctx.open_url(OpenUrl::new_tab(url));
                                 }
                             }
@@ -525,114 +667,11 @@ fn render_footer_panel(
 
                     // TODO handle that with shortcuts
                     if resp.clicked() {
-                        actions.push(AppAction::SetWindowPinned(!is_window_pinned));
+                        resulting_actions.push(AppAction::SetWindowPinned(!is_window_pinned));
                     }
-                });
-            });
-        });
-
-    if current_selection != selected {
-        actions.push(AppAction::SwitchToNote {
-            index: current_selection,
-            via_shortcut: false,
-        });
-    }
-
-    actions
-}
-
-fn set_menu_bar_style(ui: &mut egui::Ui) {
-    let style = ui.style_mut();
-    style.spacing.button_padding = vec2(0.0, 0.0);
-    style.spacing.item_spacing = vec2(0.0, 0.0);
-    style.visuals.widgets.active.bg_stroke = Stroke::NONE;
-    style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
-    style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
-    style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
-}
-
-fn render_header_panel(ctx: &egui::Context, theme: &AppTheme) -> SmallVec<[AppAction; 1]> {
-    TopBottomPanel::top("top_panel")
-        .show_separator_line(false)
-        .show(ctx, |ui| {
-            let mut resulting_actions: SmallVec<[AppAction; 1]> = Default::default();
-            // println!("-----");
-            // println!("before menu {:?}", ui.available_size());
-            ui.horizontal(|ui| {
-                let sizes = &theme.sizes;
-
-                let avail_width = ui.available_width();
-                let avail_rect = ui.available_rect_before_wrap();
-                ui.painter().line_segment(
-                    [avail_rect.left(), avail_rect.right()]
-                        .map(|x| pos2(x, avail_rect.top() + sizes.header_footer)),
-                    Stroke::new(1.0, theme.colors.outline_fg),
-                );
-                ui.set_min_size(vec2(avail_width, sizes.header_footer));
-                let icon_block_width = sizes.xl * 2.;
-
-                set_menu_bar_style(ui);
-
-                // println!("before x {:?}", ui.available_size());
-
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.set_width(icon_block_width);
-
-                    if ui
-                        .button(AppIcon::Close.render(sizes.toolbar_icon, theme.colors.button_fg))
-                        .on_hover_ui(|ui| {
-                            ui.label({
-                                RichText::new("Hide Shelv").color(theme.colors.subtle_text_color)
-                            });
-                        })
-                        .clicked()
-                    {
-                        resulting_actions
-                            .push(AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility))
-                    }
-                });
-
-                // println!("before title {:?}", ui.available_size());
-
-                ui.scope(|ui| {
-                    ui.set_width(avail_width - 2. * icon_block_width);
-                    ui.with_layout(
-                        Layout::centered_and_justified(egui::Direction::LeftToRight),
-                        |ui| {
-                            ui.label(
-                                RichText::new("Shelv")
-                                    .color(theme.colors.subtle_text_color)
-                                    .font(FontId {
-                                        size: theme.fonts.size.normal,
-                                        family: theme.fonts.family.bold.clone(),
-                                    }),
-                            );
-                        },
-                    );
                 });
 
                 // println!("before help {:?}", ui.available_size());
-
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.set_width(icon_block_width);
-
-                    // Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
-
-                    let settings = ui
-                        .button(
-                            AppIcon::Settings.render(sizes.toolbar_icon, theme.colors.button_fg),
-                        )
-                        .on_hover_ui(|ui| {
-                            ui.label(
-                                RichText::new("open app settings")
-                                    .color(theme.colors.subtle_text_color),
-                            );
-                        });
-
-                    if settings.clicked() {
-                        println!("clicked on settings");
-                    }
-                });
             });
 
             resulting_actions

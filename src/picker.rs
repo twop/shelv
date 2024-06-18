@@ -1,7 +1,7 @@
 use eframe::{
     egui::{
-        self, Context, Id, Response, RichText, Sense, Ui, Widget, WidgetInfo, WidgetType,
-        WidgetWithState,
+        self, Align2, Context, FontFamily, FontId, Id, InnerResponse, Response, RichText, Sense,
+        Ui, Widget, WidgetInfo, WidgetType, WidgetWithState,
     },
     epaint::{
         self, pos2, tessellator::path::add_circle_quadrant, vec2, Color32, PathShape, Pos2, Rect,
@@ -9,63 +9,65 @@ use eframe::{
     },
 };
 
-pub struct PickerItem {
-    pub tooltip: String,
+pub enum PickerItemKind {
+    Dot,
+    FontIcon(&'static str, FontFamily),
 }
 
-pub struct Picker<'a> {
-    pub current: &'a mut u32,
-    pub items: &'a [PickerItem],
+pub struct PickerItem<Item: PartialEq> {
+    pub tooltip: String,
+    pub kind: PickerItemKind,
+    pub data: Item,
+}
+
+pub struct Picker<'a, Item: PartialEq> {
+    pub current: usize,
+    pub items: &'a [PickerItem<Item>],
     pub gap: f32,
-    pub radius: f32,
+    pub item_size: f32,
     // colors
-    pub inactive: Color32,
-    pub hover: Color32,
-    pub pressed: Color32,
-    pub selected_stroke: Color32,
-    pub selected_fill: Color32,
-    pub tooltip_text: Color32,
+    pub inactive_color: Color32,
+    pub hover_color: Color32,
+    pub pressed_color: Color32,
+    pub selected_stroke_color: Color32,
+    pub selected_fill_color: Color32,
+    pub tooltip_text_color: Color32,
 
     // drop
     pub outline: Stroke,
 }
 
-#[derive(Clone, Default, serde::Deserialize, serde::Serialize)]
-// #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-// #[cfg_attr(feature = "serde", serde(default))]
-pub struct PickerState {}
-
-impl PickerState {
-    pub fn load(ctx: &Context, id: Id) -> Option<Self> {
-        ctx.data_mut(|d| d.get_persisted(id))
-    }
-
-    pub fn store(self, ctx: &Context, id: Id) {
-        ctx.data_mut(|d| d.insert_persisted(id, self));
+impl<'a, Item: PartialEq> Picker<'a, Item> {
+    pub fn show(self, ui: &mut Ui) -> InnerResponse<Option<&'a Item>> {
+        let mut result = None;
+        let response = ui.add(PickerResultWrapper(&mut result, self));
+        InnerResponse::new(result, response)
     }
 }
 
-impl<'t> WidgetWithState for Picker<'t> {
-    type State = PickerState;
-}
+struct PickerResultWrapper<'a, 'b, Item: PartialEq>(&'b mut Option<&'a Item>, Picker<'a, Item>);
 
-impl<'a> Widget for Picker<'a> {
+impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
     fn ui(self, ui: &mut Ui) -> Response {
-        let Self {
-            items,
-            gap,
-            radius,
-            current,
-            inactive,
-            hover,
-            pressed,
-            selected_stroke,
-            outline,
-            selected_fill,
-            tooltip_text,
-        } = self;
+        let PickerResultWrapper(
+            result,
+            Picker {
+                items,
+                gap,
+                item_size: box_size,
+                current: original_current,
+                inactive_color: inactive,
+                hover_color: hover,
+                pressed_color: pressed,
+                selected_stroke_color: selected_stroke,
+                outline,
+                selected_fill_color: selected_fill,
+                tooltip_text_color: tooltip_text,
+            },
+        ) = self;
 
-        let box_size = radius * 2.0;
+        let mut current = original_current;
+        let radius = box_size / 2.0;
         let count = items.len() as u32;
         let desired_size = vec2(
             box_size * (count as f32) + gap * ((count - 1) as f32),
@@ -88,9 +90,9 @@ impl<'a> Widget for Picker<'a> {
             let mut offset = rect.min.x;
 
             let ctx = ui.ctx();
-            for i in (0..count).map(Some).intersperse_with(|| None) {
+            for i in items.iter().enumerate().map(Some).intersperse_with(|| None) {
                 match i {
-                    Some(i) => {
+                    Some((i, item)) => {
                         let center = pos2(offset + radius, rect.center().y);
                         let rect = Rect::from_center_size(center, vec2(box_size, box_size));
 
@@ -98,16 +100,14 @@ impl<'a> Widget for Picker<'a> {
                         let mut point_response = ui.interact(rect, point_id, Sense::click());
 
                         if point_response.clicked() {
-                            *current = i;
+                            current = i;
                         }
 
-                        let is_selected = i == *current;
+                        let is_selected = i == current;
 
                         if !is_selected {
                             let tooltip_ui = |ui: &mut egui::Ui| {
-                                ui.label(
-                                    RichText::new(&items[i as usize].tooltip).color(tooltip_text),
-                                );
+                                ui.label(RichText::new(&item.tooltip).color(tooltip_text));
                                 //.font(self.font_id.clone())
                             };
 
@@ -136,12 +136,27 @@ impl<'a> Widget for Picker<'a> {
 
                         let center = pos2(center.x, center.y - selection_progress * radius / 2.0);
 
-                        painter.add(epaint::CircleShape {
-                            center,
-                            radius,
-                            fill,
-                            stroke,
-                        });
+                        match &item.kind {
+                            PickerItemKind::Dot => {
+                                painter.add(epaint::CircleShape {
+                                    center,
+                                    radius,
+                                    fill,
+                                    stroke,
+                                });
+                            }
+                            PickerItemKind::FontIcon(icon_symbol, font_family) => {
+                                painter.text(
+                                    center,
+                                    Align2::CENTER_CENTER,
+                                    icon_symbol,
+                                    FontId::new(box_size, font_family.clone()),
+                                    stroke.color,
+                                );
+                            }
+                        }
+
+                        // painter.add(shape)
 
                         if is_selected {
                             let top_rounding = gap;
@@ -204,6 +219,10 @@ impl<'a> Widget for Picker<'a> {
                     None => offset += gap,
                 }
             }
+        }
+
+        if current != original_current {
+            *result = items.get(current).map(|item| &item.data);
         }
 
         response
