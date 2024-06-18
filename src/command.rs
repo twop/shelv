@@ -79,6 +79,8 @@ impl CommandList {
         }
     }
 
+    pub const OPEN_SETTIGS: &'static str = "Open Settings";
+
     pub const PIN_WINDOW: &'static str = "Pin/Unpin Window";
 
     pub const HIDE_WINDOW: &'static str = "Hide Window";

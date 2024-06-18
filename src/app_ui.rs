@@ -67,7 +67,8 @@ pub fn render_app(
     let footer_actions = render_footer_panel(selected_note, note_count, command_list, ctx, &theme);
     output_actions.extend(footer_actions);
 
-    let header_actions = render_header_panel(ctx, theme, command_list, is_window_pinned);
+    let header_actions =
+        render_header_panel(ctx, theme, command_list, selected_note, is_window_pinned);
     output_actions.extend(header_actions);
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
@@ -394,8 +395,20 @@ fn render_footer_panel(
                             data: NoteFile::Note(index as u32),
                         })
                         .chain([PickerItem {
-                            // TODO
-                            tooltip: "Settings".to_string(),
+                            tooltip: {
+                                let tooltip_text = "Settings";
+                                command_list
+                                    .find_by_name(CommandList::OPEN_SETTIGS)
+                                    .and_then(|cmd| cmd.shortcut)
+                                    .map(|shortcut| {
+                                        format!(
+                                            "{} {}",
+                                            tooltip_text,
+                                            ctx.format_shortcut(&shortcut)
+                                        )
+                                    })
+                                    .unwrap_or_else(|| tooltip_text.to_string())
+                            },
                             kind: PickerItemKind::FontIcon(
                                 AppIcon::Settings.to_icon_str(),
                                 FontFamily::Proportional,
@@ -413,7 +426,7 @@ fn render_footer_panel(
                         gap: sizes.s,
                         // TODO why the button icons are rendered with h3 font size?
                         item_size: theme.fonts.size.h3,
-                        inactive_color: theme.colors.outline_fg,
+                        inactive_color: theme.colors.subtle_text_color,
                         hover_color: theme.colors.button_hover_bg_stroke,
                         pressed_color: theme.colors.button_pressed_fg,
                         selected_stroke_color: theme.colors.button_fg,
@@ -466,21 +479,14 @@ fn render_footer_panel(
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.set_width(icon_block_width);
 
-                    // Vec2::new(sizes.toolbar_icon, sizes.toolbar_icon),
-
-                    let settings = ui
-                        .button(
-                            AppIcon::Settings.render(sizes.toolbar_icon, theme.colors.button_fg),
-                        )
+                    let share_btn = ui
+                        .button(AppIcon::Share.render(sizes.toolbar_icon, theme.colors.button_fg))
                         .on_hover_ui(|ui| {
-                            ui.label(
-                                RichText::new("open app settings")
-                                    .color(theme.colors.subtle_text_color),
-                            );
+                            ui.label(RichText::new("Share").color(theme.colors.subtle_text_color));
                         });
 
-                    if settings.clicked() {
-                        println!("clicked on settings");
+                    if share_btn.clicked() {
+                        println!("clicked on shared");
                     }
                 });
             });
@@ -503,6 +509,7 @@ fn render_header_panel(
     ctx: &egui::Context,
     theme: &AppTheme,
     command_list: &CommandList,
+    selected_note: NoteFile,
     is_window_pinned: bool,
 ) -> SmallVec<[AppAction; 1]> {
     TopBottomPanel::top("top_panel")
@@ -553,12 +560,18 @@ fn render_header_panel(
                         Layout::centered_and_justified(egui::Direction::LeftToRight),
                         |ui| {
                             ui.label(
-                                RichText::new("Shelv")
-                                    .color(theme.colors.subtle_text_color)
-                                    .font(FontId {
-                                        size: theme.fonts.size.normal,
-                                        family: theme.fonts.family.bold.clone(),
-                                    }),
+                                RichText::new(format!(
+                                    "Shelv - {}",
+                                    match selected_note {
+                                        NoteFile::Note(index) => format!("note {}", index + 1),
+                                        NoteFile::Settings => "settings".to_string(),
+                                    }
+                                ))
+                                .color(theme.colors.subtle_text_color)
+                                .font(FontId {
+                                    size: theme.fonts.size.normal,
+                                    family: theme.fonts.family.bold.clone(),
+                                }),
                             );
                         },
                     );

@@ -144,7 +144,11 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
     let restored = RestoredData {
         state,
         notes,
-        settings: "".to_string(),
+        settings: retrieved_files
+            .into_iter()
+            .find(|(note_file, _)| *note_file == NoteFile::Settings)
+            .map(|(_, content)| content)
+            .unwrap_or_else(|| "".to_string()),
     };
 
     if state_parsed && missing_notes.is_empty() {

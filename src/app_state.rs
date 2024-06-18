@@ -58,7 +58,6 @@ pub struct AppState {
     pub scheduled_script_run_version: Option<u64>,
 
     // ------------------------------------
-    pub is_settings_opened: bool,
     pub is_pinned: bool,
 
     pub theme: AppTheme,
@@ -300,6 +299,18 @@ impl AppState {
         }
 
         editor_commands.push(EditorCommand {
+            name: CommandList::OPEN_SETTIGS.to_string(),
+            shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma)),
+            try_handle: Box::new(move |_| {
+                [AppAction::SwitchToNote {
+                    note_file: NoteFile::Settings,
+                    via_shortcut: true,
+                }]
+                .into()
+            }),
+        });
+
+        editor_commands.push(EditorCommand {
             name: CommandList::PIN_WINDOW.to_string(),
             shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::P)),
             try_handle: Box::new(|ctx| {
@@ -316,7 +327,6 @@ impl AppState {
         });
 
         Self {
-            is_settings_opened: false,
             is_pinned: false,
             unsaved_changes: Default::default(),
             scheduled_script_run_version: None,
