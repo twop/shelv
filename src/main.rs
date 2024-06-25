@@ -24,7 +24,7 @@ use scripting::execute_live_scripts;
 use smallvec::SmallVec;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 // use tray_item::TrayItem;G1
 
 use std::{
@@ -115,8 +115,17 @@ impl MyApp {
         let ctx = cc.egui_ctx.clone();
         let sender = msg_queue_tx.clone();
         TrayIconEvent::set_event_handler(Some(move |ev| {
-            sender.send(MsgToApp::ToggleVisibility).unwrap();
-            ctx.request_repaint();
+            match &ev {
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Down,
+                    ..
+                } => {
+                    sender.send(MsgToApp::ToggleVisibility).unwrap();
+                    ctx.request_repaint();
+                }
+                _ => {}
+            }
 
             println!("tray event: {:?}", ev);
         }));
