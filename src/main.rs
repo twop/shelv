@@ -202,9 +202,12 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        let text_edit_id = Id::new("text_edit");
-
         let app_state = &mut self.state;
+        let text_edit_id = Id::new(match &app_state.selected_note {
+            NoteFile::Note(index) => format!("text_edit_id_{}", index),
+            NoteFile::Settings => "text_edit_id_settings".to_string(),
+        });
+
         // handling message queue
         let mut action_list = EditorCommandOutput::from_iter(
             app_state
