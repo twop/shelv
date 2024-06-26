@@ -1,5 +1,0 @@
-[toolchain]
-channel = "nightly-2024-05-23"
-components = ["rustfmt", "rustc-dev"]
-targets = ["nightly-aarch64-apple-darwin"]
-profile = "minimal"
