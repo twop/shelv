@@ -24,7 +24,10 @@ use scripting::execute_live_scripts;
 use smallvec::SmallVec;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
-use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use tray_icon::{
+    menu::{Menu, MenuEvent, MenuItem},
+    Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
+};
 // use tray_item::TrayItem;G1
 
 use std::{
@@ -135,9 +138,22 @@ impl MyApp {
         )
         .unwrap();
 
+        let tray_quit_menu_button = MenuItem::new("Quit", true, None);
+        let tray_quit_menu_button_id = tray_quit_menu_button.id().clone();
+        let tray_menu = Menu::with_items(&[&tray_quit_menu_button]).unwrap();
+
+        MenuEvent::set_event_handler(Some(move |ev: MenuEvent| {
+            println!("tray menu event: {:?}", ev);
+            if ev.id == tray_quit_menu_button_id {
+                std::process::exit(0);
+            }
+        }));
+
         let tray_icon = TrayIconBuilder::new()
             .with_tooltip("Show/Hide Shelv")
             .with_icon(Icon::from_rgba(tray_image.into_bytes(), 64, 64).unwrap())
+            .with_menu(Box::new(tray_menu))
+            .with_menu_on_left_click(false)
             .build()
             .unwrap();
 
