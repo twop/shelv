@@ -56,6 +56,7 @@ mod command;
 mod commands;
 mod effects;
 mod egui_hotkey;
+mod settings;
 
 mod nord;
 mod persistent_state;
