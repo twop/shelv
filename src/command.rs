@@ -53,6 +53,16 @@ impl CommandList {
         self.slice().iter().find(|c| c.name == name)
     }
 
+    pub fn set_or_replace_shortcut(
+        &mut self,
+        shortcut: KeyboardShortcut,
+        cmd_name: &str,
+    ) -> Option<()> {
+        let cmd = self.0.iter_mut().find(|c| c.name == cmd_name)?;
+        cmd.shortcut = Some(shortcut);
+        Some(())
+    }
+
     // autocomplete/convinience
     pub const EXPAND_TASK_MARKER: &'static str = "Expand Task Marker";
     pub const INDENT_LIST_ITEM: &'static str = "Increase List Item identation";
@@ -60,7 +70,7 @@ impl CommandList {
     pub const SPLIT_LIST_ITEM: &'static str = "Split List item at cursor position";
 
     // markdown
-    pub const MARKDOWN_BOLD: &'static str = "Toggle Bold";
+    pub const MARKDOWN_BOLD: &'static str = "ToggleBold";
     pub const MARKDOWN_ITALIC: &'static str = "Toggle Italic";
     pub const MARKDOWN_STRIKETHROUGH: &'static str = "Toggle Strikethrough";
     pub const MARKDOWN_CODEBLOCK: &'static str = "Toggle Code Block";

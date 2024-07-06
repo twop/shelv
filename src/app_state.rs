@@ -30,6 +30,7 @@ use crate::{
     },
     effects::text_change_effect::TextChange,
     persistent_state::{DataToSave, NoteFile, RestoredData},
+    settings::{execute_settings_note, Binding},
     text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
 };
@@ -326,6 +327,22 @@ impl AppState {
             }),
         });
 
+        let mut editor_commands = CommandList::new(editor_commands);
+
+        if let Some(settings) = notes.get(&NoteFile::Settings) {
+            match execute_settings_note(&TextStructure::new(&settings.text), &settings.text) {
+                Ok(settings) => {
+                    for Binding { shortcut, command } in settings.bindings.iter() {
+                        println!("applying {shortcut:?} to {command}");
+                        editor_commands.set_or_replace_shortcut(*shortcut, command);
+                    }
+                }
+                Err(err) => {
+                    println!("error parsing settings note {err:#?}");
+                }
+            }
+        }
+
         Self {
             is_pinned: false,
             unsaved_changes: Default::default(),
@@ -341,7 +358,7 @@ impl AppState {
             hidden: false,
             prev_focused: false,
             last_saved,
-            editor_commands: CommandList::new(editor_commands),
+            editor_commands,
         }
     }
 
