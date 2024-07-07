@@ -7,6 +7,9 @@ use crate::{
     byte_span::UnOrderedByteSpan,
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::NoteFile,
+    scripting::execute_live_scripts,
+    settings::{execute_settings_note, Binding},
+    text_structure::TextStructure,
 };
 
 #[derive(Debug)]
@@ -19,8 +22,23 @@ pub enum AppAction {
     // ShowApp,
     OpenLink(String),
     SetWindowPinned(bool),
-    ApplyTextChanges(NoteFile, Vec<TextChange>),
+    ApplyTextChanges {
+        target: NoteFile,
+        changes: Vec<TextChange>,
+        should_trigger_eval: bool,
+    },
     HandleMsgToApp(MsgToApp),
+    EvalNote(NoteFile),
+}
+
+impl AppAction {
+    pub fn apply_text_changes(target: NoteFile, changes: Vec<TextChange>) -> Self {
+        Self::ApplyTextChanges {
+            target,
+            changes,
+            should_trigger_eval: true,
+        }
+    }
 }
 
 // TODO consider focus, opening links etc as IO operations
@@ -39,7 +57,7 @@ pub fn process_app_action(
     state: &mut AppState,
     text_edit_id: Id,
     app_io: &impl AppIO,
-) {
+) -> Option<AppAction> {
     match action {
         AppAction::SwitchToNote {
             note_file,
@@ -80,14 +98,25 @@ pub fn process_app_action(
                     state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
                 };
             }
+
+            None
         }
-        AppAction::OpenLink(url) => ctx.open_url(OpenUrl::new_tab(url)),
+
+        AppAction::OpenLink(url) => {
+            ctx.open_url(OpenUrl::new_tab(url));
+            None
+        }
 
         AppAction::SetWindowPinned(is_pinned) => {
             state.is_pinned = is_pinned;
+            None
         }
 
-        AppAction::ApplyTextChanges(note_file, changes) => {
+        AppAction::ApplyTextChanges {
+            target: note_file,
+            changes,
+            should_trigger_eval,
+        } => {
             let note = &mut state.notes.get_mut(&note_file).unwrap();
             let text = &mut note.text;
             let cursor = note.cursor;
@@ -98,9 +127,15 @@ pub fn process_app_action(
                         state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
                     }
                     note.cursor = Some(updated_cursor);
+                    should_trigger_eval.then(|| AppAction::EvalNote(note_file))
+                } else {
+                    None
                 }
+            } else {
+                None
             }
         }
+
         AppAction::HandleMsgToApp(msg) => {
             match msg {
                 MsgToApp::ToggleVisibility => {
@@ -115,27 +150,89 @@ pub fn process_app_action(
                         ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
                         println!("Toggle visibility: show + focus");
                     }
+
+                    None
                 }
+
                 MsgToApp::NoteFileChanged(note_file, path) => {
                     match app_io.try_read_note_if_newer(&path, state.last_saved) {
                         Ok(Some(note_content)) => {
                             if let Some(note) = state.notes.get_mut(&note_file) {
-                                note.text = note_content;
                                 // TODO don't reset the cursor
                                 note.cursor = None;
+                                if note_file == state.selected_note {
+                                    state.text_structure = state
+                                        .text_structure
+                                        .take()
+                                        .map(|s| s.recycle(&note_content));
+                                }
+
+                                note.text = note_content;
                                 state.unsaved_changes.push(UnsavedChange::LastUpdated);
                             }
+
+                            Some(AppAction::EvalNote(note_file))
                         }
                         Ok(None) => {
                             // no updates needed we already have the newest version
+                            None
                         }
                         Err(err) => {
                             // failed to read note file
                             println!("failed to read {path:#?}, err={err:#?}");
+                            None
                         }
                     }
                 }
             }
+        }
+
+        AppAction::EvalNote(note_file) => {
+            let note = &mut state.notes.get_mut(&note_file).unwrap();
+            let text = &mut note.text;
+
+            let text_structure = match note_file == state.selected_note {
+                true => state
+                    .text_structure
+                    .take()
+                    .unwrap_or_else(|| TextStructure::new(text)),
+                false => TextStructure::new(text),
+            };
+
+            let next_action = match note_file {
+                NoteFile::Note(_) => execute_live_scripts(&text_structure, text).map(|changes| {
+                    AppAction::ApplyTextChanges {
+                        target: note_file,
+                        changes,
+                        should_trigger_eval: false,
+                    }
+                }),
+
+                NoteFile::Settings => {
+                    match execute_settings_note(&text_structure, &text) {
+                        Ok(settings) => {
+                            for Binding { shortcut, command } in settings.bindings.iter() {
+                                println!("applying {shortcut:?} to {command}");
+                                state
+                                    .editor_commands
+                                    .set_or_replace_shortcut(*shortcut, command);
+                            }
+                        }
+                        Err(err) => {
+                            // TODO print the error into the note itself
+                            println!("error parsing settings note {err:#?}");
+                        }
+                    }
+
+                    None
+                }
+            };
+
+            if note_file == state.selected_note {
+                state.text_structure = Some(text_structure);
+            }
+
+            next_action
         }
     }
 }

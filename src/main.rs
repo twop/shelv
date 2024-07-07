@@ -20,7 +20,6 @@ use hotwatch::{
 };
 use image::ImageFormat;
 use persistent_state::{load_and_migrate, try_save, v1, NoteFile};
-use scripting::execute_live_scripts;
 use smallvec::SmallVec;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
@@ -271,22 +270,26 @@ impl eframe::App for MyApp {
 
         // now apply prepared changes, and update text structure and cursor appropriately
         for action in action_list {
-            process_app_action(action, ctx, app_state, text_edit_id, &RealAppIO);
+            let mut next_action = Some(action);
+
+            while let Some(to_proccess) = next_action.take() {
+                next_action =
+                    process_app_action(to_proccess, ctx, app_state, text_edit_id, &RealAppIO);
+            }
         }
 
         // note that we have a settings note amoung them
         let note_count = app_state.notes.len() - 1;
 
         let note = &app_state.notes.get(&app_state.selected_note).unwrap();
-        let mut cursor = note.cursor;
+        let cursor = note.cursor;
 
         let editor_text = &note.text;
-        let mut text_structure = app_state
+
+        let text_structure = app_state
             .text_structure
             .take()
             .unwrap_or_else(|| TextStructure::new(editor_text));
-
-        let orignal_text_version = text_structure.opaque_version();
 
         // if the app is pinned it is OK not re-requesting focus
         // neither hiding if focus lost
@@ -309,24 +312,6 @@ impl eframe::App for MyApp {
             .unwrap()
             .text;
 
-        // handling scheduled JS execution
-        if let (Some(text_cursor_range), Some(scheduled_version)) =
-            (cursor, app_state.scheduled_script_run_version.take())
-        {
-            // TODO refactor this block as an AppAction
-            // println!("executing live scripts for version = {scheduled_version}",);
-            let script_changes = execute_live_scripts(&text_structure, &editor_text);
-            if let Some(changes) = script_changes {
-                // println!("detected changes from: js\n{changes:?}\n\n");
-                if let Ok(updated_cursor) =
-                    apply_text_changes(editor_text, text_cursor_range, changes)
-                {
-                    text_structure = text_structure.recycle(&editor_text);
-                    cursor = Some(updated_cursor);
-                }
-            }
-        }
-
         let vis_state = AppRenderData {
             selected_note: app_state.selected_note,
             is_window_pinned: app_state.is_pinned,
@@ -347,6 +332,7 @@ impl eframe::App for MyApp {
             ctx,
         );
 
+        // TODO it seems that this can be done inside process_app_action
         app_state.text_structure = Some(updated_structure);
         app_state.computed_layout = updated_layout;
         app_state
@@ -355,21 +341,14 @@ impl eframe::App for MyApp {
             .unwrap()
             .cursor = byte_cursor;
 
+        // post render processing
         for action in actions {
-            process_app_action(action, ctx, app_state, text_edit_id, &RealAppIO);
-        }
+            let mut next_action = Some(action);
 
-        let updated_structure_version = app_state
-            .text_structure
-            .as_ref()
-            .map(|s| s.opaque_version());
-
-        if updated_structure_version != Some(orignal_text_version) {
-            app_state
-                .unsaved_changes
-                .push(UnsavedChange::NoteContentChanged(app_state.selected_note));
-
-            app_state.scheduled_script_run_version = updated_structure_version;
+            while let Some(to_proccess) = next_action.take() {
+                next_action =
+                    process_app_action(to_proccess, ctx, app_state, text_edit_id, &RealAppIO);
+            }
         }
     }
 

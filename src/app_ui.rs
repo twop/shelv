@@ -18,6 +18,7 @@ use crate::{
     app_state::{ComputedLayout, LayoutParams, MsgToApp},
     byte_span::UnOrderedByteSpan,
     command::CommandList,
+    effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     text_structure::{InteractiveTextPart, TextStructure},
@@ -106,7 +107,7 @@ pub fn render_app(
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
-                    let (layout, mut text_structure, mut updated_cursor, text_draw_pos) =
+                    let (changed, layout, mut text_structure, mut updated_cursor, text_draw_pos) =
                         render_editor(
                             ui,
                             editor_text,
@@ -117,6 +118,10 @@ pub fn render_app(
                             theme_set,
                             text_edit_id,
                         );
+
+                    if changed {
+                        output_actions.push(AppAction::EvalNote(selected_note))
+                    }
 
                     let space_below = ui.available_rect_before_wrap();
 
@@ -156,10 +161,15 @@ pub fn render_app(
                                             byte_range,
                                             checked,
                                         } => {
-                                            editor_text.replace_range(
-                                                byte_range.range(),
-                                                if checked { "[ ]" } else { "[x]" },
-                                            );
+                                            output_actions.push(AppAction::apply_text_changes(
+                                                selected_note,
+                                                [TextChange::Replace(
+                                                    byte_range,
+                                                    (if checked { "[ ]" } else { "[x]" })
+                                                        .to_string(),
+                                                )]
+                                                .into(),
+                                            ));
 
                                             text_structure = text_structure.recycle(&editor_text);
                                         }
@@ -198,6 +208,7 @@ fn render_editor(
     theme_set: &ThemeSet,
     text_edit_id: Id,
 ) -> (
+    bool, // if the text was changed, TODO rework this mess
     Option<ComputedLayout>,
     TextStructure,
     Option<UnOrderedByteSpan>,
@@ -240,11 +251,9 @@ fn render_editor(
 
     let TextEditOutput {
         response: text_edit_response,
-        galley,
         galley_pos,
-        text_clip_rect: _,
-        state: _,
         cursor_range,
+        ..
     } = egui::TextEdit::multiline(editor_text)
         .font(egui::TextStyle::Monospace) // for cursor height
         .code_editor()
@@ -265,65 +274,15 @@ fn render_editor(
     });
 
     let text_structure = structure_wrapper.unwrap();
-    (computed_layout, text_structure, byte_cursor, galley_pos)
+    (
+        text_edit_response.changed(),
+        computed_layout,
+        text_structure,
+        byte_cursor,
+        galley_pos,
+    )
 }
 
-fn render_settings_dialog(ctx: &Context, theme: &AppTheme) {
-    let mut window = Window::new("")
-        .id("settings".into())
-        // .open(&mut state.is_settings_opened)
-        .title_bar(false)
-        .anchor(Align2::CENTER_CENTER, [0., 0.])
-        // .resizable(false)
-        //.default_size((250., 200.))
-        .fixed_size((250., 200.));
-
-    window.show(&ctx, |ui| {
-        ui.vertical(|ui| {
-            let sizes = &theme.sizes;
-
-            let avail_rect = ui.available_rect_before_wrap();
-            ui.set_min_size(vec2(avail_rect.width(), avail_rect.height()));
-
-            ui.painter().line_segment(
-                [avail_rect.left(), avail_rect.right()]
-                    .map(|x| pos2(x, avail_rect.top() + sizes.header_footer)),
-                Stroke::new(1.0, theme.colors.outline_fg),
-            );
-
-            ui.allocate_ui(vec2(avail_rect.width(), theme.sizes.header_footer), |ui| {
-                ui.with_layout(
-                    Layout::centered_and_justified(egui::Direction::TopDown),
-                    |ui| {
-                        ui.label(
-                            RichText::new("Settings")
-                                .color(theme.colors.subtle_text_color)
-                                .font(FontId {
-                                    size: theme.fonts.size.normal,
-                                    family: theme.fonts.family.bold.clone(),
-                                }),
-                        );
-                    },
-                );
-                // ui.horizontal(|ui| {
-                //     ui.label(
-                //         RichText::new("Settings")
-                //             .color(theme.colors.subtle_text_color)
-                //             .font(FontId {
-                //                 size: theme.fonts.size.normal,
-                //                 family: theme.fonts.family.bold.clone(),
-                //             }),
-                //     );
-                // })
-            });
-
-            ui.label("yo");
-            if ui.button("close").clicked() {
-                // state.is_settings_opened = false;
-            }
-        });
-    });
-}
 fn restore_cursor_from_note_state(
     text: &str,
     byte_cursor: Option<UnOrderedByteSpan>,

@@ -196,7 +196,7 @@ impl AppState {
                     cursor.ordered(),
                 ))
                 .map(|changes| {
-                    SmallVec::from([AppAction::ApplyTextChanges(
+                    SmallVec::from([AppAction::apply_text_changes(
                         app_state.selected_note,
                         changes,
                     )])
