@@ -28,9 +28,10 @@ use crate::{
         toggle_md_headings::toggle_md_heading,
         toggle_simple_md_annotations::toggle_simple_md_annotations,
     },
-    effects::text_change_effect::TextChange,
+    effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{DataToSave, NoteFile, RestoredData},
-    settings::{execute_settings_note, Binding},
+    scripting::execute_code_blocks,
+    settings::{Binding, SettingsNoteEvalContext},
     text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
 };
@@ -55,7 +56,7 @@ pub struct AppState {
     // ------------------------------------
     // -------- emphemeral state ----------
     pub last_saved: u128,
-    pub unsaved_changes: SmallVec<[UnsavedChange; 2]>,
+    unsaved_changes: SmallVec<[UnsavedChange; 2]>,
     pub scheduled_script_run_version: Option<u64>,
 
     // ------------------------------------
@@ -71,6 +72,17 @@ pub struct AppState {
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
+}
+
+impl AppState {
+    pub fn add_unsaved_change(&mut self, change: UnsavedChange) {
+        if self.unsaved_changes.iter().any(|c| c == &change) {
+            // if we already have a change pending do nothing
+            return;
+        }
+
+        self.unsaved_changes.push(change);
+    }
 }
 
 pub struct ComputedLayout {
@@ -159,7 +171,7 @@ impl AppState {
 
         let shelf_count = notes.len();
 
-        let notes: BTreeMap<NoteFile, Note> = notes
+        let mut notes: BTreeMap<NoteFile, Note> = notes
             .into_iter()
             .enumerate()
             .map(|(i, text)| (NoteFile::Note(i as u32), Note { text, cursor: None }))
@@ -329,17 +341,28 @@ impl AppState {
 
         let mut editor_commands = CommandList::new(editor_commands);
 
-        if let Some(settings) = notes.get(&NoteFile::Settings) {
-            match execute_settings_note(&TextStructure::new(&settings.text), &settings.text) {
-                Ok(settings) => {
-                    for Binding { shortcut, command } in settings.bindings.iter() {
-                        println!("applying {shortcut:?} to {command}");
-                        editor_commands.set_or_replace_shortcut(*shortcut, command);
+        // TODO this is ugly, refactor this to be a bit nicer
+        // at least from the error reporting point of view
+        if let Some(settings) = notes.get_mut(&NoteFile::Settings) {
+            match {
+                let mut cx = SettingsNoteEvalContext {
+                    cmd_list: &mut editor_commands,
+                    should_force_eval: true,
+                };
+
+                execute_code_blocks(&mut cx, &TextStructure::new(&settings.text), &settings.text)
+            } {
+                Some(requested_changes) => {
+                    match apply_text_changes(
+                        &mut settings.text,
+                        settings.cursor.unwrap_or(UnOrderedByteSpan::new(0, 0)),
+                        requested_changes,
+                    ) {
+                        Ok(_) => println!("applied settings note successfully"),
+                        Err(err) => println!("failed to write back settings results {:#?}", err),
                     }
                 }
-                Err(err) => {
-                    println!("error parsing settings note {err:#?}");
-                }
+                None => (),
             }
         }
 

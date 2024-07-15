@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fmt::format, str::FromStr, time::Instant};
 
 use eframe::egui::{Key, KeyboardShortcut, ModifierNames, Modifiers};
 use itertools::Itertools;
@@ -6,7 +6,12 @@ use kdl::{KdlDocument, KdlError, KdlNode};
 use miette::SourceSpan;
 use smallvec::SmallVec;
 
-use crate::text_structure::{SpanKind, TextStructure};
+use crate::{
+    command::CommandList,
+    effects::text_change_effect::TextChange,
+    scripting::{execute_code_blocks, BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
+    text_structure::{SpanKind, TextStructure},
+};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TopLevelKdlSettings {
@@ -135,51 +140,52 @@ pub fn parse_top_level(block_str: &str) -> Result<TopLevelKdlSettings, SettingsP
     })
 }
 
-pub fn execute_settings_note(
-    text_structure: &TextStructure,
-    text: &str,
-) -> Result<TopLevelKdlSettings, SettingsParseError> {
-    let script_blocks: SmallVec<[_; 8]> = text_structure
-        .iter()
-        .filter_map(|(index, desc)| match desc.kind {
-            SpanKind::CodeBlock => text_structure.find_meta(index).and_then(|meta| match meta {
-                crate::text_structure::SpanMeta::CodeBlock { lang } => {
-                    // let byte_range = desc.byte_pos.clone();
+pub struct SettingsNoteEvalContext<'cmd_list> {
+    // parsed_bindings: Vec<Result<TopLevelKdlSettings, SettingsParseError>>,
+    pub cmd_list: &'cmd_list mut CommandList,
+    pub should_force_eval: bool,
+}
 
-                    let (_, code_desc) = text_structure
-                        .iterate_immediate_children_of(index)
-                        .find(|(_, desc)| desc.kind == SpanKind::Text)?;
+impl<'cmd_list> NoteEvalContext for SettingsNoteEvalContext<'cmd_list> {
+    fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind> {
+        match lang {
+            "settings" => Some(CodeBlockKind::Source),
 
-                    let code = &text[code_desc.byte_pos.range()];
+            output if output.starts_with("settings#") => {
+                let hex_str = &output.strip_prefix("settings#")?;
+                Some(CodeBlockKind::Output(SourceHash::parse(hex_str)))
+            }
 
-                    match lang.as_str() {
-                        "settings" => Some(code),
-
-                        _ => None,
-                    }
-                }
-
-                _ => None,
-            }),
             _ => None,
-        })
-        .collect();
+        }
+    }
 
-    let block_count = script_blocks.len();
-    let all_found_bindings = script_blocks
-        .into_iter()
-        .map(parse_top_level)
-        .map_ok(|doc| doc.bindings)
-        .fold_ok(vec![], |mut all, bindings| {
-            all.extend(bindings);
-            all
-        })?;
-    let bindings_count = all_found_bindings.len();
-    println!("processing settings block, found {block_count} blocks with {bindings_count} bindigns total" );
+    fn eval_block(&mut self, body: &str, hash: SourceHash) -> BlockEvalResult {
+        let result = parse_top_level(body);
 
-    Ok(TopLevelKdlSettings {
-        bindings: all_found_bindings,
-    })
+        let body = match &result {
+            Ok(res) => format!("Applied at {:#?}", Instant::now()),
+            Err(err) => format!("{:#?}", err),
+        };
+
+        // TODO report if applying bindings failed
+
+        if let Ok(settings) = result {
+            for Binding { shortcut, command } in settings.bindings {
+                println!("applying {shortcut:?} to {command}");
+                self.cmd_list.set_or_replace_shortcut(shortcut, &command);
+            }
+        }
+
+        BlockEvalResult {
+            body,
+            output_lang: format!("settings#{}", hash.to_string()),
+        }
+    }
+
+    fn should_force_eval(&self) -> bool {
+        self.should_force_eval
+    }
 }
 
 #[cfg(test)]

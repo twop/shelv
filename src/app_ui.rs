@@ -37,12 +37,13 @@ pub struct AppRenderData<'a> {
     pub is_window_pinned: bool,
 }
 
-pub struct RenderAppResult(
-    pub SmallVec<[AppAction; 4]>,
-    pub TextStructure,
-    pub Option<UnOrderedByteSpan>,
-    pub Option<ComputedLayout>,
-);
+pub struct RenderAppResult {
+    pub requested_actions: SmallVec<[AppAction; 4]>,
+    pub updated_text_structure: TextStructure,
+    pub latest_cursor: Option<UnOrderedByteSpan>,
+    pub latest_layout: Option<ComputedLayout>,
+    pub text_changed: bool,
+}
 
 pub fn render_app(
     text_structure: TextStructure,
@@ -74,41 +75,49 @@ pub fn render_app(
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
 
-    let (text_structure, computed_layout, updated_cursor) = egui::CentralPanel::default()
-        .show(ctx, |ui| {
-            let avail_space = ui.available_rect_before_wrap();
+    let (text_has_changed, text_structure, computed_layout, updated_cursor) =
+        egui::CentralPanel::default()
+            .show(ctx, |ui| {
+                let avail_space = ui.available_rect_before_wrap();
 
-            let hints: Option<SmallVec<[(&str, KeyboardShortcut); 8]>> =
-                editor_text.is_empty().then(|| {
-                    [
-                        CommandList::MARKDOWN_BOLD,
-                        CommandList::MARKDOWN_ITALIC,
-                        CommandList::MARKDOWN_STRIKETHROUGH,
-                        CommandList::MARKDOWN_CODEBLOCK,
-                        CommandList::MARKDOWN_H1,
-                        CommandList::MARKDOWN_H2,
-                        CommandList::MARKDOWN_H3,
-                    ]
-                    .into_iter()
-                    .filter_map(|name| command_list.find_by_name(name.as_ref()))
-                    .filter_map(|cmd| cmd.shortcut.map(|shortcut| (cmd.name.as_str(), shortcut)))
-                    .collect()
-                });
+                let hints: Option<SmallVec<[(&str, KeyboardShortcut); 8]>> =
+                    editor_text.is_empty().then(|| {
+                        [
+                            CommandList::MARKDOWN_BOLD,
+                            CommandList::MARKDOWN_ITALIC,
+                            CommandList::MARKDOWN_STRIKETHROUGH,
+                            CommandList::MARKDOWN_CODEBLOCK,
+                            CommandList::MARKDOWN_H1,
+                            CommandList::MARKDOWN_H2,
+                            CommandList::MARKDOWN_H3,
+                        ]
+                        .into_iter()
+                        .filter_map(|name| command_list.find_by_name(name.as_ref()))
+                        .filter_map(|cmd| {
+                            cmd.shortcut.map(|shortcut| (cmd.name.as_str(), shortcut))
+                        })
+                        .collect()
+                    });
 
-            render_hints(
-                hints.as_ref().map(|hints| hints.as_slice()),
-                avail_space,
-                ui.painter(),
-                ctx,
-                &theme,
-            );
+                render_hints(
+                    hints.as_ref().map(|hints| hints.as_slice()),
+                    avail_space,
+                    ui.painter(),
+                    ctx,
+                    &theme,
+                );
 
-            egui::ScrollArea::vertical()
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                egui::ScrollArea::vertical()
+                    .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
-                    let (changed, layout, mut text_structure, mut updated_cursor, text_draw_pos) =
-                        render_editor(
+                        let (
+                            changed,
+                            layout,
+                            mut text_structure,
+                            mut updated_cursor,
+                            text_draw_pos,
+                        ) = render_editor(
                             ui,
                             editor_text,
                             text_structure,
@@ -119,83 +128,85 @@ pub fn render_app(
                             text_edit_id,
                         );
 
-                    if changed {
-                        output_actions.push(AppAction::EvalNote(selected_note))
-                    }
+                        if changed {
+                            output_actions.push(AppAction::EvalNote(selected_note))
+                        }
 
-                    let space_below = ui.available_rect_before_wrap();
+                        let space_below = ui.available_rect_before_wrap();
 
-                    // ---- CLICKING ON EMPTY AREA FOCUSES ON TEXT EDIT ----
-                    // TODO migrate to use app actions
-                    if space_below.height() > 0.
-                        && ui
-                            .interact(space_below, Id::new("space_below"), Sense::click())
-                            .clicked()
-                    {
-                        updated_cursor =
-                            Some(UnOrderedByteSpan::new(editor_text.len(), editor_text.len()));
-                        ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
-                    }
-
-                    // ---- INTERACTIVE TEXT PARTS (TODO + LINKS) ----
-                    if let (Some(layout), Some(pointer_pos)) =
-                        (&layout, ui.ctx().pointer_interact_pos())
-                    {
-                        let cursor = layout.galley.cursor_from_pos(pointer_pos - text_draw_pos);
-
-                        use eframe::egui::TextBuffer as _;
-                        let byte_cursor = layout
-                            .galley
-                            .text()
-                            .byte_index_from_char_index(cursor.ccursor.index);
-
-                        if let Some(interactive) =
-                            text_structure.find_interactive_text_part(byte_cursor)
+                        // ---- CLICKING ON EMPTY AREA FOCUSES ON TEXT EDIT ----
+                        // TODO migrate to use app actions
+                        if space_below.height() > 0.
+                            && ui
+                                .interact(space_below, Id::new("space_below"), Sense::click())
+                                .clicked()
                         {
-                            // if ui.input(|i| i.modifiers.command)
-                            {
-                                ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-                                if ui.input(|i| i.pointer.primary_clicked()) {
-                                    match interactive {
-                                        InteractiveTextPart::TaskMarker {
-                                            byte_range,
-                                            checked,
-                                        } => {
-                                            output_actions.push(AppAction::apply_text_changes(
-                                                selected_note,
-                                                [TextChange::Replace(
-                                                    byte_range,
-                                                    (if checked { "[ ]" } else { "[x]" })
-                                                        .to_string(),
-                                                )]
-                                                .into(),
-                                            ));
+                            updated_cursor =
+                                Some(UnOrderedByteSpan::new(editor_text.len(), editor_text.len()));
+                            ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+                        }
 
-                                            text_structure = text_structure.recycle(&editor_text);
-                                        }
-                                        InteractiveTextPart::Link(url) => {
-                                            println!("open url {url:}");
-                                            output_actions
-                                                .push(AppAction::OpenLink(url.to_string()));
+                        // ---- INTERACTIVE TEXT PARTS (TODO + LINKS) ----
+                        if let (Some(layout), Some(pointer_pos)) =
+                            (&layout, ui.ctx().pointer_interact_pos())
+                        {
+                            let cursor = layout.galley.cursor_from_pos(pointer_pos - text_draw_pos);
+
+                            use eframe::egui::TextBuffer as _;
+                            let byte_cursor = layout
+                                .galley
+                                .text()
+                                .byte_index_from_char_index(cursor.ccursor.index);
+
+                            if let Some(interactive) =
+                                text_structure.find_interactive_text_part(byte_cursor)
+                            {
+                                // if ui.input(|i| i.modifiers.command)
+                                {
+                                    ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                                    if ui.input(|i| i.pointer.primary_clicked()) {
+                                        match interactive {
+                                            InteractiveTextPart::TaskMarker {
+                                                byte_range,
+                                                checked,
+                                            } => {
+                                                output_actions.push(AppAction::apply_text_changes(
+                                                    selected_note,
+                                                    [TextChange::Replace(
+                                                        byte_range,
+                                                        (if checked { "[ ]" } else { "[x]" })
+                                                            .to_string(),
+                                                    )]
+                                                    .into(),
+                                                ));
+
+                                                text_structure =
+                                                    text_structure.recycle(&editor_text);
+                                            }
+                                            InteractiveTextPart::Link(url) => {
+                                                println!("open url {url:}");
+                                                output_actions
+                                                    .push(AppAction::OpenLink(url.to_string()));
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    (text_structure, layout, updated_cursor)
-                })
-                .inner
-        })
-        .inner;
+                        (changed, text_structure, layout, updated_cursor)
+                    })
+                    .inner
+            })
+            .inner;
 
-    RenderAppResult(
-        output_actions,
-        text_structure,
-        updated_cursor,
-        computed_layout,
-    )
+    RenderAppResult {
+        requested_actions: output_actions,
+        updated_text_structure: text_structure,
+        latest_cursor: updated_cursor,
+        latest_layout: computed_layout,
+        text_changed: text_has_changed,
+    }
 }
 
 fn render_editor(

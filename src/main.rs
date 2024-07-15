@@ -324,13 +324,24 @@ impl eframe::App for MyApp {
             computed_layout: app_state.computed_layout.take(),
         };
 
-        let RenderAppResult(actions, updated_structure, byte_cursor, updated_layout) = render_app(
+        let RenderAppResult {
+            requested_actions: actions,
+            updated_text_structure: updated_structure,
+            latest_cursor: byte_cursor,
+            latest_layout: updated_layout,
+            text_changed,
+        } = render_app(
             text_structure,
             editor_text,
             vis_state,
             &app_state.theme,
             ctx,
         );
+
+        if text_changed {
+            app_state
+                .add_unsaved_change(UnsavedChange::NoteContentChanged(app_state.selected_note));
+        }
 
         // TODO it seems that this can be done inside process_app_action
         app_state.text_structure = Some(updated_structure);

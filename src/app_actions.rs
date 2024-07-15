@@ -7,8 +7,8 @@ use crate::{
     byte_span::UnOrderedByteSpan,
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::NoteFile,
-    scripting::execute_live_scripts,
-    settings::{execute_settings_note, Binding},
+    scripting::{execute_code_blocks, execute_live_scripts},
+    settings::{Binding, SettingsNoteEvalContext},
     text_structure::TextStructure,
 };
 
@@ -64,7 +64,7 @@ pub fn process_app_action(
             via_shortcut,
         } => {
             if note_file != state.selected_note {
-                state.unsaved_changes.push(UnsavedChange::SelectionChanged);
+                state.add_unsaved_change(UnsavedChange::SelectionChanged);
 
                 if via_shortcut {
                     let note = &mut state.notes.get_mut(&note_file).unwrap();
@@ -126,7 +126,10 @@ pub fn process_app_action(
                         // if the changes are for the selected note we need to recompute TextStructure
                         state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
                     }
+
                     note.cursor = Some(updated_cursor);
+
+                    state.add_unsaved_change(UnsavedChange::NoteContentChanged(note_file));
                     should_trigger_eval.then(|| AppAction::EvalNote(note_file))
                 } else {
                     None
@@ -168,7 +171,7 @@ pub fn process_app_action(
                                 }
 
                                 note.text = note_content;
-                                state.unsaved_changes.push(UnsavedChange::LastUpdated);
+                                state.add_unsaved_change(UnsavedChange::LastUpdated);
                             }
 
                             Some(AppAction::EvalNote(note_file))
@@ -199,32 +202,16 @@ pub fn process_app_action(
                 false => TextStructure::new(text),
             };
 
-            let next_action = match note_file {
-                NoteFile::Note(_) => execute_live_scripts(&text_structure, text).map(|changes| {
-                    AppAction::ApplyTextChanges {
-                        target: note_file,
-                        changes,
-                        should_trigger_eval: false,
-                    }
-                }),
+            let requested_changes = match note_file {
+                NoteFile::Note(_) => execute_live_scripts(&text_structure, text),
 
                 NoteFile::Settings => {
-                    match execute_settings_note(&text_structure, &text) {
-                        Ok(settings) => {
-                            for Binding { shortcut, command } in settings.bindings.iter() {
-                                println!("applying {shortcut:?} to {command}");
-                                state
-                                    .editor_commands
-                                    .set_or_replace_shortcut(*shortcut, command);
-                            }
-                        }
-                        Err(err) => {
-                            // TODO print the error into the note itself
-                            println!("error parsing settings note {err:#?}");
-                        }
-                    }
+                    let mut cx = SettingsNoteEvalContext {
+                        cmd_list: &mut state.editor_commands,
+                        should_force_eval: false,
+                    };
 
-                    None
+                    execute_code_blocks(&mut cx, &text_structure, &text)
                 }
             };
 
@@ -232,7 +219,11 @@ pub fn process_app_action(
                 state.text_structure = Some(text_structure);
             }
 
-            next_action
+            requested_changes.map(|changes| AppAction::ApplyTextChanges {
+                target: note_file,
+                changes,
+                should_trigger_eval: false,
+            })
         }
     }
 }
