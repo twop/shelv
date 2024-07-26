@@ -18,7 +18,8 @@ use crate::{
     app_actions::AppAction,
     byte_span::UnOrderedByteSpan,
     command::{
-        CommandContext, CommandList, EditorCommand, EditorCommandOutput, TextCommandContext,
+        map_text_command_to_command_handler, CommandContext, CommandList, EditorCommand,
+        EditorCommandOutput, TextCommandContext,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
@@ -31,7 +32,7 @@ use crate::{
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::execute_code_blocks,
-    settings::{Binding, SettingsNoteEvalContext},
+    settings::SettingsNoteEvalContext,
     text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
 };
@@ -188,35 +189,6 @@ impl AppState {
 
         let text_structure = TextStructure::new(&notes.get(&selected_note).unwrap().text);
 
-        fn map_text_command_to_command_handler(
-            f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
-        ) -> Box<dyn Fn(CommandContext) -> EditorCommandOutput> {
-            Box::new(move |CommandContext { app_state }| {
-                let note = app_state.notes.get(&app_state.selected_note).unwrap();
-
-                let Some(cursor) = note.cursor else {
-                    return SmallVec::new();
-                };
-
-                let Some(text_structure) = app_state.text_structure.as_ref() else {
-                    return SmallVec::new();
-                };
-
-                f(TextCommandContext::new(
-                    text_structure,
-                    &note.text,
-                    cursor.ordered(),
-                ))
-                .map(|changes| {
-                    SmallVec::from([AppAction::apply_text_changes(
-                        app_state.selected_note,
-                        changes,
-                    )])
-                })
-                .unwrap_or_default()
-            })
-        }
-
         let mut editor_commands: Vec<EditorCommand> = [
             (
                 CommandList::EXPAND_TASK_MARKER,
@@ -287,57 +259,49 @@ impl AppState {
             ),
         ]
         .into_iter()
-        .map(|(name, shortcut, handler)| EditorCommand {
-            name: name.to_string(),
-            shortcut: Some(shortcut),
-            try_handle: handler,
-        })
+        .map(|(name, shortcut, handler)| EditorCommand::built_in(name, shortcut, handler))
         .collect();
 
         for note_index in 0..shelf_count {
-            editor_commands.push(EditorCommand {
-                name: CommandList::switch_to_note(note_index as u8).to_string(),
-                shortcut: Some(KeyboardShortcut::new(
+            editor_commands.push(EditorCommand::built_in(
+                CommandList::switch_to_note(note_index as u8).to_string(),
+                KeyboardShortcut::new(
                     Modifiers::COMMAND,
                     number_to_key(note_index as u8 + 1).unwrap(),
-                )),
-                try_handle: Box::new(move |_| {
+                ),
+                move |_| {
                     [AppAction::SwitchToNote {
                         note_file: NoteFile::Note(note_index as u32),
                         via_shortcut: true,
                     }]
                     .into()
-                }),
-            })
+                },
+            ))
         }
 
-        editor_commands.push(EditorCommand {
-            name: CommandList::OPEN_SETTIGS.to_string(),
-            shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma)),
-            try_handle: Box::new(move |_| {
+        editor_commands.push(EditorCommand::built_in(
+            CommandList::OPEN_SETTIGS.to_string(),
+            KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma),
+            |_| {
                 [AppAction::SwitchToNote {
                     note_file: NoteFile::Settings,
                     via_shortcut: true,
                 }]
                 .into()
-            }),
-        });
+            },
+        ));
 
-        editor_commands.push(EditorCommand {
-            name: CommandList::PIN_WINDOW.to_string(),
-            shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::P)),
-            try_handle: Box::new(|ctx| {
-                [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into()
-            }),
-        });
+        editor_commands.push(EditorCommand::built_in(
+            CommandList::PIN_WINDOW,
+            KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::P),
+            |ctx| [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
+        ));
 
-        editor_commands.push(EditorCommand {
-            name: CommandList::HIDE_WINDOW.to_string(),
-            shortcut: Some(KeyboardShortcut::new(Modifiers::NONE, egui::Key::Escape)),
-            try_handle: Box::new(|_| {
-                [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
-            }),
-        });
+        editor_commands.push(EditorCommand::built_in(
+            CommandList::HIDE_WINDOW,
+            KeyboardShortcut::new(Modifiers::NONE, egui::Key::Escape),
+            |_| [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into(),
+        ));
 
         let mut editor_commands = CommandList::new(editor_commands);
 

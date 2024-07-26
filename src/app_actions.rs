@@ -8,7 +8,7 @@ use crate::{
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::NoteFile,
     scripting::{execute_code_blocks, execute_live_scripts},
-    settings::{Binding, SettingsNoteEvalContext},
+    settings::SettingsNoteEvalContext,
     text_structure::TextStructure,
 };
 

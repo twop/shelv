@@ -50,6 +50,7 @@ pub struct BlockEvalResult {
 }
 
 pub trait NoteEvalContext {
+    fn begin(&mut self) {}
     fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind>;
     fn eval_block(&mut self, body: &str, hash: SourceHash) -> BlockEvalResult;
     fn should_force_eval(&self) -> bool;
@@ -134,7 +135,7 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
         return None;
     }
 
-    // println!("script blocks: {:#?}", script_blocks);
+    // println!("#### SCRIPT blocks: {:#?}", script_blocks);
 
     let mut changes: SmallVec<[TextChange; 4]> = SmallVec::new();
 
@@ -153,6 +154,8 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
     if !needs_re_eval && !cx.should_force_eval() {
         return None;
     }
+
+    cx.begin();
 
     for (_, block, inner_body) in script_blocks {
         match block {

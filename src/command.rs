@@ -3,7 +3,8 @@ use pulldown_cmark::CowStr;
 use smallvec::SmallVec;
 
 use crate::{
-    app_actions::AppAction, app_state::AppState, byte_span::ByteSpan, text_structure::TextStructure,
+    app_actions::AppAction, app_state::AppState, byte_span::ByteSpan,
+    effects::text_change_effect::TextChange, text_structure::TextStructure,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -31,9 +32,38 @@ impl<'a> TextCommandContext<'a> {
 pub type EditorCommandOutput = SmallVec<[AppAction; 1]>;
 
 pub struct EditorCommand {
+    pub is_built_in: bool,
     pub name: String,
     pub shortcut: Option<KeyboardShortcut>,
     pub try_handle: Box<dyn Fn(CommandContext) -> EditorCommandOutput>,
+}
+
+impl EditorCommand {
+    pub fn built_in<Handler: 'static + Fn(CommandContext) -> EditorCommandOutput>(
+        name: impl Into<String>,
+        shortcut: KeyboardShortcut,
+        try_handle: Handler,
+    ) -> Self {
+        Self {
+            is_built_in: true,
+            name: name.into(),
+            shortcut: Some(shortcut),
+            try_handle: Box::new(try_handle),
+        }
+    }
+
+    pub fn custom<Handler: 'static + Fn(CommandContext) -> EditorCommandOutput>(
+        name: impl Into<String>,
+        shortcut: KeyboardShortcut,
+        try_handle: Handler,
+    ) -> Self {
+        Self {
+            is_built_in: false,
+            name: name.into(),
+            shortcut: Some(shortcut),
+            try_handle: Box::new(try_handle),
+        }
+    }
 }
 
 pub struct CommandList(Vec<EditorCommand>);
@@ -51,6 +81,14 @@ impl CommandList {
 
     pub fn find_by_name(&self, name: &str) -> Option<&EditorCommand> {
         self.slice().iter().find(|c| c.name == name)
+    }
+
+    pub fn retain_only(&mut self, filter: impl Fn(&EditorCommand) -> bool) {
+        self.0.retain(filter)
+    }
+
+    pub fn add(&mut self, cmd: EditorCommand) {
+        self.0.push(cmd)
     }
 
     pub fn set_or_replace_shortcut(
@@ -94,4 +132,33 @@ impl CommandList {
     pub const PIN_WINDOW: &'static str = "Pin/Unpin Window";
 
     pub const HIDE_WINDOW: &'static str = "Hide Window";
+}
+
+pub fn map_text_command_to_command_handler(
+    f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
+) -> Box<dyn Fn(CommandContext) -> EditorCommandOutput> {
+    Box::new(move |CommandContext { app_state }| {
+        let note = app_state.notes.get(&app_state.selected_note).unwrap();
+
+        let Some(cursor) = note.cursor else {
+            return SmallVec::new();
+        };
+
+        let Some(text_structure) = app_state.text_structure.as_ref() else {
+            return SmallVec::new();
+        };
+
+        f(TextCommandContext::new(
+            text_structure,
+            &note.text,
+            cursor.ordered(),
+        ))
+        .map(|changes| {
+            SmallVec::from([AppAction::apply_text_changes(
+                app_state.selected_note,
+                changes,
+            )])
+        })
+        .unwrap_or_default()
+    })
 }
