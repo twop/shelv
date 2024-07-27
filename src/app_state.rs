@@ -18,7 +18,8 @@ use crate::{
     app_actions::AppAction,
     byte_span::UnOrderedByteSpan,
     command::{
-        CommandContext, CommandList, EditorCommand, EditorCommandOutput, TextCommandContext,
+        map_text_command_to_command_handler, CommandContext, CommandList, EditorCommand,
+        EditorCommandOutput, TextCommandContext,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
@@ -28,8 +29,10 @@ use crate::{
         toggle_md_headings::toggle_md_heading,
         toggle_simple_md_annotations::toggle_simple_md_annotations,
     },
-    effects::text_change_effect::TextChange,
+    effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{DataToSave, NoteFile, RestoredData},
+    scripting::execute_code_blocks,
+    settings::SettingsNoteEvalContext,
     text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
 };
@@ -54,7 +57,7 @@ pub struct AppState {
     // ------------------------------------
     // -------- emphemeral state ----------
     pub last_saved: u128,
-    pub unsaved_changes: SmallVec<[UnsavedChange; 2]>,
+    unsaved_changes: SmallVec<[UnsavedChange; 2]>,
     pub scheduled_script_run_version: Option<u64>,
 
     // ------------------------------------
@@ -70,6 +73,17 @@ pub struct AppState {
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
+}
+
+impl AppState {
+    pub fn add_unsaved_change(&mut self, change: UnsavedChange) {
+        if self.unsaved_changes.iter().any(|c| c == &change) {
+            // if we already have a change pending do nothing
+            return;
+        }
+
+        self.unsaved_changes.push(change);
+    }
 }
 
 pub struct ComputedLayout {
@@ -158,7 +172,7 @@ impl AppState {
 
         let shelf_count = notes.len();
 
-        let notes: BTreeMap<NoteFile, Note> = notes
+        let mut notes: BTreeMap<NoteFile, Note> = notes
             .into_iter()
             .enumerate()
             .map(|(i, text)| (NoteFile::Note(i as u32), Note { text, cursor: None }))
@@ -174,35 +188,6 @@ impl AppState {
         let selected_note = saved_state.selected;
 
         let text_structure = TextStructure::new(&notes.get(&selected_note).unwrap().text);
-
-        fn map_text_command_to_command_handler(
-            f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
-        ) -> Box<dyn Fn(CommandContext) -> EditorCommandOutput> {
-            Box::new(move |CommandContext { app_state }| {
-                let note = app_state.notes.get(&app_state.selected_note).unwrap();
-
-                let Some(cursor) = note.cursor else {
-                    return SmallVec::new();
-                };
-
-                let Some(text_structure) = app_state.text_structure.as_ref() else {
-                    return SmallVec::new();
-                };
-
-                f(TextCommandContext::new(
-                    text_structure,
-                    &note.text,
-                    cursor.ordered(),
-                ))
-                .map(|changes| {
-                    SmallVec::from([AppAction::ApplyTextChanges(
-                        app_state.selected_note,
-                        changes,
-                    )])
-                })
-                .unwrap_or_default()
-            })
-        }
 
         let mut editor_commands: Vec<EditorCommand> = [
             (
@@ -274,57 +259,76 @@ impl AppState {
             ),
         ]
         .into_iter()
-        .map(|(name, shortcut, handler)| EditorCommand {
-            name: name.to_string(),
-            shortcut: Some(shortcut),
-            try_handle: handler,
-        })
+        .map(|(name, shortcut, handler)| EditorCommand::built_in(name, shortcut, handler))
         .collect();
 
         for note_index in 0..shelf_count {
-            editor_commands.push(EditorCommand {
-                name: CommandList::switch_to_note(note_index as u8).to_string(),
-                shortcut: Some(KeyboardShortcut::new(
+            editor_commands.push(EditorCommand::built_in(
+                CommandList::switch_to_note(note_index as u8).to_string(),
+                KeyboardShortcut::new(
                     Modifiers::COMMAND,
                     number_to_key(note_index as u8 + 1).unwrap(),
-                )),
-                try_handle: Box::new(move |_| {
+                ),
+                move |_| {
                     [AppAction::SwitchToNote {
                         note_file: NoteFile::Note(note_index as u32),
                         via_shortcut: true,
                     }]
                     .into()
-                }),
-            })
+                },
+            ))
         }
 
-        editor_commands.push(EditorCommand {
-            name: CommandList::OPEN_SETTIGS.to_string(),
-            shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma)),
-            try_handle: Box::new(move |_| {
+        editor_commands.push(EditorCommand::built_in(
+            CommandList::OPEN_SETTIGS.to_string(),
+            KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma),
+            |_| {
                 [AppAction::SwitchToNote {
                     note_file: NoteFile::Settings,
                     via_shortcut: true,
                 }]
                 .into()
-            }),
-        });
+            },
+        ));
 
-        editor_commands.push(EditorCommand {
-            name: CommandList::PIN_WINDOW.to_string(),
-            shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::P)),
-            try_handle: Box::new(|ctx| {
-                [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into()
-            }),
-        });
+        editor_commands.push(EditorCommand::built_in(
+            CommandList::PIN_WINDOW,
+            KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::P),
+            |ctx| [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
+        ));
 
-        editor_commands.push(EditorCommand {
-            name: CommandList::HIDE_WINDOW.to_string(),
-            shortcut: Some(KeyboardShortcut::new(Modifiers::NONE, egui::Key::Escape)),
-            try_handle: Box::new(|_| {
-                [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
-            }),
-        });
+        editor_commands.push(EditorCommand::built_in(
+            CommandList::HIDE_WINDOW,
+            KeyboardShortcut::new(Modifiers::NONE, egui::Key::Escape),
+            |_| [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into(),
+        ));
+
+        let mut editor_commands = CommandList::new(editor_commands);
+
+        // TODO this is ugly, refactor this to be a bit nicer
+        // at least from the error reporting point of view
+        if let Some(settings) = notes.get_mut(&NoteFile::Settings) {
+            match {
+                let mut cx = SettingsNoteEvalContext {
+                    cmd_list: &mut editor_commands,
+                    should_force_eval: true,
+                };
+
+                execute_code_blocks(&mut cx, &TextStructure::new(&settings.text), &settings.text)
+            } {
+                Some(requested_changes) => {
+                    match apply_text_changes(
+                        &mut settings.text,
+                        settings.cursor.unwrap_or(UnOrderedByteSpan::new(0, 0)),
+                        requested_changes,
+                    ) {
+                        Ok(_) => println!("applied settings note successfully"),
+                        Err(err) => println!("failed to write back settings results {:#?}", err),
+                    }
+                }
+                None => (),
+            }
+        }
 
         Self {
             is_pinned: false,
@@ -341,7 +345,7 @@ impl AppState {
             hidden: false,
             prev_focused: false,
             last_saved,
-            editor_commands: CommandList::new(editor_commands),
+            editor_commands,
         }
     }
 
