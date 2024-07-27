@@ -56,7 +56,7 @@ fn try_parse_modifier(mod_str: &str) -> Option<Modifiers> {
 #[derive(Debug)]
 enum SettingsParseError {
     UnexpectedNode(SourceSpan, &'static str),
-    MismatchedArgsCoung(SourceSpan, usize),
+    MismatchedArgsCount(SourceSpan, usize),
     MismatchedType {
         span: SourceSpan,
         expected: &'static str,
@@ -108,7 +108,7 @@ fn parse_command(node: &KdlNode) -> Result<Command, SettingsParseError> {
 fn parse_replace_text_command(node: &KdlNode) -> Result<ReplaceText, SettingsParseError> {
     use SettingsParseError as PE;
     if node.entries().len() > 0 {
-        Err(PE::MismatchedArgsCoung(node.span().clone(), 0))
+        Err(PE::MismatchedArgsCount(node.span().clone(), 0))
     } else {
         let children = node.children().ok_or_else(|| {
             PE::MismatchedChildren(
@@ -148,7 +148,7 @@ fn parse_replace_text_target(target: &KdlNode) -> Result<ReplaceTextTarget, Sett
     use SettingsParseError as PE;
 
     if target.entries().len() != 1 {
-        return Err(PE::MismatchedArgsCoung(target.span().clone(), 1));
+        return Err(PE::MismatchedArgsCount(target.span().clone(), 1));
     }
     let target_entry = &target.entries()[0];
     if target_entry.name().is_some() {
@@ -181,7 +181,7 @@ fn parse_replace_text_with(node: &KdlNode) -> Result<String, SettingsParseError>
     use SettingsParseError as PE;
 
     if node.entries().len() != 1 {
-        return Err(PE::MismatchedArgsCoung(node.span().clone(), 1));
+        return Err(PE::MismatchedArgsCount(node.span().clone(), 1));
     }
 
     let entry = &node.entries()[0];
@@ -203,7 +203,7 @@ fn parse_replace_text_with(node: &KdlNode) -> Result<String, SettingsParseError>
 
 fn parse_binding_node(node: &KdlNode) -> Result<Binding, SettingsParseError> {
     if node.entries().len() != 1 {
-        return Err(SettingsParseError::MismatchedArgsCoung(
+        return Err(SettingsParseError::MismatchedArgsCount(
             node.name().span().clone(),
             1,
         ));
@@ -294,8 +294,9 @@ impl<'cmd_list> NoteEvalContext for SettingsNoteEvalContext<'cmd_list> {
         let result = parse_top_level(body);
 
         let body = match &result {
-            Ok(res) => format!("Applied at {:#?}", Instant::now()),
-            Err(err) => format!("Error: {:#?}", err),
+            Ok(res) => format!("applied"),
+            // Ok(res) => format!("Applied at {:#?}", Instant::now()),
+            Err(err) => format!("error: {:#?}", err),
         };
 
         // TODO report if applying bindings failed
