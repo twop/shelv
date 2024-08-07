@@ -15,7 +15,7 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    app_actions::AppAction,
+    app_actions::{AppAction, AppIO},
     byte_span::UnOrderedByteSpan,
     command::{
         map_text_command_to_command_handler, CommandContext, CommandList, EditorCommand,
@@ -147,6 +147,7 @@ impl ComputedLayout {
 pub enum MsgToApp {
     ToggleVisibility,
     NoteFileChanged(NoteFile, PathBuf),
+    GlobalHotkey(u32),
 }
 
 // struct MdAnnotationShortcut {
@@ -156,7 +157,7 @@ pub enum MsgToApp {
 // }
 
 impl AppState {
-    pub fn new(init_data: AppInitData) -> Self {
+    pub fn new(init_data: AppInitData, app_io: &mut impl AppIO) -> Self {
         let AppInitData {
             theme,
             msg_queue,
@@ -312,6 +313,7 @@ impl AppState {
                 let mut cx = SettingsNoteEvalContext {
                     cmd_list: &mut editor_commands,
                     should_force_eval: true,
+                    app_io,
                 };
 
                 execute_code_blocks(&mut cx, &TextStructure::new(&settings.text), &settings.text)

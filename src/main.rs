@@ -30,6 +30,7 @@ use tray_icon::{
 // use tray_item::TrayItem;G1
 
 use std::{
+    collections::BTreeMap,
     fs::{self, File},
     io::{self, Read},
     path::PathBuf,
@@ -67,13 +68,31 @@ mod theme;
 pub struct MyApp {
     state: AppState,
     hotwatch: Hotwatch,
-    hotkeys_manager: GlobalHotKeyManager,
     tray: TrayIcon,
     msg_queue: SyncSender<MsgToApp>,
     persistence_folder: PathBuf,
+    app_io: RealAppIO,
 }
 
-struct RealAppIO;
+struct RegisteredGlobalHotkey {
+    egui_shortcut: egui::KeyboardShortcut,
+    system_hotkey: global_hotkey::hotkey::HotKey,
+    handler: Box<dyn Fn() -> MsgToApp>,
+}
+
+struct RealAppIO {
+    hotkeys_manager: GlobalHotKeyManager,
+    registered_hotkeys: BTreeMap<u32, RegisteredGlobalHotkey>,
+}
+
+impl RealAppIO {
+    fn new(hotkeys_manager: GlobalHotKeyManager) -> Self {
+        Self {
+            hotkeys_manager,
+            registered_hotkeys: Default::default(),
+        }
+    }
+}
 
 impl AppIO for RealAppIO {
     fn hide_app(&self) {
@@ -87,6 +106,45 @@ impl AppIO for RealAppIO {
     ) -> Result<Option<String>, io::Error> {
         try_read_note_if_newer(path, last_saved)
     }
+
+    fn try_map_hotkey(&self, hotkey_id: u32) -> Option<MsgToApp> {
+        self.registered_hotkeys
+            .get(&hotkey_id)
+            .map(|key| (key.handler)())
+    }
+
+    fn bind_global_hotkey(
+        &mut self,
+        shortcut: egui::KeyboardShortcut,
+        handler: Box<dyn Fn() -> MsgToApp>,
+    ) -> Result<(), String> {
+        let system_hotkey = convert_egui_shortcut_to_global_hotkey(shortcut);
+
+        self.hotkeys_manager
+            .register(system_hotkey)
+            .map_err(|err| err.to_string())?;
+
+        self.registered_hotkeys.insert(
+            system_hotkey.id(),
+            RegisteredGlobalHotkey {
+                egui_shortcut: shortcut,
+                system_hotkey,
+                handler,
+            },
+        );
+
+        Ok(())
+    }
+
+    fn cleanup_all_global_hotkeys(&mut self) -> Result<(), String> {
+        for hotkey in self.registered_hotkeys.values() {
+            self.hotkeys_manager
+                .unregister(hotkey.system_hotkey)
+                .map_err(|err| err.to_string())?;
+        }
+        self.registered_hotkeys.clear();
+        Ok(())
+    }
 }
 
 impl MyApp {
@@ -99,19 +157,19 @@ impl MyApp {
         cc.egui_ctx.set_fonts(fonts);
 
         let (msg_queue_tx, msg_queue_rx) = sync_channel::<MsgToApp>(10);
-        let hotkeys_manager = GlobalHotKeyManager::new().unwrap();
-        let global_open_hotkey = HotKey::new(Some(Modifiers::SHIFT | Modifiers::META), Code::KeyM);
 
-        hotkeys_manager.register(global_open_hotkey).unwrap();
+        let mut app_io = RealAppIO::new(GlobalHotKeyManager::new().unwrap());
 
-        let open_hotkey = global_open_hotkey.clone();
+        // hotkeys_manager.register(global_open_hotkey).unwrap();
+
+        // let open_hotkey = global_open_hotkey.clone();
         let ctx = cc.egui_ctx.clone();
         let sender = msg_queue_tx.clone();
+
         GlobalHotKeyEvent::set_event_handler(Some(move |ev: GlobalHotKeyEvent| {
-            if ev.id == open_hotkey.id() && ev.state() == HotKeyState::Pressed {
-                sender.send(MsgToApp::ToggleVisibility).unwrap();
+            if ev.state() == HotKeyState::Pressed {
+                sender.send(MsgToApp::GlobalHotkey(ev.id())).unwrap();
                 ctx.request_repaint();
-                println!("handler for ToggleVisibility: {open_hotkey:?}, ev = {ev:#?}");
             }
         }));
 
@@ -200,14 +258,18 @@ impl MyApp {
 
         let last_saved = persistent_state.state.last_saved;
 
-        Self {
-            state: AppState::new(AppInitData {
+        let state = AppState::new(
+            AppInitData {
                 theme,
                 msg_queue: msg_queue_rx,
                 persistent_state,
                 last_saved,
-            }),
-            hotkeys_manager,
+            },
+            &mut app_io,
+        );
+        Self {
+            state,
+            app_io,
             tray: tray_icon,
             msg_queue: msg_queue_tx,
             persistence_folder,
@@ -217,7 +279,7 @@ impl MyApp {
 }
 
 impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let app_state = &mut self.state;
         let text_edit_id = Id::new(match &app_state.selected_note {
             NoteFile::Note(index) => format!("text_edit_id_{}", index),
@@ -274,7 +336,7 @@ impl eframe::App for MyApp {
 
             while let Some(to_proccess) = next_action.take() {
                 next_action =
-                    process_app_action(to_proccess, ctx, app_state, text_edit_id, &RealAppIO);
+                    process_app_action(to_proccess, ctx, app_state, text_edit_id, &mut self.app_io);
             }
         }
 
@@ -358,7 +420,7 @@ impl eframe::App for MyApp {
 
             while let Some(to_proccess) = next_action.take() {
                 next_action =
-                    process_app_action(to_proccess, ctx, app_state, text_edit_id, &RealAppIO);
+                    process_app_action(to_proccess, ctx, app_state, text_edit_id, &mut self.app_io);
             }
         }
     }
@@ -471,4 +533,59 @@ fn hide_app_on_macos() {
         let arg = app.as_ref();
         let _: () = msg_send![&app, hide:arg];
     }
+}
+
+fn convert_egui_shortcut_to_global_hotkey(
+    shortcut: egui::KeyboardShortcut,
+) -> global_hotkey::hotkey::HotKey {
+    let mut modifiers = Modifiers::empty();
+    if shortcut.modifiers.alt {
+        modifiers |= Modifiers::ALT;
+    }
+    if shortcut.modifiers.ctrl {
+        modifiers |= Modifiers::CONTROL;
+    }
+    if shortcut.modifiers.shift {
+        modifiers |= Modifiers::SHIFT;
+    }
+    if shortcut.modifiers.mac_cmd {
+        modifiers |= Modifiers::META;
+    }
+
+    use egui::Key::*;
+    use global_hotkey::hotkey::Code::*;
+
+    let code = match shortcut.logical_key {
+        A => KeyA,
+        B => KeyB,
+        C => KeyC,
+        D => KeyD,
+        E => KeyE,
+        F => KeyF,
+        G => KeyG,
+        H => KeyH,
+        I => KeyI,
+        J => KeyJ,
+        K => KeyK,
+        L => KeyL,
+        M => KeyM,
+        N => KeyN,
+        O => KeyO,
+        P => KeyP,
+        Q => KeyQ,
+        R => KeyR,
+        S => KeyS,
+        T => KeyT,
+        U => KeyU,
+        V => KeyV,
+        W => KeyW,
+        X => KeyX,
+        Y => KeyY,
+        Z => KeyZ,
+        // TODO: Add more mappings as needed
+        // TODO2: is there a way not to do it manually?
+        _ => KeyA, // Default to KeyA for unmapped keys
+    };
+
+    HotKey::new(Some(modifiers), code)
 }

@@ -1,6 +1,6 @@
 use std::{io, path::PathBuf};
 
-use eframe::egui::{Context, Id, OpenUrl, ViewportCommand};
+use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
 
 use crate::{
     app_state::{AppState, MsgToApp, UnsavedChange},
@@ -49,6 +49,16 @@ pub trait AppIO {
         path: &PathBuf,
         last_saved: u128,
     ) -> Result<Option<String>, io::Error>;
+
+    fn cleanup_all_global_hotkeys(&mut self) -> Result<(), String>;
+
+    fn try_map_hotkey(&self, hotkey_id: u32) -> Option<MsgToApp>;
+
+    fn bind_global_hotkey(
+        &mut self,
+        shortcut: KeyboardShortcut,
+        to: Box<dyn Fn() -> MsgToApp>,
+    ) -> Result<(), String>;
 }
 
 pub fn process_app_action(
@@ -56,7 +66,7 @@ pub fn process_app_action(
     ctx: &Context,
     state: &mut AppState,
     text_edit_id: Id,
-    app_io: &impl AppIO,
+    app_io: &mut impl AppIO,
 ) -> Option<AppAction> {
     match action {
         AppAction::SwitchToNote {
@@ -187,6 +197,10 @@ pub fn process_app_action(
                         }
                     }
                 }
+
+                MsgToApp::GlobalHotkey(hotkey_id) => app_io
+                    .try_map_hotkey(hotkey_id)
+                    .map(AppAction::HandleMsgToApp),
             }
         }
 
@@ -209,6 +223,7 @@ pub fn process_app_action(
                     let mut cx = SettingsNoteEvalContext {
                         cmd_list: &mut state.editor_commands,
                         should_force_eval: false,
+                        app_io,
                     };
 
                     execute_code_blocks(&mut cx, &text_structure, &text)

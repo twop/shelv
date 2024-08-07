@@ -1,12 +1,14 @@
 use std::{fmt::format, str::FromStr, time::Instant};
 
 use eframe::egui::{util::undoer::Settings, Key, KeyboardShortcut, ModifierNames, Modifiers};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use kdl::{KdlDocument, KdlError, KdlNode};
 use miette::SourceSpan;
 use smallvec::SmallVec;
 
 use crate::{
+    app_actions::AppIO,
+    app_state::MsgToApp,
     command::{
         map_text_command_to_command_handler, CommandList, EditorCommand, TextCommandContext,
     },
@@ -18,6 +20,7 @@ use crate::{
 #[derive(Debug, PartialEq, Eq)]
 struct TopLevelKdlSettings {
     bindings: Vec<Binding>,
+    global_bindings: Vec<GlobalBinding>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -38,9 +41,20 @@ enum Command {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+enum GlobalCommand {
+    ToggleAppVisibility,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 struct Binding {
     shortcut: KeyboardShortcut,
     command: Command,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct GlobalBinding {
+    shortcut: KeyboardShortcut,
+    command: GlobalCommand,
 }
 
 fn try_parse_modifier(mod_str: &str) -> Option<Modifiers> {
@@ -49,6 +63,7 @@ fn try_parse_modifier(mod_str: &str) -> Option<Modifiers> {
         s if s == ModifierNames::NAMES.ctrl => Some(Modifiers::CTRL),
         s if s == ModifierNames::NAMES.mac_cmd => Some(Modifiers::MAC_CMD),
         s if s == ModifierNames::NAMES.mac_alt => Some(Modifiers::ALT),
+        s if s == ModifierNames::NAMES.shift => Some(Modifiers::SHIFT),
         _ => None,
     }
 }
@@ -69,6 +84,7 @@ enum SettingsParseError {
         node: String,
     },
     ParseKdlErro(KdlError),
+    UknownCommand(String),
 }
 
 fn parse_keyboard_shortcut(attr: &str) -> Result<KeyboardShortcut, String> {
@@ -102,6 +118,13 @@ fn parse_command(node: &KdlNode) -> Result<Command, SettingsParseError> {
     match node.name().value() {
         "ReplaceText" => parse_replace_text_command(node).map(Command::ReplaceText),
         name => Ok(Command::Predefined(name.to_string())),
+    }
+}
+
+fn parse_global_command(node: &KdlNode) -> Result<GlobalCommand, SettingsParseError> {
+    match node.name().value() {
+        "ToggleAppVisibility" => Ok(GlobalCommand::ToggleAppVisibility),
+        name => Err(SettingsParseError::UknownCommand(name.to_string())),
     }
 }
 
@@ -201,7 +224,10 @@ fn parse_replace_text_with(node: &KdlNode) -> Result<String, SettingsParseError>
     }
 }
 
-fn parse_binding_node(node: &KdlNode) -> Result<Binding, SettingsParseError> {
+fn parse_binding<Cmd>(
+    node: &KdlNode,
+    parse: impl Fn(&KdlNode) -> Result<Cmd, SettingsParseError>,
+) -> Result<(KeyboardShortcut, Cmd), SettingsParseError> {
     if node.entries().len() != 1 {
         return Err(SettingsParseError::MismatchedArgsCount(
             node.name().span().clone(),
@@ -235,46 +261,66 @@ fn parse_binding_node(node: &KdlNode) -> Result<Binding, SettingsParseError> {
     }
 
     let command_node = &children.nodes()[0];
-    let command = parse_command(&command_node)?;
+    let command = parse(&command_node)?;
 
     // .map_err(|err| {
     //     SettingsParseError::CoulndntParseCommand(command_node.span().clone(), err)
     // })?;
 
-    Ok(Binding { shortcut, command })
+    Ok((shortcut, command))
 }
 
 fn parse_top_level(block_str: &str) -> Result<TopLevelKdlSettings, SettingsParseError> {
     let doc = KdlDocument::from_str(block_str).map_err(SettingsParseError::ParseKdlErro)?;
 
+    enum Bind {
+        InsideApp(Binding),
+        Global(GlobalBinding),
+    }
+
     let bindings: Result<Vec<_>, SettingsParseError> = doc
         .nodes()
         .iter()
         .map(|node| match node.name().value() {
-            "bind" => parse_binding_node(node),
+            "bind" => parse_binding(node, parse_command)
+                .map(|(shortcut, command)| Bind::InsideApp(Binding { shortcut, command })),
+
+            "global" => parse_binding(node, parse_global_command)
+                .map(|(shortcut, command)| Bind::Global(GlobalBinding { shortcut, command })),
+
             _ => Err(SettingsParseError::UnexpectedNode(
                 node.name().span().clone(),
-                "bind",
+                "bind | global",
             )),
         })
         .collect();
 
+    let (bindings, global_bindings): (Vec<Binding>, Vec<GlobalBinding>) =
+        bindings?.into_iter().partition_map(|bind| match bind {
+            Bind::InsideApp(b) => Either::Left(b),
+            Bind::Global(b) => Either::Right(b),
+        });
+
     Ok(TopLevelKdlSettings {
-        bindings: bindings?,
+        bindings,
+        global_bindings,
     })
 }
 
-pub struct SettingsNoteEvalContext<'cmd_list> {
+pub struct SettingsNoteEvalContext<'cx, IO: AppIO> {
     // parsed_bindings: Vec<Result<TopLevelKdlSettings, SettingsParseError>>,
-    pub cmd_list: &'cmd_list mut CommandList,
+    pub cmd_list: &'cx mut CommandList,
     pub should_force_eval: bool,
+    pub app_io: &'cx mut IO,
 }
 
-impl<'cmd_list> NoteEvalContext for SettingsNoteEvalContext<'cmd_list> {
+impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
     fn begin(&mut self) {
         println!("##### STARTING settings eval");
 
         self.cmd_list.retain_only(|cmd| cmd.is_built_in);
+        // TODO handle error case
+        self.app_io.cleanup_all_global_hotkeys().unwrap();
     }
 
     fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind> {
@@ -293,7 +339,7 @@ impl<'cmd_list> NoteEvalContext for SettingsNoteEvalContext<'cmd_list> {
     fn eval_block(&mut self, body: &str, hash: SourceHash) -> BlockEvalResult {
         let result = parse_top_level(body);
 
-        let body = match &result {
+        let mut body = match &result {
             Ok(res) => format!("applied"),
             // Ok(res) => format!("Applied at {:#?}", Instant::now()),
             Err(err) => format!("error: {:#?}", err),
@@ -302,6 +348,27 @@ impl<'cmd_list> NoteEvalContext for SettingsNoteEvalContext<'cmd_list> {
         // TODO report if applying bindings failed
 
         if let Ok(settings) = result {
+            for GlobalBinding { shortcut, command } in settings.global_bindings {
+                println!("applying global {shortcut:?} to {command:?}");
+                match command {
+                    GlobalCommand::ToggleAppVisibility => {
+                        match self
+                            .app_io
+                            .bind_global_hotkey(shortcut, Box::new(|| MsgToApp::ToggleVisibility))
+                        {
+                            Ok(_) => {
+                                println!("registered global {shortcut:?} to show/hide Shelv");
+                            }
+
+                            Err(err) => {
+                                println!("error registering global {shortcut:?} to show/hide Shelv, err = {err:?}");
+                                body = err;
+                            }
+                        }
+                    }
+                }
+            }
+
             for Binding { shortcut, command } in settings.bindings {
                 println!("applying {shortcut:?} to {command:?}");
                 match command {
@@ -374,7 +441,8 @@ mod tests {
                     shortcut: KeyboardShortcut::new(Modifiers::MAC_CMD, Key::A),
                     command: Command::Predefined("Test".to_string())
                 }]
-                .into()
+                .into(),
+                global_bindings: vec![],
             }
         );
     }
@@ -402,7 +470,8 @@ mod tests {
                         with: "something else".to_string()
                     })
                 }]
-                .into()
+                .into(),
+                global_bindings: vec![],
             }
         );
     }
