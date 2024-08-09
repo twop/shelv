@@ -2,7 +2,7 @@ use std::{fmt::format, str::FromStr, time::Instant};
 
 use eframe::egui::{util::undoer::Settings, Key, KeyboardShortcut, ModifierNames, Modifiers};
 use itertools::{Either, Itertools};
-use kdl::{KdlDocument, KdlError, KdlNode};
+use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode, KdlValue};
 use miette::SourceSpan;
 use smallvec::SmallVec;
 
@@ -10,7 +10,8 @@ use crate::{
     app_actions::AppIO,
     app_state::MsgToApp,
     command::{
-        map_text_command_to_command_handler, CommandList, EditorCommand, TextCommandContext,
+        map_text_command_to_command_handler, BuiltInCommand, CommandList, EditorCommand,
+        TextCommandContext,
     },
     effects::text_change_effect::TextChange,
     scripting::{execute_code_blocks, BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
@@ -36,7 +37,7 @@ struct ReplaceText {
 
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
-    Predefined(String),
+    Predefined(BuiltInCommand),
     ReplaceText(ReplaceText),
 }
 
@@ -84,7 +85,7 @@ enum SettingsParseError {
         node: String,
     },
     ParseKdlErro(KdlError),
-    UknownCommand(String),
+    UnknownCommand(String),
 }
 
 fn parse_keyboard_shortcut(attr: &str) -> Result<KeyboardShortcut, String> {
@@ -117,14 +118,47 @@ fn parse_keyboard_shortcut(attr: &str) -> Result<KeyboardShortcut, String> {
 fn parse_command(node: &KdlNode) -> Result<Command, SettingsParseError> {
     match node.name().value() {
         "ReplaceText" => parse_replace_text_command(node).map(Command::ReplaceText),
-        name => Ok(Command::Predefined(name.to_string())),
+        name => match try_parse_builtin_command(name, node.entries()) {
+            Some(cmd) => Ok(Command::Predefined(cmd)),
+            None => Err(SettingsParseError::UnknownCommand(node.name().to_string())),
+        },
+    }
+}
+
+fn try_parse_builtin_command(name: &str, entries: &[KdlEntry]) -> Option<BuiltInCommand> {
+    use BuiltInCommand as B;
+
+    match name {
+        name if name == B::ExpandTaskMarker.name() => Some(B::ExpandTaskMarker),
+        name if name == B::IndentListItem.name() => Some(B::IndentListItem),
+        name if name == B::UnindentListItem.name() => Some(B::UnindentListItem),
+        name if name == B::SplitListItem.name() => Some(B::SplitListItem),
+        name if name == B::MarkdownBold.name() => Some(B::MarkdownBold),
+        name if name == B::MarkdownItalic.name() => Some(B::MarkdownItalic),
+        name if name == B::MarkdownStrikethrough.name() => Some(B::MarkdownStrikethrough),
+        name if name == B::MarkdownCodeBlock.name() => Some(B::MarkdownCodeBlock),
+        name if name == B::MarkdownH1.name() => Some(B::MarkdownH1),
+        name if name == B::MarkdownH2.name() => Some(B::MarkdownH2),
+        name if name == B::MarkdownH3.name() => Some(B::MarkdownH3),
+        name if name == B::SwitchToNote(0).name() => match entries {
+            [entry] => match entry.value() {
+                KdlValue::Base10(note) if *note > 0 => Some(B::SwitchToNote((note - 1) as u8)),
+                _ => None,
+            },
+            _ => None, // TODO wrong number of arguments
+        },
+        name if name == B::SwitchToSettings.name() => Some(B::SwitchToSettings),
+        name if name == B::PinWindow.name() => Some(B::PinWindow),
+        name if name == B::HideApp.name() => Some(B::HideApp),
+
+        _ => None,
     }
 }
 
 fn parse_global_command(node: &KdlNode) -> Result<GlobalCommand, SettingsParseError> {
     match node.name().value() {
         "ToggleAppVisibility" => Ok(GlobalCommand::ToggleAppVisibility),
-        name => Err(SettingsParseError::UknownCommand(name.to_string())),
+        name => Err(SettingsParseError::UnknownCommand(name.to_string())),
     }
 }
 
@@ -318,7 +352,9 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
     fn begin(&mut self) {
         println!("##### STARTING settings eval");
 
-        self.cmd_list.retain_only(|cmd| cmd.is_built_in);
+        self.cmd_list.retain_only(|cmd| cmd.kind.is_some());
+        self.cmd_list.reset_builtins_to_default_keybindings();
+
         // TODO handle error case
         self.app_io.cleanup_all_global_hotkeys().unwrap();
     }
@@ -372,12 +408,13 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
             for Binding { shortcut, command } in settings.bindings {
                 println!("applying {shortcut:?} to {command:?}");
                 match command {
-                    Command::Predefined(name) => {
-                        self.cmd_list.set_or_replace_shortcut(shortcut, &name);
+                    Command::Predefined(kind) => {
+                        self.cmd_list
+                            .set_or_replace_builtin_shortcut(shortcut, kind);
                     }
 
-                    Command::ReplaceText(cmd) => self.cmd_list.add(EditorCommand::custom(
-                        "replace text", // TODO figure out the name
+                    Command::ReplaceText(cmd) => self.cmd_list.add(EditorCommand::user_defined(
+                        // "replace text", // TODO figure out the name
                         shortcut,
                         map_text_command_to_command_handler(move |ctx| {
                             run_replace_text_cmd(ctx, &cmd)
@@ -421,6 +458,29 @@ fn run_replace_text_cmd(
     }
 }
 
+impl BuiltInCommand {
+    fn name(&self) -> &'static str {
+        use BuiltInCommand::*;
+        match self {
+            ExpandTaskMarker => "ExpandTaskMarker",
+            IndentListItem => "IndentListItem",
+            UnindentListItem => "UnindentListItem",
+            SplitListItem => "SplitListItem",
+            MarkdownBold => "MarkdownBold",
+            MarkdownItalic => "MarkdownItalic",
+            MarkdownStrikethrough => "MarkdownStrikethrough",
+            MarkdownCodeBlock => "MarkdownCodeBlock",
+            MarkdownH1 => "MarkdownH1",
+            MarkdownH2 => "MarkdownH2",
+            MarkdownH3 => "MarkdownH3",
+            SwitchToNote(_) => "SwitchToNote",
+            SwitchToSettings => "SwitchToSettings",
+            PinWindow => "PinWindow",
+            HideApp => "HideApp",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -429,7 +489,7 @@ mod tests {
     #[test]
     pub fn test_bind_predefined_cmd_parsing() {
         let doc_str = r#"
-        bind "Cmd A" { Test;}
+        bind "Cmd A" { HideApp;}
         "#;
 
         let keybindings = parse_top_level(doc_str).unwrap();
@@ -439,7 +499,7 @@ mod tests {
             TopLevelKdlSettings {
                 bindings: [Binding {
                     shortcut: KeyboardShortcut::new(Modifiers::MAC_CMD, Key::A),
-                    command: Command::Predefined("Test".to_string())
+                    command: Command::Predefined(BuiltInCommand::HideApp)
                 }]
                 .into(),
                 global_bindings: vec![],
