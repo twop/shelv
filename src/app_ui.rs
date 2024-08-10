@@ -9,6 +9,7 @@ use eframe::{
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
 };
+use pulldown_cmark::CowStr;
 // use itertools::Itertools;
 use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
@@ -17,7 +18,7 @@ use crate::{
     app_actions::AppAction,
     app_state::{ComputedLayout, LayoutParams, MsgToApp},
     byte_span::UnOrderedByteSpan,
-    command::CommandList,
+    command::{BuiltInCommand, CommandList},
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
@@ -80,22 +81,20 @@ pub fn render_app(
             .show(ctx, |ui| {
                 let avail_space = ui.available_rect_before_wrap();
 
-                let hints: Option<SmallVec<[(&str, KeyboardShortcut); 8]>> =
+                let hints: Option<SmallVec<[(CowStr<'static>, KeyboardShortcut); 8]>> =
                     editor_text.is_empty().then(|| {
                         [
-                            CommandList::MARKDOWN_BOLD,
-                            CommandList::MARKDOWN_ITALIC,
-                            CommandList::MARKDOWN_STRIKETHROUGH,
-                            CommandList::MARKDOWN_CODEBLOCK,
-                            CommandList::MARKDOWN_H1,
-                            CommandList::MARKDOWN_H2,
-                            CommandList::MARKDOWN_H3,
+                            BuiltInCommand::MarkdownBold,
+                            BuiltInCommand::MarkdownItalic,
+                            BuiltInCommand::MarkdownStrikethrough,
+                            BuiltInCommand::MarkdownCodeBlock,
+                            BuiltInCommand::MarkdownH1,
+                            BuiltInCommand::MarkdownH2,
+                            BuiltInCommand::MarkdownH3,
                         ]
                         .into_iter()
-                        .filter_map(|name| command_list.find_by_name(name.as_ref()))
-                        .filter_map(|cmd| {
-                            cmd.shortcut.map(|shortcut| (cmd.name.as_str(), shortcut))
-                        })
+                        .filter_map(|builtin| command_list.find(builtin))
+                        .filter_map(|cmd| cmd.kind.map(|k| k.human_description()).zip(cmd.shortcut))
                         .collect()
                     });
 
@@ -323,8 +322,8 @@ fn render_footer_panel(
     theme: &AppTheme,
 ) -> SmallVec<[AppAction; 1]> {
     let tooltips: SmallVec<[String; 6]> = (0..note_count)
-        .map(|note_index| CommandList::switch_to_note(note_index as u8))
-        .map(|name| command_list.find_by_name(name.as_ref()))
+        .map(|note_index| BuiltInCommand::SwitchToNote(note_index as u8))
+        .map(|cmd| command_list.find(cmd))
         .enumerate()
         .map(|(note_index, cmd)| match cmd.and_then(|cmd| cmd.shortcut) {
             Some(shortcut) => format!("Shelf {}", ctx.format_shortcut(&shortcut)),
@@ -368,7 +367,7 @@ fn render_footer_panel(
                             tooltip: {
                                 let tooltip_text = "Settings";
                                 command_list
-                                    .find_by_name(CommandList::OPEN_SETTIGS)
+                                    .find(BuiltInCommand::SwitchToSettings)
                                     .and_then(|cmd| cmd.shortcut)
                                     .map(|shortcut| {
                                         format!(
@@ -623,7 +622,7 @@ fn render_header_panel(
                             };
 
                             let tooltip_text = command_list
-                                .find_by_name(CommandList::PIN_WINDOW)
+                                .find(BuiltInCommand::PinWindow)
                                 .and_then(|cmd| cmd.shortcut)
                                 .map(|shortcut| {
                                     format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
@@ -650,7 +649,7 @@ fn render_header_panel(
 }
 
 fn render_hints(
-    shortcuts: Option<&[(&str, KeyboardShortcut)]>,
+    shortcuts: Option<&[(CowStr<'static>, KeyboardShortcut)]>,
     available_space: Rect,
     painter: &Painter,
     cx: &egui::Context,

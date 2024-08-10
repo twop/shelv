@@ -32,38 +32,121 @@ impl<'a> TextCommandContext<'a> {
 pub type EditorCommandOutput = SmallVec<[AppAction; 1]>;
 
 pub struct EditorCommand {
-    pub is_built_in: bool,
-    pub name: String,
+    pub kind: Option<BuiltInCommand>,
     pub shortcut: Option<KeyboardShortcut>,
     pub try_handle: Box<dyn Fn(CommandContext) -> EditorCommandOutput>,
 }
 
 impl EditorCommand {
     pub fn built_in<Handler: 'static + Fn(CommandContext) -> EditorCommandOutput>(
-        name: impl Into<String>,
-        shortcut: KeyboardShortcut,
+        kind: BuiltInCommand,
         try_handle: Handler,
     ) -> Self {
         Self {
-            is_built_in: true,
-            name: name.into(),
-            shortcut: Some(shortcut),
+            kind: Some(kind),
+            shortcut: Some(kind.default_keybinding()),
             try_handle: Box::new(try_handle),
         }
     }
 
-    pub fn custom<Handler: 'static + Fn(CommandContext) -> EditorCommandOutput>(
-        name: impl Into<String>,
+    pub fn user_defined<Handler: 'static + Fn(CommandContext) -> EditorCommandOutput>(
         shortcut: KeyboardShortcut,
         try_handle: Handler,
     ) -> Self {
         Self {
-            is_built_in: false,
-            name: name.into(),
+            kind: None,
             shortcut: Some(shortcut),
             try_handle: Box::new(try_handle),
         }
     }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum BuiltInCommand {
+    // Autocomplete/convenience
+    ExpandTaskMarker,
+    IndentListItem,
+    UnindentListItem,
+    SplitListItem,
+
+    // Markdown
+    MarkdownBold,
+    MarkdownItalic,
+    MarkdownStrikethrough,
+    MarkdownCodeBlock,
+    MarkdownH1,
+    MarkdownH2,
+    MarkdownH3,
+
+    // Others
+    SwitchToNote(u8),
+    SwitchToSettings,
+    PinWindow,
+    HideApp,
+}
+
+impl BuiltInCommand {
+    pub fn human_description(&self) -> CowStr<'static> {
+        match self {
+            Self::ExpandTaskMarker => "Expand Task Marker".into(),
+            Self::IndentListItem => "Increase List Item identation".into(),
+            Self::UnindentListItem => "Decrease List Item identation".into(),
+            Self::SplitListItem => "Split List item at cursor position".into(),
+            Self::MarkdownBold => "Toggle Bold".into(),
+            Self::MarkdownItalic => "Toggle Italic".into(),
+            Self::MarkdownStrikethrough => "Toggle Strikethrough".into(),
+            Self::MarkdownCodeBlock => "Toggle Code Block".into(),
+            Self::MarkdownH1 => "Heading 1".into(),
+            Self::MarkdownH2 => "Heading 2".into(),
+            Self::MarkdownH3 => "Heading 3".into(),
+            Self::SwitchToNote(n) => {
+                let note_index = *n;
+                match note_index {
+                    0 => "Shelf 1".into(),
+                    1 => "Shelf 2".into(),
+                    2 => "Shelf 3".into(),
+                    3 => "Shelf 4".into(),
+                    n => format!("Shelf {}", n + 1).into(),
+                }
+            }
+            Self::SwitchToSettings => "Open Settings".into(),
+            Self::PinWindow => "Pin/Unpin Window".into(),
+            Self::HideApp => "Hide Window".into(),
+        }
+    }
+
+    pub fn default_keybinding(self) -> eframe::egui::KeyboardShortcut {
+        use eframe::egui::{Key, Modifiers};
+        use BuiltInCommand::*;
+        let shortcut = KeyboardShortcut::new;
+        match self {
+            ExpandTaskMarker => shortcut(Modifiers::NONE, Key::Space),
+            IndentListItem => shortcut(Modifiers::NONE, Key::Tab),
+            UnindentListItem => shortcut(Modifiers::SHIFT, Key::Tab),
+            SplitListItem => shortcut(Modifiers::NONE, Key::Enter),
+            MarkdownCodeBlock => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::B),
+            MarkdownBold => shortcut(Modifiers::COMMAND, Key::B),
+            MarkdownItalic => shortcut(Modifiers::COMMAND, Key::I),
+            MarkdownStrikethrough => shortcut(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::E),
+            MarkdownH1 => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num1),
+            MarkdownH2 => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num2),
+            MarkdownH3 => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num3),
+            SwitchToNote(0) => shortcut(Modifiers::COMMAND, Key::Num1),
+            SwitchToNote(1) => shortcut(Modifiers::COMMAND, Key::Num2),
+            SwitchToNote(2) => shortcut(Modifiers::COMMAND, Key::Num3),
+            SwitchToNote(3) => shortcut(Modifiers::COMMAND, Key::Num4),
+            // TODO figure out how to make it more bulletproof, option maybe?
+            SwitchToNote(_) => shortcut(Modifiers::COMMAND, Key::Num0),
+            SwitchToSettings => shortcut(Modifiers::COMMAND, Key::Comma),
+            PinWindow => shortcut(Modifiers::COMMAND, Key::P),
+            HideApp => shortcut(Modifiers::NONE, Key::Escape),
+        }
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum GlobalCommandKind {
+    ShowHideApp,
 }
 
 pub struct CommandList(Vec<EditorCommand>);
@@ -79,8 +162,8 @@ impl CommandList {
         &self.0
     }
 
-    pub fn find_by_name(&self, name: &str) -> Option<&EditorCommand> {
-        self.slice().iter().find(|c| c.name == name)
+    pub fn find(&self, cmd: BuiltInCommand) -> Option<&EditorCommand> {
+        self.slice().iter().find(|c| c.kind == Some(cmd))
     }
 
     pub fn retain_only(&mut self, filter: impl Fn(&EditorCommand) -> bool) {
@@ -91,47 +174,23 @@ impl CommandList {
         self.0.push(cmd)
     }
 
-    pub fn set_or_replace_shortcut(
+    pub fn set_or_replace_builtin_shortcut(
         &mut self,
         shortcut: KeyboardShortcut,
-        cmd_name: &str,
+        cmd: BuiltInCommand,
     ) -> Option<()> {
-        let cmd = self.0.iter_mut().find(|c| c.name == cmd_name)?;
+        let cmd = self.0.iter_mut().find(|c| c.kind == Some(cmd))?;
         cmd.shortcut = Some(shortcut);
         Some(())
     }
 
-    // autocomplete/convinience
-    pub const EXPAND_TASK_MARKER: &'static str = "Expand Task Marker";
-    pub const INDENT_LIST_ITEM: &'static str = "Increase List Item identation";
-    pub const UNINDENT_LIST_ITEM: &'static str = "Decrease List Item identation";
-    pub const SPLIT_LIST_ITEM: &'static str = "Split List item at cursor position";
-
-    // markdown
-    pub const MARKDOWN_BOLD: &'static str = "ToggleBold";
-    pub const MARKDOWN_ITALIC: &'static str = "Toggle Italic";
-    pub const MARKDOWN_STRIKETHROUGH: &'static str = "Toggle Strikethrough";
-    pub const MARKDOWN_CODEBLOCK: &'static str = "Toggle Code Block";
-    pub const MARKDOWN_H1: &'static str = "Heading 1";
-    pub const MARKDOWN_H2: &'static str = "Heading 2";
-    pub const MARKDOWN_H3: &'static str = "Heading 3";
-
-    // others
-    pub fn switch_to_note(note_index: u8) -> CowStr<'static> {
-        match note_index {
-            0 => "Shelf 1".into(),
-            1 => "Shelf 2".into(),
-            2 => "Shelf 3".into(),
-            3 => "Shelf 4".into(),
-            n => format!("Shelf {}", n + 1).into(),
+    pub fn reset_builtins_to_default_keybindings(&mut self) {
+        for command in self.0.iter_mut() {
+            if let Some(kind) = command.kind {
+                command.shortcut = Some(kind.default_keybinding());
+            }
         }
     }
-
-    pub const OPEN_SETTIGS: &'static str = "Open Settings";
-
-    pub const PIN_WINDOW: &'static str = "Pin/Unpin Window";
-
-    pub const HIDE_WINDOW: &'static str = "Hide Window";
 }
 
 pub fn map_text_command_to_command_handler(

@@ -18,8 +18,8 @@ use crate::{
     app_actions::{AppAction, AppIO},
     byte_span::UnOrderedByteSpan,
     command::{
-        map_text_command_to_command_handler, CommandContext, CommandList, EditorCommand,
-        EditorCommandOutput, TextCommandContext,
+        map_text_command_to_command_handler, BuiltInCommand, CommandContext, CommandList,
+        EditorCommand, EditorCommandOutput, TextCommandContext,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
@@ -192,97 +192,79 @@ impl AppState {
 
         let mut editor_commands: Vec<EditorCommand> = [
             (
-                CommandList::EXPAND_TASK_MARKER,
-                KeyboardShortcut::new(Modifiers::NONE, eframe::egui::Key::Space),
+                BuiltInCommand::ExpandTaskMarker,
                 map_text_command_to_command_handler(on_space_after_task_markers),
             ),
             (
-                CommandList::INDENT_LIST_ITEM,
-                KeyboardShortcut::new(Modifiers::NONE, egui::Key::Tab),
+                BuiltInCommand::IndentListItem,
                 map_text_command_to_command_handler(on_tab_inside_list),
             ),
             (
-                CommandList::UNINDENT_LIST_ITEM,
-                KeyboardShortcut::new(Modifiers::SHIFT, egui::Key::Tab),
+                BuiltInCommand::UnindentListItem,
                 map_text_command_to_command_handler(on_shift_tab_inside_list),
             ),
             (
-                CommandList::SPLIT_LIST_ITEM,
-                KeyboardShortcut::new(Modifiers::NONE, egui::Key::Enter),
+                BuiltInCommand::SplitListItem,
                 map_text_command_to_command_handler(on_enter_inside_list_item),
             ),
             (
-                CommandList::MARKDOWN_CODEBLOCK,
-                KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), egui::Key::B),
+                BuiltInCommand::MarkdownCodeBlock,
                 map_text_command_to_command_handler(toggle_code_block),
             ),
             (
-                CommandList::MARKDOWN_BOLD,
-                KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::B),
+                BuiltInCommand::MarkdownBold,
                 map_text_command_to_command_handler(|text_context| {
                     toggle_simple_md_annotations(text_context, SpanKind::Bold, "**")
                 }),
             ),
             (
-                CommandList::MARKDOWN_ITALIC,
-                KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::I),
+                BuiltInCommand::MarkdownItalic,
                 map_text_command_to_command_handler(|text_context| {
                     toggle_simple_md_annotations(text_context, SpanKind::Emphasis, "*")
                 }),
             ),
             (
-                CommandList::MARKDOWN_STRIKETHROUGH,
-                KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), egui::Key::E),
+                BuiltInCommand::MarkdownStrikethrough,
                 map_text_command_to_command_handler(|text_context| {
                     toggle_simple_md_annotations(text_context, SpanKind::Strike, "~~")
                 }),
             ),
             (
-                CommandList::MARKDOWN_H1,
-                KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num1),
+                BuiltInCommand::MarkdownH1,
                 map_text_command_to_command_handler(|text_context| {
                     toggle_md_heading(text_context, HeadingLevel::H1)
                 }),
             ),
             (
-                CommandList::MARKDOWN_H2,
-                KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num2),
+                BuiltInCommand::MarkdownH2,
                 map_text_command_to_command_handler(|text_context| {
                     toggle_md_heading(text_context, HeadingLevel::H2)
                 }),
             ),
             (
-                CommandList::MARKDOWN_H3,
-                KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, egui::Key::Num3),
+                BuiltInCommand::MarkdownH3,
                 map_text_command_to_command_handler(|text_context| {
                     toggle_md_heading(text_context, HeadingLevel::H3)
                 }),
             ),
         ]
         .into_iter()
-        .map(|(name, shortcut, handler)| EditorCommand::built_in(name, shortcut, handler))
+        .map(|(cmd, handler)| EditorCommand::built_in(cmd, handler))
         .collect();
 
         for note_index in 0..shelf_count {
-            editor_commands.push(EditorCommand::built_in(
-                CommandList::switch_to_note(note_index as u8).to_string(),
-                KeyboardShortcut::new(
-                    Modifiers::COMMAND,
-                    number_to_key(note_index as u8 + 1).unwrap(),
-                ),
-                move |_| {
-                    [AppAction::SwitchToNote {
-                        note_file: NoteFile::Note(note_index as u32),
-                        via_shortcut: true,
-                    }]
-                    .into()
-                },
-            ))
+            let cmd = BuiltInCommand::SwitchToNote(note_index as u8);
+            editor_commands.push(EditorCommand::built_in(cmd, move |_| {
+                [AppAction::SwitchToNote {
+                    note_file: NoteFile::Note(note_index as u32),
+                    via_shortcut: true,
+                }]
+                .into()
+            }))
         }
 
         editor_commands.push(EditorCommand::built_in(
-            CommandList::OPEN_SETTIGS.to_string(),
-            KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma),
+            BuiltInCommand::SwitchToSettings,
             |_| {
                 [AppAction::SwitchToNote {
                     note_file: NoteFile::Settings,
@@ -292,17 +274,13 @@ impl AppState {
             },
         ));
 
-        editor_commands.push(EditorCommand::built_in(
-            CommandList::PIN_WINDOW,
-            KeyboardShortcut::new(Modifiers::COMMAND, egui::Key::P),
-            |ctx| [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
-        ));
+        editor_commands.push(EditorCommand::built_in(BuiltInCommand::PinWindow, |ctx| {
+            [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into()
+        }));
 
-        editor_commands.push(EditorCommand::built_in(
-            CommandList::HIDE_WINDOW,
-            KeyboardShortcut::new(Modifiers::NONE, egui::Key::Escape),
-            |_| [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into(),
-        ));
+        editor_commands.push(EditorCommand::built_in(BuiltInCommand::HideApp, |_| {
+            [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
+        }));
 
         let mut editor_commands = CommandList::new(editor_commands);
 

@@ -312,7 +312,10 @@ impl eframe::App for MyApp {
                             Some(keyboard_shortcut)
                                 if is_shortcut_match(input, &keyboard_shortcut) =>
                             {
-                                println!("---Found a match for {}", editor_command.name);
+                                println!(
+                                    "---Found a match for {:?}",
+                                    editor_command.kind.map(|k| k.human_description())
+                                );
                                 let res = (editor_command.try_handle)(CommandContext { app_state });
 
                                 if !res.is_empty() {
