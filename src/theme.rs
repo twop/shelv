@@ -4,7 +4,7 @@ use eframe::{
     egui::{
         self,
         style::{NumericColorSpace, Selection, WidgetVisuals, Widgets},
-        vec2, FontDefinitions, Margin, RichText, TextStyle, Visuals,
+        vec2, FontData, FontDefinitions, Margin, RichText, TextStyle, Visuals,
     },
     epaint::{Color32, FontFamily, FontId, Rounding, Shadow, Stroke},
 };
@@ -146,10 +146,10 @@ pub struct FontFamilies {
 impl FontFamilies {
     pub fn new() -> Self {
         Self {
-            normal: FontFamily::Name("inter".into()),
-            italic: FontFamily::Name("inter-italic".into()),
-            bold: FontFamily::Name("inter-bold".into()),
-            bold_italic: FontFamily::Name("inter-bold-italic".into()),
+            normal: FontFamily::Name("system".into()),
+            italic: FontFamily::Name("system-italic".into()),
+            bold: FontFamily::Name("system-bold".into()),
+            bold_italic: FontFamily::Name("system-bold-italic".into()),
             code: FontFamily::Monospace,
         }
     }
@@ -324,6 +324,69 @@ pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
     ctx.set_style(style);
 }
 
+pub fn try_load_font_family(font_family_name: &str) -> Option<Vec<(String, FontData)>> {
+    if let Some(font) = font_loader::system_fonts::get(
+        &font_loader::system_fonts::FontPropertyBuilder::new()
+            .family(font_family_name)
+            .build(),
+    ) {
+        let mut fonts = vec![Some(("".to_owned(), FontData::from_owned(font.0)))];
+
+        let bold_font = font_loader::system_fonts::get(
+            &font_loader::system_fonts::FontPropertyBuilder::new()
+                .family(font_family_name)
+                .bold()
+                .build(),
+        )
+        .or_else(|| {
+            let property = font_loader::system_fonts::FontPropertyBuilder::new()
+                .family(&(font_family_name.to_owned() + " Bold"))
+                .build();
+            font_loader::system_fonts::get(&property)
+        });
+        fonts.push(bold_font.map(|font| ("bold".to_owned(), FontData::from_owned(font.0))));
+
+        let italic_font = font_loader::system_fonts::get(
+            &font_loader::system_fonts::FontPropertyBuilder::new()
+                .family(font_family_name)
+                .italic()
+                .build(),
+        )
+        .or_else(|| {
+            let property = font_loader::system_fonts::FontPropertyBuilder::new()
+                .family(&(font_family_name.to_owned() + " Italic"))
+                .build();
+            font_loader::system_fonts::get(&property)
+        });
+        fonts.push(italic_font.map(|font| ("italic".to_owned(), FontData::from_owned(font.0))));
+
+        let bold_italic_font = font_loader::system_fonts::get(
+            &font_loader::system_fonts::FontPropertyBuilder::new()
+                .family(font_family_name)
+                .bold()
+                .italic()
+                .build(),
+        )
+        .or_else(|| {
+            let property = font_loader::system_fonts::FontPropertyBuilder::new()
+                .family(&(font_family_name.to_owned() + " BoldItalic"))
+                .build();
+            font_loader::system_fonts::get(&property)
+        });
+        fonts.push(
+            bold_italic_font.map(|font: (Vec<u8>, i32)| {
+                ("bold-italic".to_owned(), FontData::from_owned(font.0))
+            }),
+        );
+
+        Some(fonts.into_iter().flatten().collect())
+    } else {
+        println!("Failed to load font family: {}", font_family_name);
+        None
+    }
+}
+
+use font_loader::system_fonts::*;
 pub fn get_font_definitions() -> FontDefinitions {
     // Start with the default fonts (we will be adding to them rather than replacing them).
     let mut fonts = FontDefinitions::default();
@@ -359,6 +422,24 @@ pub fn get_font_definitions() -> FontDefinitions {
         egui::FontData::from_static(include_bytes!("../assets/Inter-SemiBoldItalic.otf")),
     );
 
+    let sysfonts = font_loader::system_fonts::query_all();
+    println!("System fonts: {:?}", sysfonts);
+
+    let font_to_try = "JetBrainsMono Nerd Font";
+    println!("Trying to load system font: {}", font_to_try);
+
+    if let Some(loaded_fonts) = try_load_font_family(font_to_try) {
+        println!("Found user configured font family!");
+        for (name, font) in loaded_fonts {
+            let font_key = if name.len() > 0 {
+                format!("user-{}", name)
+            } else {
+                format!("user")
+            };
+            fonts.font_data.insert(font_key, font);
+        }
+    }
+
     // Put my font first (highest priority) for proportional text:
     fonts
         .families
@@ -366,7 +447,19 @@ pub fn get_font_definitions() -> FontDefinitions {
         .or_default()
         .insert(0, "inter".to_owned());
 
+    // fonts
+    //     .families
+    //     .entry(FontFamily::Proportional)
+    //     .or_default()
+    //     .insert(0, "user".to_owned());
+
     // Put my font as last fallback for monospace:
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .push("user".to_owned());
+
     fonts
         .families
         .entry(egui::FontFamily::Monospace)
@@ -375,21 +468,45 @@ pub fn get_font_definitions() -> FontDefinitions {
 
     fonts
         .families
-        .entry(egui::FontFamily::Name("inter".into()))
+        .entry(egui::FontFamily::Name("system".into()))
+        .or_default()
+        .push("user".to_owned());
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("system".into()))
         .or_default()
         .push("inter".to_owned());
 
     fonts
         .families
-        .entry(egui::FontFamily::Name("inter-bold".into()))
+        .entry(egui::FontFamily::Name("system-bold".into()))
+        .or_default()
+        .push("user-bold".to_owned());
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("system-bold".into()))
         .or_default()
         .push("inter-bold".to_owned());
 
     fonts
         .families
-        .entry(egui::FontFamily::Name("inter-italic".into()))
+        .entry(egui::FontFamily::Name("system-italic".into()))
+        .or_default()
+        .push("user-italic".to_owned());
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("system-italic".into()))
         .or_default()
         .push("inter-italic".to_owned());
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("system-bold-italic".into()))
+        .or_default()
+        .push("user-bold-italic".to_owned());
 
     fonts
         .families
