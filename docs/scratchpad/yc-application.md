@@ -10,7 +10,6 @@ We met in the beginning of 2021 working at Next, and kept in touch ever since. L
 
 Both of us are software engineers, and only the two of us contributed to the codebase.
 
-
 ## Founder Video
 
 - [ ] TODO
@@ -43,6 +42,32 @@ Unanswered
 
 **What is your company going to make? Please describe your product and what it does or will do.**
 
+Shelv is blend on note-taking apps and computational notebooks.
+
+- Shelv takes the stance that plain-text is king, and with full markdown support, text dictates formatting.
+- Rich structural editing akin to Notion (checkboxes, lists etc)
+- Extensive keyboard shortcuts, including global shortcut to easily access and hide Shelv without disrupting your focus
+- Notes come to life with codeblocks that execute inline (similar to other notebooks), we currently support javascript, but shell, sql, python are on the way.
+- Hackable and extendable, settings is just another markdown note, hence you can enhance and build custom workflows (like parameterized snippets), or introduce new code blocks type (like running Rust).
+
+We believe that Shelv serves an important use case: Not all notes are meant to be eternal. We've all had the experience of littering our knowledge bases with temporary notes we'll never look at again. Shelv is the perfect playground for expressing your creativity without the friction. With computation cpabilities, you can play with code and data without ever leaving Shelv.
+
+Shelv is an awesome tool for indvidual productivity, but we believe that effect will compound for teams. What is more fun than playing together?
+
+n(notes:
+
+- team aspect
+- live alongside notion
+- serves the ephemeral usecase
+  )
+
+      * S: BUT all in mark-down plain text
+      * S: The magic: Shelv brings your notes to life with
+
+Shelv takes the stance that plain-text is king. But with full markdown support, your text content itself dictates
+
+Shelv is a note taking app that is optimized for quickly capturing your spontaneous thoughts and ideas without disrupting your focus. It’s designed to be simple to maximize ease of use, yet also powerful with integrated and customizable shortcuts and computations, as well as future plans for
+
 Our goal is to empower individuals and teams to be more productive. And that starts with ourselves, hence we noticed that there is a gap in a way we capture quick and dirty notes without worrying about formatting or structure and littering your knowledge base like notion or obsidian. And sometimes we want to run little scripts like sql query, js, shell script etc, but setting up a NodeJS project, Jupyter notebooks, Postico was enough friction or disruption to our workflow that it didn’t ever happen.
 
 The hypothesis: those two needs are linked, we wanted a dedicated playground to explore and capture thoughts, but we also wanted the power of computation (like a quick tax calculation or database query) without ever leaving the playground.
@@ -54,14 +79,14 @@ What we have now : Shelv → a no-frills plain-text computational markdown edito
 We’ve been using Shelv daily for the last 6 months, and the experience of live code blocks in markdown feels magical. And it was clear that sharing that joy with your team should be our next objective, e.g. collaboration. And we know that this is valuable looking at tools like VSCode live share, collaborative notebooks and google docs.
 
 Here are some details:
+
 - CRDT for syncing and collaboration, we want to support local-first architecture, aspirationally e2e encrypted
 - Speed is a key feature for productivity, thus our tech stack relies heavily on Rust for native development
 - We aim to bring SQL code blocks powered by DuckDB to enable lightweight “Jupyter-like” experience for SQL.
 - Hackable and extendable, settings is just another markdown note, hence you can enhance and build custom workflows (like parameterized snippets).
 - AI (LLM) can be just another code block (llm) that interplays nicely with the idea of “computation” and plain-text
-Shell scripts (sh) that can be run immediately inside the note.
-- 
-**Where do you live now, and where would the company be based after YC?**
+  Shell scripts (sh) that can be run immediately inside the note.
+- **Where do you live now, and where would the company be based after YC?**
 
 (Mirza) Reno, NV, USA / (Simon) Alexandria, VA, USA / (Company HQ TBD)
 
@@ -80,7 +105,7 @@ Note computations through code blocks
 Hackable: Extendable through an API and fully customizable
 Coming up next (based on early feedback and what we crave ourselves):
 Sync between devices
-Multi-person collaboration 
+Multi-person collaboration
 Web and mobile versions
 All of the above future features represent a significant milestone that depends on a backend for Shelv. We cut those features from the wider release so we can ship faster and gather feedback. But so far, early feedback has shown this seems to be a sticky product.
 
@@ -88,11 +113,12 @@ All of the above future features represent a significant milestone that depends 
 
 Both of us have been working on Shelv as a side project for over a year now. There have been periods where one of us has been between jobs and has worked on it full-time, but for the most part it has been a side-project while working day jobs.
 
-Our original thinking was to launch Shelv on Apple App Store and slowly grow revenue (as an indie project), but as we continued development, our vision kept expanding and we realized a much bigger vision and potential impact this project could have. 
+Our original thinking was to launch Shelv on Apple App Store and slowly grow revenue (as an indie project), but as we continued development, our vision kept expanding and we realized a much bigger vision and potential impact this project could have.
 
 **What tech stack are you using, or planning to use, to build this product?**
 
-Our entire stack will be using Rust, which we picked for the particular advantages of the language for this project and our proficiency working with Rust 
+Our entire stack will be using Rust, which we picked for the particular advantages of the language for this project and our proficiency working with Rust
+
 - Performance and reliability
 - Automerge (CRDT)
 - Axum on the server
@@ -105,7 +131,7 @@ Yes
 
 **How many active users or customers do you have? How many are paying? Who is paying you the most, and how much do they pay you?**
 
-We’re currently testing a pre-alpha version on TestFlight that’s currently being tested by friends and family (<10). 
+We’re currently testing a pre-alpha version on TestFlight that’s currently being tested by friends and family (<10).
 
 **Anything else you would like us to know regarding your revenue or growth rate?**
 
@@ -124,41 +150,45 @@ Unanswered
 **Why did you pick this idea to work on? Do you have domain expertise in this area? How do you know people need what you're making?**
 
 - Both of us are developers that love optimizing our workflows
+
   - There are apps like Raycast and Warp that have huge communities around optimizing workflows. We’re inspired by (and are users ourselves) how these tools help their respective domains and we want to do the same.
 
 - Simon has experience in game development and a lot of his career revolved around performance optimizations (including desktop platform team at Dropbox)
 
 - Mirza worked on YouTube for iOS, a performance critical consumer app.
-In a way we have a cheat code: scratch our own itch, we are building a tool for ourselves, adjacent, our social circle is the target audience for Shelv.
+  In a way we have a cheat code: scratch our own itch, we are building a tool for ourselves, adjacent, our social circle is the target audience for Shelv.
 
 - We see over and over again people using Sublime Text, Notepad++ etc, to capture ephemeral thoughts in pure text rather than use Notion or Obsidian, even though those apps are literally open on their screens. There’s something about pure ephemeral plain-text that simply frees the mind to explore and play without friction.
 
 **Who are your competitors? What do you understand about your business that they don't?**
 
 - Notion
+
   - Corporate, cloud-based, broader audience / general purpose
-Promotes knowledge base philosophy, hence not conducive for the sense of “play”
+    Promotes knowledge base philosophy, hence not conducive for the sense of “play”
   - No scripting capabilities
 
 - Obsidian
-  - Personal knowledge base, thus feels heavy weight 
+
+  - Personal knowledge base, thus feels heavy weight
   - Some scripting capabilities are via plugins, but not first class
   - Feels sluggish (especially with more plugins), built with web technologies
   - No scratch notes experience (quick notes), at least yet.
 
 - Apple Notes
+
   - Big advantage of being baked in into the OS
   - Targeting a very broad audience, hence opportunity to niche out.
   - No Windows, Linux and web support.
 
 - Jupyter notebooks
- - It is a computational canvas first, not notes/prose.
-  - Oriented towards professional use 
+- It is a computational canvas first, not notes/prose.
+- Oriented towards professional use
 
 Those tools are 1:1 competitors in terms of features, but people already use them, hence we indirectly compete for time and headspace. We think that Shelv can have a unique feeling of “playfulness” and be a place for ephemeral thoughts, while combining some features from all of them at the same time.
 
 **How do or will you make money? How much could you make?**
-*We realize you can't know precisely, but give your best estimate.*
+_We realize you can't know precisely, but give your best estimate._
 
 We take inspiration from Warp, Raycast and Obsidian, both in terms of feel and business model:
 
@@ -168,6 +198,7 @@ We take inspiration from Warp, Raycast and Obsidian, both in terms of feel and b
 Hence, "Personal - free tier", "Personal - pro tier", "Team tier" seem like a good place to start.
 
 Here are some rough numbers:
+
 - Personal: pro -> $5 - $8 a month
 - Team: $20-$30 a month/seat
 
@@ -184,7 +215,7 @@ Maybe the local AI version of Shelv that’s all about indexing all of your note
 ## Equity
 
 **Have you formed ANY legal entity yet?**
-*This may be in the US, in your home country, or in another country.*
+_This may be in the US, in your home country, or in another country._
 
 No
 
@@ -207,10 +238,10 @@ No
 
 **What convinced you to apply to Y Combinator? Did someone encourage you to apply? Have you been to any YC events?**
 
-While working on Shelv we were expanding the vision, and now we got to the point when taking an investment and go full time is what we both want. 
+While working on Shelv we were expanding the vision, and now we got to the point when taking an investment and go full time is what we both want.
 
 We have a mutual friend who was a part of a couple of YC applications, and when he saw Shelv he strongly encouraged us to apply.
 
 **How did you hear about Y Combinator?**
 
-We knew about YC for quite a while, who doesn't? ^_^
+We knew about YC for quite a while, who doesn't? ^\_^
