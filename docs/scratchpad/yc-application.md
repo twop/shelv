@@ -67,25 +67,18 @@ The two of us have been working remotely together in some form for over 2 years 
 
 **How far along are you?**
 
-Shelv is a fully functioning standalone note-taking app that we’re currently alpha testing on TestFlight with friends & family. We’re planning on releasing to a wider audience soon. Currently, both of us have been dependent on Shelv daily for tasks (including this very application!)
-Current feature set:
+Shelv is a fully functioning standalone note-taking app that we’re currently alpha testing on TestFlight with friends & family. Both of us are heavy users of Shelv, and we feel that the current feature set is about 70-80% there. Currently we're focusing on polishing some of the rough edges and adding some bare-minimum educational/onboarding content for a wider release.
 
-- Full markdown support text editor
-- Note computations through code blocks
-- Hackable: Extendable through an API and fully customizable
-
-Coming up next (based on early feedback and what we crave ourselves):
+After launching the "personal" version of Shelv, we're thinking about the following ideas to support a "team" version of Shelv:
 
 - Sync between devices
 - Multi-person collaboration
 - Web and mobile versions
 - More code blocks: `sql`, `sh`, `llm` etc
 
-All of the above future features represent a significant milestone that depends on a backend for Shelv. We cut those features from the initial release so we can ship faster and gather feedback. But so far, early feedback has shown this seems to be a sticky product.
-
 **How long have each of you been working on this? How much of that has been full-time? Please explain.**
 
-Both of us have been working on Shelv as a side project for over a year now. There have been periods where one of us has been between jobs and has worked on it full-time, but for the most part it has been a side-project while working day jobs.
+Both of us have been working on Shelv on the side for over a year now. There have been periods where one of us has been between jobs and has worked on it full-time.
 
 Our original thinking was to launch Shelv on the Apple App Store and slowly grow revenue (as an indie project), but as we continued development, our vision kept expanding, and we realized a much bigger vision and potential impact this project could have.
 
@@ -105,7 +98,7 @@ Yes
 
 **How many active users or customers do you have? How many are paying? Who is paying you the most, and how much do they pay you?**
 
-We’re currently testing a pre-alpha version on TestFlight that’s currently being tested by friends and family (<10).
+We’re currently testing a alpha version on TestFlight that’s currently being tested by friends and family (<10).
 
 **Anything else you would like us to know regarding your revenue or growth rate?**
 
@@ -123,38 +116,19 @@ Unanswered
 
 **Why did you pick this idea to work on? Do you have domain expertise in this area? How do you know people need what you're making?**
 
-Both of us are developers that love optimizing our workflows, and what we noticed is the tooling gap in our personal and work lives: a temporary place to store rough ideas or play with code (often one-off scripts). It feels wrong to create a NodeJS project or a page in Notion for that, we see over and over again, people using tools like Sublime/Notepad++ for transient plain text editing.
+Both of us are developers that love optimizing our workflows, and what we noticed is the tooling gap in our personal and work lives: a playground for our rough ideas or code experimentation (often one-off scripts). It feels wrong to create a NodeJS project or a page in Notion for that, we see over and over again, people using tools like Sublime/Notepad++ for transient plain text editing.
 
-Shelv is the tool optimized just for that. In a way, we have a cheat code: scratch our own itch, we are building a tool for ourselves, adjacent, our social circle is the target audience for Shelv.
+Shelv is the tool optimized just for that. In a way, we have a cheat code: scratch our own itch, we are building a tool for ourselves, adjacent, our social circle is the target audience for Shelv. And quite a few of our colleagues said "I would pay for Shelv".
 
 **Who are your competitors? What do you understand about your business that they don't?**
+Shelv is a blend of note taking apps and computational notebooks, so obviously there is some overlap in functionality with tools like Notion, Obsidian, and Jupyeter notebooks. However, we don't feel like we're directly competing as Shelv serves a different usecase: a playground for your ephemeral thoughts. We believe that Shelv can be successful in this niche.
 
-- Notion
+Here are the bets we believe that can help us to diffenciate:
 
-  - Cloud-based, broader audience / general purpose
-  - Promotes knowledge base philosophy, hence not conducive for the sense of “play”
-  - No scripting capabilities
-
-- Obsidian
-
-  - Personal knowledge base, thus feels heavy weight
-  - Some scripting capabilities are via plugins, but not first class
-  - Feels sluggish (especially with more plugins), built with web technologies
-  - No scratch notes experience (quick notes), at least yet.
-
-- Apple Notes
-
-  - Big advantage of being baked in into the OS
-  - Targeting a very broad audience, hence opportunity to niche out.
-  - No Windows, Linux and web support.
-
-- Jupyter notebooks (and other notebooks)
-  - It is a computational canvas first, not notes/prose.
-  - Oriented towards professional use
-  - no first class support for collaboration (depending on the app)
-  - not local-first, which is an opportunity to differentiate
-
-Those tools are 1:1 competitors in terms of features, but people already use them, and they have overlap, hence we compete for time and headspace. We think that Shelv can have a unique feeling of “playfulness” and be a place for ephemeral thoughts, while combining some features from all of them at the same time.
+- Local-first, you own your data and compute is local, yet collaborative through CRDT
+- Native feel and speed on every platform
+- Hackability, extending should not only be possible but fun.
+- Niche out on a specific audience first
 
 **How do or will you make money? How much could you make?**
 _We realize you can't know precisely, but give your best estimate._
@@ -179,7 +153,7 @@ Other
 
 **If you had any other ideas you considered applying with, please list them. One may be something we've been waiting for. Often when we fund people it's to do something they list here and not in the main application.**
 
-Maybe the local AI version of Shelv that’s all about indexing all of your notes and other local content. Imagine asking the AI assistant “What books did I read last year”. Potentially, local fine-tuning on your data (alongside vector search)
+Maybe the local AI version of Shelv that’s all about indexing all of your notes and other local content. Imagine asking the AI assistant “What books have I noted last year?”. Potentially, local fine-tuning on your data (alongside vector search)
 
 ## Equity
 
