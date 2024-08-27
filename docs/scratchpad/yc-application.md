@@ -49,6 +49,7 @@ Shelv is blend on note-taking apps and computational notebooks.
 - Extensive keyboard shortcuts, including global shortcut to easily access and hide Shelv without disrupting your focus
 - Notes come to life with codeblocks that execute inline (similar to other notebooks), we currently support javascript, but shell, sql, python are on the way.
 - Hackable and extendable, settings is just another markdown note, hence you can enhance and build custom workflows (like parameterized snippets), or introduce new code blocks type (like running Rust).
+- AI (LLM) can be just another code block (llm) that interplays nicely with the idea of “computation” and plain-text
 
 We believe that Shelv serves an important use case: Not all notes are meant to be eternal. We've all had the experience of littering our knowledge bases with temporary notes we'll never look at again. Shelv is the perfect playground for expressing your creativity without the friction. With computation cpabilities, you can play with code and data without ever leaving Shelv.
 
