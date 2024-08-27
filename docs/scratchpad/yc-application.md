@@ -42,7 +42,7 @@ Unanswered
 
 **What is your company going to make? Please describe your product and what it does or will do.**
 
-Shelv is blend of note-taking apps and computational notebooks.
+Shelv is a blend of note-taking apps and computational notebooks.
 
 - Shelv takes the stance that plain-text is king, and with full markdown support, text dictates formatting.
 - Rich structural editing akin to Notion (checkboxes, lists etc)
@@ -51,9 +51,9 @@ Shelv is blend of note-taking apps and computational notebooks.
 - Hackable and extendable, settings is just another markdown note, hence you can enhance and build custom workflows (like parameterized snippets), or introduce new code blocks type (like running `rust`).
 - AI (LLM) can be just another code block (`llm`) that naturally can be context aware inside the note
 
-We believe that Shelv serves an important use case: not all notes are meant to be eternal. We've all had the experience of littering our knowledge bases with temporary notes we'll never look at again. Shelv is the perfect playground for expressing your creativity without the friction. With computation cpabilities, you can play with code and data without ever leaving Shelv.
+We believe that Shelv serves an important use case: not all notes are meant to be eternal. We've all had the experience of littering our knowledge bases with temporary notes we'll never look at again. Shelv is the perfect playground for expressing your creativity without the friction. With computation capabilities, you can play with code and data without ever leaving Shelv.
 
-Shelv is an awesome tool for indvidual productivity, but we believe that effect will compound for teams, for example: multiplayer editing powered by CRDT or exploring data with DuckDB together. What is more fun than playing together?
+Shelv is an awesome tool for individual productivity, but we believe that effect will compound for teams, for example: multiplayer editing powered by CRDT or exploring data with DuckDB together. What is more fun than playing together?
 
 **Where do you live now, and where would the company be based after YC?**
 
@@ -87,7 +87,7 @@ All of the above future features represent a significant milestone that depends 
 
 Both of us have been working on Shelv as a side project for over a year now. There have been periods where one of us has been between jobs and has worked on it full-time, but for the most part it has been a side-project while working day jobs.
 
-Our original thinking was to launch Shelv on Apple App Store and slowly grow revenue (as an indie project), but as we continued development, our vision kept expanding and we realized a much bigger vision and potential impact this project could have.
+Our original thinking was to launch Shelv on the Apple App Store and slowly grow revenue (as an indie project), but as we continued development, our vision kept expanding, and we realized a much bigger vision and potential impact this project could have.
 
 **What tech stack are you using, or planning to use, to build this product?**
 
@@ -152,9 +152,9 @@ Shelv is the tool optimized just for that. In a way, we have a cheat code: scrat
   - It is a computational canvas first, not notes/prose.
   - Oriented towards professional use
   - no first class support for collaboration (depending on the app)
-  - not local-first, which is an opportunuty to differenciate
+  - not local-first, which is an opportunity to differentiate
 
-Those tools are 1:1 competitors in terms of features, but people already use them and they have overlap, hence we compete for time and headspace. We think that Shelv can have a unique feeling of “playfulness” and be a place for ephemeral thoughts, while combining some features from all of them at the same time.
+Those tools are 1:1 competitors in terms of features, but people already use them, and they have overlap, hence we compete for time and headspace. We think that Shelv can have a unique feeling of “playfulness” and be a place for ephemeral thoughts, while combining some features from all of them at the same time.
 
 **How do or will you make money? How much could you make?**
 _We realize you can't know precisely, but give your best estimate._
@@ -207,7 +207,7 @@ No
 
 **What convinced you to apply to Y Combinator? Did someone encourage you to apply? Have you been to any YC events?**
 
-While working on Shelv we were expanding the vision, and now we got to the point when taking an investment and go full time is what we both want.
+While working on Shelv we were expanding the vision, and now we got to the point when taking an investment and go full-time is what we both want
 
 We have a mutual friend who was a part of a couple of YC applications, and when he saw Shelv he strongly encouraged us to apply.
 
