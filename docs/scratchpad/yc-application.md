@@ -42,52 +42,20 @@ Unanswered
 
 **What is your company going to make? Please describe your product and what it does or will do.**
 
-Shelv is blend on note-taking apps and computational notebooks.
+Shelv is blend of note-taking apps and computational notebooks.
 
 - Shelv takes the stance that plain-text is king, and with full markdown support, text dictates formatting.
 - Rich structural editing akin to Notion (checkboxes, lists etc)
 - Extensive keyboard shortcuts, including global shortcut to easily access and hide Shelv without disrupting your focus
-- Notes come to life with codeblocks that execute inline (similar to other notebooks), we currently support javascript, but shell, sql, python are on the way.
-- Hackable and extendable, settings is just another markdown note, hence you can enhance and build custom workflows (like parameterized snippets), or introduce new code blocks type (like running Rust).
-- AI (LLM) can be just another code block (llm) that interplays nicely with the idea of “computation” and plain-text
+- Notes come to life with codeblocks that execute inline (similar to other notebooks), we currently support `javascript`, but `shell`, `sql`, `python` are on the way.
+- Hackable and extendable, settings is just another markdown note, hence you can enhance and build custom workflows (like parameterized snippets), or introduce new code blocks type (like running `rust`).
+- AI (LLM) can be just another code block (`llm`) that naturally can be context aware inside the note
 
-We believe that Shelv serves an important use case: Not all notes are meant to be eternal. We've all had the experience of littering our knowledge bases with temporary notes we'll never look at again. Shelv is the perfect playground for expressing your creativity without the friction. With computation cpabilities, you can play with code and data without ever leaving Shelv.
+We believe that Shelv serves an important use case: not all notes are meant to be eternal. We've all had the experience of littering our knowledge bases with temporary notes we'll never look at again. Shelv is the perfect playground for expressing your creativity without the friction. With computation cpabilities, you can play with code and data without ever leaving Shelv.
 
-Shelv is an awesome tool for indvidual productivity, but we believe that effect will compound for teams. What is more fun than playing together?
+Shelv is an awesome tool for indvidual productivity, but we believe that effect will compound for teams, for example: multiplayer editing powered by CRDT or exploring data with DuckDB together. What is more fun than playing together?
 
-n(notes:
-
-- team aspect
-- live alongside notion
-- serves the ephemeral usecase
-  )
-
-      * S: BUT all in mark-down plain text
-      * S: The magic: Shelv brings your notes to life with
-
-Shelv takes the stance that plain-text is king. But with full markdown support, your text content itself dictates
-
-Shelv is a note taking app that is optimized for quickly capturing your spontaneous thoughts and ideas without disrupting your focus. It’s designed to be simple to maximize ease of use, yet also powerful with integrated and customizable shortcuts and computations, as well as future plans for
-
-Our goal is to empower individuals and teams to be more productive. And that starts with ourselves, hence we noticed that there is a gap in a way we capture quick and dirty notes without worrying about formatting or structure and littering your knowledge base like notion or obsidian. And sometimes we want to run little scripts like sql query, js, shell script etc, but setting up a NodeJS project, Jupyter notebooks, Postico was enough friction or disruption to our workflow that it didn’t ever happen.
-
-The hypothesis: those two needs are linked, we wanted a dedicated playground to explore and capture thoughts, but we also wanted the power of computation (like a quick tax calculation or database query) without ever leaving the playground.
-
-That’s why we built Shelv.
-
-What we have now : Shelv → a no-frills plain-text computational markdown editor that’s always at your fingertips, so you can capture and play with your ideas without disrupting your focus.
-
-We’ve been using Shelv daily for the last 6 months, and the experience of live code blocks in markdown feels magical. And it was clear that sharing that joy with your team should be our next objective, e.g. collaboration. And we know that this is valuable looking at tools like VSCode live share, collaborative notebooks and google docs.
-
-Here are some details:
-
-- CRDT for syncing and collaboration, we want to support local-first architecture, aspirationally e2e encrypted
-- Speed is a key feature for productivity, thus our tech stack relies heavily on Rust for native development
-- We aim to bring SQL code blocks powered by DuckDB to enable lightweight “Jupyter-like” experience for SQL.
-- Hackable and extendable, settings is just another markdown note, hence you can enhance and build custom workflows (like parameterized snippets).
-- AI (LLM) can be just another code block (llm) that interplays nicely with the idea of “computation” and plain-text
-  Shell scripts (sh) that can be run immediately inside the note.
-- **Where do you live now, and where would the company be based after YC?**
+**Where do you live now, and where would the company be based after YC?**
 
 (Mirza) Reno, NV, USA / (Simon) Alexandria, VA, USA / (Company HQ TBD)
 
@@ -99,16 +67,21 @@ The two of us have been working remotely together in some form for over 2 years 
 
 **How far along are you?**
 
-Shelv is a fully functioning standalone note-taking app that we’re currently beta testing on TestFlight with friends & family. We’re planning on releasing to a wider audience soon. Currently, both of us have been dependent on Shelv daily for tasks (including this very application!)
+Shelv is a fully functioning standalone note-taking app that we’re currently alpha testing on TestFlight with friends & family. We’re planning on releasing to a wider audience soon. Currently, both of us have been dependent on Shelv daily for tasks (including this very application!)
 Current feature set:
-Full markdown support text editor
-Note computations through code blocks
-Hackable: Extendable through an API and fully customizable
+
+- Full markdown support text editor
+- Note computations through code blocks
+- Hackable: Extendable through an API and fully customizable
+
 Coming up next (based on early feedback and what we crave ourselves):
-Sync between devices
-Multi-person collaboration
-Web and mobile versions
-All of the above future features represent a significant milestone that depends on a backend for Shelv. We cut those features from the wider release so we can ship faster and gather feedback. But so far, early feedback has shown this seems to be a sticky product.
+
+- Sync between devices
+- Multi-person collaboration
+- Web and mobile versions
+- More code blocks: `sql`, `sh`, `llm` etc
+
+All of the above future features represent a significant milestone that depends on a backend for Shelv. We cut those features from the initial release so we can ship faster and gather feedback. But so far, early feedback has shown this seems to be a sticky product.
 
 **How long have each of you been working on this? How much of that has been full-time? Please explain.**
 
@@ -150,23 +123,16 @@ Unanswered
 
 **Why did you pick this idea to work on? Do you have domain expertise in this area? How do you know people need what you're making?**
 
-- Both of us are developers that love optimizing our workflows
+Both of us are developers that love optimizing our workflows, and what we noticed is the tooling gap in our personal and work lives: a temporary place to store rough ideas or play with code (often one-off scripts). It feels wrong to create a NodeJS project or a page in Notion for that, we see over and over again, people using tools like Sublime/Notepad++ for transient plain text editing.
 
-  - There are apps like Raycast and Warp that have huge communities around optimizing workflows. We’re inspired by (and are users ourselves) how these tools help their respective domains and we want to do the same.
-
-- Simon has experience in game development and a lot of his career revolved around performance optimizations (including desktop platform team at Dropbox)
-
-- Mirza worked on YouTube for iOS, a performance critical consumer app.
-  In a way we have a cheat code: scratch our own itch, we are building a tool for ourselves, adjacent, our social circle is the target audience for Shelv.
-
-- We see over and over again people using Sublime Text, Notepad++ etc, to capture ephemeral thoughts in pure text rather than use Notion or Obsidian, even though those apps are literally open on their screens. There’s something about pure ephemeral plain-text that simply frees the mind to explore and play without friction.
+Shelv is the tool optimized just for that. In a way, we have a cheat code: scratch our own itch, we are building a tool for ourselves, adjacent, our social circle is the target audience for Shelv.
 
 **Who are your competitors? What do you understand about your business that they don't?**
 
 - Notion
 
-  - Corporate, cloud-based, broader audience / general purpose
-    Promotes knowledge base philosophy, hence not conducive for the sense of “play”
+  - Cloud-based, broader audience / general purpose
+  - Promotes knowledge base philosophy, hence not conducive for the sense of “play”
   - No scripting capabilities
 
 - Obsidian
@@ -182,19 +148,21 @@ Unanswered
   - Targeting a very broad audience, hence opportunity to niche out.
   - No Windows, Linux and web support.
 
-- Jupyter notebooks
-- It is a computational canvas first, not notes/prose.
-- Oriented towards professional use
+- Jupyter notebooks (and other notebooks)
+  - It is a computational canvas first, not notes/prose.
+  - Oriented towards professional use
+  - no first class support for collaboration (depending on the app)
+  - not local-first, which is an opportunuty to differenciate
 
-Those tools are 1:1 competitors in terms of features, but people already use them, hence we indirectly compete for time and headspace. We think that Shelv can have a unique feeling of “playfulness” and be a place for ephemeral thoughts, while combining some features from all of them at the same time.
+Those tools are 1:1 competitors in terms of features, but people already use them and they have overlap, hence we compete for time and headspace. We think that Shelv can have a unique feeling of “playfulness” and be a place for ephemeral thoughts, while combining some features from all of them at the same time.
 
 **How do or will you make money? How much could you make?**
 _We realize you can't know precisely, but give your best estimate._
 
-We take inspiration from Warp, Raycast and Obsidian, both in terms of feel and business model:
+We take inspiration from Warp, Raycast and Obsidian, both in terms of ethos + polish and business model:
 
 - amazing for personal productivity
-- compound effect collaborating in a team
+- compound effect collaborating on a team
 
 Hence, "Personal - free tier", "Personal - pro tier", "Team tier" seem like a good place to start.
 
@@ -211,7 +179,7 @@ Other
 
 **If you had any other ideas you considered applying with, please list them. One may be something we've been waiting for. Often when we fund people it's to do something they list here and not in the main application.**
 
-Maybe the local AI version of Shelv that’s all about indexing all of your notes and other local content. Imagine asking the AI assistant “What books did I read last year”. Potentially, local fine-tuning on your data (alongside vector indexing)
+Maybe the local AI version of Shelv that’s all about indexing all of your notes and other local content. Imagine asking the AI assistant “What books did I read last year”. Potentially, local fine-tuning on your data (alongside vector search)
 
 ## Equity
 
