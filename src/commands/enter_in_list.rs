@@ -219,13 +219,13 @@ mod tests {
             (
                 // thus we need a better parser
                 "## Enter on empty list item removes it ##",
-                "- a\n\t* {||}\n\t* b",
-                "- a\n{||}\n\t* b",
+                "- a\n\t* b\n\t* {||}",
+                "- a\n\t* b\n{||}",
             ),
             (
                 "## Removing empty item in a numbered list adjusts indicies ##",
-                "1. a\n\t1. {||}\n\t2. c",
-                "1. a\n{||}\n\t1. c",
+                "1. a\n\t1. b\n\t2. {||}\n\t3. c",
+                "1. a\n\t1. b\n{||}\n\t2. c",
             ),
             (
                 "## Splitting a numbered list with selection ##",
@@ -250,7 +250,7 @@ mod tests {
             ),
         ];
 
-        for (desc, input, output) in test_cases {
+        for (desc, input, expected) in test_cases {
             let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
             let cursor = cursor.unwrap();
 
@@ -264,12 +264,10 @@ mod tests {
             .unwrap();
 
             let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
-            assert_eq!(
-                TextChange::encode_cursor(&text, cursor),
-                output,
-                "test case: {}",
-                desc
-            );
+            let res = TextChange::encode_cursor(&text, cursor);
+
+            println!("{desc}\ninitial:\n{input}\nres:\n{res}\nexpected:\n{expected}");
+            assert_eq!(res, expected, "test case: {}", desc);
         }
     }
 
