@@ -111,7 +111,7 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
                     let code = &text[code_desc.byte_pos.range()];
 
                     match Ctx::try_parse_block_lang(lang.as_str()) {
-                        Some(CodeBlockKind::Source) => Some((
+                        Some(CodeBlockKind::Source) if code.trim().len() > 0 => Some((
                             index,
                             CodeBlock::Source(byte_range, SourceHash::from(code)),
                             code,
@@ -163,7 +163,7 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
                 // this branch means that we are missing an ouput block => add it
                 if let Some((source_hash, block_range, prev_block_body)) = last_was_source.take() {
                     changes.push(TextChange::Replace(
-                        block_range,
+                        ByteSpan::point(block_range.end),
                         "\n".to_string()
                             + &print_output_block(cx.eval_block(prev_block_body, source_hash)),
                     ));
@@ -183,7 +183,8 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
                 }
                 None => {
                     // this branch means that we have an orphant code block => remove it
-                    changes.push(TextChange::Replace(output_range, "".to_string()));
+                    // changes.push(TextChange::Replace(output_range, "".to_string()));
+                    // UPD: let's not remove code blocks and see how it feels
                 }
             },
         }
@@ -300,7 +301,7 @@ I should be overwritten, but I won't
             ),
             // ________________________________________________
             (
-                "## removes orhpant output blocks ##",
+                "## doesn't remove orhpant output blocks ##",
                 r#"
 ```#dfgh
 1
@@ -314,7 +315,9 @@ I should be overwritten, but I won't
 "#,
                 Some(
                     r#"
-
+```#dfgh
+1
+```
 ```js
 2 + 2
 ```{||}
@@ -343,6 +346,56 @@ Error: yo!
 "#,
                 ),
             ),
+
+            // ________________________________________________
+            (
+                "## inserts codeblock output if needed ##",
+                r#"
+```js
+1
+```
+```js#4422
+1
+```
+
+```js
+1 + 1
+```
+
+```js
+4{||}
+```
+
+```js#c9f6
+2
+```
+"#,
+                Some(
+                    r#"
+```js
+1
+```
+```js#4422
+1
+```
+
+```js
+1 + 1
+```
+```js#c9f6
+2
+```
+
+```js
+4{||}
+```
+
+```js#f33e
+4
+```
+"#,
+                ),
+            ),
         ];
 
         for (desc, input, expected_output) in test_cases {
@@ -357,12 +410,9 @@ Error: yo!
                 (Some(changes), Some(expected_output)) => {
                     let cursor =
                         apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
-                    assert_eq!(
-                        TextChange::encode_cursor(&text, cursor),
-                        expected_output,
-                        "test case: \n{}\n",
-                        desc
-                    )
+                    let res = TextChange::encode_cursor(&text, cursor);
+                    // println!("res:\n{res:#}\n\nexpected:{expected_output:#}");
+                    assert_eq!(res, expected_output, "test case: \n{}\n", desc)
                 }
                 (None, None) => (),
                 (changes, expected) => assert!(
