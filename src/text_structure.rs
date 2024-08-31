@@ -111,7 +111,7 @@ impl MarkdownRunningState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct SpanDesc {
     pub kind: SpanKind,
     pub byte_pos: ByteSpan,
@@ -708,6 +708,21 @@ impl TextStructure {
             .enumerate()
             .skip(1)
             .map(|(i, desc)| (SpanIndex(i), desc))
+    }
+
+    pub fn filter_map_codeblocks<T>(
+        &self,
+        f: impl Fn(&str) -> Option<T>,
+    ) -> impl Iterator<Item = (SpanIndex, &SpanDesc, T)> {
+        self.iter()
+            .filter_map(move |(index, desc)| match desc.kind {
+                SpanKind::CodeBlock => self.find_meta(index).and_then(|meta| match meta {
+                    SpanMeta::CodeBlock { lang } => f(lang).map(|val| (index, desc, val)),
+
+                    _ => None,
+                }),
+                _ => None,
+            })
     }
 
     pub fn find_any_span_at(

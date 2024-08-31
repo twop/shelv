@@ -43,9 +43,20 @@ impl AppAction {
 }
 
 #[derive(Debug)]
+pub enum ConversationPart {
+    Markdown(String),
+    Question(String),
+    Answer(String),
+}
+
+#[derive(Debug)]
+pub struct Conversation {
+    pub parts: Vec<ConversationPart>,
+}
+
+#[derive(Debug)]
 pub struct LLMRequest {
-    pub context: String,
-    pub question: String,
+    pub conversation: Conversation,
     pub output_code_block_address: String,
     pub note_id: NoteFile,
 }
@@ -231,34 +242,23 @@ pub fn process_app_action(
                         Subsequent { pos: usize },
                     }
 
-                    let insertion_pos = text_structure.iter().find_map(|(index, desc)| match desc
-                        .kind
-                    {
-                        SpanKind::CodeBlock => {
-                            text_structure.find_meta(index).and_then(|meta| match meta {
-                                SpanMeta::CodeBlock { lang } if lang == &resp.address => {
-                                    let entire_block_text = &text[desc.byte_pos.range()];
+                    let insertion_pos = text_structure
+                        .filter_map_codeblocks(|lang| (lang == &resp.address).then(|| ()))
+                        .next()
+                        .map(|(_index, desc, _)| {
+                            let entire_block_text = &text[desc.byte_pos.range()];
+                            match entire_block_text.lines().count() {
+                                // right before "```"
+                                2 => InsertMode::Initial {
+                                    pos: desc.byte_pos.end - 3,
+                                },
 
-                                    let lines_count = entire_block_text.lines().count();
-
-                                    Some(if lines_count == 2 {
-                                        InsertMode::Initial {
-                                            // right before "```"
-                                            pos: desc.byte_pos.end - 3,
-                                        }
-                                    } else {
-                                        InsertMode::Subsequent {
-                                            // right before "\n```"
-                                            pos: desc.byte_pos.end - 4,
-                                        }
-                                    })
-                                }
-
-                                _ => None,
-                            })
-                        }
-                        _ => None,
-                    });
+                                // right before "\n```"
+                                _ => InsertMode::Subsequent {
+                                    pos: desc.byte_pos.end - 4,
+                                },
+                            }
+                        });
 
                     if resp.note_id == state.selected_note {
                         state.text_structure = Some(text_structure);

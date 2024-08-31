@@ -38,7 +38,7 @@ enum CodeBlock {
     Output(ByteSpan, Option<SourceHash>),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum CodeBlockKind {
     Source,
     Output(Option<SourceHash>),
@@ -98,36 +98,29 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
     text: &str,
 ) -> Option<Vec<TextChange>> {
     let script_blocks: SmallVec<[_; 8]> = text_structure
-        .iter()
-        .filter_map(|(index, desc)| match desc.kind {
-            SpanKind::CodeBlock => text_structure.find_meta(index).and_then(|meta| match meta {
-                crate::text_structure::SpanMeta::CodeBlock { lang } => {
-                    let byte_range = desc.byte_pos.clone();
+        .filter_map_codeblocks(Ctx::try_parse_block_lang)
+        .filter_map(|(index, desc, block_kind)| {
+            let byte_range = desc.byte_pos.clone();
 
-                    let (_, code_desc) = text_structure
-                        .iterate_immediate_children_of(index)
-                        .find(|(_, desc)| desc.kind == SpanKind::Text)?;
+            let (_, code_desc) = text_structure
+                .iterate_immediate_children_of(index)
+                .find(|(_, desc)| desc.kind == SpanKind::Text)?;
 
-                    let code = &text[code_desc.byte_pos.range()];
+            let code = &text[code_desc.byte_pos.range()];
 
-                    match Ctx::try_parse_block_lang(lang.as_str()) {
-                        Some(CodeBlockKind::Source) if code.trim().len() > 0 => Some((
-                            index,
-                            CodeBlock::Source(byte_range, SourceHash::from(code)),
-                            code,
-                        )),
+            match block_kind {
+                CodeBlockKind::Source if code.trim().len() > 0 => Some((
+                    index,
+                    CodeBlock::Source(byte_range, SourceHash::from(code)),
+                    code,
+                )),
 
-                        Some(CodeBlockKind::Output(hash)) => {
-                            Some((index, CodeBlock::Output(byte_range, hash), code))
-                        }
-
-                        _ => None,
-                    }
+                CodeBlockKind::Output(hash) => {
+                    Some((index, CodeBlock::Output(byte_range, hash), code))
                 }
 
                 _ => None,
-            }),
-            _ => None,
+            }
         })
         .collect();
 
@@ -184,7 +177,6 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
                 None => {
                     // this branch means that we have an orphant code block => remove it
                     // changes.push(TextChange::Replace(output_range, "".to_string()));
-                    // UPD: let's not remove code blocks and see how it feels
                 }
             },
         }
@@ -301,7 +293,7 @@ I should be overwritten, but I won't
             ),
             // ________________________________________________
             (
-                "## doesn't remove orhpant output blocks ##",
+                "## removes orhpant output blocks ##",
                 r#"
 ```#dfgh
 1
@@ -315,9 +307,7 @@ I should be overwritten, but I won't
 "#,
                 Some(
                     r#"
-```#dfgh
-1
-```
+
 ```js
 2 + 2
 ```{||}
@@ -349,7 +339,7 @@ Error: yo!
 
             // ________________________________________________
             (
-                "## inserts codeblock output if needed ##",
+                "## inserts codeb ##",
                 r#"
 ```js
 1
@@ -363,7 +353,7 @@ Error: yo!
 ```
 
 ```js
-4{||}
+{||}
 ```
 
 ```js#c9f6
@@ -387,11 +377,11 @@ Error: yo!
 ```
 
 ```js
-4{||}
+{||}
 ```
 
-```js#f33e
-4
+```js#bd0e
+undefined
 ```
 "#,
                 ),
@@ -411,7 +401,7 @@ Error: yo!
                     let cursor =
                         apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
                     let res = TextChange::encode_cursor(&text, cursor);
-                    // println!("res:\n{res:#}\n\nexpected:{expected_output:#}");
+                    println!("res:\n{res:#}\n\nexpected:{expected_output:#}");
                     assert_eq!(res, expected_output, "test case: \n{}\n", desc)
                 }
                 (None, None) => (),
