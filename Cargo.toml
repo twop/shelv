@@ -54,16 +54,13 @@ kdl = { version = "4.6.0" }
 miette = { version = "5.10.0", features = ["fancy"] }
 
 [patch.crates-io]
-winit = { path = '../winit' }
-
-[profile.release]
-strip = false
+winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "remove-private-apis" }
 
 [package.metadata.bundle]
 name = "Shelv"
 identifier = "app.shelv"
 icon = ["assets/TrayIcon.icns"]
-version = "1.0.3"
+version = "1.1.0"
 osx_minimum_system_version = "12.0"
 resources = ["assets"]
 copyright = "Copyright (c) Simon Korzunov 2023. All rights reserved."
