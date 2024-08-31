@@ -83,6 +83,9 @@ pub enum BuiltInCommand {
     SwitchToSettings,
     PinWindow,
     HideApp,
+
+    // Async Code blocks
+    RunLLMBlock,
 }
 
 impl BuiltInCommand {
@@ -112,6 +115,7 @@ impl BuiltInCommand {
             Self::SwitchToSettings => "Open Settings".into(),
             Self::PinWindow => "Pin/Unpin Window".into(),
             Self::HideApp => "Hide Window".into(),
+            Self::RunLLMBlock => "Run LLM Block".into(),
         }
     }
 
@@ -140,6 +144,7 @@ impl BuiltInCommand {
             SwitchToSettings => shortcut(Modifiers::COMMAND, Key::Comma),
             PinWindow => shortcut(Modifiers::COMMAND, Key::P),
             HideApp => shortcut(Modifiers::NONE, Key::Escape),
+            RunLLMBlock => shortcut(Modifiers::COMMAND, Key::Enter),
         }
     }
 }
@@ -197,27 +202,30 @@ pub fn map_text_command_to_command_handler(
     f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
 ) -> Box<dyn Fn(CommandContext) -> EditorCommandOutput> {
     Box::new(move |CommandContext { app_state }| {
-        let note = app_state.notes.get(&app_state.selected_note).unwrap();
-
-        let Some(cursor) = note.cursor else {
+        let Some(text_command_context) = try_extract_text_command_context(app_state) else {
             return SmallVec::new();
         };
 
-        let Some(text_structure) = app_state.text_structure.as_ref() else {
-            return SmallVec::new();
-        };
-
-        f(TextCommandContext::new(
-            text_structure,
-            &note.text,
-            cursor.ordered(),
-        ))
-        .map(|changes| {
-            SmallVec::from([AppAction::apply_text_changes(
-                app_state.selected_note,
-                changes,
-            )])
-        })
-        .unwrap_or_default()
+        f(text_command_context)
+            .map(|changes| {
+                SmallVec::from([AppAction::apply_text_changes(
+                    app_state.selected_note,
+                    changes,
+                )])
+            })
+            .unwrap_or_default()
     })
+}
+
+pub fn try_extract_text_command_context(app_state: &AppState) -> Option<TextCommandContext<'_>> {
+    let note = app_state.notes.get(&app_state.selected_note).unwrap();
+
+    let cursor = note.cursor?;
+
+    let text_structure = app_state.text_structure.as_ref()?;
+
+    let text_command_context =
+        TextCommandContext::new(text_structure, &note.text, cursor.ordered());
+
+    Some(text_command_context)
 }

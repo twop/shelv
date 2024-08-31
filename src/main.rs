@@ -3,12 +3,16 @@
 #![feature(offset_of)]
 #![feature(generic_const_exprs)]
 
-use app_actions::{process_app_action, AppAction, AppIO};
-use app_state::{AppInitData, AppState, MsgToApp};
+use app_actions::{process_app_action, AppAction, AppIO, LLMRequest};
+use app_state::{AppInitData, AppState, LLMResponseChunk, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
 use byte_span::UnOrderedByteSpan;
 use command::{CommandContext, EditorCommandOutput, TextCommandContext};
 use effects::text_change_effect::{apply_text_changes, TextChange};
+use genai::{
+    chat::{ChatMessage, ChatRequest, ChatStreamEvent, StreamChunk},
+    resolver::AuthResolver,
+};
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
     GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
@@ -23,6 +27,8 @@ use persistent_state::{load_and_migrate, try_save, v1, NoteFile};
 use smallvec::SmallVec;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
+use tokio::runtime::Runtime;
+use tokio_stream::StreamExt;
 use tray_icon::{
     menu::{Menu, MenuEvent, MenuItem},
     Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
@@ -69,7 +75,6 @@ pub struct MyApp {
     state: AppState,
     hotwatch: Hotwatch,
     tray: TrayIcon,
-    msg_queue: SyncSender<MsgToApp>,
     persistence_folder: PathBuf,
     app_io: RealAppIO,
 }
@@ -83,13 +88,24 @@ struct RegisteredGlobalHotkey {
 struct RealAppIO {
     hotkeys_manager: GlobalHotKeyManager,
     registered_hotkeys: BTreeMap<u32, RegisteredGlobalHotkey>,
+    egui_ctx: egui::Context,
+    msg_queue: SyncSender<MsgToApp>,
+    shelv_folder: PathBuf,
 }
 
 impl RealAppIO {
-    fn new(hotkeys_manager: GlobalHotKeyManager) -> Self {
+    fn new(
+        hotkeys_manager: GlobalHotKeyManager,
+        egui_ctx: egui::Context,
+        msg_queue: SyncSender<MsgToApp>,
+        shelv_folder: PathBuf,
+    ) -> Self {
         Self {
             hotkeys_manager,
             registered_hotkeys: Default::default(),
+            egui_ctx,
+            msg_queue,
+            shelv_folder,
         }
     }
 }
@@ -145,6 +161,90 @@ impl AppIO for RealAppIO {
         self.registered_hotkeys.clear();
         Ok(())
     }
+
+    fn ask_llm(&self, question: LLMRequest) {
+        let egui_ctx = self.egui_ctx.clone();
+        let sender = self.msg_queue.clone();
+
+        const MODEL_ANTHROPIC: &str = "claude-3-haiku-20240307";
+
+        let LLMRequest {
+            context,
+            question,
+            output_code_block_address,
+            note_id,
+        } = question;
+
+        let send = move |chunk: String| {
+            sender
+                .send(MsgToApp::LLMResponseChunk(LLMResponseChunk {
+                    chunk: chunk.to_string(),
+                    address: output_code_block_address.clone(),
+                    note_id,
+                }))
+                .unwrap();
+
+            egui_ctx.request_repaint();
+        };
+
+        let key_path = self.shelv_folder.join(".claude_key");
+
+        tokio::spawn(async move {
+            let chat_req = ChatRequest::new(
+                [
+                    // -- Messages (de/activate to see the differences)
+                    ChatMessage::system(context),
+                    ChatMessage::user(question),
+                ]
+                .into(),
+            );
+
+            let auth_resolver = AuthResolver::from_resolver_fn(
+                |model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
+                    let genai::ModelIden {
+                        adapter_kind,
+                        model_name,
+                    } = model_iden;
+
+
+                    let key = fs::read_to_string(key_path).map_err(|e| {
+                        genai::resolver::Error::Custom(format!("Failed to read .claude_key: {}", e))
+                    })?;
+
+                    let key = key.trim();
+                    if key.is_empty() {
+                        return Err(genai::resolver::Error::ApiKeyEnvNotFound {
+                            env_name: ".claude_key".to_string(),
+                        });
+                    }
+
+                    Ok(Some(genai::resolver::AuthData::from_single(key)))
+                },
+            );
+
+            // -- Build the new client with this adapter_config
+            let client = genai::Client::builder()
+                .with_auth_resolver(auth_resolver)
+                .build();
+
+            let chat_res = client
+                .exec_chat_stream(MODEL_ANTHROPIC, chat_req.clone(), None)
+                .await;
+
+            match chat_res {
+                Ok(mut stream) => {
+                    while let Some(Ok(stream_event)) = stream.stream.next().await {
+                        match stream_event {
+                            ChatStreamEvent::Chunk(StreamChunk { content }) => send(content),
+
+                            _ => (),
+                        }
+                    }
+                }
+                Err(err) => send(err.to_string()),
+            };
+        });
+    }
 }
 
 impl MyApp {
@@ -156,11 +256,18 @@ impl MyApp {
 
         cc.egui_ctx.set_fonts(fonts);
 
+        let persistence_folder = directories_next::ProjectDirs::from("app", "", "Shelv")
+            .map(|proj_dirs| proj_dirs.data_dir().to_path_buf())
+            .unwrap();
+
         let (msg_queue_tx, msg_queue_rx) = sync_channel::<MsgToApp>(10);
 
-        let mut app_io = RealAppIO::new(GlobalHotKeyManager::new().unwrap());
-
-        // hotkeys_manager.register(global_open_hotkey).unwrap();
+        let mut app_io = RealAppIO::new(
+            GlobalHotKeyManager::new().unwrap(),
+            cc.egui_ctx.clone(),
+            msg_queue_tx.clone(),
+            persistence_folder.clone(),
+        );
 
         // let open_hotkey = global_open_hotkey.clone();
         let ctx = cc.egui_ctx.clone();
@@ -218,10 +325,6 @@ impl MyApp {
         let v1_save: Option<v1::PersistentState> =
             cc.storage.and_then(|s| get_value(s, "persistent_state"));
 
-        let persistence_folder = directories_next::ProjectDirs::from("app", "", "Shelv")
-            .map(|proj_dirs| proj_dirs.data_dir().to_path_buf())
-            .unwrap();
-
         let number_of_notes = 4;
         let persistent_state = load_and_migrate(number_of_notes, v1_save, &persistence_folder);
 
@@ -271,7 +374,6 @@ impl MyApp {
             state,
             app_io,
             tray: tray_icon,
-            msg_queue: msg_queue_tx,
             persistence_folder,
             hotwatch,
         }
@@ -483,6 +585,10 @@ fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<Str
 }
 
 fn main() {
+    let rt = Runtime::new().expect("Unable to create Runtime");
+    // Enter the runtime so that `tokio::spawn` is available immediately.
+    let _enter = rt.enter();
+
     let options = eframe::NativeOptions {
         default_theme: eframe::Theme::Dark,
         viewport: egui::ViewportBuilder::default()

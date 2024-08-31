@@ -477,6 +477,7 @@ impl BuiltInCommand {
             SwitchToSettings => "SwitchToSettings",
             PinWindow => "PinWindow",
             HideApp => "HideApp",
+            RunLLMBlock => "RunLLMBLock",
         }
     }
 }

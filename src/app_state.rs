@@ -23,6 +23,7 @@ use crate::{
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
+        run_llm::run_llm_block,
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
         toggle_code_block::toggle_code_block,
@@ -144,10 +145,18 @@ impl ComputedLayout {
 }
 
 #[derive(Debug)]
+pub struct LLMResponseChunk {
+    pub chunk: String,
+    pub address: String,
+    pub note_id: NoteFile,
+}
+
+#[derive(Debug)]
 pub enum MsgToApp {
     ToggleVisibility,
     NoteFileChanged(NoteFile, PathBuf),
     GlobalHotkey(u32),
+    LLMResponseChunk(LLMResponseChunk),
 }
 
 // struct MdAnnotationShortcut {
@@ -281,6 +290,11 @@ impl AppState {
         editor_commands.push(EditorCommand::built_in(BuiltInCommand::HideApp, |_| {
             [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
         }));
+
+        editor_commands.push(EditorCommand::built_in(
+            BuiltInCommand::RunLLMBlock,
+            |ctx| run_llm_block(ctx).unwrap_or_default(),
+        ));
 
         let mut editor_commands = CommandList::new(editor_commands);
 

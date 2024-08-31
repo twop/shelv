@@ -4,12 +4,12 @@ use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
 
 use crate::{
     app_state::{AppState, MsgToApp, UnsavedChange},
-    byte_span::UnOrderedByteSpan,
+    byte_span::{ByteSpan, UnOrderedByteSpan},
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::NoteFile,
     scripting::{execute_code_blocks, execute_live_scripts},
     settings::SettingsNoteEvalContext,
-    text_structure::TextStructure,
+    text_structure::{SpanKind, SpanMeta, TextStructure},
 };
 
 #[derive(Debug)]
@@ -29,6 +29,7 @@ pub enum AppAction {
     },
     HandleMsgToApp(MsgToApp),
     EvalNote(NoteFile),
+    AskLLM(LLMRequest),
 }
 
 impl AppAction {
@@ -39,6 +40,14 @@ impl AppAction {
             should_trigger_eval: true,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct LLMRequest {
+    pub context: String,
+    pub question: String,
+    pub output_code_block_address: String,
+    pub note_id: NoteFile,
 }
 
 // TODO consider focus, opening links etc as IO operations
@@ -59,6 +68,8 @@ pub trait AppIO {
         shortcut: KeyboardShortcut,
         to: Box<dyn Fn() -> MsgToApp>,
     ) -> Result<(), String>;
+
+    fn ask_llm(&self, question: LLMRequest);
 }
 
 pub fn process_app_action(
@@ -201,6 +212,72 @@ pub fn process_app_action(
                 MsgToApp::GlobalHotkey(hotkey_id) => app_io
                     .try_map_hotkey(hotkey_id)
                     .map(AppAction::HandleMsgToApp),
+
+                MsgToApp::LLMResponseChunk(resp) => {
+                    // TODO(simon): this entire code is VERY ugly, and deserves to be better
+                    let note = &mut state.notes.get_mut(&resp.note_id).unwrap();
+                    let text = &mut note.text;
+
+                    let text_structure = match resp.note_id == state.selected_note {
+                        true => state
+                            .text_structure
+                            .take()
+                            .unwrap_or_else(|| TextStructure::new(text)),
+                        false => TextStructure::new(text),
+                    };
+
+                    enum InsertMode {
+                        Initial { pos: usize },
+                        Subsequent { pos: usize },
+                    }
+
+                    let insertion_pos = text_structure.iter().find_map(|(index, desc)| match desc
+                        .kind
+                    {
+                        SpanKind::CodeBlock => {
+                            text_structure.find_meta(index).and_then(|meta| match meta {
+                                SpanMeta::CodeBlock { lang } if lang == &resp.address => {
+                                    let entire_block_text = &text[desc.byte_pos.range()];
+
+                                    let lines_count = entire_block_text.lines().count();
+
+                                    Some(if lines_count == 2 {
+                                        InsertMode::Initial {
+                                            // right before "```"
+                                            pos: desc.byte_pos.end - 3,
+                                        }
+                                    } else {
+                                        InsertMode::Subsequent {
+                                            // right before "\n```"
+                                            pos: desc.byte_pos.end - 4,
+                                        }
+                                    })
+                                }
+
+                                _ => None,
+                            })
+                        }
+                        _ => None,
+                    });
+
+                    if resp.note_id == state.selected_note {
+                        state.text_structure = Some(text_structure);
+                    }
+
+                    insertion_pos.map(|insert_mode| AppAction::ApplyTextChanges {
+                        target: resp.note_id,
+                        changes: [match insert_mode {
+                            InsertMode::Initial { pos } => {
+                                TextChange::Replace(ByteSpan::point(pos), resp.chunk + "\n")
+                            }
+                            InsertMode::Subsequent { pos } => {
+                                TextChange::Replace(ByteSpan::point(pos), resp.chunk)
+                            }
+                        }]
+                        .into(),
+                        should_trigger_eval: false,
+                    })
+                }
             }
         }
 
@@ -239,6 +316,11 @@ pub fn process_app_action(
                 changes,
                 should_trigger_eval: false,
             })
+        }
+
+        AppAction::AskLLM(question) => {
+            app_io.ask_llm(question);
+            None
         }
     }
 }
