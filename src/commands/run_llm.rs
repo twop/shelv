@@ -33,13 +33,16 @@ pub fn run_llm_block(CommandContext { app_state }: CommandContext) -> Option<Edi
 
             _ => None,
         })
-        .take_while(|(_, desc, _)| desc.byte_pos.start < cursor.end)
         .collect();
 
-    let (block_span_index, block_desc, _) = llm_blocks
-        .iter()
-        .rev()
-        .find(|(_, desc, kind)| desc.byte_pos.contains(cursor) && *kind == CodeBlockKind::Source)?;
+    // find source llm code block
+    let (index_in_array, (block_span_index, block_desc, _)) =
+        llm_blocks
+            .iter()
+            .enumerate()
+            .find(|(_pos_index, (_, desc, kind))| {
+                desc.byte_pos.contains(cursor) && *kind == CodeBlockKind::Source
+            })?;
 
     let (_, question_desc) = text_structure
         .iterate_immediate_children_of(*block_span_index)
@@ -50,16 +53,29 @@ pub fn run_llm_block(CommandContext { app_state }: CommandContext) -> Option<Edi
 
     // Create a new code block for llm output
     let address = format!("llm#{}", source_hash.to_string());
-    let output_block = format!("\n```{address}\n```\n");
 
-    let text_change = TextChange::Replace(ByteSpan::point(block_desc.byte_pos.end), output_block);
+    // check the next block
+    let (replacemen_pos, output_block) = match llm_blocks.get(index_in_array + 1) {
+        // if it is llm output just reuse that one
+        Some((_index, desc, CodeBlockKind::Output(_))) => {
+            (desc.byte_pos, format!("```{address}\n```"))
+        }
+
+        // if not then add a new code block right after, note extra new lines
+        _ => (
+            ByteSpan::point(block_desc.byte_pos.end),
+            format!("\n```{address}\n```\n"),
+        ),
+    };
+
+    let text_change = TextChange::Replace(replacemen_pos, output_block);
 
     let target = app_state.selected_note;
 
     let mut conversation = Conversation { parts: Vec::new() };
 
     let mut prev_block_end = 0;
-    for (block_index, desc, kind) in llm_blocks.iter() {
+    for (block_index, desc, kind) in llm_blocks.iter().take(index_in_array + 1) {
         if prev_block_end < desc.byte_pos.start {
             let markdown = text[prev_block_end..desc.byte_pos.start].trim();
             if !markdown.is_empty() {
