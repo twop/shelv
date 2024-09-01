@@ -42,7 +42,7 @@ smallvec = "1.10.0"
 tray-icon = "0.14.0"
 egui-phosphor = { version = "0.5.0", features = ["light"] }
 # tray-item = "0.7.1"
-winit = "0.29.4"
+winit = "0.29.15"
 linkify = "0.10.0"
 objc2 = "0.5.1"
 boa_engine = "0.18.0"
@@ -53,16 +53,21 @@ itertools = "0.13.0"
 kdl = { version = "4.6.0" }
 miette = { version = "5.10.0", features = ["fancy"] }
 
+[patch.crates-io]
+winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.29.15" }
 
 [package.metadata.bundle]
 name = "Shelv"
 identifier = "app.shelv"
-icon = ["assets/tray-icon.png"]
-version = "1.0.0"
-resources = ["assets", "images/**/*.png", "secrets/public_key.txt"]
+icon = ["assets/TrayIcon.icns"]
+version = "1.1.0"
+osx_minimum_system_version = "12.0"
+resources = ["assets"]
 copyright = "Copyright (c) Simon Korzunov 2023. All rights reserved."
 category = "Productivity"
 short_description = "Note taking app optimized for capturing phase."
 long_description = """
 Note taking app optimized for capturing phase.
 """
+
+
