@@ -8,6 +8,7 @@ use std::{
 
 use eframe::egui;
 use genai::{
+    adapter::AdapterKind,
     chat::{ChatMessage, ChatRequest, ChatStreamEvent, StreamChunk},
     resolver::AuthResolver,
 };
@@ -158,17 +159,12 @@ impl AppIO for RealAppIO {
                         model_name,
                     } = model_iden;
 
-
-                    let key = fs::read_to_string(&key_path).map_err(|e| {
-                        genai::resolver::Error::Custom(format!("Failed to read .llm_key: {}, here: {:?}", e, key_path))
-                    })?;
-
-                    let key = key.trim();
-                    if key.is_empty() {
-                        return Err(genai::resolver::Error::ApiKeyEnvNotFound {
-                            env_name: ".llm_key".to_string(),
-                        });
+                    if adapter_kind != AdapterKind::Anthropic {
+                        return Err(genai::resolver::Error::Custom("Currently we only support Anthropic models".to_string()));
                     }
+
+                    // YES it is OK to hardcode it here, it is heavily rate limited AND unique for this specific usage
+                    let key = "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";
 
                     Ok(Some(genai::resolver::AuthData::from_single(key)))
                 },
