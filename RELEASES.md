@@ -107,6 +107,18 @@ xcrun altool --validate-app -f target/release/bundle/osx/Shelv.pkg -t macos --ap
 xcrun altool --upload-app -f target/release/bundle/osx/Shelv.pkg -t macos --apiKey "HRG65U3FX8" --apiIssuer "804cc69c-4df1-44ae-b829-c8d144aea43d"
 ```
 
+#### Private API usage
+
+For Apple App Store releases, any usage of private APIs will lead to a rejection during the review process. There are some tools you can use to dump all symbols in the binary. Unfortunately, there is no clear list of private APIs to check against, but a release is rejected, the tools can be used to validate the fix.
+
+```shell
+nm -u target/release/bundle/osx/Shelv.app/Contents/MacOS/shelv | grep CGSSetWindowBackgroundBlurRadius
+
+otool -L target/release/bundle/osx/Shelv.app/Contents/MacOS/shelv
+
+strings target/release/bundle/osx/Shelv.app/Contents/MacOS/shelv
+```
+
 ### Outside of App Store distribution
 
 1. Code Sign

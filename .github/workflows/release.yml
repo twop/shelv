@@ -1,4 +1,4 @@
-name: Rust
+name: Release
 
 on:
   workflow_dispatch:
@@ -77,42 +77,23 @@ jobs:
           command: bundle
           args: --release
 
-      - name: Modify Bundle
+      - name: Code Signing
         run: |
-          PLIST_FILE = target/release/bundle/osx/Shelv.app/Contents/Info.plist
-
-          /usr/libexec/PlistBuddy -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST_FILE"
-          /usr/libexec/PlistBuddy -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST_FILE"
-          /usr/libexec/PlistBuddy -c "Add :DTPlatformBuild string 15F31d" "$PLIST_FILE"
-          /usr/libexec/PlistBuddy -c "Add :DTPlatformName string macosx" "$PLIST_FILE"
-          /usr/libexec/PlistBuddy -c "Add :DTPlatformVersion string 14.5" "$PLIST_FILE"
-          /usr/libexec/PlistBuddy -c "Add :DTSDKBuild string 23F73" "$PLIST_FILE"
-          /usr/libexec/PlistBuddy -c "Add :DTSDKName string macosx14.5" "$PLIST_FILE"
-          /usr/libexec/PlistBuddy -c "Add :DTXcode string 1540" "$PLIST_FILE"
-          /usr/libexec/PlistBuddy -c "Add :DTXcodeBuild string 15F31d" "$PLIST_FILE"
-          cp distribution/embedded.provisionprofile target/release/bundle/osx/Shelv.app/Contents/embedded.provisionprofile
-
-      - name: Sign Bundle
-        run: |
-          codesign --sign "3rd Party Mac Developer Application" --entitlements distribution/entitlements.xml -v target/release/bundle/osx/Shelv.app
-
-      - name: Create Installer
-        run: |
-          productbuild --sign "3rd Party Mac Developer Installer" --component target/release/bundle/osx/Shelv.app /Applications target/release/bundle/osx/Shelv.pkg
+          ./distribution/build_release.sh
 
       - name: Validate Package
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
-          xcrun altool --validate-app -f target/release/bundle/osx/Shelv.pkg -t macos --apiKey "$APP_STORE_CONNECT_KEY_ID" --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+          ./distribution/validate_package.sh
 
       - name: Upload to TestFlight
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
-          xcrun altool --upload-app -f target/release/bundle/osx/Shelv.pkg -t macos --apiKey "$APP_STORE_CONNECT_KEY_ID" --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+          ./distribution/upload_to_testflight.sh
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v1-release

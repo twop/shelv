@@ -54,7 +54,7 @@ kdl = { version = "4.6.0" }
 miette = { version = "5.10.0", features = ["fancy"] }
 
 [patch.crates-io]
-winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "remove-private-apis" }
+winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.29.15" }
 
 [package.metadata.bundle]
 name = "Shelv"
