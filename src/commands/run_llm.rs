@@ -59,7 +59,7 @@ pub fn run_llm_block(CommandContext { app_state }: CommandContext) -> Option<Edi
     let mut conversation = Conversation { parts: Vec::new() };
 
     let mut prev_block_end = 0;
-    for (_, desc, kind) in llm_blocks.iter() {
+    for (block_index, desc, kind) in llm_blocks.iter() {
         if prev_block_end < desc.byte_pos.start {
             let markdown = text[prev_block_end..desc.byte_pos.start].trim();
             if !markdown.is_empty() {
@@ -69,18 +69,19 @@ pub fn run_llm_block(CommandContext { app_state }: CommandContext) -> Option<Edi
             }
         }
 
+        let inner_content_range = text_structure.get_span_inner_content(*block_index);
+        let inner_content = text[inner_content_range.range()].trim();
+
         match kind {
             CodeBlockKind::Source => {
-                let question = text[desc.byte_pos.range()].trim();
                 conversation
                     .parts
-                    .push(ConversationPart::Question(question.to_string()));
+                    .push(ConversationPart::Question(inner_content.to_string()));
             }
             CodeBlockKind::Output(_) => {
-                let answer = text[desc.byte_pos.range()].trim();
                 conversation
                     .parts
-                    .push(ConversationPart::Answer(answer.to_string()));
+                    .push(ConversationPart::Answer(inner_content.to_string()));
             }
         }
 
@@ -93,7 +94,7 @@ pub fn run_llm_block(CommandContext { app_state }: CommandContext) -> Option<Edi
         note_id: target,
     };
 
-    println!("{llm_request:#?}");
+    println!("----\n{llm_request:#?}");
 
     let mut res = SmallVec::new();
 

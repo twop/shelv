@@ -264,14 +264,21 @@ pub fn process_app_action(
                         state.text_structure = Some(text_structure);
                     }
 
+                    let mut chunk = resp.chunk;
+
+                    if chunk.contains("```") {
+                        // sanitze llm response so it can be nested inside llm output code block
+                        chunk = chunk.replace("```", "-```");
+                    }
+
                     insertion_pos.map(|insert_mode| AppAction::ApplyTextChanges {
                         target: resp.note_id,
                         changes: [match insert_mode {
                             InsertMode::Initial { pos } => {
-                                TextChange::Replace(ByteSpan::point(pos), resp.chunk + "\n")
+                                TextChange::Replace(ByteSpan::point(pos), chunk + "\n")
                             }
                             InsertMode::Subsequent { pos } => {
-                                TextChange::Replace(ByteSpan::point(pos), resp.chunk)
+                                TextChange::Replace(ByteSpan::point(pos), chunk)
                             }
                         }]
                         .into(),

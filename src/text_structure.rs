@@ -250,7 +250,7 @@ impl<'a> TextStructureBuilder<'a> {
             );
         }
 
-        println!("---structure-end---\n");
+        // println!("---structure-end---\n");
 
         let md_parser_options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
             | pulldown_cmark::Options::ENABLE_TASKLISTS
@@ -455,7 +455,7 @@ impl TextStructure {
             }
         }
 
-        builder.print_structure();
+        // builder.print_structure();
 
         builder.finish(points, generation.wrapping_add(1))
     }
