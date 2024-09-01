@@ -47,7 +47,7 @@ impl AppIcon {
             AppIcon::Discord => P::DISCORD_LOGO,
             AppIcon::Pin => P::PUSH_PIN,
             AppIcon::VerticalSeparator => P::ARROWS_VERTICAL,
-            AppIcon::Share => P::SHARE,
+            AppIcon::Share => P::BUG,
             AppIcon::One => P::NUMBER_ONE,
             AppIcon::Two => P::NUMBER_TWO,
             AppIcon::Three => P::NUMBER_THREE,

@@ -451,11 +451,15 @@ fn render_footer_panel(
                     let share_btn = ui
                         .button(AppIcon::Share.render(sizes.toolbar_icon, theme.colors.button_fg))
                         .on_hover_ui(|ui| {
-                            ui.label(RichText::new("Share").color(theme.colors.subtle_text_color));
+                            ui.label(
+                                RichText::new("Send this note to report a bug or share feedback.")
+                                    .color(theme.colors.subtle_text_color),
+                            );
                         });
 
                     if share_btn.clicked() {
                         println!("clicked on shared");
+                        actions.push(AppAction::SendFeedback(selected));
                     }
                 });
             });

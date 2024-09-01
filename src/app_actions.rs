@@ -30,6 +30,7 @@ pub enum AppAction {
     HandleMsgToApp(MsgToApp),
     EvalNote(NoteFile),
     AskLLM(LLMRequest),
+    SendFeedback(NoteFile),
 }
 
 impl AppAction {
@@ -330,6 +331,36 @@ pub fn process_app_action(
 
         AppAction::AskLLM(question) => {
             app_io.ask_llm(question);
+            None
+        }
+        AppAction::SendFeedback(selected) => {
+            let note = state.notes.get(&selected)?;
+
+            if selected == state.selected_note {
+                sentry::configure_scope(|scope| {
+                    let mut map = std::collections::BTreeMap::new();
+                    map.insert(
+                        String::from("text_structure"),
+                        format!("{:?}", state.text_structure).into(),
+                    );
+                    map.insert(
+                        String::from("selected_note"),
+                        format!("{:?}", state.selected_note).into(),
+                    );
+
+                    scope.set_context("state", sentry::protocol::Context::Other(map));
+                });
+
+                let result = sentry::capture_message(
+                    format!("Feedback: {}", note.text).as_str(),
+                    sentry::Level::Info,
+                );
+
+                println!("Feedback sent: {:?}", result);
+
+                // TODO Maybe modify the note with the UUID of the feedback? Just so people know it worked.
+            }
+
             None
         }
     }

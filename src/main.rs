@@ -381,6 +381,11 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 }
 
 fn main() {
+    let _guard = sentry::init(("https://10f977d35f32b70d88180f4875543208@o4507879687454720.ingest.us.sentry.io/4507879689945088", sentry::ClientOptions {
+        release: sentry::release_name!(),
+        ..Default::default()
+      }));
+
     let rt = Runtime::new().expect("Unable to create Runtime");
     // Enter the runtime so that `tokio::spawn` is available immediately.
     let _enter = rt.enter();
