@@ -3582,7 +3582,7 @@ dependencies = [
 
 [[package]]
 name = "shelv"
-version = "0.1.0"
+version = "1.1.1"
 dependencies = [
  "boa_engine",
  "directories-next",
