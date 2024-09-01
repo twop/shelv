@@ -23,6 +23,7 @@ use crate::{
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
+        run_llm::run_llm_block,
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
         toggle_code_block::toggle_code_block,
@@ -32,7 +33,7 @@ use crate::{
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::execute_code_blocks,
-    settings::SettingsNoteEvalContext,
+    settings::{LlmSettings, SettingsNoteEvalContext},
     text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
 };
@@ -70,6 +71,7 @@ pub struct AppState {
     pub hidden: bool,
     pub prev_focused: bool,
     pub editor_commands: CommandList,
+    pub llm_settings: Option<LlmSettings>,
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
@@ -144,10 +146,18 @@ impl ComputedLayout {
 }
 
 #[derive(Debug)]
+pub struct LLMResponseChunk {
+    pub chunk: String,
+    pub address: String,
+    pub note_id: NoteFile,
+}
+
+#[derive(Debug)]
 pub enum MsgToApp {
     ToggleVisibility,
     NoteFileChanged(NoteFile, PathBuf),
     GlobalHotkey(u32),
+    LLMResponseChunk(LLMResponseChunk),
 }
 
 // struct MdAnnotationShortcut {
@@ -282,7 +292,13 @@ impl AppState {
             [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
         }));
 
+        editor_commands.push(EditorCommand::built_in(
+            BuiltInCommand::RunLLMBlock,
+            |ctx| run_llm_block(ctx).unwrap_or_default(),
+        ));
+
         let mut editor_commands = CommandList::new(editor_commands);
+        let mut llm_settings: Option<LlmSettings> = None;
 
         // TODO this is ugly, refactor this to be a bit nicer
         // at least from the error reporting point of view
@@ -292,6 +308,7 @@ impl AppState {
                     cmd_list: &mut editor_commands,
                     should_force_eval: true,
                     app_io,
+                    llm_settings: &mut llm_settings,
                 };
 
                 execute_code_blocks(&mut cx, &TextStructure::new(&settings.text), &settings.text)
@@ -326,6 +343,7 @@ impl AppState {
             prev_focused: false,
             last_saved,
             editor_commands,
+            llm_settings,
         }
     }
 

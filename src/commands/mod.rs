@@ -1,4 +1,5 @@
 pub mod enter_in_list;
+pub mod run_llm;
 pub mod space_after_task_markers;
 pub mod tabbing_in_list;
 pub mod toggle_code_block;

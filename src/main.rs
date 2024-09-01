@@ -4,15 +4,11 @@
 #![feature(generic_const_exprs)]
 
 use app_actions::{process_app_action, AppAction, AppIO};
+use app_io::RealAppIO;
 use app_state::{AppInitData, AppState, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
-use byte_span::UnOrderedByteSpan;
-use command::{CommandContext, EditorCommandOutput, TextCommandContext};
-use effects::text_change_effect::{apply_text_changes, TextChange};
-use global_hotkey::{
-    hotkey::{Code, HotKey, Modifiers},
-    GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
-};
+use command::{CommandContext, EditorCommandOutput};
+use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use hotwatch::{
     notify::event::{DataChange, ModifyKind},
@@ -23,32 +19,26 @@ use persistent_state::{load_and_migrate, try_save, v1, NoteFile};
 use smallvec::SmallVec;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
+use tokio::runtime::Runtime;
+
 use tray_icon::{
     menu::{Menu, MenuEvent, MenuItem},
     Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
 };
 // use tray_item::TrayItem;G1
 
-use std::{
-    collections::BTreeMap,
-    fs::{self, File},
-    io::{self, Read},
-    path::PathBuf,
-    sync::mpsc::{sync_channel, SyncSender},
-};
+use std::{path::PathBuf, sync::mpsc::sync_channel};
 
 use eframe::{
-    egui::{self, Id, ViewportCommand},
+    egui::{self, Id},
     epaint::vec2,
-    get_value, set_value, CreationContext,
+    get_value, CreationContext,
 };
 
-use crate::{
-    app_state::UnsavedChange,
-    persistent_state::{extract_note_file, get_utc_timestamp},
-};
+use crate::{app_state::UnsavedChange, persistent_state::extract_note_file};
 
 mod app_actions;
+mod app_io;
 mod app_state;
 mod app_ui;
 mod byte_span;
@@ -65,89 +55,15 @@ mod scripting;
 mod text_structure;
 mod theme;
 
-pub struct MyApp {
+pub struct MyApp<IO: AppIO> {
     state: AppState,
     hotwatch: Hotwatch,
     tray: TrayIcon,
-    msg_queue: SyncSender<MsgToApp>,
     persistence_folder: PathBuf,
-    app_io: RealAppIO,
+    app_io: IO,
 }
 
-struct RegisteredGlobalHotkey {
-    egui_shortcut: egui::KeyboardShortcut,
-    system_hotkey: global_hotkey::hotkey::HotKey,
-    handler: Box<dyn Fn() -> MsgToApp>,
-}
-
-struct RealAppIO {
-    hotkeys_manager: GlobalHotKeyManager,
-    registered_hotkeys: BTreeMap<u32, RegisteredGlobalHotkey>,
-}
-
-impl RealAppIO {
-    fn new(hotkeys_manager: GlobalHotKeyManager) -> Self {
-        Self {
-            hotkeys_manager,
-            registered_hotkeys: Default::default(),
-        }
-    }
-}
-
-impl AppIO for RealAppIO {
-    fn hide_app(&self) {
-        hide_app_on_macos();
-    }
-
-    fn try_read_note_if_newer(
-        &self,
-        path: &PathBuf,
-        last_saved: u128,
-    ) -> Result<Option<String>, io::Error> {
-        try_read_note_if_newer(path, last_saved)
-    }
-
-    fn try_map_hotkey(&self, hotkey_id: u32) -> Option<MsgToApp> {
-        self.registered_hotkeys
-            .get(&hotkey_id)
-            .map(|key| (key.handler)())
-    }
-
-    fn bind_global_hotkey(
-        &mut self,
-        shortcut: egui::KeyboardShortcut,
-        handler: Box<dyn Fn() -> MsgToApp>,
-    ) -> Result<(), String> {
-        let system_hotkey = convert_egui_shortcut_to_global_hotkey(shortcut);
-
-        self.hotkeys_manager
-            .register(system_hotkey)
-            .map_err(|err| err.to_string())?;
-
-        self.registered_hotkeys.insert(
-            system_hotkey.id(),
-            RegisteredGlobalHotkey {
-                egui_shortcut: shortcut,
-                system_hotkey,
-                handler,
-            },
-        );
-
-        Ok(())
-    }
-
-    fn cleanup_all_global_hotkeys(&mut self) -> Result<(), String> {
-        for hotkey in self.registered_hotkeys.values() {
-            self.hotkeys_manager
-                .unregister(hotkey.system_hotkey)
-                .map_err(|err| err.to_string())?;
-        }
-        self.registered_hotkeys.clear();
-        Ok(())
-    }
-}
-
-impl MyApp {
+impl MyApp<RealAppIO> {
     pub fn new(cc: &CreationContext) -> Self {
         let theme = Default::default();
         configure_styles(&cc.egui_ctx, &theme);
@@ -156,11 +72,18 @@ impl MyApp {
 
         cc.egui_ctx.set_fonts(fonts);
 
+        let persistence_folder = directories_next::ProjectDirs::from("app", "", "Shelv")
+            .map(|proj_dirs| proj_dirs.data_dir().to_path_buf())
+            .unwrap();
+
         let (msg_queue_tx, msg_queue_rx) = sync_channel::<MsgToApp>(10);
 
-        let mut app_io = RealAppIO::new(GlobalHotKeyManager::new().unwrap());
-
-        // hotkeys_manager.register(global_open_hotkey).unwrap();
+        let mut app_io = RealAppIO::new(
+            GlobalHotKeyManager::new().unwrap(),
+            cc.egui_ctx.clone(),
+            msg_queue_tx.clone(),
+            persistence_folder.clone(),
+        );
 
         // let open_hotkey = global_open_hotkey.clone();
         let ctx = cc.egui_ctx.clone();
@@ -218,10 +141,6 @@ impl MyApp {
         let v1_save: Option<v1::PersistentState> =
             cc.storage.and_then(|s| get_value(s, "persistent_state"));
 
-        let persistence_folder = directories_next::ProjectDirs::from("app", "", "Shelv")
-            .map(|proj_dirs| proj_dirs.data_dir().to_path_buf())
-            .unwrap();
-
         let number_of_notes = 4;
         let persistent_state = load_and_migrate(number_of_notes, v1_save, &persistence_folder);
 
@@ -271,14 +190,13 @@ impl MyApp {
             state,
             app_io,
             tray: tray_icon,
-            msg_queue: msg_queue_tx,
             persistence_folder,
             hotwatch,
         }
     }
 }
 
-impl eframe::App for MyApp {
+impl<IO: AppIO> eframe::App for MyApp<IO> {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let app_state = &mut self.state;
         let text_edit_id = Id::new(match &app_state.selected_note {
@@ -365,7 +283,7 @@ impl eframe::App for MyApp {
             if app_state.prev_focused != is_frame_actually_focused && !is_frame_actually_focused {
                 println!("lost focus");
                 app_state.hidden = true;
-                hide_app_on_macos();
+                self.app_io.hide_app();
             }
 
             app_state.prev_focused = is_frame_actually_focused;
@@ -462,27 +380,11 @@ impl eframe::App for MyApp {
     }
 }
 
-fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<String>, io::Error> {
-    let mut file = File::open(path)?;
-    let meta = file.metadata()?;
-    let modified_at = meta.modified()?;
-
-    if get_utc_timestamp(modified_at) > last_saved + 10 {
-        // println!(
-        //     "updating note {note_file:?}, \nlast_saved={}\nmodified_at={}",
-        //     self.last_saved,
-        //     get_utc_timestamp(modified_at)
-        // );
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
-
-        Ok(Some(content))
-    } else {
-        Ok(None)
-    }
-}
-
 fn main() {
+    let rt = Runtime::new().expect("Unable to create Runtime");
+    // Enter the runtime so that `tokio::spawn` is available immediately.
+    let _enter = rt.enter();
+
     let options = eframe::NativeOptions {
         default_theme: eframe::Theme::Dark,
         viewport: egui::ViewportBuilder::default()
@@ -525,70 +427,4 @@ fn main() {
     };
 
     eframe::run_native("Shelv", options, Box::new(|cc| Box::new(MyApp::new(cc)))).unwrap();
-}
-
-fn hide_app_on_macos() {
-    // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
-    use objc2::rc::Id;
-    use objc2::{class, msg_send, msg_send_id, runtime::Object};
-    unsafe {
-        let app: Id<Object> = msg_send_id![class!(NSApplication), sharedApplication];
-        let arg = app.as_ref();
-        let _: () = msg_send![&app, hide:arg];
-    }
-}
-
-fn convert_egui_shortcut_to_global_hotkey(
-    shortcut: egui::KeyboardShortcut,
-) -> global_hotkey::hotkey::HotKey {
-    let mut modifiers = Modifiers::empty();
-    if shortcut.modifiers.alt {
-        modifiers |= Modifiers::ALT;
-    }
-    if shortcut.modifiers.ctrl {
-        modifiers |= Modifiers::CONTROL;
-    }
-    if shortcut.modifiers.shift {
-        modifiers |= Modifiers::SHIFT;
-    }
-    if shortcut.modifiers.mac_cmd {
-        modifiers |= Modifiers::META;
-    }
-
-    use egui::Key::*;
-    use global_hotkey::hotkey::Code::*;
-
-    let code = match shortcut.logical_key {
-        A => KeyA,
-        B => KeyB,
-        C => KeyC,
-        D => KeyD,
-        E => KeyE,
-        F => KeyF,
-        G => KeyG,
-        H => KeyH,
-        I => KeyI,
-        J => KeyJ,
-        K => KeyK,
-        L => KeyL,
-        M => KeyM,
-        N => KeyN,
-        O => KeyO,
-        P => KeyP,
-        Q => KeyQ,
-        R => KeyR,
-        S => KeyS,
-        T => KeyT,
-        U => KeyU,
-        V => KeyV,
-        W => KeyW,
-        X => KeyX,
-        Y => KeyY,
-        Z => KeyZ,
-        // TODO: Add more mappings as needed
-        // TODO2: is there a way not to do it manually?
-        _ => KeyA, // Default to KeyA for unmapped keys
-    };
-
-    HotKey::new(Some(modifiers), code)
 }
