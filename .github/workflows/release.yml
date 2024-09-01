@@ -97,12 +97,3 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           ./distribution/upload_to_testflight.sh
-
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v1-release
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/release/bundle/osx/Shelv.pkg
-          asset_name: Shelv.pkg
-          tag: release-${{ github.ref }}
-          overwrite: true
