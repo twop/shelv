@@ -104,7 +104,15 @@ pub fn run_llm_block(CommandContext { app_state }: CommandContext) -> Option<Edi
         prev_block_end = desc.byte_pos.end;
     }
 
+    let (model, system_prompt) = app_state
+        .llm_settings
+        .as_ref()
+        .map(|s| (s.model.clone(), s.system_prompt.clone()))
+        .unwrap_or_else(|| ("claude-3-haiku-20240307".to_string(), None));
+
     let llm_request = LLMRequest {
+        model,
+        system_prompt,
         conversation,
         output_code_block_address: address,
         note_id: target,

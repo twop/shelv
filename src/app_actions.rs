@@ -56,6 +56,8 @@ pub struct Conversation {
 
 #[derive(Debug)]
 pub struct LLMRequest {
+    pub system_prompt: Option<String>,
+    pub model: String,
     pub conversation: Conversation,
     pub output_code_block_address: String,
     pub note_id: NoteFile,
@@ -308,6 +310,7 @@ pub fn process_app_action(
                         cmd_list: &mut state.editor_commands,
                         should_force_eval: false,
                         app_io,
+                        llm_settings: &mut state.llm_settings,
                     };
 
                     execute_code_blocks(&mut cx, &text_structure, &text)

@@ -19,9 +19,16 @@ use crate::{
 };
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct LlmSettings {
+    pub model: String,
+    pub system_prompt: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 struct TopLevelKdlSettings {
     bindings: Vec<Binding>,
     global_bindings: Vec<GlobalBinding>,
+    llm_settings: Vec<LlmSettings>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -307,37 +314,72 @@ fn parse_binding<Cmd>(
 fn parse_top_level(block_str: &str) -> Result<TopLevelKdlSettings, SettingsParseError> {
     let doc = KdlDocument::from_str(block_str).map_err(SettingsParseError::ParseKdlErro)?;
 
-    enum Bind {
-        InsideApp(Binding),
-        Global(GlobalBinding),
-    }
-
-    let bindings: Result<Vec<_>, SettingsParseError> = doc
+    let bindings: Result<Vec<Binding>, SettingsParseError> = doc
         .nodes()
         .iter()
-        .map(|node| match node.name().value() {
-            "bind" => parse_binding(node, parse_command)
-                .map(|(shortcut, command)| Bind::InsideApp(Binding { shortcut, command })),
-
-            "global" => parse_binding(node, parse_global_command)
-                .map(|(shortcut, command)| Bind::Global(GlobalBinding { shortcut, command })),
-
-            _ => Err(SettingsParseError::UnexpectedNode(
-                node.name().span().clone(),
-                "bind | global",
-            )),
+        .filter(|node| node.name().value() == "bind")
+        .map(|node| {
+            parse_binding(node, parse_command)
+                .map(|(shortcut, command)| Binding { shortcut, command })
         })
         .collect();
 
-    let (bindings, global_bindings): (Vec<Binding>, Vec<GlobalBinding>) =
-        bindings?.into_iter().partition_map(|bind| match bind {
-            Bind::InsideApp(b) => Either::Left(b),
-            Bind::Global(b) => Either::Right(b),
-        });
+    let global_bindings: Result<Vec<GlobalBinding>, SettingsParseError> = doc
+        .nodes()
+        .iter()
+        .filter(|node| node.name().value() == "global")
+        .map(|node| {
+            parse_binding(node, parse_global_command)
+                .map(|(shortcut, command)| GlobalBinding { shortcut, command })
+        })
+        .collect();
+
+    let llm_settings: Result<Vec<LlmSettings>, SettingsParseError> = doc
+        .nodes()
+        .iter()
+        .filter(|node| node.name().value() == "llm")
+        .map(|node| parse_llm_block(node))
+        .collect();
+
+    let llm_settings = llm_settings?;
+
+    let bindings = bindings?;
+    let global_bindings = global_bindings?;
 
     Ok(TopLevelKdlSettings {
         bindings,
         global_bindings,
+        llm_settings,
+    })
+}
+
+fn parse_llm_block(node: &KdlNode) -> Result<LlmSettings, SettingsParseError> {
+    let children = node.children().ok_or_else(|| {
+        SettingsParseError::MismatchedChildren(
+            node.span().clone(),
+            "llm node should have children".to_string(),
+        )
+    })?;
+
+    let model = children
+        .get("model")
+        .and_then(|model_node| model_node.entries().first())
+        .and_then(|entry| entry.value().as_string())
+        .ok_or_else(|| SettingsParseError::MissingNode {
+            span: children.span().clone(),
+            node: "model".to_string(),
+        })?
+        .to_string();
+
+    let system_prompt = children
+        .get("systemPrompt")
+        .and_then(|prompt_node| prompt_node.entries().first())
+        .and_then(|entry| entry.value().as_string())
+        .map(|s| s.to_string());
+
+    Ok(LlmSettings {
+        model,
+        system_prompt,
     })
 }
 
@@ -346,6 +388,7 @@ pub struct SettingsNoteEvalContext<'cx, IO: AppIO> {
     pub cmd_list: &'cx mut CommandList,
     pub should_force_eval: bool,
     pub app_io: &'cx mut IO,
+    pub llm_settings: &'cx mut Option<LlmSettings>,
 }
 
 impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
@@ -383,7 +426,7 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
 
         // TODO report if applying bindings failed
 
-        if let Ok(settings) = result {
+        if let Ok(mut settings) = result {
             for GlobalBinding { shortcut, command } in settings.global_bindings {
                 println!("applying global {shortcut:?} to {command:?}");
                 match command {
@@ -421,6 +464,10 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                         }),
                     )),
                 }
+            }
+
+            if let Some(last_llm_settings) = settings.llm_settings.pop() {
+                *self.llm_settings = Some(last_llm_settings);
             }
         }
 
@@ -500,10 +547,11 @@ mod tests {
             TopLevelKdlSettings {
                 bindings: [Binding {
                     shortcut: KeyboardShortcut::new(Modifiers::MAC_CMD, Key::A),
-                    command: Command::Predefined(BuiltInCommand::HideApp)
+                    command: Command::Predefined(BuiltInCommand::HideApp),
                 }]
                 .into(),
                 global_bindings: vec![],
+                llm_settings: vec![]
             }
         );
     }
@@ -533,6 +581,7 @@ mod tests {
                 }]
                 .into(),
                 global_bindings: vec![],
+                llm_settings: vec![]
             }
         );
     }

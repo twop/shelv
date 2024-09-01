@@ -33,7 +33,7 @@ use crate::{
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::execute_code_blocks,
-    settings::SettingsNoteEvalContext,
+    settings::{LlmSettings, SettingsNoteEvalContext},
     text_structure::{SpanKind, TextStructure},
     theme::AppTheme,
 };
@@ -71,6 +71,7 @@ pub struct AppState {
     pub hidden: bool,
     pub prev_focused: bool,
     pub editor_commands: CommandList,
+    pub llm_settings: Option<LlmSettings>,
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
@@ -297,6 +298,7 @@ impl AppState {
         ));
 
         let mut editor_commands = CommandList::new(editor_commands);
+        let mut llm_settings: Option<LlmSettings> = None;
 
         // TODO this is ugly, refactor this to be a bit nicer
         // at least from the error reporting point of view
@@ -306,6 +308,7 @@ impl AppState {
                     cmd_list: &mut editor_commands,
                     should_force_eval: true,
                     app_io,
+                    llm_settings: &mut llm_settings,
                 };
 
                 execute_code_blocks(&mut cx, &TextStructure::new(&settings.text), &settings.text)
@@ -340,6 +343,7 @@ impl AppState {
             prev_focused: false,
             last_saved,
             editor_commands,
+            llm_settings,
         }
     }
 

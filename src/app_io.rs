@@ -108,12 +108,14 @@ impl AppIO for RealAppIO {
         let egui_ctx = self.egui_ctx.clone();
         let sender = self.msg_queue.clone();
 
-        const MODEL_ANTHROPIC: &str = "claude-3-haiku-20240307";
+        // const MODEL_ANTHROPIC: &str = "claude-3-haiku-20240307";
 
         let LLMRequest {
             conversation,
             output_code_block_address,
             note_id,
+            system_prompt,
+            model,
         } = question;
 
         let send = move |chunk: String| {
@@ -128,10 +130,10 @@ impl AppIO for RealAppIO {
             egui_ctx.request_repaint();
         };
 
-        let key_path = self.shelv_folder.join(".claude_key");
+        let key_path = self.shelv_folder.join(".llm_key");
 
         tokio::spawn(async move {
-            let chat_req = ChatRequest::new(
+            let mut chat_req = ChatRequest::new(
                 conversation
                     .parts
                     .into_iter()
@@ -143,22 +145,28 @@ impl AppIO for RealAppIO {
                     .collect(), //[ChatMessage::system(context), ChatMessage::user(question)].into(),
             );
 
+            if let Some(system_prompt) = system_prompt {
+                chat_req
+                    .messages
+                    .insert(0, ChatMessage::system(system_prompt));
+            }
+
             let auth_resolver = AuthResolver::from_resolver_fn(
-                |model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
+                move |model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
                     let genai::ModelIden {
                         adapter_kind,
                         model_name,
                     } = model_iden;
 
 
-                    let key = fs::read_to_string(key_path).map_err(|e| {
-                        genai::resolver::Error::Custom(format!("Failed to read .claude_key: {}", e))
+                    let key = fs::read_to_string(&key_path).map_err(|e| {
+                        genai::resolver::Error::Custom(format!("Failed to read .llm_key: {}, here: {:?}", e, key_path))
                     })?;
 
                     let key = key.trim();
                     if key.is_empty() {
                         return Err(genai::resolver::Error::ApiKeyEnvNotFound {
-                            env_name: ".claude_key".to_string(),
+                            env_name: ".llm_key".to_string(),
                         });
                     }
 
@@ -172,7 +180,7 @@ impl AppIO for RealAppIO {
                 .build();
 
             let chat_res = client
-                .exec_chat_stream(MODEL_ANTHROPIC, chat_req.clone(), None)
+                .exec_chat_stream(model.as_str(), chat_req.clone(), None)
                 .await;
 
             match chat_res {
