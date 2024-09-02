@@ -341,9 +341,10 @@ Error: yo!
 
             // ________________________________________________
             (
-                // Since we don't remove orphan blocks anymore, and empty JS blocks don't output anything, it kinda leaves the old output block hanging
-                // TODO Determine what behaviour we want here and update the test.
-                "## empty codeblock doesn't update output block ##",
+
+                "## if we identified a missing output (for example when you copy paste blocks)
+                then we
+                ##",
                 r#"
 ```js
 1
@@ -355,16 +356,40 @@ Error: yo!
 ```js
 1 + 1
 ```
-
+--- start: this is copy pasted ---
 ```js
-{||}
+45{||}
 ```
+--- end: this is copy pasted ---
 
 ```js#c9f6
 2
 ```
 "#,
-                None,
+                Some(r#"
+```js
+1
+```
+```js#4422
+1
+```
+
+```js
+1 + 1
+```
+```js#c9f6
+2
+```
+--- start: this is copy pasted ---
+```js
+45{||}
+```
+--- end: this is copy pasted ---
+
+```js#a4a
+45
+```
+"#),
             ),
         ];
 
