@@ -341,7 +341,7 @@ pub fn process_app_action(
                     let mut map = std::collections::BTreeMap::new();
                     map.insert(
                         String::from("text_structure"),
-                        format!("{:?}", state.text_structure).into(),
+                        format!("{:#?}", state.text_structure).into(),
                     );
                     map.insert(
                         String::from("selected_note"),
@@ -358,10 +358,24 @@ pub fn process_app_action(
 
                 println!("Feedback sent: {:?}", result);
 
-                // TODO Maybe modify the note with the UUID of the feedback? Just so people know it worked.
+                Some(AppAction::ApplyTextChanges {
+                    target: selected,
+                    changes: vec![TextChange::Replace(
+                        ByteSpan::point(note.text.len()),
+                        format!(
+                            "\n---\n\
+                            Thank you for your feedback!\n\
+                            We would appreciete if we can reach out to discuss it,\n\
+                            for that please add your email to the note and submit again\n\
+                            FeedbackId: {:?}",
+                            result
+                        ),
+                    )],
+                    should_trigger_eval: false,
+                })
+            } else {
+                None
             }
-
-            None
         }
     }
 }
