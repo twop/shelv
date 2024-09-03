@@ -1,9 +1,16 @@
+const { colors } = require("./theme");
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   mode: "all",
   content: ["./src/**/*.{rs,html,css}", "./dist/**/*.html"],
   theme: {
-    extend: {},
+    colors,
+    extend: {
+      borderWidth: {
+        1: "1px",
+      },
+    },
   },
   plugins: [],
 };
