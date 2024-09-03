@@ -84,11 +84,7 @@ pub fn HomePage() -> Element {
                     p { class: "mt-3 text-m leading-7",
                         "Done with "
                         Heart {}
-                        " by Simon Korzunov ("
-                        SvgIconLink { link_to: "https://github.com/twop", path: github_svg_path() }
-                        " "
-                        SvgIconLink { link_to: "https://twitter.com/twopSK", path: twitter_svg_path() }
-                        ")"
+                        " by Briskmode Labs"
                     }
                     p { class: "mt-3 text-m leading-7",
                         "Shoot us an email at "
@@ -193,8 +189,8 @@ pub enum ThemeColor {
 #[component]
 fn Wave(path: String, top_color: ThemeColor) -> Element {
     let (top_color, fill_color) = match top_color {
-        ThemeColor::Dark => ("bg-nord-bg-dark", "nord-bg"),
-        ThemeColor::Light => ("bg-nord-bg", "nord-bg-dark"),
+        ThemeColor::Dark => ("bg-nord-bg-dark", "#1a202c"),
+        ThemeColor::Light => ("bg-nord-bg", "#0f1521"),
     };
 
     rsx! {
@@ -476,10 +472,10 @@ fn SloganAndMacStoreLink() -> Element {
 #[component]
 fn MacStoreLink() -> Element {
     rsx! {
-        a { href: "",
+        a { href: "https://testflight.apple.com/join/38OBZSRD",
             img {
                 src: "/images/mac-app-store-badge.svg",
-                alt: "Download Shelv on the Mac App Store",
+                alt: "Download Shelv on the Mac Test Flight",
                 class: "home-app-store-buttons-mac",
                 height: "64"
             }

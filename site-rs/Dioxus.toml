@@ -16,7 +16,7 @@ asset_dir = "assets"
 [web.app]
 
 # HTML title tag content
-title = "site-rs"
+title = "Hackable playground for your ephemeral thoughts"
 
 [web.watcher]
 
