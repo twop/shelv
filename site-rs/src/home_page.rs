@@ -9,8 +9,6 @@ const DOWN_WAVE_PATH:&str =
 const IMG_W: usize = 1180;
 const IMG_H: usize = 1128;
 
-// const SCREENSHOT_WELCOME: manganis::ImageAsset = manganis::mg!(image("./screenshot-markdown.png"));
-
 #[component]
 pub fn HomePage() -> Element {
     rsx! {
