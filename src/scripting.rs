@@ -404,8 +404,8 @@ Error: yo!
             match (changes, expected_output) {
                 (Some(changes), Some(expected_output)) => {
                     let cursor =
-                        apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
-                    let res = TextChange::encode_cursor(&text, cursor);
+                        apply_text_changes(&mut text, Some(cursor.unordered()), changes).unwrap();
+                    let res = TextChange::encode_cursor(&text, cursor.unwrap());
                     println!("res:\n{res:#}\n\nexpected:{expected_output:#}");
                     assert_eq!(res, expected_output, "test case: \n{}\n", desc)
                 }
