@@ -314,11 +314,8 @@ impl AppState {
                 execute_code_blocks(&mut cx, &TextStructure::new(&settings.text), &settings.text)
             } {
                 Some(requested_changes) => {
-                    match apply_text_changes(
-                        &mut settings.text,
-                        settings.cursor.unwrap_or(UnOrderedByteSpan::new(0, 0)),
-                        requested_changes,
-                    ) {
+                    match apply_text_changes(&mut settings.text, settings.cursor, requested_changes)
+                    {
                         Ok(_) => println!("applied settings note successfully"),
                         Err(err) => println!("failed to write back settings results {:#?}", err),
                     }

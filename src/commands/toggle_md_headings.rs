@@ -208,10 +208,10 @@ mod tests {
                 (None, None) => (),
                 (Some(changes), Some(expected_output)) => {
                     let cursor =
-                        apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
+                        apply_text_changes(&mut text, Some(cursor.unordered()), changes).unwrap();
 
                     assert_eq!(
-                        TextChange::encode_cursor(&text, cursor),
+                        TextChange::encode_cursor(&text, cursor.unwrap()),
                         expected_output,
                         "test case: {}",
                         desc

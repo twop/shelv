@@ -155,20 +155,17 @@ pub fn process_app_action(
             let note = &mut state.notes.get_mut(&note_file).unwrap();
             let text = &mut note.text;
             let cursor = note.cursor;
-            if let Some(byte_range) = cursor {
-                if let Ok(updated_cursor) = apply_text_changes(text, byte_range, changes) {
-                    if note_file == state.selected_note {
-                        // if the changes are for the selected note we need to recompute TextStructure
-                        state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
-                    }
 
-                    note.cursor = Some(updated_cursor);
-
-                    state.add_unsaved_change(UnsavedChange::NoteContentChanged(note_file));
-                    should_trigger_eval.then(|| AppAction::EvalNote(note_file))
-                } else {
-                    None
+            if let Ok(updated_cursor) = apply_text_changes(text, cursor, changes) {
+                if note_file == state.selected_note {
+                    // if the changes are for the selected note we need to recompute TextStructure
+                    state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
                 }
+
+                note.cursor = updated_cursor;
+
+                state.add_unsaved_change(UnsavedChange::NoteContentChanged(note_file));
+                should_trigger_eval.then(|| AppAction::EvalNote(note_file))
             } else {
                 None
             }
@@ -341,7 +338,7 @@ pub fn process_app_action(
                     let mut map = std::collections::BTreeMap::new();
                     map.insert(
                         String::from("text_structure"),
-                        format!("{:?}", state.text_structure).into(),
+                        format!("{:#?}", state.text_structure).into(),
                     );
                     map.insert(
                         String::from("selected_note"),
@@ -358,10 +355,22 @@ pub fn process_app_action(
 
                 println!("Feedback sent: {:?}", result);
 
-                // TODO Maybe modify the note with the UUID of the feedback? Just so people know it worked.
+                Some(AppAction::ApplyTextChanges {
+                    target: selected,
+                    changes: vec![TextChange::Replace(
+                        ByteSpan::point(note.text.len()),
+                        // TODO Add a link to join the discord server (as a way to encourage feedback discussion)
+                        format!(
+                            "\n---\n\
+                            Thank you for your feedback! (reference: {:?})\n",
+                            result
+                        ),
+                    )],
+                    should_trigger_eval: false,
+                })
+            } else {
+                None
             }
-
-            None
         }
     }
 }

@@ -263,8 +263,8 @@ mod tests {
             ))
             .unwrap();
 
-            let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
-            let res = TextChange::encode_cursor(&text, cursor);
+            let cursor = apply_text_changes(&mut text, Some(cursor.unordered()), changes).unwrap();
+            let res = TextChange::encode_cursor(&text, cursor.unwrap());
 
             println!("{desc}\ninitial:\n{input}\nres:\n{res}\nexpected:\n{expected}");
             assert_eq!(res, expected, "test case: {}", desc);
@@ -283,8 +283,11 @@ mod tests {
         let changes =
             on_enter_inside_list_item(TextCommandContext::new(&structure, &text, cursor)).unwrap();
 
-        let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
-        assert_eq!(TextChange::encode_cursor(&text, cursor), "- item\n- {||}");
+        let cursor = apply_text_changes(&mut text, Some(cursor.unordered()), changes).unwrap();
+        assert_eq!(
+            TextChange::encode_cursor(&text, cursor.unwrap()),
+            "- item\n- {||}"
+        );
     }
 
     #[test]
@@ -300,8 +303,11 @@ mod tests {
             on_enter_inside_list_item(TextCommandContext::new(&structure, &text, cursor.clone()))
                 .unwrap();
 
-        let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
-        assert_eq!(TextChange::encode_cursor(&text, cursor), "- *item*\n- {||}");
+        let cursor = apply_text_changes(&mut text, Some(cursor.unordered()), changes).unwrap();
+        assert_eq!(
+            TextChange::encode_cursor(&text, cursor.unwrap()),
+            "- *item*\n- {||}"
+        );
     }
 
     #[test]

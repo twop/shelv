@@ -57,9 +57,9 @@ pub enum TextChangeError {
 
 pub fn apply_text_changes(
     text: &mut String,
-    prev_cursor: UnOrderedByteSpan,
+    prev_cursor: Option<UnOrderedByteSpan>,
     changes: impl IntoIterator<Item = TextChange>,
-) -> Result<UnOrderedByteSpan, TextChangeError> {
+) -> Result<Option<UnOrderedByteSpan>, TextChangeError> {
     #[derive(Debug, Clone)]
 
     struct Log {
@@ -159,7 +159,7 @@ pub fn apply_text_changes(
         }
     }
 
-    let adjusted_cursor = match inserted_cursor {
+    let adjusted_cursor = prev_cursor.map(|prev_cursor| match inserted_cursor {
         Some(cursor) => UnOrderedByteSpan::new(cursor.start, cursor.end),
         None => {
             // let mut cursor_start = prev_cursor.start;
@@ -253,7 +253,7 @@ pub fn apply_text_changes(
 
             UnOrderedByteSpan::new(cursor_start, cursor_end)
         }
-    };
+    });
 
     // finally apply all the precomputed changes
     for change in actual_changes.into_iter() {
@@ -301,7 +301,7 @@ mod tests {
             TextChange::Replace(ByteSpan::new(b_pos + 1, b_pos + 1), "!".into()),
         ];
 
-        apply_text_changes(&mut text, UnOrderedByteSpan::new(0, 0), changes).unwrap();
+        apply_text_changes(&mut text, Some(UnOrderedByteSpan::new(0, 0)), changes).unwrap();
         assert_eq!(text, "hello world!");
     }
 
@@ -318,7 +318,7 @@ mod tests {
             TextChange::Replace(ByteSpan::new(a_pos, a_pos + 1), "hello".into()),
         ];
 
-        apply_text_changes(&mut text, UnOrderedByteSpan::new(0, 0), changes).unwrap();
+        apply_text_changes(&mut text, Some(UnOrderedByteSpan::new(0, 0)), changes).unwrap();
         assert_eq!(text, "hello world!");
     }
 
@@ -336,7 +336,7 @@ mod tests {
             TextChange::Replace(ByteSpan::new(b_pos, b_pos + 1), "world".into()),
         ];
 
-        let cursor = apply_text_changes(&mut text, UnOrderedByteSpan::new(0, 0), changes);
+        let cursor = apply_text_changes(&mut text, Some(UnOrderedByteSpan::new(0, 0)), changes);
         assert!(matches!(cursor, Err(TextChangeError::OverlappingChanges)));
         assert_eq!(text, "a b");
     }
@@ -359,8 +359,12 @@ mod tests {
             TextChange::Replace(ByteSpan::new(0, 1), "".into()),
         ];
 
-        let cursor = apply_text_changes(&mut text, cursor.unwrap().unordered(), changes).unwrap();
-        assert_eq!(TextChange::encode_cursor(&text, cursor), "{|}oops{|}d");
+        let cursor =
+            apply_text_changes(&mut text, Some(cursor.unwrap().unordered()), changes).unwrap();
+        assert_eq!(
+            TextChange::encode_cursor(&text, cursor.unwrap()),
+            "{|}oops{|}d"
+        );
     }
 
     #[test]
@@ -382,8 +386,12 @@ mod tests {
             TextChange::Replace(ByteSpan::new(0, 1), "".into()),
         ];
 
-        let cursor = apply_text_changes(&mut text, cursor.unwrap().unordered(), changes).unwrap();
-        assert_eq!(TextChange::encode_cursor(&text, cursor), "{|}boops{|}f");
+        let cursor =
+            apply_text_changes(&mut text, Some(cursor.unwrap().unordered()), changes).unwrap();
+        assert_eq!(
+            TextChange::encode_cursor(&text, cursor.unwrap()),
+            "{|}boops{|}f"
+        );
     }
 
     #[test]
@@ -404,8 +412,12 @@ mod tests {
             TextChange::Replace(ByteSpan::new(text.len(), text.len()), "!".into()),
         ];
 
-        let cursor = apply_text_changes(&mut text, cursor.unwrap().unordered(), changes).unwrap();
-        assert_eq!(TextChange::encode_cursor(&text, cursor), "a{|}oopsd{|}e!");
+        let cursor =
+            apply_text_changes(&mut text, Some(cursor.unwrap().unordered()), changes).unwrap();
+        assert_eq!(
+            TextChange::encode_cursor(&text, cursor.unwrap()),
+            "a{|}oopsd{|}e!"
+        );
     }
 
     #[test]
@@ -426,7 +438,11 @@ mod tests {
             TextChange::Replace(ByteSpan::new(0, 1), "!!".into()),
         ];
 
-        let cursor = apply_text_changes(&mut text, cursor.unwrap().unordered(), changes).unwrap();
-        assert_eq!(TextChange::encode_cursor(&text, cursor), "!!b{|}coops{|}j");
+        let cursor =
+            apply_text_changes(&mut text, Some(cursor.unwrap().unordered()), changes).unwrap();
+        assert_eq!(
+            TextChange::encode_cursor(&text, cursor.unwrap()),
+            "!!b{|}coops{|}j"
+        );
     }
 }

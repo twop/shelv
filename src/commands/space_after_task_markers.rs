@@ -121,9 +121,9 @@ mod tests {
             ))
             .unwrap();
 
-            let cursor = apply_text_changes(&mut text, cursor.unordered(), changes).unwrap();
+            let cursor = apply_text_changes(&mut text, Some(cursor.unordered()), changes).unwrap();
             assert_eq!(
-                TextChange::encode_cursor(&text, cursor),
+                TextChange::encode_cursor(&text, cursor.unwrap()),
                 output,
                 "test case: {}",
                 desc
