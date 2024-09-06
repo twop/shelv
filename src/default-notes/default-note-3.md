@@ -1,46 +1,52 @@
 # Code-blocks
 
-## Markdown Format
+- [ ] **Create a codeblock** by highlighting the text below and pressing `cmd + option + B`
 
-In Markdown, you can format a block of text as "code" as follows:
+  /\ 
+ /__\
 
+
+## AI codeblocks
+
+- [ ] **Execute the AI prompt** by pressing `cmd + enter` while inside the codeblock.
+
+```llm
+What is the meaning of life? Answer ONLY as a single number
 ```
-hjhjhj
-```
 
-You can also specify the language of the code like this (and some languages suport syntax highlighting!):
+- [ ] Change `number` to `word` for the promp, and re-run by pressing `cmd + enter`, and the output block will refresh!
 
-```ts
-"hello" + "world";
-```
-
-- [ ] **Task**: Highight the function below and use the hotkey `cmd + option + B` to create a codeblock.
-
-function main() {
-return "hello" + "world"
-}
 
 ## Codeblocks that compute
 
 In Shelv, `js` codeblocks have special functionality - they compute their output right in your note! Any codeblocks that start with ```js will automatically execute whenever the content changes.
 
-- [ ] **Task**: Append js to the block below (to make ```js), the code should execute!
-- [ ] **Task**: Modify the formula inside the block, and the code output should automatically update.
+- [ ] **Execute the code below** by specifying `js` (to make ```js) as the language.
 
 ```
-1 + 2
+const hi(name) = () => "hello " + name + "!"
+hi("universe")
 ```
 
-## AI codeblocks
+## Blocks are interconnected
 
-- Shelv also supports ```ai codeblocks that execute by pressing `cmd + enter`
+AI blocks will have the rest of the note above it as context, enabling use cases like:
+- `Check spelling and grammer`
+- `Re-write without markdown`
+- `Give a summary`
 
-  - _Note: AI codeblocks won't automatically execute when the content changes._
+Tip: AI blocks in a note essentially form a conversations, and content between each block is additional context (just like a traditional chat!)
 
-- [ ] **Task**: Place your keyboard cursor in the block below and press `cmd + enter`
-
-```llm
+```ai
 Give me a concise summary of the above.
 ```
 
-- [ ] **Task**: Try your own AI prompt. Examples: Check spelling and grammer, Re-write without markdown, Write a Javascript function that adds two numbers
+- [ ] **Try running the above AI block**
+
+Code blocks can reference the variables and functions defined in earlier blocks!
+
+- [ ] Reference our `hi` function from before `hi("awesome user of Shelv")` inside the block below
+
+```js
+
+```
