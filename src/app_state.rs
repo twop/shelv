@@ -6,7 +6,7 @@ use std::{
 };
 
 use eframe::{
-    egui::{self, Key, KeyboardShortcut, Modifiers, Ui},
+    egui::{self, text::CCursor, Key, KeyboardShortcut, Modifiers, Rect, Ui},
     epaint::Galley,
 };
 use itertools::Itertools;
@@ -16,7 +16,8 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     app_actions::{AppAction, AppIO},
-    byte_span::UnOrderedByteSpan,
+    app_ui::char_index_from_byte_index,
+    byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
         map_text_command_to_command_handler, BuiltInCommand, CommandContext, CommandList,
         EditorCommand, EditorCommandOutput, TextCommandContext,
@@ -91,8 +92,10 @@ impl AppState {
 pub struct ComputedLayout {
     pub galley: Arc<Galley>,
     pub layout_params_hash: u64,
+    pub code_areas: SmallVec<[Rect; 6]>,
 }
 
+#[derive(Debug)]
 pub struct LayoutParams<'a> {
     text: &'a str,
     wrap_width: f32,
@@ -138,8 +141,35 @@ impl ComputedLayout {
 
         let galley = ui.fonts(|f| f.layout_job(job));
 
+        let code_areas: SmallVec<[Rect; 6]> = text_structure
+            .iter()
+            .filter_map(|(_index, desc)| match desc.kind {
+                SpanKind::CodeBlock => Some(desc.byte_pos),
+                _ => None,
+            })
+            .map(|byte_span| {
+                let [mut r_start, r_end] = [byte_span.start, byte_span.end].map(|byte_pos| {
+                    let char_pos = char_index_from_byte_index(layout_params.text, byte_pos);
+                    galley.pos_from_ccursor(CCursor::new(char_pos))
+                });
+
+                // TODO make a prettier math
+                r_start.extend_with(r_end.min);
+                r_start.extend_with(r_end.max);
+                r_start.set_right(r_start.right().max(layout_params.wrap_width));
+                r_start
+            })
+            .collect();
+
+        // println!("^^^^ compute layout, code_areas = {code_areas:#?}");
+        // println!(
+        //     "^^^^ galley rect={:#?}, mesh_rect={:#?}",
+        //     galley.rect, galley.mesh_bounds
+        // );
+
         Self {
             galley,
+            code_areas,
             layout_params_hash: layout_params.hash,
         }
     }

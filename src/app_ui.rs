@@ -226,6 +226,20 @@ fn render_editor(
 ) {
     let mut structure_wrapper = Some(text_structure);
 
+    let estimated_text_pos = ui.next_widget_position();
+
+    if let Some(computed_layout) = &computed_layout {
+        for &area in computed_layout.code_areas.iter() {
+            ui.painter().rect_filled(
+                area.translate(estimated_text_pos.to_vec2()),
+                // TODO pick actual radius
+                8.,
+                // TODO pick actual color
+                Color32::from_black_alpha(50),
+            );
+        }
+    }
+
     let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
         let layout_cache_params = LayoutParams::new(text, wrap_width);
 
@@ -235,8 +249,8 @@ fn render_editor(
             _ => {
                 let structure = structure_wrapper.take().unwrap().recycle(text);
 
-                // println!("### updated structure {structure:#?}");
-                // println!("### rerender with {text}");
+                // println!("### updated structure w={avail_w} {layout_cache_params:#?}");
+                //println!("### rerender with {text}");
                 let layout = ComputedLayout::compute(
                     &structure,
                     &layout_cache_params,
