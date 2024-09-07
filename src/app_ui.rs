@@ -228,14 +228,14 @@ fn render_editor(
 
     let estimated_text_pos = ui.next_widget_position();
 
+    let code_bg = ui.visuals().code_bg_color;
+    let code_bg_rounding = ui.visuals().widgets.inactive.rounding;
     if let Some(computed_layout) = &computed_layout {
         for &area in computed_layout.code_areas.iter() {
             ui.painter().rect_filled(
-                area.translate(estimated_text_pos.to_vec2()),
-                // TODO pick actual radius
-                8.,
-                // TODO pick actual color
-                Color32::from_black_alpha(50),
+                area.shrink(0.5).translate(estimated_text_pos.to_vec2()),
+                code_bg_rounding,
+                code_bg,
             );
         }
     }

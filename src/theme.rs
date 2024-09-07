@@ -273,7 +273,8 @@ impl ColorTheme {
         let extreme_bg_color = Nord::NORD0.shade(0.6);
 
         // Background color behind code-styled monospaced labels.
-        let code_bg_color = Nord::NORD0.shade(0.6);
+        // let code_bg_color = Nord::NORD0.shade(0.6);
+        let code_bg_color = Color32::from_black_alpha(45);
 
         // A good color for warning text (e.g. orange).
         let warn_fg_color = Nord::NORD12;
