@@ -1,33 +1,30 @@
 # Welcome to **Shelv**
 
-We are so *happy* that you are giving a us chance <3.
+Shelv blends note-taking and computation, and is optimized for drafting and playing with ideas. We believe that `not all notes are meant to be eternal`, and Shelv is your sketchpad for text.
 
-Shelv is a blend of note taking apps and computational notebooks optimized for ideation/draft: `not all notes are meant to be eternal`.
+We (the dev team) use it for all our daily note-taking needs like todos, meeting notes, research, and more!
 
-We (the dev team) use it for interview notes, links from research, quick AI access, daily notes + todos, calculator  and much more!
-
+We are so *happy* that you are giving a us chance, and can't wait to learn how *you* use Shelv <3.
 
 ## Onboarding
 
 Let's start:
 
-- [ ] Assign **global hotkey**
-	* click on `gear` icon below or press `cmd + comma`
-	* uncomment the line that starts with "UNCOMMENT"
-- [ ] Explore **markdown features**
-	* click on `2` below or press `cmd + 2`
-- [ ] Learn about **code blocks**
-	* click on `3` or press `cmd + 3`
-- [ ] **Tell us how did it go**
-	* click on `4` or press `cmd + 4`
+- [ ] Assign a **global hotkey** in `settings` to summon/dismiss Shelv
+  - *Tip: open settings by clicking the `gear` icon in the bottom bar or press `cmd + comma`*
+- [ ] Explore **markdown features** in note `2`
+  - *Tip: Switch notes by clicking the tabs in the bottom bar (or use the hotkey like: `cmd + 2`)*
+- [ ] Learn about **code blocks** in note `3`
+- [ ] **Share your feedback with us** in note `4`
 
 
 ## Useful to know
 
-Some quorks and key features:
-- lives only in tray, that is, you *can't* "cmd + tab" into it.
-- plain text + markdown => easy interop with other apps (like Notion)
-- *only 4* notes, and they don't even have names. And, yes, we want more notes too, working on it!
+
+Some quirks and key features:
+- **Shelv only lives in the tray** (top menu bar by the clock), thus you *can't* `cmd + tab` into it nor find it in the dock. 
+- In Shelv, your notes are always plain-text. It may feel constraining, but we believe it's worth it. For example, copy-pasting your notes is always interopable with other apps.
+- **Shelv intentionally only supports 4 notes** (numbered 1-4), and we know this can feel limiting. We're still playing with different ideas how to organize notes (while emphasizing ephemeral use-cases), so if you have opinons/ideas, please share!
 
 Our tentitive tagline: `Hackable playground for ephemeral thoughts`, whatever that means. Please give us feedback on that btw!
 
