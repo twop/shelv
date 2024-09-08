@@ -139,7 +139,7 @@ impl AppIO for RealAppIO {
                     .parts
                     .into_iter()
                     .map(|p| match p {
-                        ConversationPart::Markdown(content) => ChatMessage::system(content),
+                        ConversationPart::Markdown(content) => ChatMessage::user(content),
                         ConversationPart::Question(content) => ChatMessage::user(content),
                         ConversationPart::Answer(content) => ChatMessage::assistant(content),
                     })
