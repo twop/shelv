@@ -360,6 +360,10 @@ pub fn get_font_definitions() -> FontDefinitions {
         egui::FontData::from_static(include_bytes!("../assets/Inter-SemiBoldItalic.otf")),
     );
 
+    fonts.font_data.insert("commit-mono".to_owned(), 
+    egui::FontData::from_static(include_bytes!("../assets/CommitMonoNerdFontMono-Regular.otf")),
+);
+
     // Put my font first (highest priority) for proportional text:
     fonts
         .families
@@ -372,7 +376,7 @@ pub fn get_font_definitions() -> FontDefinitions {
         .families
         .entry(egui::FontFamily::Monospace)
         .or_default()
-        .push("inter".to_owned());
+        .push("commit-mono".to_owned());
 
     fonts
         .families
