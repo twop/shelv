@@ -131,20 +131,44 @@ impl AppIO for RealAppIO {
             egui_ctx.request_repaint();
         };
 
-        let key_path = self.shelv_folder.join(".llm_key");
-
         tokio::spawn(async move {
-            let mut chat_req = ChatRequest::new(
-                conversation
-                    .parts
-                    .into_iter()
-                    .map(|p| match p {
-                        ConversationPart::Markdown(content) => ChatMessage::user(content),
-                        ConversationPart::Question(content) => ChatMessage::user(content),
-                        ConversationPart::Answer(content) => ChatMessage::assistant(content),
-                    })
-                    .collect(), //[ChatMessage::system(context), ChatMessage::user(question)].into(),
-            );
+            let mut chat_req = ChatRequest::new({
+                // Note that some AI apis (lile anthropic) requires to be user -> assistant -> user -> ...
+                // that means that markdown parts in between ai blocks either need to be "system" or user
+                // in case of "user" they need to be merged with the quesion (ai block content)
+                // for now pure string contatenation should work
+                //  but potentially we might consider annotating somehow, like <md> </md> with system prompt
+                let mut parts = Vec::new();
+                let mut current_user_content: Option<String> = None;
+
+                for part in conversation.parts {
+                    match part {
+                        // TODO potentially use some meta prompt to inject markdown content)
+                        ConversationPart::Markdown(content)
+                        | ConversationPart::Question(content) => match &mut current_user_content {
+                            Some(user_content) => {
+                                user_content.push_str("\n\n");
+                                user_content.push_str(&content);
+                            }
+                            None => {
+                                current_user_content = Some(content);
+                            }
+                        },
+                        ConversationPart::Answer(content) => {
+                            if let Some(user_content) = current_user_content.take() {
+                                parts.push(ChatMessage::user(user_content));
+                            }
+                            parts.push(ChatMessage::assistant(content));
+                        }
+                    }
+                }
+
+                if let Some(current_user_content) = current_user_content {
+                    parts.push(ChatMessage::user(current_user_content));
+                }
+
+                parts
+            });
 
             if let Some(system_prompt) = system_prompt {
                 chat_req
@@ -170,6 +194,7 @@ impl AppIO for RealAppIO {
                 },
             );
 
+            // println!("-----llm req: {chat_req:#?}");
             // -- Build the new client with this adapter_config
             let client = genai::Client::builder()
                 .with_auth_resolver(auth_resolver)
@@ -179,17 +204,28 @@ impl AppIO for RealAppIO {
                 .exec_chat_stream(model.as_str(), chat_req.clone(), None)
                 .await;
 
+            // println!(
+            //     "-----llm resp: {:#?}",
+            //     match &chat_res {
+            //         Ok(resp) => "Ok".to_string(),
+            //         Err(e) => "Err".to_string(),
+            //     }
+            // );
+
             match chat_res {
                 Ok(mut stream) => {
-                    while let Some(Ok(stream_event)) = stream.stream.next().await {
+                    while let Some(stream_event) = stream.stream.next().await {
                         match stream_event {
-                            ChatStreamEvent::Chunk(StreamChunk { content }) => send(content),
-
-                            _ => (),
+                            Ok(ChatStreamEvent::Chunk(StreamChunk { content })) => send(content),
+                            Ok(_) => (),
+                            Err(e) => {
+                                send(format!("Error getting response: {:#?}", e));
+                                break;
+                            }
                         }
                     }
                 }
-                Err(err) => send(err.to_string()),
+                Err(err) => send(format!("{:#?}", err)),
             };
         });
     }
