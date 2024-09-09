@@ -1,20 +1,24 @@
 # Code-blocks
 
-- [ ] **Create a codeblock** by highlighting the text below and pressing `cmd + option + B`
+- [ ] **Create a codeblock** by highlighting the text below and pressing `⌘ + ⌥ + B`
 
-  /\ 
- /__\
-
+.--------------------------.
+| ____  _          _       |
+|/ ___|| |__   ___| |_   __|
+|\___ \| '_ \ / _ \ \ \ / /|
+| ___) | | | |  __/ |\ V / |
+||____/|_| |_|\___|_| \_/  |
+'--------------------------'
 
 ## AI codeblocks
 
-- [ ] **Execute the AI prompt** by pressing `cmd + enter` while inside the codeblock.
+- [ ] **Execute the AI prompt** by pressing `⌘ + ⏎` while inside the codeblock.
 
-```llm
+```ai
 What is the meaning of life? Answer ONLY as a single number
 ```
 
-- [ ] Change `number` to `word` for the promp, and re-run by pressing `cmd + enter`, and the output block will refresh!
+- [ ] Change `number` to `word` for the promp, and re-run by pressing `⌘ + ⏎`, and the output block will refresh!
 
 
 ## Codeblocks that compute

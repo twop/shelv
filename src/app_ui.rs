@@ -568,13 +568,13 @@ fn render_header_panel(
                     for item in [
                         (
                             &AppIcon::Twitter,
-                            "tweet us @shelvdotapp",
+                            "Tweet us @shelvdotapp",
                             "https://twitter.com/shelvdotapp",
                         ),
-                        (&AppIcon::Discord, "join our discrod", "https://shelv.app"),
+                        (&AppIcon::Discord, "Join our Discord", "https://discord.gg/sSGHwNKy"),
                         (
                             &AppIcon::HomeSite,
-                            "visit https://shelv.app",
+                            "Visit https://shelv.app",
                             "https://shelv.app",
                         ),
                         // (

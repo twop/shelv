@@ -50,7 +50,7 @@ enum Command {
 
 #[derive(Debug, PartialEq, Eq)]
 enum GlobalCommand {
-    ToggleAppVisibility,
+    ShowHideApp,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -164,7 +164,7 @@ fn try_parse_builtin_command(name: &str, entries: &[KdlEntry]) -> Option<BuiltIn
 
 fn parse_global_command(node: &KdlNode) -> Result<GlobalCommand, SettingsParseError> {
     match node.name().value() {
-        "ToggleAppVisibility" => Ok(GlobalCommand::ToggleAppVisibility),
+        "ToggleAppVisibility" | "ShowHideApp" => Ok(GlobalCommand::ShowHideApp),
         name => Err(SettingsParseError::UnknownCommand(name.to_string())),
     }
 }
@@ -337,7 +337,7 @@ fn parse_top_level(block_str: &str) -> Result<TopLevelKdlSettings, SettingsParse
     let llm_settings: Result<Vec<LlmSettings>, SettingsParseError> = doc
         .nodes()
         .iter()
-        .filter(|node| node.name().value() == "llm")
+        .filter(|node| node.name().value() == "ai")
         .map(|node| parse_llm_block(node))
         .collect();
 
@@ -357,7 +357,7 @@ fn parse_llm_block(node: &KdlNode) -> Result<LlmSettings, SettingsParseError> {
     let children = node.children().ok_or_else(|| {
         SettingsParseError::MismatchedChildren(
             node.span().clone(),
-            "llm node should have children".to_string(),
+            "ai node should have children".to_string(),
         )
     })?;
 
@@ -430,7 +430,7 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
             for GlobalBinding { shortcut, command } in settings.global_bindings {
                 println!("applying global {shortcut:?} to {command:?}");
                 match command {
-                    GlobalCommand::ToggleAppVisibility => {
+                    GlobalCommand::ShowHideApp => {
                         match self
                             .app_io
                             .bind_global_hotkey(shortcut, Box::new(|| MsgToApp::ToggleVisibility))
