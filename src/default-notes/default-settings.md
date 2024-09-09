@@ -40,7 +40,7 @@ ai {
 ```
 
 **System Prompt**
-- The `systemPrompt` sets the initial context for all AI requests 
+- The `systemPrompt` sets the initial context for all AI requests
 	* We've found "be concise" to be very helpful, feel free to play around with it!
 
-***Tip**: Haiku model is the cheapest for us to run, but you can also try sonnet (commented out in the settings block below). It's is slower and more expensive for us, but more accurate.*
+***Tip**: Haiku model is the cheapest for us to run, but you can also try sonnet (commented out in the settings block below). It is slower and more expensive for us, but more accurate.*

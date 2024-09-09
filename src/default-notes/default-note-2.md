@@ -24,7 +24,7 @@ This onboarding guide is designed to be interactive. As you go through the note,
 - Raw links https://shelv.app
 	* [ ] click on the link
 - Markdown [links](https://shelv.app)
-- **bold**, *italic*, ~strikethrough~
+- **bold**, *italic*, ~strike-through~
 
 
 ## Keyboard Shortcuts
@@ -36,7 +36,7 @@ This onboarding guide is designed to be interactive. As you go through the note,
 - [ ] Select TEXT and press `⌘ + b`,
 - [ ] **Put your cursor ‸ there** and press `⌘ + b`
 
-- [ ] Repeat but with `⌘ + i` (italic) and `⌘ + ⇧ + e` (strikethrough)
+- [ ] Repeat but with `⌘ + i` (italic) and `⌘ + ⇧ + e` (strike-through)
 
 - [ ] We will cover this later on note 3, but for completeness
 	* Select `1 + 1` and press `⌘ + ⌥ + b`

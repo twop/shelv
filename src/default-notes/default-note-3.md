@@ -18,7 +18,7 @@
 What is the meaning of life? Answer ONLY as a single number
 ```
 
-- [ ] Change `number` to `word` for the promp, and re-run by pressing `⌘ + ⏎`, and the output block will refresh!
+- [ ] Change `number` to `word` for the prompt, and re-run by pressing `⌘ + ⏎`, and the output block will refresh!
 
 
 ## Codeblocks that compute
@@ -39,7 +39,7 @@ AI blocks will have the rest of the note above it as context, enabling use cases
 - `Re-write without markdown`
 - `Give a summary`
 
-Tip: AI blocks in a note essentially form a conversations, and content between each block is additional context (just like a traditional chat!)
+Tip: AI blocks in a note essentially form a conversation, and content between each block is additional context (just like a traditional chat!)
 
 ```ai
 Give me a concise summary of the above.
