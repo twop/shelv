@@ -4,17 +4,18 @@
 
 ## Questions for *you*
 
-- Tell us about your experience so far using Shelv
+Tell us about your experience so far using Shelv
+Answer:
 
-- Do you plan on using Shelv in the future
-	* [ ] Yes
-	* [ ] No
+What do you use now for your note taking? Do you use a different app for temporary notes?
+Answer:
 
-- How can we contact you (*optional*)
-	* Name: 
-	* Email:
-	* Are you willing to participate in an interview with the team:
-		* [ ] Yes
-		* [ ] No
+How can we contact you (*optional*)?
+Name:
+Email:
 
-- [ ] Submit feedback by pressing bug icon!
+Are you willing to participate in an interview with the team:
+- [ ] Yes
+- [ ] No
+
+**Submit feedback** by pressing the bug icon!

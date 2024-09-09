@@ -33,28 +33,11 @@ This onboarding guide is designed to be interactive. As you go through the note,
 
 - [ ] Also try doing it again to toggle heading
 
-- [ ] Select TEXT and press `⌘ + b`, 
-- [ ] **this is| bold** `⌘ + b`
+- [ ] Select TEXT and press `⌘ + b`,
+- [ ] **Put your cursor ‸ there** and press `⌘ + b`
 
-- [ ] Repeat but with `⌘ + i` and `⌘ + ⇧ + e`
+- [ ] Repeat but with `⌘ + i` (italic) and `⌘ + ⇧ + e` (strikethrough)
 
 - [ ] We will cover this later on note 3, but for completeness
 	* Select `1 + 1` and press `⌘ + ⌥ + b`
 	* [ ] And press again with the cursor inside the block
-- `Give a summary`
-
-Tip: AI blocks in a note essentially form a conversations, and content between each block is additional context (just like a traditional chat!)
-
-```ai
-Give me a concise summary of the above.
-```
-
-- [ ] **Try running the above AI block**
-
-Code blocks can reference the variables and functions defined in earlier blocks!
-
-- [ ] Reference our `hi` function from before `hi("awesome user of Shelv")` inside the block below
-
-```js
-
-```

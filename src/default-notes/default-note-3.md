@@ -28,7 +28,7 @@ In Shelv, `js` codeblocks have special functionality - they compute their output
 - [ ] **Execute the code below** by specifying `js` (to make ```js) as the language.
 
 ```
-const hi(name) = () => "hello " + name + "!"
+const hi = (name) => "hello " + name + "!"
 hi("universe")
 ```
 
