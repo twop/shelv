@@ -226,6 +226,20 @@ fn render_editor(
 ) {
     let mut structure_wrapper = Some(text_structure);
 
+    let estimated_text_pos = ui.next_widget_position();
+
+    let code_bg = ui.visuals().code_bg_color;
+    let code_bg_rounding = ui.visuals().widgets.inactive.rounding;
+    if let Some(computed_layout) = &computed_layout {
+        for &area in computed_layout.code_areas.iter() {
+            ui.painter().rect_filled(
+                area.shrink(0.5).translate(estimated_text_pos.to_vec2()),
+                code_bg_rounding,
+                code_bg,
+            );
+        }
+    }
+
     let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
         let layout_cache_params = LayoutParams::new(text, wrap_width);
 
@@ -235,8 +249,8 @@ fn render_editor(
             _ => {
                 let structure = structure_wrapper.take().unwrap().recycle(text);
 
-                // println!("### updated structure {structure:#?}");
-                // println!("### rerender with {text}");
+                // println!("### updated structure w={avail_w} {layout_cache_params:#?}");
+                //println!("### rerender with {text}");
                 let layout = ComputedLayout::compute(
                     &structure,
                     &layout_cache_params,
@@ -554,13 +568,13 @@ fn render_header_panel(
                     for item in [
                         (
                             &AppIcon::Twitter,
-                            "tweet us @shelvdotapp",
+                            "Tweet us @shelvdotapp",
                             "https://twitter.com/shelvdotapp",
                         ),
-                        (&AppIcon::Discord, "join our discrod", "https://shelv.app"),
+                        (&AppIcon::Discord, "Join our Discord", "https://discord.gg/sSGHwNKy"),
                         (
                             &AppIcon::HomeSite,
-                            "visit https://shelv.app",
+                            "Visit https://shelv.app",
                             "https://shelv.app",
                         ),
                         // (

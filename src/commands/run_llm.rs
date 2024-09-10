@@ -12,7 +12,9 @@ use crate::{
 };
 
 pub fn run_llm_block(CommandContext { app_state }: CommandContext) -> Option<EditorCommandOutput> {
-    const LLM_LANG: &str = "llm";
+    const LLM_LANG: &str = "ai";
+    const LLM_LANG_OLD: &str = "llm";
+
     let text_command_context = try_extract_text_command_context(app_state)?;
 
     let TextCommandContext {
@@ -24,7 +26,7 @@ pub fn run_llm_block(CommandContext { app_state }: CommandContext) -> Option<Edi
     // Check if we are in an LLM code block
     let llm_blocks: SmallVec<[(SpanIndex, &SpanDesc, CodeBlockKind); 6]> = text_structure
         .filter_map_codeblocks(|lang| match lang {
-            LLM_LANG => Some(CodeBlockKind::Source),
+            LLM_LANG | LLM_LANG_OLD => Some(CodeBlockKind::Source),
 
             output if output.starts_with(LLM_LANG) => {
                 let hex_str = &output[LLM_LANG.len()..];
@@ -52,7 +54,7 @@ pub fn run_llm_block(CommandContext { app_state }: CommandContext) -> Option<Edi
     let source_hash = SourceHash::from(question_body);
 
     // Create a new code block for llm output
-    let address = format!("llm#{}", source_hash.to_string());
+    let address = format!("{LLM_LANG}#{}", source_hash.to_string());
 
     // check the next block
     let (replacemen_pos, output_block) = match llm_blocks.get(index_in_array + 1) {

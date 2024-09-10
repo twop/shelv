@@ -124,9 +124,12 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
         {
             notes.push(note_content.to_string());
         } else {
-            notes.push(get_default_note_content(index).to_string());
+            notes.push(get_default_note_content(searched_note_file).to_string());
             println!("try_hydrate: detected missing {searched_note_file:?}");
-            missing_notes.push((searched_note_file, get_default_note_content(index)))
+            missing_notes.push((
+                searched_note_file,
+                get_default_note_content(searched_note_file),
+            ))
         }
     }
 
@@ -231,8 +234,10 @@ pub fn fn_migrate_from_v1<'s>(
             .iter()
             .enumerate()
             .map(|(index, note)| (NoteFile::Note(index as u32), note.as_ref()))
-            // TODO settings default content
-            .chain([(NoteFile::Settings, "")])
+            .chain([(
+                NoteFile::Settings,
+                get_default_note_content(NoteFile::Settings),
+            )])
             .collect(),
         selected,
     };
@@ -244,8 +249,7 @@ pub fn fn_migrate_from_v1<'s>(
             selected,
         },
         notes: old_state.notes.iter().map(|s| s.to_string()).collect(),
-        // TODO settings note
-        settings: "".to_string(),
+        settings: get_default_note_content(NoteFile::Settings).to_string(),
     };
 
     (to_save, restored_data)
@@ -254,22 +258,15 @@ pub fn fn_migrate_from_v1<'s>(
 pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
     let selected = NoteFile::Note(0);
     let to_save = DataToSave {
-        // TODO fill out welcome notes
         files: (0..number_of_notes)
             .into_iter()
-            .map(|index| {
-                (
-                    NoteFile::Note(index as u32),
-                    get_default_note_content(index),
-                )
-            })
-            // TODO settings note
-            .chain([(NoteFile::Settings, "")])
+            .map(|index| NoteFile::Note(index as u32))
+            .chain([NoteFile::Settings])
+            .map(|file| (file, get_default_note_content(file)))
             .collect(),
         selected,
     };
 
-    // TODO fill out welcome notes
     let restored_data = RestoredData {
         state: SaveState {
             version: CURRENT_VERSION,
@@ -278,18 +275,24 @@ pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
         },
         notes: (0..number_of_notes)
             .into_iter()
-            .map(get_default_note_content)
+            .map(|i| get_default_note_content(NoteFile::Note(i)))
             .map(|s| s.to_string())
             .collect(),
-        // TODO settings note
-        settings: "".to_string(),
+        settings: get_default_note_content(NoteFile::Settings).to_string(),
     };
 
     (to_save, restored_data)
 }
 
-fn get_default_note_content(note_index: u32) -> &'static str {
-    ""
+fn get_default_note_content(note: NoteFile) -> &'static str {
+    match note {
+        NoteFile::Settings => include_str!("./default-notes/default-settings.md"),
+        NoteFile::Note(0) => include_str!("./default-notes/default-note-1.md"),
+        NoteFile::Note(1) => include_str!("./default-notes/default-note-2.md"),
+        NoteFile::Note(2) => include_str!("./default-notes/default-note-3.md"),
+        NoteFile::Note(3) => include_str!("./default-notes/default-note-4.md"),
+        _ => "",
+    }
 }
 
 // ---------------------- older versions --------------

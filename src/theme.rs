@@ -273,7 +273,8 @@ impl ColorTheme {
         let extreme_bg_color = Nord::NORD0.shade(0.6);
 
         // Background color behind code-styled monospaced labels.
-        let code_bg_color = Nord::NORD0.shade(0.6);
+        // let code_bg_color = Nord::NORD0.shade(0.6);
+        let code_bg_color = Color32::from_black_alpha(45);
 
         // A good color for warning text (e.g. orange).
         let warn_fg_color = Nord::NORD12;
@@ -359,6 +360,10 @@ pub fn get_font_definitions() -> FontDefinitions {
         egui::FontData::from_static(include_bytes!("../assets/Inter-SemiBoldItalic.otf")),
     );
 
+    fonts.font_data.insert("commit-mono".to_owned(), 
+    egui::FontData::from_static(include_bytes!("../assets/CommitMonoNerdFontMono-Regular.otf")),
+);
+
     // Put my font first (highest priority) for proportional text:
     fonts
         .families
@@ -371,7 +376,7 @@ pub fn get_font_definitions() -> FontDefinitions {
         .families
         .entry(egui::FontFamily::Monospace)
         .or_default()
-        .push("inter".to_owned());
+        .push("commit-mono".to_owned());
 
     fonts
         .families
