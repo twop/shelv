@@ -114,7 +114,7 @@ impl MyApp<RealAppIO> {
             println!("tray event: {:?}", ev);
         }));
         let tray_image = image::load_from_memory_with_format(
-            include_bytes!("../assets/tray-icon.png",),
+            include_bytes!("../assets/tray-icon-macos-template.png",),
             ImageFormat::Png,
         )
         .unwrap();
@@ -135,6 +135,8 @@ impl MyApp<RealAppIO> {
             .with_icon(Icon::from_rgba(tray_image.into_bytes(), 64, 64).unwrap())
             .with_menu(Box::new(tray_menu))
             .with_menu_on_left_click(false)
+            // TODO macOS
+            .with_icon_as_template(true)
             .build()
             .unwrap();
 
