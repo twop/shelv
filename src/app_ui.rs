@@ -7,7 +7,7 @@ use eframe::{
         TopBottomPanel, Ui, Window,
     },
     emath::{Align, Align2},
-    epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
+    epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
 };
 use pulldown_cmark::CowStr;
 // use itertools::Itertools;
@@ -414,7 +414,7 @@ fn render_footer_panel(
                         pressed_color: theme.colors.button_pressed_fg,
                         selected_stroke_color: theme.colors.button_fg,
                         selected_fill_color: theme.colors.button_bg,
-                        outline: Stroke::new(1.0, theme.colors.outline_fg),
+                        outline: PathStroke::new(1.0, theme.colors.outline_fg),
                         tooltip_text_color: theme.colors.subtle_text_color,
                     };
 
@@ -537,30 +537,22 @@ fn render_header_panel(
                         resulting_actions
                             .push(AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility))
                     }
-                });
 
-                // println!("before title {:?}", ui.available_size());
+                    ui.add_space(theme.sizes.m);
 
-                ui.scope(|ui| {
-                    ui.set_width(avail_width - 2. * icon_block_width);
-                    ui.with_layout(
-                        Layout::centered_and_justified(egui::Direction::LeftToRight),
-                        |ui| {
-                            ui.label(
-                                RichText::new(format!(
-                                    "Shelv - {}",
-                                    match selected_note {
-                                        NoteFile::Note(index) => format!("note {}", index + 1),
-                                        NoteFile::Settings => "settings".to_string(),
-                                    }
-                                ))
-                                .color(theme.colors.subtle_text_color)
-                                .font(FontId {
-                                    size: theme.fonts.size.normal,
-                                    family: theme.fonts.family.bold.clone(),
-                                }),
-                            );
-                        },
+                    ui.label(
+                        RichText::new(format!(
+                            "Shelv - {}",
+                            match selected_note {
+                                NoteFile::Note(index) => format!("note {}", index + 1),
+                                NoteFile::Settings => "settings".to_string(),
+                            }
+                        ))
+                        .color(theme.colors.subtle_text_color)
+                        .font(FontId {
+                            size: theme.fonts.size.normal,
+                            family: theme.fonts.family.bold.clone(),
+                        }),
                     );
                 });
 
@@ -571,7 +563,11 @@ fn render_header_panel(
                             "Tweet us @shelvdotapp",
                             "https://twitter.com/shelvdotapp",
                         ),
-                        (&AppIcon::Discord, "Join our Discord", "https://discord.gg/sSGHwNKy"),
+                        (
+                            &AppIcon::Discord,
+                            "Join our Discord",
+                            "https://discord.gg/sSGHwNKy",
+                        ),
                         (
                             &AppIcon::HomeSite,
                             "Visit https://shelv.app",
@@ -623,6 +619,33 @@ fn render_header_panel(
                     );
                     ui.add_space(theme.sizes.s);
 
+                    let tutorial_tooltip = r#"Start tutorial"#;
+
+                    if ui
+                        .button(
+                            AppIcon::Tutorial
+                                .render(sizes.toolbar_icon, theme.colors.subtle_text_color),
+                        )
+                        .on_hover_ui(|ui| {
+                            ui.label(
+                                RichText::new(tutorial_tooltip)
+                                    .color(theme.colors.subtle_text_color),
+                            );
+                        })
+                        .clicked()
+                    {
+                        resulting_actions.push(AppAction::StartTutorial);
+                    }
+
+                    ui.add_space(theme.sizes.s);
+
+                    ui.label(
+                        AppIcon::VerticalSeparator
+                            .render(sizes.toolbar_icon, theme.colors.outline_fg),
+                    );
+
+                    ui.add_space(theme.sizes.s);
+
                     let resp = ui
                         .button(AppIcon::Pin.render(
                             sizes.toolbar_icon,
@@ -634,9 +657,9 @@ fn render_header_panel(
                         ))
                         .on_hover_ui(|ui| {
                             let tooltip_text = if is_window_pinned {
-                                "unpin window"
+                                "Unpin window"
                             } else {
-                                "pin window"
+                                "Pin window"
                             };
 
                             let tooltip_text = command_list

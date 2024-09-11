@@ -2,11 +2,13 @@ use std::{io, path::PathBuf};
 
 use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
 
+use smallvec::{smallvec, SmallVec};
+
 use crate::{
     app_state::{AppState, MsgToApp, UnsavedChange},
     byte_span::{ByteSpan, UnOrderedByteSpan},
     effects::text_change_effect::{apply_text_changes, TextChange},
-    persistent_state::NoteFile,
+    persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
     settings::SettingsNoteEvalContext,
     text_structure::{SpanKind, SpanMeta, TextStructure},
@@ -31,6 +33,7 @@ pub enum AppAction {
     EvalNote(NoteFile),
     AskLLM(LLMRequest),
     SendFeedback(NoteFile),
+    StartTutorial,
 }
 
 impl AppAction {
@@ -92,7 +95,7 @@ pub fn process_app_action(
     state: &mut AppState,
     text_edit_id: Id,
     app_io: &mut impl AppIO,
-) -> Option<AppAction> {
+) -> SmallVec<[AppAction; 1]> {
     match action {
         AppAction::SwitchToNote {
             note_file,
@@ -134,17 +137,17 @@ pub fn process_app_action(
                 };
             }
 
-            None
+            SmallVec::new()
         }
 
         AppAction::OpenLink(url) => {
             ctx.open_url(OpenUrl::new_tab(url));
-            None
+            SmallVec::new()
         }
 
         AppAction::SetWindowPinned(is_pinned) => {
             state.is_pinned = is_pinned;
-            None
+            SmallVec::new()
         }
 
         AppAction::ApplyTextChanges {
@@ -156,18 +159,24 @@ pub fn process_app_action(
             let text = &mut note.text;
             let cursor = note.cursor;
 
-            if let Ok(updated_cursor) = apply_text_changes(text, cursor, changes) {
-                if note_file == state.selected_note {
-                    // if the changes are for the selected note we need to recompute TextStructure
-                    state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
+            let next_action = match apply_text_changes(text, cursor, changes) {
+                Ok(updated_cursor) => {
+                    if note_file == state.selected_note {
+                        // if the changes are for the selected note we need to recompute TextStructure
+                        state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
+                    }
+
+                    note.cursor = updated_cursor;
+
+                    state.add_unsaved_change(UnsavedChange::NoteContentChanged(note_file));
+                    should_trigger_eval.then(|| AppAction::EvalNote(note_file))
                 }
+                Err(_) => None,
+            };
 
-                note.cursor = updated_cursor;
-
-                state.add_unsaved_change(UnsavedChange::NoteContentChanged(note_file));
-                should_trigger_eval.then(|| AppAction::EvalNote(note_file))
-            } else {
-                None
+            match next_action {
+                Some(a) => [a].into(),
+                None => SmallVec::new(),
             }
         }
 
@@ -186,7 +195,7 @@ pub fn process_app_action(
                         println!("Toggle visibility: show + focus");
                     }
 
-                    None
+                    SmallVec::new()
                 }
 
                 MsgToApp::NoteFileChanged(note_file, path) => {
@@ -206,23 +215,24 @@ pub fn process_app_action(
                                 state.add_unsaved_change(UnsavedChange::LastUpdated);
                             }
 
-                            Some(AppAction::EvalNote(note_file))
+                            [AppAction::EvalNote(note_file)].into()
                         }
                         Ok(None) => {
                             // no updates needed we already have the newest version
-                            None
+                            SmallVec::new()
                         }
                         Err(err) => {
                             // failed to read note file
                             println!("failed to read {path:#?}, err={err:#?}");
-                            None
+                            SmallVec::new()
                         }
                     }
                 }
 
                 MsgToApp::GlobalHotkey(hotkey_id) => app_io
                     .try_map_hotkey(hotkey_id)
-                    .map(AppAction::HandleMsgToApp),
+                    .map(|msg| [AppAction::HandleMsgToApp(msg)].into())
+                    .unwrap_or_default(),
 
                 MsgToApp::LLMResponseChunk(resp) => {
                     // TODO(simon): this entire code is VERY ugly, and deserves to be better
@@ -271,19 +281,24 @@ pub fn process_app_action(
                         chunk = chunk.replace("```", "-```");
                     }
 
-                    insertion_pos.map(|insert_mode| AppAction::ApplyTextChanges {
-                        target: resp.note_id,
-                        changes: [match insert_mode {
-                            InsertMode::Initial { pos } => {
-                                TextChange::Replace(ByteSpan::point(pos), chunk + "\n")
-                            }
-                            InsertMode::Subsequent { pos } => {
-                                TextChange::Replace(ByteSpan::point(pos), chunk)
-                            }
-                        }]
-                        .into(),
-                        should_trigger_eval: false,
-                    })
+                    insertion_pos
+                        .map(|insert_mode| {
+                            [AppAction::ApplyTextChanges {
+                                target: resp.note_id,
+                                changes: [match insert_mode {
+                                    InsertMode::Initial { pos } => {
+                                        TextChange::Replace(ByteSpan::point(pos), chunk + "\n")
+                                    }
+                                    InsertMode::Subsequent { pos } => {
+                                        TextChange::Replace(ByteSpan::point(pos), chunk)
+                                    }
+                                }]
+                                .into(),
+                                should_trigger_eval: false,
+                            }]
+                            .into()
+                        })
+                        .unwrap_or_default()
                 }
             }
         }
@@ -319,19 +334,24 @@ pub fn process_app_action(
                 state.text_structure = Some(text_structure);
             }
 
-            requested_changes.map(|changes| AppAction::ApplyTextChanges {
-                target: note_file,
-                changes,
-                should_trigger_eval: false,
-            })
+            requested_changes
+                .map(|changes| AppAction::ApplyTextChanges {
+                    target: note_file,
+                    changes,
+                    should_trigger_eval: false,
+                })
+                .map(|a| [a].into())
+                .unwrap_or_default()
         }
 
         AppAction::AskLLM(question) => {
             app_io.ask_llm(question);
-            None
+            SmallVec::new()
         }
         AppAction::SendFeedback(selected) => {
-            let note = state.notes.get(&selected)?;
+            let Some(note) = state.notes.get(&selected) else {
+                return SmallVec::new();
+            };
 
             if selected == state.selected_note {
                 sentry::configure_scope(|scope| {
@@ -355,7 +375,7 @@ pub fn process_app_action(
 
                 println!("Feedback sent: {:?}", result);
 
-                Some(AppAction::ApplyTextChanges {
+                [AppAction::ApplyTextChanges {
                     target: selected,
                     changes: vec![TextChange::Replace(
                         ByteSpan::point(note.text.len()),
@@ -367,10 +387,46 @@ pub fn process_app_action(
                         ),
                     )],
                     should_trigger_eval: false,
-                })
+                }]
+                .into()
             } else {
-                None
+                SmallVec::new()
             }
+        }
+
+        AppAction::StartTutorial => {
+            // Plan:
+            // append "default" notes to the existing notes
+            // if a note is empty, just insert as is
+            // if there was a conent, insert it in the begining of the note but also add a separator
+            // "----END of tutorial----"
+
+            let actions_iter = state
+                .notes
+                .iter()
+                .map(|(&id, note)| (id, note.text.trim().is_empty()))
+                .filter_map(|(id, is_empty)| match get_tutorial_note_content(id) {
+                    "" => None,
+                    tutorial_conent => {
+                        let to_insert = match is_empty {
+                            true => format!("{cursor}{tutorial_conent}", cursor=TextChange::CURSOR),
+                            false => {
+                                format!("{cursor}{tutorial_conent}\n\n-------end of tutorial-------\n\n", cursor=TextChange::CURSOR)
+                            }
+                        };
+                        Some((id, TextChange::Replace(ByteSpan::point(0), to_insert)))
+                    }
+                })
+                .map(|(target, change)| AppAction::ApplyTextChanges {
+                    target,
+                    changes: [change].into(),
+                    should_trigger_eval: false,
+                });
+
+            SmallVec::from_iter(actions_iter.chain([AppAction::SwitchToNote {
+                note_file: NoteFile::Note(0),
+                via_shortcut: true,
+            }]))
         }
     }
 }

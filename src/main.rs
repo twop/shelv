@@ -255,11 +255,13 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
         // now apply prepared changes, and update text structure and cursor appropriately
         for action in action_list {
-            let mut next_action = Some(action);
+            let mut action_buffer: SmallVec<[AppAction; 4]> = SmallVec::from_iter([action]);
 
-            while let Some(to_proccess) = next_action.take() {
-                next_action =
-                    process_app_action(to_proccess, ctx, app_state, text_edit_id, &mut self.app_io);
+            while let Some(to_process) = action_buffer.pop() {
+                let new_actions =
+                    process_app_action(to_process, ctx, app_state, text_edit_id, &mut self.app_io);
+
+                action_buffer.extend(new_actions);
             }
         }
 
@@ -339,11 +341,12 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
         // post render processing
         for action in actions {
-            let mut next_action = Some(action);
+            let mut action_buffer: SmallVec<[AppAction; 4]> = SmallVec::from_iter([action]);
 
-            while let Some(to_proccess) = next_action.take() {
-                next_action =
+            while let Some(to_proccess) = action_buffer.pop() {
+                let new_actions =
                     process_app_action(to_proccess, ctx, app_state, text_edit_id, &mut self.app_io);
+                action_buffer.extend(new_actions);
             }
         }
     }
@@ -434,5 +437,10 @@ fn main() {
         ..Default::default()
     };
 
-    eframe::run_native("Shelv", options, Box::new(|cc| Box::new(MyApp::new(cc)))).unwrap();
+    eframe::run_native(
+        "Shelv",
+        options,
+        Box::new(|cc| Ok(Box::new(MyApp::new(cc)))),
+    )
+    .unwrap();
 }

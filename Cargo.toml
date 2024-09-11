@@ -24,12 +24,12 @@ description = "Note taking app optimized for capturing phase."
 #   "svg",
 # ] }
 
-eframe = { version = "0.27.2", default-features = false, features = [
+eframe = { version = "0.28.1", default-features = false, features = [
     "wgpu",
     "persistence",
     "ron",
 ] }
-egui_extras = { version = "0.27.2", features = ["svg"] }
+egui_extras = { version = "0.28.1", features = ["svg"] }
 serde = { version = "1.0.197", features = ["derive"] }
 ron = "0.8"
 global-hotkey = "0.5.3"
@@ -40,7 +40,7 @@ syntect = { version = "5.0.0", default-features = false, features = [
 ] }
 smallvec = "1.10.0"
 tray-icon = "0.14.0"
-egui-phosphor = { version = "0.5.0", features = ["light"] }
+egui-phosphor = { version = "0.6.0", features = ["light"] }
 # tray-item = "0.7.1"
 winit = "0.29.15"
 linkify = "0.10.0"
@@ -72,5 +72,3 @@ short_description = "Hackable playground for ephemeral thoughts."
 long_description = """
 Hackable playground for ephemeral thoughts.
 """
-
-
