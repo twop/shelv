@@ -3,8 +3,8 @@ use eframe::{
         self,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Context, FontFamily, Id, KeyboardShortcut, Layout, Painter, RichText, Sense,
-        TopBottomPanel, Ui, Window,
+        Context, FontFamily, Id, KeyboardShortcut, LayerId, Layout, Painter, RichText, Sense,
+        TopBottomPanel, Ui, Vec2, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
@@ -230,15 +230,55 @@ fn render_editor(
 
     let code_bg = ui.visuals().code_bg_color;
     let code_bg_rounding = ui.visuals().widgets.inactive.rounding;
-    if let Some(computed_layout) = &computed_layout {
-        for &area in computed_layout.code_areas.iter() {
-            ui.painter().rect_filled(
-                area.shrink(0.5).translate(estimated_text_pos.to_vec2()),
-                code_bg_rounding,
-                code_bg,
-            );
-        }
-    }
+    ui.with_layer_id(
+        // LayerId::new(ui.de, Id::new("buttons_overlay")),
+        LayerId::debug(),
+        |ui| {
+            if let Some(computed_layout) = &computed_layout {
+                for &area in computed_layout.code_areas.iter() {
+                    let code_area = area.translate(estimated_text_pos.to_vec2());
+                    ui.painter()
+                        .rect_filled(code_area.shrink(0.5), code_bg_rounding, code_bg);
+
+                    {
+                        let mut ui = ui.child_ui(
+                            code_area.translate(Vec2::new(-theme.sizes.xs, theme.sizes.xs)),
+                            Layout::right_to_left(Align::TOP),
+                        );
+                        let share_btn = ui
+                            .button(
+                                AppIcon::Play
+                                    .render(theme.sizes.toolbar_icon, theme.colors.button_fg),
+                            )
+                            .on_hover_ui(|ui| {
+                                ui.label(
+                                    RichText::new("Execute code block (⌘ + Enter).")
+                                        .color(theme.colors.subtle_text_color),
+                                );
+                            });
+
+                        if share_btn.clicked() {
+                            println!("clicked on shared");
+                            // actions.push(AppAction::SendFeedback(selected));
+                        }
+                    }
+                }
+            }
+        },
+    );
+
+    // if let Some(computed_layout) = &computed_layout {
+    //     for &area in computed_layout.code_areas.iter() {
+    //         let button_size = vec2(40.0, 20.0);
+    //         let button_pos = area.right_top() + vec2(-button_size.x - 5.0, 5.0);
+    //         let button_rect = Rect::from_min_size(button_pos, button_size);
+
+    //         if ui.put(button_rect, egui::Button::new("run")).clicked() {
+    //             // Handle button click here
+    //             println!("Run button clicked for code block");
+    //         }
+    //     }
+    // }
 
     let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
         let layout_cache_params = LayoutParams::new(text, wrap_width);
@@ -571,7 +611,11 @@ fn render_header_panel(
                             "Tweet us @shelvdotapp",
                             "https://twitter.com/shelvdotapp",
                         ),
-                        (&AppIcon::Discord, "Join our Discord", "https://discord.gg/sSGHwNKy"),
+                        (
+                            &AppIcon::Discord,
+                            "Join our Discord",
+                            "https://discord.gg/sSGHwNKy",
+                        ),
                         (
                             &AppIcon::HomeSite,
                             "Visit https://shelv.app",
