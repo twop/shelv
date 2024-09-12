@@ -11,7 +11,7 @@ use crate::{
     app_state::MsgToApp,
     command::{
         map_text_command_to_command_handler, BuiltInCommand, CommandList, EditorCommand,
-        TextCommandContext,
+        TextCommandContext, PROMOTED_COMMANDS,
     },
     effects::text_change_effect::TextChange,
     scripting::{execute_code_blocks, BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
@@ -32,20 +32,20 @@ struct TopLevelKdlSettings {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum ReplaceTextTarget {
+enum InsertTextTarget {
     Selection,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct ReplaceText {
-    target: ReplaceTextTarget,
-    with: String,
+struct InsertText {
+    target: InsertTextTarget,
+    text: String,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
     Predefined(BuiltInCommand),
-    ReplaceText(ReplaceText),
+    InsertText(InsertText),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -124,7 +124,7 @@ fn parse_keyboard_shortcut(attr: &str) -> Result<KeyboardShortcut, String> {
 
 fn parse_command(node: &KdlNode) -> Result<Command, SettingsParseError> {
     match node.name().value() {
-        "ReplaceText" => parse_replace_text_command(node).map(Command::ReplaceText),
+        "InsertText" => parse_replace_text_command(node).map(Command::InsertText),
         name => match try_parse_builtin_command(name, node.entries()) {
             Some(cmd) => Ok(Command::Predefined(cmd)),
             None => Err(SettingsParseError::UnknownCommand(node.name().to_string())),
@@ -169,7 +169,7 @@ fn parse_global_command(node: &KdlNode) -> Result<GlobalCommand, SettingsParseEr
     }
 }
 
-fn parse_replace_text_command(node: &KdlNode) -> Result<ReplaceText, SettingsParseError> {
+fn parse_replace_text_command(node: &KdlNode) -> Result<InsertText, SettingsParseError> {
     use SettingsParseError as PE;
     if node.entries().len() > 0 {
         Err(PE::MismatchedArgsCount(node.span().clone(), 0))
@@ -177,11 +177,11 @@ fn parse_replace_text_command(node: &KdlNode) -> Result<ReplaceText, SettingsPar
         let children = node.children().ok_or_else(|| {
             PE::MismatchedChildren(
                 node.span().clone(),
-                r#"ReplaceText needs to have 'target' and 'with' nodes
+                r#"InsertText needs to have 'target' and 'text' nodes
 For example:
-ReplaceText {
+InsertText {
     target "selection"
-    with "this is before {{selection}} and this is after"
+    text "this is before {{selection}} and this is after"
 }
 "#
                 .to_string(),
@@ -196,19 +196,19 @@ ReplaceText {
             })
             .and_then(parse_replace_text_target)?;
 
-        let with = children
-            .get("with")
+        let text = children
+            .get("text")
             .ok_or_else(|| PE::MissingNode {
                 span: children.span().clone(),
-                node: "with".to_string(),
+                node: "text".to_string(),
             })
             .and_then(parse_replace_text_with)?;
 
-        Ok(ReplaceText { target, with })
+        Ok(InsertText { target, text })
     }
 }
 
-fn parse_replace_text_target(target: &KdlNode) -> Result<ReplaceTextTarget, SettingsParseError> {
+fn parse_replace_text_target(target: &KdlNode) -> Result<InsertTextTarget, SettingsParseError> {
     use SettingsParseError as PE;
 
     if target.entries().len() != 1 {
@@ -238,7 +238,7 @@ fn parse_replace_text_target(target: &KdlNode) -> Result<ReplaceTextTarget, Sett
         ));
     }
 
-    Ok(ReplaceTextTarget::Selection)
+    Ok(InsertTextTarget::Selection)
 }
 
 fn parse_replace_text_with(node: &KdlNode) -> Result<String, SettingsParseError> {
@@ -418,62 +418,104 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
     fn eval_block(&mut self, body: &str, hash: SourceHash) -> BlockEvalResult {
         let result = parse_top_level(body);
 
-        let mut body = match &result {
-            Ok(res) => format!("applied"),
-            // Ok(res) => format!("Applied at {:#?}", Instant::now()),
-            Err(err) => format!("error: {:#?}", err),
-        };
-
         // TODO report if applying bindings failed
 
-        if let Ok(mut settings) = result {
-            for GlobalBinding { shortcut, command } in settings.global_bindings {
-                println!("applying global {shortcut:?} to {command:?}");
-                match command {
-                    GlobalCommand::ShowHideApp => {
-                        match self
-                            .app_io
-                            .bind_global_hotkey(shortcut, Box::new(|| MsgToApp::ToggleVisibility))
-                        {
-                            Ok(_) => {
-                                println!("registered global {shortcut:?} to show/hide Shelv");
-                            }
+        match result {
+            Ok(mut settings) => {
+                let has_any_bindings =
+                    !(settings.global_bindings.is_empty() && settings.bindings.is_empty());
 
-                            Err(err) => {
-                                println!("error registering global {shortcut:?} to show/hide Shelv, err = {err:?}");
-                                body = err;
+                for GlobalBinding { shortcut, command } in settings.global_bindings.iter() {
+                    println!("applying global {shortcut:?} to {command:?}");
+                    match command {
+                        GlobalCommand::ShowHideApp => {
+                            match self.app_io.bind_global_hotkey(
+                                *shortcut,
+                                Box::new(|| MsgToApp::ToggleVisibility),
+                            ) {
+                                Ok(_) => {
+                                    println!("registered global {shortcut:?} to show/hide Shelv");
+                                }
+
+                                Err(err) => {
+                                    println!("error registering global {shortcut:?} to show/hide Shelv, err = {err:?}");
+
+                                    return BlockEvalResult {
+                                        body: format!("error: {:#?}", err),
+                                        output_lang: format!("settings#{}", hash.to_string()),
+                                    };
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            for Binding { shortcut, command } in settings.bindings {
-                println!("applying {shortcut:?} to {command:?}");
-                match command {
-                    Command::Predefined(kind) => {
-                        self.cmd_list
-                            .set_or_replace_builtin_shortcut(shortcut, kind);
+                for Binding { shortcut, command } in settings.bindings {
+                    println!("applying {shortcut:?} to {command:?}");
+                    match command {
+                        Command::Predefined(kind) => {
+                            self.cmd_list
+                                .set_or_replace_builtin_shortcut(shortcut, kind);
+                        }
+
+                        Command::InsertText(cmd) => self.cmd_list.add(EditorCommand::user_defined(
+                            // "replace text", // TODO figure out the name
+                            shortcut,
+                            map_text_command_to_command_handler(move |ctx| {
+                                run_replace_text_cmd(ctx, &cmd)
+                            }),
+                        )),
                     }
+                }
 
-                    Command::ReplaceText(cmd) => self.cmd_list.add(EditorCommand::user_defined(
-                        // "replace text", // TODO figure out the name
-                        shortcut,
-                        map_text_command_to_command_handler(move |ctx| {
-                            run_replace_text_cmd(ctx, &cmd)
-                        }),
-                    )),
+                if let Some(last_llm_settings) = settings.llm_settings.pop() {
+                    *self.llm_settings = Some(last_llm_settings);
+                }
+
+                let body = match has_any_bindings {
+                    true => {
+                        let mut body = "applied\n\nEffective bindings after the block:".to_string();
+                        for (binding_name, shortcut) in
+                            settings.global_bindings.into_iter().map(|binding| {
+                                match binding.command {
+                                    GlobalCommand::ShowHideApp => ("ShowHideApp", binding.shortcut),
+                                }
+                            })
+                        {
+                            body.push_str(&format!(
+                                "\n{} -> {}",
+                                binding_name,
+                                format_mac_shortcut(shortcut)
+                            ));
+                        }
+
+                        for (promoted_cmd, shortcut) in
+                            PROMOTED_COMMANDS.into_iter().filter_map(|cmd| {
+                                self.cmd_list
+                                    .find(cmd)
+                                    .and_then(|editor_cmd| editor_cmd.kind.zip(editor_cmd.shortcut))
+                            })
+                        {
+                            body.push_str(&format!(
+                                "\n{} -> {}",
+                                promoted_cmd.name(),
+                                format_mac_shortcut(shortcut)
+                            ));
+                        }
+                        body
+                    }
+                    false => format!("applied"),
+                };
+
+                BlockEvalResult {
+                    body,
+                    output_lang: format!("settings#{}", hash.to_string()),
                 }
             }
-
-            if let Some(last_llm_settings) = settings.llm_settings.pop() {
-                *self.llm_settings = Some(last_llm_settings);
-            }
-        }
-
-        BlockEvalResult {
-            body,
-            output_lang: format!("settings#{}", hash.to_string()),
+            Err(err) => BlockEvalResult {
+                body: format!("error: {:#?}", err),
+                output_lang: format!("settings#{}", hash.to_string()),
+            },
         }
     }
 
@@ -484,24 +526,22 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
 
 fn run_replace_text_cmd(
     context: TextCommandContext,
-    ReplaceText { target, with }: &ReplaceText,
+    InsertText { target, text }: &InsertText,
 ) -> Option<Vec<TextChange>> {
     let TextCommandContext {
         text_structure: _,
-        text,
+        text: source_text,
         byte_cursor,
     } = context;
 
-    let replacement = if with.contains("{{selection}}") {
-        with.replace("{{selection}}", &text[byte_cursor.range()])
+    let replacement = if text.contains("{{selection}}") {
+        text.replace("{{selection}}", &source_text[byte_cursor.range()])
     } else {
-        with.clone()
+        text.clone()
     };
 
     match target {
-        ReplaceTextTarget::Selection => {
-            Some([TextChange::Replace(byte_cursor, replacement)].into())
-        }
+        InsertTextTarget::Selection => Some([TextChange::Replace(byte_cursor, replacement)].into()),
     }
 }
 
@@ -524,9 +564,18 @@ impl BuiltInCommand {
             SwitchToSettings => "SwitchToSettings",
             PinWindow => "PinWindow",
             HideApp => "HideApp",
-            RunLLMBlock => "RunLLMBLock",
+            RunLLMBlock => "ExecutePrompt",
         }
     }
+}
+
+fn format_mac_shortcut(shortcut: KeyboardShortcut) -> String {
+    const SPACED_NAMES: ModifierNames = ModifierNames {
+        concat: " ",
+        ..ModifierNames::SYMBOLS
+    };
+
+    shortcut.format(&SPACED_NAMES, true)
 }
 
 #[cfg(test)]
@@ -560,9 +609,9 @@ mod tests {
     pub fn test_replace_text_cmd_parsing() {
         let doc_str = r#"
         bind "Cmd J" {
-            ReplaceText {
+            InsertText {
                 target "selection"
-                with "something else"
+                text "something else"
             }
         }
         "#;
@@ -574,9 +623,9 @@ mod tests {
             TopLevelKdlSettings {
                 bindings: [Binding {
                     shortcut: KeyboardShortcut::new(Modifiers::MAC_CMD, Key::J),
-                    command: Command::ReplaceText(ReplaceText {
-                        target: ReplaceTextTarget::Selection,
-                        with: "something else".to_string()
+                    command: Command::InsertText(InsertText {
+                        target: InsertTextTarget::Selection,
+                        text: "something else".to_string()
                     })
                 }]
                 .into(),

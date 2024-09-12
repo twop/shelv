@@ -88,6 +88,21 @@ pub enum BuiltInCommand {
     RunLLMBlock,
 }
 
+/// Commands that we promote in UI
+pub const PROMOTED_COMMANDS: [BuiltInCommand; 9] = const {
+    [
+        BuiltInCommand::PinWindow,
+        BuiltInCommand::MarkdownBold,
+        BuiltInCommand::MarkdownItalic,
+        BuiltInCommand::MarkdownStrikethrough,
+        BuiltInCommand::MarkdownCodeBlock,
+        BuiltInCommand::RunLLMBlock,
+        BuiltInCommand::MarkdownH1,
+        BuiltInCommand::MarkdownH2,
+        BuiltInCommand::MarkdownH3,
+    ]
+};
+
 impl BuiltInCommand {
     pub fn human_description(&self) -> CowStr<'static> {
         match self {
@@ -113,9 +128,9 @@ impl BuiltInCommand {
                 }
             }
             Self::SwitchToSettings => "Open Settings".into(),
-            Self::PinWindow => "Pin/Unpin Window".into(),
+            Self::PinWindow => "Toggle Always on Top".into(),
             Self::HideApp => "Hide Window".into(),
-            Self::RunLLMBlock => "Run LLM Block".into(),
+            Self::RunLLMBlock => "Execute AI Block".into(),
         }
     }
 
