@@ -27,11 +27,19 @@ pub enum AppIcon {
     Three,
     Four,
     Tutorial,
+    Menu,
 }
 
 impl AppIcon {
     pub fn render(&self, size: f32, color: Color32) -> RichText {
         RichText::new(self.to_icon_str())
+            .family(eframe::epaint::FontFamily::Proportional)
+            .color(color)
+            .size(size)
+    }
+
+    pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> RichText {
+        RichText::new(format!("{} {text}", self.to_icon_str()))
             .family(eframe::epaint::FontFamily::Proportional)
             .color(color)
             .size(size)
@@ -54,6 +62,7 @@ impl AppIcon {
             AppIcon::Three => P::NUMBER_THREE,
             AppIcon::Four => P::NUMBER_FOUR,
             AppIcon::Tutorial => P::GRADUATION_CAP,
+            AppIcon::Menu => P::LIST,
         }
     }
 }
