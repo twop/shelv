@@ -4,8 +4,8 @@ use eframe::{
         Ui, Widget, WidgetInfo, WidgetType, WidgetWithState,
     },
     epaint::{
-        self, pos2, tessellator::path::add_circle_quadrant, vec2, Color32, PathShape, Pos2, Rect,
-        Shape, Stroke, Vec2,
+        self, pos2, tessellator::path::add_circle_quadrant, vec2, Color32, PathShape, PathStroke,
+        Pos2, Rect, Shape, Stroke, Vec2,
     },
 };
 
@@ -34,7 +34,7 @@ pub struct Picker<'a, Item: PartialEq> {
     pub tooltip_text_color: Color32,
 
     // drop
-    pub outline: Stroke,
+    pub outline: PathStroke,
 }
 
 impl<'a, Item: PartialEq> Picker<'a, Item> {
@@ -79,7 +79,7 @@ impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
         let (rect, response) = ui.allocate_exact_size(desired_size, Sense::hover());
         // println!("allocated={:?}, available = {:?}", rect, avail);
 
-        response.widget_info(|| WidgetInfo::selected(WidgetType::RadioButton, true, ""));
+        response.widget_info(|| WidgetInfo::selected(WidgetType::RadioButton, true, true, ""));
 
         if ui.is_rect_visible(rect) {
             // let visuals = ui.style().interact_selectable(&response, checked); // too colorful
@@ -183,7 +183,7 @@ impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
                                 }),
                                 closed: false,
                                 fill: Color32::TRANSPARENT,
-                                stroke: outline,
+                                stroke: outline.clone(),
                             });
 
                             painter.line_segment(
@@ -195,7 +195,7 @@ impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
                                         available_rect.top(),
                                     ),
                                 ],
-                                outline,
+                                outline.clone(),
                             );
 
                             painter.line_segment(
@@ -207,7 +207,7 @@ impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
                                     ),
                                     available_rect.right_top(),
                                 ],
-                                outline,
+                                outline.clone(),
                             );
 
                             drop_shape.translate(drop_pos.to_vec2());

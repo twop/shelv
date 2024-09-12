@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use eframe::{
     egui::{
         self,
-        style::{NumericColorSpace, Selection, WidgetVisuals, Widgets},
+        style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets},
         vec2, FontDefinitions, Margin, RichText, TextStyle, Visuals,
     },
     epaint::{Color32, FontFamily, FontId, Rounding, Shadow, Stroke},
@@ -26,6 +26,7 @@ pub enum AppIcon {
     Two,
     Three,
     Four,
+    Tutorial,
 }
 
 impl AppIcon {
@@ -39,19 +40,20 @@ impl AppIcon {
     pub fn to_icon_str(&self) -> &'static str {
         use egui_phosphor::light as P;
         match self {
-            AppIcon::More => P::DOTS_THREE_OUTLINE,
             AppIcon::Settings => P::GEAR_FINE,
+            AppIcon::More => P::DOTS_THREE_OUTLINE,
             AppIcon::Close => P::X,
-            AppIcon::Twitter => P::TWITTER_LOGO,
+            AppIcon::Twitter => P::X_LOGO,
             AppIcon::HomeSite => P::HOUSE_SIMPLE,
             AppIcon::Discord => P::DISCORD_LOGO,
             AppIcon::Pin => P::PUSH_PIN,
-            AppIcon::VerticalSeparator => P::ARROWS_VERTICAL,
+            AppIcon::VerticalSeparator => P::LINE_VERTICAL,
             AppIcon::Share => P::BUG,
             AppIcon::One => P::NUMBER_ONE,
             AppIcon::Two => P::NUMBER_TWO,
             AppIcon::Three => P::NUMBER_THREE,
             AppIcon::Four => P::NUMBER_FOUR,
+            AppIcon::Tutorial => P::GRADUATION_CAP,
         }
     }
 }
@@ -360,9 +362,12 @@ pub fn get_font_definitions() -> FontDefinitions {
         egui::FontData::from_static(include_bytes!("../assets/Inter-SemiBoldItalic.otf")),
     );
 
-    fonts.font_data.insert("commit-mono".to_owned(), 
-    egui::FontData::from_static(include_bytes!("../assets/CommitMonoNerdFontMono-Regular.otf")),
-);
+    fonts.font_data.insert(
+        "commit-mono".to_owned(),
+        egui::FontData::from_static(include_bytes!(
+            "../assets/CommitMonoNerdFontMono-Regular.otf"
+        )),
+    );
 
     // Put my font first (highest priority) for proportional text:
     fonts
@@ -565,7 +570,6 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
             color: Color32::from_black_alpha(96),
         },
         resize_corner_size: 12.,
-        text_cursor_preview: false,
         clip_rect_margin: 3.,
         button_frame: true,
         collapsing_header_frame: false,
@@ -573,7 +577,11 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         striped: false,
         slider_trailing_fill: false,
         widgets,
-        text_cursor: Stroke::new(2.0, normal_text_color),
+        text_cursor: TextCursorStyle {
+            stroke: Stroke::new(2.0, normal_text_color),
+            // preview: true,
+            ..Default::default()
+        },
         interact_cursor: Some(egui::CursorIcon::PointingHand),
         image_loading_spinners: true,
         window_highlight_topmost: true,

@@ -76,6 +76,7 @@ pub struct AppState {
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
+    pub deferred_to_post_render: Vec<AppAction>,
 }
 
 impl AppState {
@@ -371,6 +372,7 @@ impl AppState {
             last_saved,
             editor_commands,
             llm_settings,
+            deferred_to_post_render: vec![],
         }
     }
 
