@@ -18,7 +18,7 @@ use crate::{
     app_actions::AppAction,
     app_state::{ComputedLayout, LayoutParams, MsgToApp},
     byte_span::UnOrderedByteSpan,
-    command::{BuiltInCommand, CommandList},
+    command::{BuiltInCommand, CommandList, PROMOTED_COMMANDS},
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
@@ -83,19 +83,13 @@ pub fn render_app(
 
                 let hints: Option<SmallVec<[(CowStr<'static>, KeyboardShortcut); 8]>> =
                     editor_text.is_empty().then(|| {
-                        [
-                            BuiltInCommand::MarkdownBold,
-                            BuiltInCommand::MarkdownItalic,
-                            BuiltInCommand::MarkdownStrikethrough,
-                            BuiltInCommand::MarkdownCodeBlock,
-                            BuiltInCommand::MarkdownH1,
-                            BuiltInCommand::MarkdownH2,
-                            BuiltInCommand::MarkdownH3,
-                        ]
-                        .into_iter()
-                        .filter_map(|builtin| command_list.find(builtin))
-                        .filter_map(|cmd| cmd.kind.map(|k| k.human_description()).zip(cmd.shortcut))
-                        .collect()
+                        PROMOTED_COMMANDS
+                            .into_iter()
+                            .filter_map(|builtin| command_list.find(builtin))
+                            .filter_map(|cmd| {
+                                cmd.kind.map(|k| k.human_description()).zip(cmd.shortcut)
+                            })
+                            .collect()
                     });
 
                 render_hints(
@@ -571,7 +565,11 @@ fn render_header_panel(
                             "Tweet us @shelvdotapp",
                             "https://twitter.com/shelvdotapp",
                         ),
-                        (&AppIcon::Discord, "Join our Discord", "https://discord.gg/sSGHwNKy"),
+                        (
+                            &AppIcon::Discord,
+                            "Join our Discord",
+                            "https://discord.gg/sSGHwNKy",
+                        ),
                         (
                             &AppIcon::HomeSite,
                             "Visit https://shelv.app",
