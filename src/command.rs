@@ -128,7 +128,7 @@ impl BuiltInCommand {
                 }
             }
             Self::SwitchToSettings => "Open Settings".into(),
-            Self::PinWindow => "Pin/Unpin Window".into(),
+            Self::PinWindow => "Toggle Always on Top".into(),
             Self::HideApp => "Hide Window".into(),
             Self::RunLLMBlock => "Execute AI Block".into(),
         }
