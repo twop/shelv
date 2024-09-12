@@ -107,6 +107,7 @@ pub fn render_app(
                 );
 
                 egui::ScrollArea::vertical()
+                    .id_source(text_edit_id)
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
