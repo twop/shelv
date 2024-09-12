@@ -485,7 +485,7 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                             body.push_str(&format!(
                                 "\n{} -> {}",
                                 binding_name,
-                                shortcut.format(&ModifierNames::SYMBOLS, true)
+                                format_mac_shortcut(shortcut)
                             ));
                         }
 
@@ -499,7 +499,7 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                             body.push_str(&format!(
                                 "\n{} -> {}",
                                 promoted_cmd.name(),
-                                shortcut.format(&ModifierNames::SYMBOLS, true)
+                                format_mac_shortcut(shortcut)
                             ));
                         }
                         body
@@ -567,6 +567,15 @@ impl BuiltInCommand {
             RunLLMBlock => "ExecutePrompt",
         }
     }
+}
+
+fn format_mac_shortcut(shortcut: KeyboardShortcut) -> String {
+    const SPACED_NAMES: ModifierNames = ModifierNames {
+        concat: " ",
+        ..ModifierNames::SYMBOLS
+    };
+
+    shortcut.format(&SPACED_NAMES, true)
 }
 
 #[cfg(test)]
