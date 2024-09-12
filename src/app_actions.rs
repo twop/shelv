@@ -34,6 +34,8 @@ pub enum AppAction {
     AskLLM(LLMRequest),
     SendFeedback(NoteFile),
     StartTutorial,
+    DeferToPostRender(Box<AppAction>),
+    FocusOnEditor,
 }
 
 impl AppAction {
@@ -113,10 +115,6 @@ pub fn process_app_action(
                         }
                         prev => prev,
                     };
-
-                    // it is possible that text editing was out of focus
-                    // hence, refocus it again
-                    ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
                 } else {
                     // means that we reselected via UI
 
@@ -137,7 +135,13 @@ pub fn process_app_action(
                 };
             }
 
-            SmallVec::new()
+            match via_shortcut {
+                true => [AppAction::DeferToPostRender(Box::new(
+                    AppAction::FocusOnEditor,
+                ))]
+                .into(),
+                false => SmallVec::new(),
+            }
         }
 
         AppAction::OpenLink(url) => {
@@ -427,6 +431,18 @@ pub fn process_app_action(
                 note_file: NoteFile::Note(0),
                 via_shortcut: true,
             }]))
+        }
+
+        AppAction::DeferToPostRender(action) => {
+            state.deferred_to_post_render.push(*action);
+            SmallVec::new()
+        }
+
+        AppAction::FocusOnEditor => {
+            // it is possible that text editing was out of focus
+            // hence, refocus it again
+            ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+            SmallVec::new()
         }
     }
 }

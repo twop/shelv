@@ -15,6 +15,7 @@ use hotwatch::{
     Event, EventKind, Hotwatch,
 };
 use image::ImageFormat;
+use itertools::Itertools;
 use persistent_state::{load_and_migrate, try_save, v1, NoteFile};
 use smallvec::SmallVec;
 use text_structure::TextStructure;
@@ -252,6 +253,8 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             .unwrap_or_default();
 
         action_list.extend(actions_from_keyboard_commands.into_iter());
+
+        action_list.insert_many(0, app_state.deferred_to_post_render.drain(0..));
 
         // now apply prepared changes, and update text structure and cursor appropriately
         for action in action_list {
