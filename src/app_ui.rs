@@ -458,7 +458,9 @@ fn render_footer_panel(
                     ui.set_width(icon_block_width);
 
                     let share_btn = ui
-                        .button(AppIcon::Share.render(sizes.toolbar_icon, theme.colors.button_fg))
+                        .button(
+                            AppIcon::Feedback.render(sizes.toolbar_icon, theme.colors.button_fg),
+                        )
                         .on_hover_ui(|ui| {
                             ui.label(
                                 RichText::new("Send this note to report a bug or share feedback.")
@@ -521,7 +523,10 @@ fn render_header_panel(
                     ui.set_width(icon_block_width);
 
                     if ui
-                        .button(AppIcon::Close.render(sizes.toolbar_icon, theme.colors.button_fg))
+                        .button(
+                            AppIcon::Close
+                                .render(sizes.toolbar_icon, theme.colors.subtle_text_color),
+                        )
                         .on_hover_ui(|ui| {
                             ui.label({
                                 RichText::new("Hide Shelv").color(theme.colors.subtle_text_color)
@@ -563,12 +568,6 @@ fn render_header_panel(
                                     theme.colors.normal_text_color,
                                     "Start tutorial",
                                 ))
-                                // .on_hover_ui(|ui| {
-                                //     ui.label(
-                                //         RichText::new(tutorial_tooltip)
-                                //             .color(theme.colors.subtle_text_color),
-                                //     );
-                                // })
                                 .clicked()
                             {
                                 ui.close_menu();

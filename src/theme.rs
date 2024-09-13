@@ -4,7 +4,7 @@ use eframe::{
     egui::{
         self,
         style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets},
-        vec2, FontDefinitions, Margin, RichText, TextStyle, Visuals,
+        vec2, FontDefinitions, Margin, RichText, TextStyle, Vec2, Visuals,
     },
     epaint::{Color32, FontFamily, FontId, Rounding, Shadow, Stroke},
 };
@@ -21,7 +21,7 @@ pub enum AppIcon {
     Discord,
     Pin,
     VerticalSeparator,
-    Share,
+    Feedback,
     One,
     Two,
     Three,
@@ -39,7 +39,7 @@ impl AppIcon {
     }
 
     pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> RichText {
-        RichText::new(format!("{} {text}", self.to_icon_str()))
+        RichText::new(format!("{}  {text}", self.to_icon_str()))
             .family(eframe::epaint::FontFamily::Proportional)
             .color(color)
             .size(size)
@@ -56,7 +56,7 @@ impl AppIcon {
             AppIcon::Discord => P::DISCORD_LOGO,
             AppIcon::Pin => P::PUSH_PIN,
             AppIcon::VerticalSeparator => P::LINE_VERTICAL,
-            AppIcon::Share => P::BUG,
+            AppIcon::Feedback => P::SMILEY,
             AppIcon::One => P::NUMBER_ONE,
             AppIcon::Two => P::NUMBER_TWO,
             AppIcon::Three => P::NUMBER_THREE,
@@ -272,7 +272,7 @@ impl ColorTheme {
         let selection_stroke = Nord::NORD6;
         let hyperlink_color = Nord::NORD7;
         let normal_text_color = Nord::NORD4;
-        let subtle_text_color = Nord::NORD4.shade(0.5);
+        let subtle_text_color = Nord::NORD4.shade(0.6);
 
         // Something just barely different from the background color.
         // Used for [`crate::Grid::striped`].
@@ -281,11 +281,11 @@ impl ColorTheme {
         // Very dark or light color (for corresponding theme).
         // Used as the background of text edits, scroll bars and others things
         // that needs to look different from other interactive stuff.
-        let extreme_bg_color = Nord::NORD0.shade(0.6);
+        let extreme_bg_color = Nord::NORD0.shade(0.5);
 
         // Background color behind code-styled monospaced labels.
         // let code_bg_color = Nord::NORD0.shade(0.6);
-        let code_bg_color = Color32::from_black_alpha(45);
+        let code_bg_color = Color32::from_black_alpha(20);
 
         // A good color for warning text (e.g. orange).
         let warn_fg_color = Nord::NORD12;
@@ -332,7 +332,7 @@ pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
 
     style.text_styles = text_styles(&theme.fonts);
     style.visuals = visuals(&theme.colors);
-    // style.spacing.window_margin = Margin::same(0.);
+    style.spacing.item_spacing = Vec2::splat(theme.sizes.s);
     ctx.set_style(style);
 }
 
