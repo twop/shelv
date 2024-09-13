@@ -608,12 +608,12 @@ fn render_header_panel(
                         },
                     );
 
-                    ui.add_space(theme.sizes.s);
+                    // ui.add_space(theme.sizes.s);
                     ui.label(
                         AppIcon::VerticalSeparator
                             .render(sizes.toolbar_icon, theme.colors.outline_fg),
                     );
-                    ui.add_space(theme.sizes.s);
+                    // ui.add_space(theme.sizes.s);
 
                     let resp = ui
                         .button(AppIcon::Pin.render(
