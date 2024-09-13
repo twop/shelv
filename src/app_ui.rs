@@ -458,7 +458,9 @@ fn render_footer_panel(
                     ui.set_width(icon_block_width);
 
                     let share_btn = ui
-                        .button(AppIcon::Share.render(sizes.toolbar_icon, theme.colors.button_fg))
+                        .button(
+                            AppIcon::Feedback.render(sizes.toolbar_icon, theme.colors.button_fg),
+                        )
                         .on_hover_ui(|ui| {
                             ui.label(
                                 RichText::new("Send this note to report a bug or share feedback.")
@@ -521,7 +523,10 @@ fn render_header_panel(
                     ui.set_width(icon_block_width);
 
                     if ui
-                        .button(AppIcon::Close.render(sizes.toolbar_icon, theme.colors.button_fg))
+                        .button(
+                            AppIcon::Close
+                                .render(sizes.toolbar_icon, theme.colors.subtle_text_color),
+                        )
                         .on_hover_ui(|ui| {
                             ui.label({
                                 RichText::new("Hide Shelv").color(theme.colors.subtle_text_color)
@@ -552,94 +557,63 @@ fn render_header_panel(
                 });
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    for item in [
-                        (
-                            &AppIcon::Twitter,
-                            "Tweet us @shelvdotapp",
-                            "https://twitter.com/shelvdotapp",
-                        ),
-                        (
-                            &AppIcon::Discord,
-                            "Join our Discord",
-                            "https://discord.gg/sSGHwNKy",
-                        ),
-                        (
-                            &AppIcon::HomeSite,
-                            "Visit https://shelv.app",
-                            "https://shelv.app",
-                        ),
-                        // (
-                        //     &icons.at,
-                        //     "e-mail us at hi@shelv.app",
-                        //     "mailto:hi@shelv.app",
-                        // ),
-                    ]
-                    .into_iter()
-                    .map(Some)
-                    .intersperse(None)
-                    {
-                        match item {
-                            Some((icon, tooltip, url)) => {
-                                let resp =
-                                    ui.button(icon.render(
-                                        sizes.toolbar_icon,
-                                        theme.colors.subtle_text_color,
-                                    ))
-                                    .on_hover_ui(|ui| {
-                                        ui.label(
-                                            RichText::new(tooltip)
-                                                .color(theme.colors.subtle_text_color),
-                                        );
-                                    });
+                    ui.menu_button(
+                        AppIcon::Menu.render(sizes.toolbar_icon, theme.colors.subtle_text_color),
+                        |ui| {
+                            ui.set_max_width(200.0);
 
-                                if resp.clicked() {
-                                    resulting_actions.push(AppAction::OpenLink(url.to_owned()));
-                                    // ctx.open_url(OpenUrl::new_tab(url));
+                            if ui
+                                .button(AppIcon::Tutorial.render_with_text(
+                                    theme.fonts.size.normal,
+                                    theme.colors.normal_text_color,
+                                    "Start tutorial",
+                                ))
+                                .clicked()
+                            {
+                                ui.close_menu();
+                                resulting_actions.push(AppAction::StartTutorial);
+                            }
+
+                            ui.separator();
+
+                            for (icon, text, link) in [
+                                (
+                                    &AppIcon::Discord,
+                                    "Join our Discord",
+                                    "https://discord.gg/sSGHwNKy",
+                                ),
+                                (
+                                    &AppIcon::Twitter,
+                                    "Tweet us @shelvdotapp",
+                                    "https://twitter.com/shelvdotapp",
+                                ),
+                                (
+                                    &AppIcon::HomeSite,
+                                    "Visit https://shelv.app",
+                                    "https://shelv.app",
+                                ),
+                            ] {
+                                if ui
+                                    .button(icon.render_with_text(
+                                        theme.fonts.size.normal,
+                                        theme.colors.normal_text_color,
+                                        text,
+                                    ))
+                                    .clicked()
+                                {
+                                    ui.close_menu();
+                                    resulting_actions.push(AppAction::OpenLink(link.to_string()));
                                 }
                             }
-                            None => {
-                                ui.add_space(theme.sizes.s);
-                            }
-                        }
-                    }
+                        },
+                    );
 
-                    // pin button
-                    ui.add_space(theme.sizes.s);
-
-                    // TODO either wait or fork egui-phosphor to update to phosphor 2.1
-                    // which has "|" as a separator
+                    // ui.add_space(theme.sizes.s);
                     ui.label(
                         AppIcon::VerticalSeparator
                             .render(sizes.toolbar_icon, theme.colors.outline_fg),
                     );
-                    ui.add_space(theme.sizes.s);
-
-                    let tutorial_tooltip = r#"Start tutorial"#;
-
-                    if ui
-                        .button(
-                            AppIcon::Tutorial
-                                .render(sizes.toolbar_icon, theme.colors.subtle_text_color),
-                        )
-                        .on_hover_ui(|ui| {
-                            ui.label(
-                                RichText::new(tutorial_tooltip)
-                                    .color(theme.colors.subtle_text_color),
-                            );
-                        })
-                        .clicked()
-                    {
-                        resulting_actions.push(AppAction::StartTutorial);
-                    }
-
-                    ui.add_space(theme.sizes.s);
-
-                    ui.label(
-                        AppIcon::VerticalSeparator
-                            .render(sizes.toolbar_icon, theme.colors.outline_fg),
-                    );
-
-                    ui.add_space(theme.sizes.s);
+                    // ui.add_space(theme.sizes.s);
 
                     let resp = ui
                         .button(AppIcon::Pin.render(
