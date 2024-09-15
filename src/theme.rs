@@ -28,6 +28,7 @@ pub enum AppIcon {
     Four,
     Tutorial,
     Menu,
+    Folder,
 }
 
 impl AppIcon {
@@ -63,6 +64,7 @@ impl AppIcon {
             AppIcon::Four => P::NUMBER_FOUR,
             AppIcon::Tutorial => P::GRADUATION_CAP,
             AppIcon::Menu => P::LIST,
+            AppIcon::Folder => P::FOLDER_SIMPLE,
         }
     }
 }

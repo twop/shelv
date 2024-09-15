@@ -36,6 +36,7 @@ pub enum AppAction {
     StartTutorial,
     DeferToPostRender(Box<AppAction>),
     FocusOnEditor,
+    OpenNotesInFinder,
 }
 
 impl AppAction {
@@ -72,6 +73,7 @@ pub struct LLMRequest {
 // TODO consider focus, opening links etc as IO operations
 pub trait AppIO {
     fn hide_app(&self);
+    fn open_shelv_folder(&self) -> Result<(), Box<dyn std::error::Error>>;
     fn try_read_note_if_newer(
         &self,
         path: &PathBuf,
@@ -442,6 +444,12 @@ pub fn process_app_action(
             // it is possible that text editing was out of focus
             // hence, refocus it again
             ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+            SmallVec::new()
+        }
+        AppAction::OpenNotesInFinder => {
+            if let Err(e) = app_io.open_shelv_folder() {
+                println!("Error opening shelv folder: {}", e);
+            }
             SmallVec::new()
         }
     }
