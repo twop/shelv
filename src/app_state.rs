@@ -356,7 +356,7 @@ impl AppState {
         }
 
         Self {
-            is_pinned: false,
+            is_pinned: true,
             unsaved_changes: Default::default(),
             scheduled_script_run_version: None,
             theme,

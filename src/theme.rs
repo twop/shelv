@@ -372,11 +372,10 @@ pub fn get_font_definitions() -> FontDefinitions {
         "inter-bold-italic".to_owned(),
         egui::FontData::from_static(include_bytes!("../assets/Inter-SemiBoldItalic.otf")),
     );
-
     fonts.font_data.insert(
-        "commit-mono".to_owned(),
+        "jetbrains-mono".to_owned(),
         egui::FontData::from_static(include_bytes!(
-            "../assets/CommitMonoNerdFontMono-Regular.otf"
+            "../assets/JetBrainsMonoNerdFontMono-ExtraLight.ttf"
         )),
     );
 
@@ -392,7 +391,7 @@ pub fn get_font_definitions() -> FontDefinitions {
         .families
         .entry(egui::FontFamily::Monospace)
         .or_default()
-        .push("commit-mono".to_owned());
+        .push("jetbrains-mono".to_owned());
 
     fonts
         .families
