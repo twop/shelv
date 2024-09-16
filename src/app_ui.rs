@@ -605,6 +605,20 @@ fn render_header_panel(
                                     resulting_actions.push(AppAction::OpenLink(link.to_string()));
                                 }
                             }
+
+                            ui.separator();
+
+                            if ui
+                                .button(AppIcon::Folder.render_with_text(
+                                    theme.fonts.size.normal,
+                                    theme.colors.normal_text_color,
+                                    "Open notes folder",
+                                ))
+                                .clicked()
+                            {
+                                ui.close_menu();
+                                resulting_actions.push(AppAction::OpenNotesInFinder);
+                            }
                         },
                     );
 

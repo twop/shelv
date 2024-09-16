@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    ffi::CString,
     fs::{self, File},
     io::{self, Read},
     path::PathBuf,
@@ -229,6 +230,10 @@ impl AppIO for RealAppIO {
             };
         });
     }
+
+    fn open_shelv_folder(&self) -> Result<(), Box<dyn std::error::Error>> {
+        open_folder_in_finder(&self.shelv_folder)
+    }
 }
 
 fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<String>, io::Error> {
@@ -254,14 +259,36 @@ fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<Str
 fn hide_app_on_macos() {
     // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
     use objc2::rc::Id;
-    use objc2::{class, msg_send, msg_send_id, runtime::Object};
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send, msg_send_id};
     unsafe {
-        let app: Id<Object> = msg_send_id![class!(NSApplication), sharedApplication];
+        let app: Id<AnyObject> = msg_send_id![class!(NSApplication), sharedApplication];
         let arg = app.as_ref();
         let _: () = msg_send![&app, hide:arg];
     }
 }
 
+fn open_folder_in_finder(path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    use objc2::rc::Id;
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send, msg_send_id};
+    unsafe {
+        let workspace: Id<AnyObject> = msg_send_id![class!(NSWorkspace), sharedWorkspace];
+
+        // Convert the Rust string to a C string
+        let c_path = CString::new(path.to_str().ok_or("Invalid UTF-8 in path")?)?;
+        let ns_string: Id<AnyObject> =
+            msg_send_id![class!(NSString), stringWithUTF8String:c_path.as_ptr()];
+
+        let _: bool = msg_send![
+            &workspace,
+            selectFile: std::ptr::null::<AnyObject>()
+            inFileViewerRootedAtPath: &*ns_string
+        ];
+
+        Ok(())
+    }
+}
 fn convert_egui_shortcut_to_global_hotkey(
     shortcut: egui::KeyboardShortcut,
 ) -> global_hotkey::hotkey::HotKey {
