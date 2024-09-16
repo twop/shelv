@@ -6,18 +6,24 @@ We (the dev team) use it for all our daily note-taking needs like todos, meeting
 
 We are so *happy* that you are giving us a chance, and can't wait to learn how *you* use Shelv <3.
 
+
 ## How to use Shelv
 
 To help you get started with Shelv, we've pre-filled your notes with an interactive onboarding tutorial. In each note, there are quick tasks provided so you can try out the features of Shelv. Have fun!
 
-- [ ] ←**Tasks look like this**. Click the box after finishing (try it right now!)
+- [ ] **Tasks look like this**
+- ↑*try clicking this! (we'll learn more about checklists later)*
 
-### Global Hotkey
 
-Shelv works a bit different than most apps. For example, Shelv won't show up as a window when you press `⌘ + tab`tab. The best way to open Shelv is to use the **global hotkey**.
+### Global Hotkey:`⌘ + ⌥ + s`
 
-- [ ] **Assign your global hotkey** in `settings` (to open settings, click the `` icon in the bottom bar)
-- [ ] **Try your new hotkey to hide Shelv**, and then again to bring Shelv back.
+The best way to use Shelv is with the **global hotkey**. Use it to quickly summon Shelv, and again to dismiss. The hotkey will continue to work even while using other apps!
+
+- [ ] **Try the global hotkey to hide Shelv**, and then again to show Shelv.
+
+***Note**: While Shelv is running in the background, **it will override shortcuts of other apps**. If you'd prefer a different shortcut, it can be configured in settings.*
+
+- [ ] **(optional) Assign a custom global hotkey** in [settings](shelv://settings)
 
 
 ### Pinning
@@ -25,21 +31,21 @@ Shelv works a bit different than most apps. For example, Shelv won't show up as 
 When you first open Shelv, the **Always On Top** mode is enabled. This is controlled by a pin icon (`󰐃`) in the topbar.
 
 - [ ] **Turn off "Always On Top" mode**  by clicking the `󰐃` icon
-- [ ] **Click outside Shelv to hide**. Then use the hotke to bring Shelv back.
+- [ ] **Click outside the Shelv window** and Shelv will go away, then use the hotkey to bring Shelv back.
 
 
 ### Tray Icon
 
-**Shelv lives in the tray** (the top menu bar by the clock) as an icon (of our logo!). You can always open Shelv by clicking on this icon (kinda looks like `󰇼`)
+**Shelv lives in the tray** (the top menu bar by the clock) as an icon. You can always open Shelv by clicking on this icon (kinda looks like "shelves" `󰇼`)
 
 - [ ] **Hide Shelv with the tray icon** by cicking it, and then again to bring Shelv back.
 
 
-### Continue learning more about Shelv!
+## Explore other topics!
 
-- [ ] Explore **markdown features** in note `2`
-- [ ] Explore **code blocks** in note `3`
-- [ ] Share your **feedback** with us in note `4` 
+- [ ] Explore **markdown features** in [note 2](shelv://note2)
+- [ ] Explore **codeblocks** in [note 3](shelv://note3)
+- [ ] Share your **feedback** in [note 4](shelv://note4) 
 
 ***Tip**:  You can quickly switch notes with `⌘` + the note number. For example, note 2 is `⌘ + 2`*
 

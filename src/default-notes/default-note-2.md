@@ -69,3 +69,6 @@ Shelv supports 3 variations of markdown headers. Use a variable number of `#` ch
 »Place text cursor anywhere on this line«
 - [ ] Use the shortcut `⌘ + ⌥ + 1` to switch to header 1 (similar shortcut for header 2 and 3)
 - [ ] Undo the header by pressing `⌘ + ⌥ + 1` again
+
+
+# Now, let's learn about [codeblocks](shelv://note3)
