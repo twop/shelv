@@ -80,4 +80,3 @@ We seriously appreciate you for sharing any feedback with us! Thank you <3
 - Tell others about Shelv by sharing out website
 
 - [ ] Submit this note by pressing the `bug` icon in the bottom-right corner.
-

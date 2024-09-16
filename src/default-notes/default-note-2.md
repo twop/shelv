@@ -22,14 +22,14 @@ Even though everything in Shelv is plain-text, you'll find all the handy shortcu
 - [ ] Press `tab` anywhere on this item to indent right
 	* [ ]  and `shift + tab`to indent left
 
-1. Numbered lists are also supported. Try adding another item with `enter` »
+1. **Numbered** lists also work! Try adding another item with `enter` »
 2. Now, indent your new row to the right (with `tab`). Notice the counter resets.
 3. [ ] Done (numbered lists can also be checklists!)
 
 In Markdown, it's important to note that checkboxes only work in lists. Shelv also provides a nifty shortcut for creating them:
 
-- Add a checkbox to the start of a list item with `[]`
-	*  « type `[] done!` here 
+- Add a checkbox to a list item by starting with `[]`
+	* « type `[] done!` here 
 
 Or start a new checklist with `[]`
 « type `[] done!` here
@@ -37,27 +37,26 @@ Or start a new checklist with `[]`
 
 ## Formatting
 
-In Markdown, ***emphasize*** words or phrases with **bold** or *italic* by wrapping the text with:
-- single-asterisks `*` (for *italic*) 
-- double-asterisks `**` (for **bold**) 
-- triple-asterisks `***` (for ***bold + italic***)
-- double-tildes `~~` (for ~~strikethrough~~)
+***Emphasize*** words or phrases with **bold** or *italic* using `*` asterisks. Or ~~demphasize~~ using `~` tildes!
 
-Shelv also supports some nifty features using the shortcuts `⌘ + b` for bold, and `⌘ + i` for italic.
+***Tip**: Use the shortcuts `⌘ + b` for bold, and `⌘ + i` for italic.*
 
-Highlight the text »here«
-- [ ] Press `⌘ + i` to italicize and then `⌘ + b` to also add bold
+- [ ] **Start writing bold** by pressing `⌘ + b` and writing `bold!` here » 
 
-To switch from bold to italic, **»Place text cursor anywhere here«**
-- [ ] Press `⌘ + b` to unbold, which auto-selects the text, and then `⌘ + i` to italicize.
+- [ ] **Format existing text** by selecting the  »TEXT« and pressing `⌘ + i` to italicize
+- 
+- [ ] **Make bold and italic** by selecting the italic TEXT above and pressing  `⌘ + b`
+
+- [ ] **»Undo this formatting «** by pressing  `⌘ + b` with your text cursor anywhere in the bold text
+
 
 ## Links
 
-- Shelv will automatically link URLs: https://shelv.app
-	* [ ] Hover the link to see its clickable!
+Any URL detected will be automatically linked 
+	* [ ] Click https://shelv.app 
 
-- Markdown also supports links like [this](https://shelv.app)
-	* [ ] Hover over `this` and see it's clickable!
+Or use the markdown format for URLs: `[text](url)`
+	* [ ] Click [this](https://shelv.app) 
 
 ## Headers
 

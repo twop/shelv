@@ -1,8 +1,14 @@
 # Welcome to Shelv
 
+Shelv is a blend of note-taking and computation, optimized for the creative process. We believe that `not all notes are meant to be eternal`, and Shelv is your sketchpad for ephemeral text.
+
+We (the dev team) use it for all our daily note-taking needs like todos, meeting notes, research, and more!
+
+We are so *happy* that you are giving us a chance, and can't wait to learn how *you* use Shelv <3.
+
 ## How to use Shelv
 
-To help you get started with Shelv, we've pre-filled your notes with an interactive onboarding guide. Each section has tasks indicated with a checkbox.
+To help you get started with Shelv, we've pre-filled your notes with an interactive onboarding tutorial. In each note, there are quick tasks provided so you can try out the features of Shelv. Have fun!
 
 - [ ] ←**Tasks look like this**. Click the box after finishing (try it right now!)
 
