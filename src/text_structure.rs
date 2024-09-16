@@ -34,6 +34,7 @@ enum Annotation {
     Text,
     TaskMarker,
     Link,
+    RawLink,
     Heading(HeadingLevel),
     CodeBlock,
     // CodeBlockBody,
@@ -88,6 +89,7 @@ struct MarkdownRunningState {
     emphasis: i8,
     text: i8,
     link: i8,
+    raw_link: i8,
     task_marker: i8,
     code: i8,
     code_block: i8,
@@ -106,6 +108,7 @@ impl MarkdownRunningState {
             heading: Default::default(),
             text: 0,
             link: 0,
+            raw_link: 0,
             task_marker: 0,
         }
     }
@@ -330,8 +333,10 @@ impl TextStructure {
             | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION;
 
         let parser = pulldown_cmark::Parser::new_ext(&text, md_parser_options);
+        println!("Parser output:\n{:?}", parser);
 
         for (ev, range) in parser.into_offset_iter() {
+            println!("{:?} {:?}", ev, range);
             use pulldown_cmark::Event::*;
             let range = ByteSpan::from_range(&range);
             match ev {
@@ -477,8 +482,21 @@ impl TextStructure {
             family: theme.fonts.family.code.clone(),
         };
 
-        // println!("points: {:#?}", points);
+        // println!("points: {:#?}", self.points);
+
         for point in self.points.iter() {
+
+            // match point.kind {
+            //     PointKind::Start => {
+            //         print!("{}", text.get(pos..point.str_offset).unwrap_or(""));
+            //         print!("<{:?}>", point.annotation)
+            //     }
+            //     PointKind::End => {
+            //         print!("{}", text.get(pos..point.str_offset).unwrap_or(""));
+            //         print!("</{:?}>", point.annotation)
+            //     }
+            // }
+
             if state.code_block > 0 && state.text > 0 {
                 // means that we are inside code block body
 
@@ -553,6 +571,7 @@ impl TextStructure {
                 Annotation::Bold => state.bold += delta,
                 Annotation::Text => state.text += delta,
                 Annotation::Link => state.link += delta,
+                Annotation::RawLink => state.raw_link += delta,
                 Annotation::TaskMarker => state.task_marker += delta,
                 Annotation::Emphasis => state.emphasis += delta,
 
@@ -580,48 +599,48 @@ impl TextStructure {
         &self,
         byte_cursor_pos: usize,
     ) -> Option<InteractiveTextPart> {
-        self.spans
+        let interactive_span = self
+            .spans
             .iter()
             .enumerate()
-            .find_map(
-                |(
-                    index,
-                    SpanDesc {
-                        kind,
-                        byte_pos,
-                        parent,
-                    },
-                )| match kind {
-                    SpanKind::TaskMarker | SpanKind::MdLink
-                        if byte_pos.contains_pos(byte_cursor_pos) =>
-                    {
-                        find_metadata(SpanIndex(index), &self.metadata).and_then(|meta| {
-                            match (kind, meta) {
-                                (SpanKind::TaskMarker, SpanMeta::TaskMarker { checked, .. }) => {
-                                    Some(InteractiveTextPart::TaskMarker {
-                                        byte_range: byte_pos.clone(),
-                                        checked: *checked,
-                                    })
-                                }
-                                (SpanKind::MdLink, SpanMeta::Link { url }) => {
-                                    Some(InteractiveTextPart::Link(url.as_str()))
-                                }
-                                _ => None,
-                            }
-                        })
-                    }
-                    _ => None,
-                },
-            )
-            .or_else(|| {
-                self.raw_links.iter().find_map(|RawLink { url, byte_pos }| {
-                    if byte_pos.contains(&byte_cursor_pos) {
-                        Some(InteractiveTextPart::Link(url.as_str()))
-                    } else {
-                        None
-                    }
-                })
+            .find(|(_, SpanDesc { kind, byte_pos, .. })| match kind {
+                SpanKind::TaskMarker | SpanKind::MdLink if byte_pos.contains_pos(byte_cursor_pos) => true,
+                _ => false,
+            });
+
+        interactive_span.map_or_else(|| {
+            // Raw links in a MD link won't be interactive, which is why this is only the default case
+            self.raw_links.iter().find_map(|RawLink { url, byte_pos }| {
+                if byte_pos.contains(&byte_cursor_pos) {
+                    Some(InteractiveTextPart::Link(url.as_str()))
+                } else {
+                    None
+                }
             })
+        }, |(index, SpanDesc { kind, byte_pos, .. })| {
+            find_metadata(SpanIndex(index), &self.metadata).and_then(|meta| match (kind, meta) {
+                (SpanKind::TaskMarker, SpanMeta::TaskMarker { checked, .. }) => {
+                    Some(InteractiveTextPart::TaskMarker {
+                        byte_range: byte_pos.clone(),
+                        checked: *checked,
+                    })
+                }
+                (SpanKind::MdLink, SpanMeta::Link { url }) => {
+                    // Only the text part inside an MD link is interactive
+                    self.iterate_immediate_children_of(SpanIndex(index)).find_map(
+                        |(_, child_span)| {
+                            match child_span.kind {
+                                SpanKind::Text if child_span.byte_pos.contains_pos(byte_cursor_pos) => Some(InteractiveTextPart::Link(url.as_str())),
+                                _ => None
+                            }
+                     
+                        },
+                    )
+                   
+                }
+                _ => None,
+            })
+        })
     }
 
     pub fn find_surrounding_span_with_meta(
@@ -829,7 +848,10 @@ fn fill_annotation_points(
             },
 
             SpanKind::Heading(level) => smallvec![(Annotation::Heading(*level), pos)],
-            SpanKind::InlineCode => smallvec![(Annotation::InlineCode, pos)],
+            SpanKind::InlineCode => smallvec![
+                (Annotation::InlineCode, pos),
+                (Annotation::Text, ByteSpan::new(pos.start + 1, pos.end - 1))
+            ],
             SpanKind::CodeBlock => smallvec![(Annotation::CodeBlock, pos)],
             // SpanKind::CodeBlock => match find_metadata(span_index, metadata) {
             //     Some(SpanMeta::CodeBlock { lang }) => match *checked {
@@ -846,8 +868,8 @@ fn fill_annotation_points(
             //     },
             //     _ => smallvec![(Annotation::CodeBlock, pos)],
             // },
-            SpanKind::MdLink
-            | SpanKind::List
+            SpanKind::MdLink => smallvec![(Annotation::Link, pos)],
+            SpanKind::List
             | SpanKind::Root
             | SpanKind::Html
             | SpanKind::Image
@@ -881,7 +903,7 @@ fn fill_annotation_points(
         points.push(AnnotationPoint {
             str_offset,
             kind,
-            annotation: Annotation::Link,
+            annotation: Annotation::RawLink,
         });
     }
 
@@ -961,13 +983,24 @@ impl MarkdownRunningState {
             [_, _, _, h4, ..] if h4 > 0 => size.h4,
             [_, _, _, _, h5, ..] if h5 > 0 => size.h4,
             [_, _, _, _, _, h6] if h6 > 0 => size.h4,
+            _ if self.code > 0 || self.code_block > 0 => 13.,
             _ => size.normal,
         };
 
-        let color = if self.link > 0 {
+        let is_link = match (self.link > 0, self.raw_link > 0, self.text > 0) {
+            (true, _, true) => true,
+            (false, true, _) => true,
+            _ => false,
+        };
+
+        let color = if is_link {
             *md_link
         } else if self.code > 0 {
-            *md_code
+            if self.text > 0 {
+                *md_code
+            } else {
+                *md_annotation
+            }
         } else {
             match (self.heading.iter().any(|h| *h > 0), self.text > 0) {
                 (_, false) => *md_annotation,
@@ -1000,7 +1033,7 @@ impl MarkdownRunningState {
             } else {
                 Stroke::NONE
             },
-            underline: if self.link > 0 {
+            underline: if is_link {
                 Stroke::new(0.6, *md_link)
             } else {
                 Stroke::NONE
