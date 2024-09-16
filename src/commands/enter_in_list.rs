@@ -248,6 +248,17 @@ mod tests {
                 "- [ ] {||}",
                 "{||}",
             ),
+            // TODO bullet continuation
+            // (
+            //     "## Continues with * bullets",
+            //     "* item{||}",
+            //     "* item\n* {||}"
+            // ),
+            // (
+            //     "## Continues with - sub-bullets",
+            //     "- parent\n\t- child{||}",
+            //     "- parent\n\t- child\n\t- {||}"
+            // )
         ];
 
         for (desc, input, expected) in test_cases {

@@ -473,7 +473,7 @@ impl TextStructure {
         let mut state = MarkdownRunningState::new();
 
         let code_font_id = FontId {
-            size: theme.fonts.size.normal,
+            size: 12.,
             family: theme.fonts.family.code.clone(),
         };
 
@@ -976,11 +976,15 @@ impl MarkdownRunningState {
             }
         };
 
-        let font_family = match (emphasis, bold) {
-            (true, true) => &family.bold_italic,
-            (false, true) => &family.bold,
-            (true, false) => &family.italic,
-            (false, false) => &family.normal,
+        let font_family = if self.code > 0 {
+            &family.code
+        } else {
+            match (emphasis, bold) {
+                (true, true) => &family.bold_italic,
+                (false, true) => &family.bold,
+                (true, false) => &family.italic,
+                (false, false) => &family.normal,
+            }
         };
 
         // && command_pressed;

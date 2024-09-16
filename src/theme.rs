@@ -377,6 +377,12 @@ pub fn get_font_definitions() -> FontDefinitions {
             "../assets/CommitMonoNerdFontMono-Regular.otf"
         )),
     );
+    fonts.font_data.insert(
+        "jetbrains-mono".to_owned(),
+        egui::FontData::from_static(include_bytes!(
+            "../assets/JetBrainsMonoNerdFontMono-ExtraLight.ttf"
+        )),
+    );
 
     // Put my font first (highest priority) for proportional text:
     fonts
@@ -390,7 +396,7 @@ pub fn get_font_definitions() -> FontDefinitions {
         .families
         .entry(egui::FontFamily::Monospace)
         .or_default()
-        .push("commit-mono".to_owned());
+        .push("jetbrains-mono".to_owned());
 
     fonts
         .families
