@@ -16,8 +16,15 @@ pub enum NoteFile {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SaveState {
     version: i32,
+
+    #[serde(default = "default_window_pinned_value")]
+    pub is_pinned: bool,
     pub last_saved: u128,
     pub selected: NoteFile,
+}
+
+fn default_window_pinned_value() -> bool {
+    true
 }
 
 pub struct RestoredData {
@@ -30,6 +37,7 @@ pub struct RestoredData {
 pub struct DataToSave<'a> {
     pub files: Vec<(NoteFile, &'a str)>,
     pub selected: NoteFile,
+    pub is_pinned: bool,
 }
 
 #[derive(Debug)]
@@ -138,11 +146,13 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
     // NOTE that we don't do any version checks yet
     let state = state.unwrap_or_else(|| SaveState {
         version: CURRENT_VERSION,
+        is_pinned: true,
         last_saved: get_current_utc_timestamp(),
         selected: NoteFile::Note(0),
     });
 
     let selected = state.selected;
+    let is_pinned = state.is_pinned;
 
     let restored = RestoredData {
         state,
@@ -167,6 +177,7 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
             DataToSave {
                 files: missing_notes,
                 selected,
+                is_pinned,
             },
         ))
     }
@@ -185,12 +196,17 @@ pub fn extract_note_file(file_name: &str) -> Option<(NoteFile, &str)> {
 }
 
 pub fn try_save<'a>(data: DataToSave<'a>, folder: &PathBuf) -> Result<SaveState, LoadSaveError> {
-    let DataToSave { files, selected } = data;
+    let DataToSave {
+        files,
+        is_pinned,
+        selected,
+    } = data;
 
     fs::create_dir_all(folder)?;
 
     let state = SaveState {
         version: CURRENT_VERSION,
+        is_pinned,
         last_saved: get_current_utc_timestamp(),
         selected,
     };
@@ -239,6 +255,7 @@ pub fn fn_migrate_from_v1<'s>(
                 get_tutorial_note_content(NoteFile::Settings),
             )])
             .collect(),
+        is_pinned: true,
         selected,
     };
 
@@ -246,6 +263,7 @@ pub fn fn_migrate_from_v1<'s>(
         state: SaveState {
             version: CURRENT_VERSION,
             last_saved: get_current_utc_timestamp(),
+            is_pinned: true,
             selected,
         },
         notes: old_state.notes.iter().map(|s| s.to_string()).collect(),
@@ -265,10 +283,12 @@ pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
             .map(|file| (file, get_tutorial_note_content(file)))
             .collect(),
         selected,
+        is_pinned: true,
     };
 
     let restored_data = RestoredData {
         state: SaveState {
+            is_pinned: true,
             version: CURRENT_VERSION,
             last_saved: get_current_utc_timestamp(),
             selected,

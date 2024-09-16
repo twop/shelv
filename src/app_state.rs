@@ -50,6 +50,7 @@ pub enum UnsavedChange {
     NoteContentChanged(NoteFile),
     SelectionChanged,
     LastUpdated,
+    PinStateChanged,
 }
 
 pub struct AppState {
@@ -391,6 +392,7 @@ impl AppState {
                     })
                     .collect(),
                 selected: self.selected_note,
+                is_pinned: self.is_pinned,
             })
         } else {
             None
