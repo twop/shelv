@@ -74,9 +74,11 @@ Onboarding Feedback Report
 **Any other thoughts or feedback you'd like to share?**
 
 
+- [ ] When finished, submit this note by pressing the `bug` icon in the bottom-right corner :)
+
 ---
 We seriously appreciate you for sharing any feedback with us! Thank you <3
-- Get invovlled by joining our community on Discord
-- Tell others about Shelv by sharing out website
 
-- [ ] Submit this note by pressing the `bug` icon in the bottom-right corner.
+Bonus tasks:
+- [ ] Get involved by joining our community on [Discord](https://discord.gg/sSGHwNKy)
+- [ ] Spread the word! Send folks to [shelv.app](https://shelv.app) to learn more about Shelv.
