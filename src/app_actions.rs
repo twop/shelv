@@ -153,6 +153,7 @@ pub fn process_app_action(
 
         AppAction::SetWindowPinned(is_pinned) => {
             state.is_pinned = is_pinned;
+            state.add_unsaved_change(UnsavedChange::PinStateChanged);
             SmallVec::new()
         }
 

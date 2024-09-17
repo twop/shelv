@@ -50,6 +50,7 @@ pub enum UnsavedChange {
     NoteContentChanged(NoteFile),
     SelectionChanged,
     LastUpdated,
+    PinStateChanged,
 }
 
 pub struct AppState {
@@ -228,6 +229,7 @@ impl AppState {
             .collect();
 
         let selected_note = saved_state.selected;
+        let is_window_pinned = saved_state.is_pinned;
 
         let text_structure = TextStructure::new(&notes.get(&selected_note).unwrap().text);
 
@@ -356,7 +358,7 @@ impl AppState {
         }
 
         Self {
-            is_pinned: true,
+            is_pinned: is_window_pinned,
             unsaved_changes: Default::default(),
             scheduled_script_run_version: None,
             theme,
@@ -391,6 +393,7 @@ impl AppState {
                     })
                     .collect(),
                 selected: self.selected_note,
+                is_pinned: self.is_pinned,
             })
         } else {
             None
