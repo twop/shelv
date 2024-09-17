@@ -65,3 +65,6 @@ JS Code blocks also connected! We can use the `hi` function we wrote earlier in 
 ```
 
 You should now see your name printed as an output block. 
+
+
+# Almost done! Give us your feedback in [note 4](shelv://note4)

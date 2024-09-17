@@ -1,32 +1,32 @@
 # Welcome to **settings**
 
-Yep, settings is just another note! (Note: A more comprehensive list of settings is coming soon)
-Feel free to ask questions on [discord](https://discord.gg/sSGHwNKy)
+In Shelv, settings is just another note. All configuration is done inside codeblocks marked as `settings` (you'll learn more about codeblocks later). **Any changes are automatically applied**.
 
-- [ ] Set up your global hotkey for `ShowHideApp`
-	* [ ] Try showing and hiding Shelv by pressing your new shortcut
+- [ ] **Assign a custom global hotkey** by modifying the key bindings for `ShowHideApp` in the block below.
+- [ ] **Test out your new hotkey** to hide Shelv, and again to bring Shelv back.
 
-## Global shortcuts
+Once you are done, go back to onboarding by [clicking here!](shelv://note1)
 
 ```settings
-// <-- Tip: Remove the "//" part on the line below to enable
-// global "Cmd Option S" {ShowHideApp;}
+global "Cmd Shift M" {ShowHideApp;}
 
 ```
+```settings#44a6
+applied
+```
 
-**Supported Shortcuts**
-- `ShowHideApp`: Global shortcut that shows or hides Shelv
-
-For configuring your own shortcuts, use the following expanded keywords:
-- `⇧` -> `Shift`,
-- `⌘` -> `Cmd`
-- `⌥` -> `Option`,
-- `⌃` -> `Ctrl`
-- `⏎` -> `Enter`
-- Alpha-numeric keys -> `A-Z` or `0-9`
+*Format: Alt keys are `Shift (⇧)`, `Cmd (⌘)`, `Option (⌥)`, `Ctrl (⌃)`, `Enter (⏎)`, and alpha-numeric keys are `A-Z` or `0-9`*
 
 
-## AI configuration
+
+
+
+
+
+
+
+
+## Advanced configuration
 
 ```settings
 ai {
@@ -37,6 +37,9 @@ ai {
     	You are a helpful assistant in tech. Be very concise with your answers
     "#
 }
+```
+```settings#3108
+applied
 ```
 
 **System Prompt**

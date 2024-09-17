@@ -9,6 +9,7 @@ use eframe::{
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
 };
+use itertools::Itertools;
 use pulldown_cmark::CowStr;
 // use itertools::Itertools;
 use smallvec::SmallVec;
@@ -179,8 +180,18 @@ pub fn render_app(
                                             }
                                             InteractiveTextPart::Link(url) => {
                                                 println!("open url {url:}");
+
+                                                let parts: Vec<&str> = url.split("://").collect_vec();
+                                                let action = match parts.as_slice() {
+                                                    ["shelv", "note1", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(0), via_shortcut: true },
+                                                    ["shelv", "note2", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(1), via_shortcut: true },
+                                                    ["shelv", "note3", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(2), via_shortcut: true },
+                                                    ["shelv", "note4", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(3), via_shortcut: true },
+                                                    ["shelv", "settings", ..] => AppAction::SwitchToNote { note_file: NoteFile::Settings, via_shortcut: true },
+                                                    _ => AppAction::OpenLink(url.to_string())
+                                                };
                                                 output_actions
-                                                    .push(AppAction::OpenLink(url.to_string()));
+                                                    .push(action)
                                             }
                                         }
                                     }

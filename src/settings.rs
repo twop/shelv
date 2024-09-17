@@ -472,6 +472,9 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                     *self.llm_settings = Some(last_llm_settings);
                 }
 
+                // TODO temporarily disabled until we improve
+                let has_any_bindings = false;
+
                 let body = match has_any_bindings {
                     true => {
                         let mut body = "applied\n\nEffective bindings after the block:".to_string();
