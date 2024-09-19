@@ -35,7 +35,7 @@ use crate::{
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::execute_code_blocks,
     settings::{LlmSettings, SettingsNoteEvalContext},
-    text_structure::{SpanKind, TextStructure},
+    text_structure::{SpanKind, SpanMeta, TextStructure},
     theme::AppTheme,
 };
 
@@ -91,10 +91,16 @@ impl AppState {
     }
 }
 
+pub struct CodeArea {
+    pub rect: Rect,
+    // TODO: use small string
+    pub lang: String,
+}
+
 pub struct ComputedLayout {
     pub galley: Arc<Galley>,
     pub layout_params_hash: u64,
-    pub code_areas: SmallVec<[Rect; 6]>,
+    pub code_areas: SmallVec<[CodeArea; 6]>,
 }
 
 #[derive(Debug)]
@@ -143,13 +149,19 @@ impl ComputedLayout {
 
         let galley = ui.fonts(|f| f.layout_job(job));
 
-        let code_areas: SmallVec<[Rect; 6]> = text_structure
+        let code_areas: SmallVec<[CodeArea; 6]> = text_structure
             .iter()
-            .filter_map(|(_index, desc)| match desc.kind {
-                SpanKind::CodeBlock => Some(desc.byte_pos),
+            .filter_map(|(index, desc)| match desc.kind {
+                SpanKind::CodeBlock => {
+                    text_structure.find_meta(index).and_then(|meta| match meta {
+                        // TODO use small string instead
+                        SpanMeta::CodeBlock { lang } => Some((desc.byte_pos, lang.to_owned())),
+                        _ => None,
+                    })
+                }
                 _ => None,
             })
-            .map(|byte_span| {
+            .map(|(byte_span, lang)| {
                 let [mut r_start, r_end] = [byte_span.start, byte_span.end].map(|byte_pos| {
                     let char_pos = char_index_from_byte_index(layout_params.text, byte_pos);
                     galley.pos_from_ccursor(CCursor::new(char_pos))
@@ -159,7 +171,10 @@ impl ComputedLayout {
                 r_start.extend_with(r_end.min);
                 r_start.extend_with(r_end.max);
                 r_start.set_right(r_start.right().max(layout_params.wrap_width));
-                r_start
+                CodeArea {
+                    rect: r_start,
+                    lang,
+                }
             })
             .collect();
 

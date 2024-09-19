@@ -3,8 +3,8 @@ use eframe::{
         self,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Context, FontFamily, Id, KeyboardShortcut, Layout, Painter, RichText, Sense,
-        TopBottomPanel, Ui, Window,
+        Context, FontFamily, Id, KeyboardShortcut, LayerId, Layout, Painter, RichText, Sense,
+        TopBottomPanel, Ui, UiStackInfo, Vec2, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
@@ -20,6 +20,7 @@ use crate::{
     app_state::{ComputedLayout, LayoutParams, MsgToApp},
     byte_span::UnOrderedByteSpan,
     command::{BuiltInCommand, CommandList, PROMOTED_COMMANDS},
+    commands::run_llm::LLM_LANG,
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
@@ -181,17 +182,42 @@ pub fn render_app(
                                             InteractiveTextPart::Link(url) => {
                                                 println!("open url {url:}");
 
-                                                let parts: Vec<&str> = url.split("://").collect_vec();
+                                                let parts: Vec<&str> =
+                                                    url.split("://").collect_vec();
                                                 let action = match parts.as_slice() {
-                                                    ["shelv", "note1", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(0), via_shortcut: true },
-                                                    ["shelv", "note2", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(1), via_shortcut: true },
-                                                    ["shelv", "note3", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(2), via_shortcut: true },
-                                                    ["shelv", "note4", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(3), via_shortcut: true },
-                                                    ["shelv", "settings", ..] => AppAction::SwitchToNote { note_file: NoteFile::Settings, via_shortcut: true },
-                                                    _ => AppAction::OpenLink(url.to_string())
+                                                    ["shelv", "note1", ..] => {
+                                                        AppAction::SwitchToNote {
+                                                            note_file: NoteFile::Note(0),
+                                                            via_shortcut: true,
+                                                        }
+                                                    }
+                                                    ["shelv", "note2", ..] => {
+                                                        AppAction::SwitchToNote {
+                                                            note_file: NoteFile::Note(1),
+                                                            via_shortcut: true,
+                                                        }
+                                                    }
+                                                    ["shelv", "note3", ..] => {
+                                                        AppAction::SwitchToNote {
+                                                            note_file: NoteFile::Note(2),
+                                                            via_shortcut: true,
+                                                        }
+                                                    }
+                                                    ["shelv", "note4", ..] => {
+                                                        AppAction::SwitchToNote {
+                                                            note_file: NoteFile::Note(3),
+                                                            via_shortcut: true,
+                                                        }
+                                                    }
+                                                    ["shelv", "settings", ..] => {
+                                                        AppAction::SwitchToNote {
+                                                            note_file: NoteFile::Settings,
+                                                            via_shortcut: true,
+                                                        }
+                                                    }
+                                                    _ => AppAction::OpenLink(url.to_string()),
                                                 };
-                                                output_actions
-                                                    .push(action)
+                                                output_actions.push(action)
                                             }
                                         }
                                     }
@@ -237,9 +263,11 @@ fn render_editor(
     let code_bg = ui.visuals().code_bg_color;
     let code_bg_rounding = ui.visuals().widgets.inactive.rounding;
     if let Some(computed_layout) = &computed_layout {
-        for &area in computed_layout.code_areas.iter() {
+        for area in computed_layout.code_areas.iter() {
             ui.painter().rect_filled(
-                area.shrink(0.5).translate(estimated_text_pos.to_vec2()),
+                area.rect
+                    .shrink(0.5)
+                    .translate(estimated_text_pos.to_vec2()),
                 code_bg_rounding,
                 code_bg,
             );
@@ -293,6 +321,52 @@ fn render_editor(
         .frame(false)
         .layouter(&mut layouter)
         .show(ui);
+
+    ui.with_layer_id(
+        // LayerId::new(ui.de, Id::new("buttons_overlay")),
+        LayerId::new(egui::Order::Foreground, Id::new("floating buttons")),
+        |ui| {
+            set_menu_bar_style(ui);
+
+            if let Some(computed_layout) = &computed_layout {
+                for area in computed_layout
+                    .code_areas
+                    .iter()
+                    .filter(|area| &area.lang == LLM_LANG)
+                {
+                    let code_area = area.rect.translate(estimated_text_pos.to_vec2());
+                    // ui.painter()
+                    //     .rect_filled(code_area.shrink(0.5), code_bg_rounding, code_bg);
+
+                    {
+                        let mut ui = ui.child_ui(
+                            code_area.translate(Vec2::new(-theme.sizes.xs, theme.sizes.xs)),
+                            Layout::right_to_left(Align::TOP),
+                            Some(UiStackInfo::new(egui::UiKind::GenericArea)),
+                        );
+                        let share_btn = ui
+                            .button(
+                                AppIcon::Play.render(
+                                    theme.sizes.toolbar_icon,
+                                    theme.colors.subtle_text_color,
+                                ),
+                            )
+                            .on_hover_ui(|ui| {
+                                ui.label(
+                                    RichText::new("Execute code block (⌘ + Enter).")
+                                        .color(theme.colors.subtle_text_color),
+                                );
+                            });
+
+                        if share_btn.clicked() {
+                            println!("clicked on shared");
+                            // actions.push(AppAction::SendFeedback(selected));
+                        }
+                    }
+                }
+            }
+        },
+    );
 
     use egui::TextBuffer;
 
@@ -492,7 +566,8 @@ fn render_footer_panel(
 
 fn set_menu_bar_style(ui: &mut egui::Ui) {
     let style = ui.style_mut();
-    style.spacing.button_padding = vec2(0.0, 0.0);
+    // TODO 2 seems better (more square, but we need to take the value from theme or soemthing)
+    style.spacing.button_padding = vec2(2., 0.0);
     style.spacing.item_spacing = vec2(0.0, 0.0);
     style.visuals.widgets.active.bg_stroke = Stroke::NONE;
     style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;

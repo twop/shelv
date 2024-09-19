@@ -11,8 +11,8 @@ use crate::{
     text_structure::{SpanDesc, SpanIndex, SpanKind, SpanMeta},
 };
 
+pub const LLM_LANG: &str = "ai";
 pub fn run_llm_block(CommandContext { app_state }: CommandContext) -> Option<EditorCommandOutput> {
-    const LLM_LANG: &str = "ai";
     const LLM_LANG_OLD: &str = "llm";
 
     let text_command_context = try_extract_text_command_context(app_state)?;
