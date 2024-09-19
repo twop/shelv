@@ -7,6 +7,7 @@ use smallvec::{smallvec, SmallVec};
 use crate::{
     app_state::{AppState, MsgToApp, UnsavedChange},
     byte_span::{ByteSpan, UnOrderedByteSpan},
+    commands::run_llm::{run_llm_block, CodeBlockAddress},
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
@@ -448,12 +449,18 @@ pub fn process_app_action(
             ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
             SmallVec::new()
         }
+
         AppAction::OpenNotesInFinder => {
             if let Err(e) = app_io.open_shelv_folder() {
                 println!("Error opening shelv folder: {}", e);
             }
             SmallVec::new()
         }
-        AppAction::RunLLMBLock(note_file, span_index) => todo!(),
+
+        AppAction::RunLLMBLock(note_file, span_index) => run_llm_block(
+            crate::command::CommandContext { app_state: state },
+            CodeBlockAddress::TargetBlock(note_file, span_index),
+        )
+        .unwrap_or_default(),
     }
 }

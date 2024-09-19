@@ -485,7 +485,6 @@ impl TextStructure {
         // println!("points: {:#?}", self.points);
 
         for point in self.points.iter() {
-
             // match point.kind {
             //     PointKind::Start => {
             //         print!("{}", text.get(pos..point.str_offset).unwrap_or(""));
@@ -718,6 +717,10 @@ impl TextStructure {
 
     pub fn find_meta(&self, index: SpanIndex) -> Option<&SpanMeta> {
         find_metadata(index, &self.metadata)
+    }
+
+    pub fn get_span_with_meta(&self, index: SpanIndex) -> Option<(SpanDesc, &SpanMeta)> {
+        find_metadata(index, &self.metadata).map(|meta| (self.spans[index.0], meta))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {

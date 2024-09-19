@@ -4,7 +4,8 @@ use smallvec::SmallVec;
 
 use crate::{
     app_actions::AppAction, app_state::AppState, byte_span::ByteSpan,
-    effects::text_change_effect::TextChange, text_structure::TextStructure,
+    effects::text_change_effect::TextChange, persistent_state::NoteFile,
+    text_structure::TextStructure,
 };
 
 #[derive(Debug, Clone, Copy)]

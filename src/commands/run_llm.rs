@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use smallvec::SmallVec;
 
 use crate::{
@@ -7,21 +9,71 @@ use crate::{
         try_extract_text_command_context, CommandContext, EditorCommandOutput, TextCommandContext,
     },
     effects::text_change_effect::TextChange,
+    persistent_state::NoteFile,
     scripting::{CodeBlockKind, SourceHash},
-    text_structure::{SpanDesc, SpanIndex, SpanKind, SpanMeta},
+    text_structure::{SpanDesc, SpanIndex, SpanKind, SpanMeta, TextStructure},
 };
 
+#[derive(Clone, Copy)]
+pub enum CodeBlockAddress {
+    NoteSelection,
+    TargetBlock(NoteFile, SpanIndex),
+}
+
 pub const LLM_LANG: &str = "ai";
-pub fn run_llm_block(CommandContext { app_state }: CommandContext) -> Option<EditorCommandOutput> {
+pub fn run_llm_block(
+    CommandContext { app_state }: CommandContext,
+    address: CodeBlockAddress,
+) -> Option<EditorCommandOutput> {
     const LLM_LANG_OLD: &str = "llm";
 
-    let text_command_context = try_extract_text_command_context(app_state)?;
+    enum OwnedOrRef<'r> {
+        Ref(&'r TextStructure),
+        Owned(TextStructure),
+    }
 
-    let TextCommandContext {
-        text_structure,
-        text,
-        byte_cursor: cursor,
-    } = text_command_context;
+    impl<'r> Deref for OwnedOrRef<'r> {
+        type Target = TextStructure;
+
+        fn deref(&self) -> &Self::Target {
+            match self {
+                OwnedOrRef::Ref(ts) => ts,
+                OwnedOrRef::Owned(ts) => ts,
+            }
+        }
+    }
+
+    let (text_structure, cursor, text) = match address {
+        CodeBlockAddress::NoteSelection => {
+            let text_command_context = try_extract_text_command_context(app_state)?;
+
+            let TextCommandContext {
+                text_structure,
+                text,
+                byte_cursor: cursor,
+            } = text_command_context;
+
+            (OwnedOrRef::Ref(text_structure), cursor, text)
+        }
+        CodeBlockAddress::TargetBlock(note_file, span_index) => {
+            let note = app_state.notes.get(&note_file).unwrap();
+
+            let text_structure = TextStructure::new(&note.text);
+
+            let cursor = match text_structure.get_span_with_meta(span_index) {
+                Some((desc, SpanMeta::CodeBlock { lang })) if lang == LLM_LANG => {
+                    Some(desc.byte_pos)
+                }
+                _ => None,
+            }?;
+
+            (
+                OwnedOrRef::Owned(text_structure),
+                cursor,
+                note.text.as_str(),
+            )
+        }
+    };
 
     // Check if we are in an LLM code block
     let llm_blocks: SmallVec<[(SpanIndex, &SpanDesc, CodeBlockKind); 6]> = text_structure
