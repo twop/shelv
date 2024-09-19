@@ -78,7 +78,7 @@ pub fn render_app(
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
 
-    let (text_has_changed, text_structure, computed_layout, updated_cursor) =
+    let (text_has_changed, text_structure, computed_layout, updated_cursor, editor_actions) =
         egui::CentralPanel::default()
             .show(ctx, |ui| {
                 let avail_space = ui.available_rect_before_wrap();
@@ -113,6 +113,7 @@ pub fn render_app(
                             mut text_structure,
                             mut updated_cursor,
                             text_draw_pos,
+                            editor_actions,
                         ) = render_editor(
                             ui,
                             editor_text,
@@ -122,6 +123,9 @@ pub fn render_app(
                             syntax_set,
                             theme_set,
                             text_edit_id,
+                            selected_note,
+                            command_list,
+                            ctx,
                         );
 
                         if changed {
@@ -225,12 +229,19 @@ pub fn render_app(
                             }
                         }
 
-                        (changed, text_structure, layout, updated_cursor)
+                        (
+                            changed,
+                            text_structure,
+                            layout,
+                            updated_cursor,
+                            editor_actions,
+                        )
                     })
                     .inner
             })
             .inner;
 
+    output_actions.extend(editor_actions);
     RenderAppResult {
         requested_actions: output_actions,
         updated_text_structure: text_structure,
@@ -249,13 +260,18 @@ fn render_editor(
     syntax_set: &SyntaxSet,
     theme_set: &ThemeSet,
     text_edit_id: Id,
+    note_file: NoteFile,
+    command_list: &CommandList,
+    ctx: &egui::Context,
 ) -> (
     bool, // if the text was changed, TODO rework this mess
     Option<ComputedLayout>,
     TextStructure,
     Option<UnOrderedByteSpan>,
     egui::Pos2,
+    SmallVec<[AppAction; 1]>,
 ) {
+    let mut resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
     let mut structure_wrapper = Some(text_structure);
 
     let estimated_text_pos = ui.next_widget_position();
@@ -344,7 +360,7 @@ fn render_editor(
                             Layout::right_to_left(Align::TOP),
                             Some(UiStackInfo::new(egui::UiKind::GenericArea)),
                         );
-                        let share_btn = ui
+                        let run_btn = ui
                             .button(
                                 AppIcon::Play.render(
                                     theme.sizes.toolbar_icon,
@@ -352,15 +368,30 @@ fn render_editor(
                                 ),
                             )
                             .on_hover_ui(|ui| {
+                                let tooltip_text = "Execute code block";
+                                let tooltip_text = command_list
+                                    .find(BuiltInCommand::RunLLMBlock)
+                                    .and_then(|cmd| cmd.shortcut)
+                                    .map(|shortcut| {
+                                        format!(
+                                            "{} {}",
+                                            tooltip_text,
+                                            ctx.format_shortcut(&shortcut)
+                                        )
+                                    })
+                                    .unwrap_or_else(|| tooltip_text.to_string());
+
                                 ui.label(
-                                    RichText::new("Execute code block (⌘ + Enter).")
+                                    RichText::new(tooltip_text)
                                         .color(theme.colors.subtle_text_color),
                                 );
                             });
 
-                        if share_btn.clicked() {
-                            println!("clicked on shared");
-                            // actions.push(AppAction::SendFeedback(selected));
+                        if run_btn.clicked() {
+                            resulting_actions.push(AppAction::RunLLMBLock(
+                                note_file,
+                                area.code_block_span_index,
+                            ));
                         }
                     }
                 }
@@ -384,6 +415,7 @@ fn render_editor(
         text_structure,
         byte_cursor,
         galley_pos,
+        resulting_actions,
     )
 }
 

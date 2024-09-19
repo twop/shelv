@@ -35,7 +35,7 @@ use crate::{
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::execute_code_blocks,
     settings::{LlmSettings, SettingsNoteEvalContext},
-    text_structure::{SpanKind, SpanMeta, TextStructure},
+    text_structure::{SpanIndex, SpanKind, SpanMeta, TextStructure},
     theme::AppTheme,
 };
 
@@ -95,6 +95,7 @@ pub struct CodeArea {
     pub rect: Rect,
     // TODO: use small string
     pub lang: String,
+    pub code_block_span_index: SpanIndex,
 }
 
 pub struct ComputedLayout {
@@ -155,13 +156,15 @@ impl ComputedLayout {
                 SpanKind::CodeBlock => {
                     text_structure.find_meta(index).and_then(|meta| match meta {
                         // TODO use small string instead
-                        SpanMeta::CodeBlock { lang } => Some((desc.byte_pos, lang.to_owned())),
+                        SpanMeta::CodeBlock { lang } => {
+                            Some((desc.byte_pos, lang.to_owned(), index))
+                        }
                         _ => None,
                     })
                 }
                 _ => None,
             })
-            .map(|(byte_span, lang)| {
+            .map(|(byte_span, lang, index)| {
                 let [mut r_start, r_end] = [byte_span.start, byte_span.end].map(|byte_pos| {
                     let char_pos = char_index_from_byte_index(layout_params.text, byte_pos);
                     galley.pos_from_ccursor(CCursor::new(char_pos))
@@ -174,6 +177,7 @@ impl ComputedLayout {
                 CodeArea {
                     rect: r_start,
                     lang,
+                    code_block_span_index: index,
                 }
             })
             .collect();

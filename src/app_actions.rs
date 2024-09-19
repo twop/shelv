@@ -11,7 +11,7 @@ use crate::{
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
     settings::SettingsNoteEvalContext,
-    text_structure::{SpanKind, SpanMeta, TextStructure},
+    text_structure::{SpanIndex, SpanKind, SpanMeta, TextStructure},
 };
 
 #[derive(Debug)]
@@ -32,6 +32,7 @@ pub enum AppAction {
     HandleMsgToApp(MsgToApp),
     EvalNote(NoteFile),
     AskLLM(LLMRequest),
+    RunLLMBLock(NoteFile, SpanIndex),
     SendFeedback(NoteFile),
     StartTutorial,
     DeferToPostRender(Box<AppAction>),
@@ -453,5 +454,6 @@ pub fn process_app_action(
             }
             SmallVec::new()
         }
+        AppAction::RunLLMBLock(note_file, span_index) => todo!(),
     }
 }
