@@ -1,6 +1,8 @@
 #![allow(non_snake_case)]
 
-use dioxus::prelude::*;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+use dioxus::{fullstack::Config, prelude::*};
 use dioxus_logger::tracing;
 mod home_page;
 use home_page::HomePage;
@@ -21,7 +23,28 @@ fn main() {
     // Init logger
     dioxus_logger::init(tracing::Level::INFO).expect("failed to init logger");
     tracing::info!("starting app");
-    launch(App);
+
+    // launch(App);
+
+    // // let serve_on_addr = SocketAddr::new("[::]:8080".into(), 8080);
+    // // launch_fullstack(app);
+    // LaunchBuilder::new()
+    //     .with_cfg(server_only! {Config::new().addr(serve_on_addr)})
+    //     .launch(App);
+
+    #[allow(dead_code)]
+    #[cfg(feature = "server")]
+    {
+        let serve_on_addr: SocketAddr = "[::]:8080".parse().unwrap();
+        LaunchBuilder::fullstack()
+            .with_cfg(Config::new().addr(serve_on_addr))
+            .launch(App);
+    }
+    #[allow(dead_code)]
+    #[cfg(feature = "web")]
+    {
+        launch(App);
+    }
 }
 
 fn App() -> Element {

@@ -835,6 +835,7 @@ dependencies = [
 name = "dioxus-site"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "dioxus",
  "dioxus-logger",
  "serde",
