@@ -3,8 +3,8 @@ use eframe::{
         self,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Context, FontFamily, Id, KeyboardShortcut, Layout, Painter, RichText, Sense,
-        TopBottomPanel, Ui, Window,
+        Context, FontFamily, Id, KeyboardShortcut, LayerId, Layout, Painter, RichText, Sense,
+        TopBottomPanel, Ui, UiStackInfo, Vec2, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
@@ -20,6 +20,7 @@ use crate::{
     app_state::{ComputedLayout, LayoutParams, MsgToApp},
     byte_span::UnOrderedByteSpan,
     command::{BuiltInCommand, CommandList, PROMOTED_COMMANDS},
+    commands::run_llm::LLM_LANG,
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
@@ -77,7 +78,7 @@ pub fn render_app(
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
 
-    let (text_has_changed, text_structure, computed_layout, updated_cursor) =
+    let (text_has_changed, text_structure, computed_layout, updated_cursor, editor_actions) =
         egui::CentralPanel::default()
             .show(ctx, |ui| {
                 let avail_space = ui.available_rect_before_wrap();
@@ -112,6 +113,7 @@ pub fn render_app(
                             mut text_structure,
                             mut updated_cursor,
                             text_draw_pos,
+                            editor_actions,
                         ) = render_editor(
                             ui,
                             editor_text,
@@ -121,6 +123,9 @@ pub fn render_app(
                             syntax_set,
                             theme_set,
                             text_edit_id,
+                            selected_note,
+                            command_list,
+                            ctx,
                         );
 
                         if changed {
@@ -181,17 +186,42 @@ pub fn render_app(
                                             InteractiveTextPart::Link(url) => {
                                                 println!("open url {url:}");
 
-                                                let parts: Vec<&str> = url.split("://").collect_vec();
+                                                let parts: Vec<&str> =
+                                                    url.split("://").collect_vec();
                                                 let action = match parts.as_slice() {
-                                                    ["shelv", "note1", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(0), via_shortcut: true },
-                                                    ["shelv", "note2", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(1), via_shortcut: true },
-                                                    ["shelv", "note3", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(2), via_shortcut: true },
-                                                    ["shelv", "note4", ..] => AppAction::SwitchToNote { note_file: NoteFile::Note(3), via_shortcut: true },
-                                                    ["shelv", "settings", ..] => AppAction::SwitchToNote { note_file: NoteFile::Settings, via_shortcut: true },
-                                                    _ => AppAction::OpenLink(url.to_string())
+                                                    ["shelv", "note1", ..] => {
+                                                        AppAction::SwitchToNote {
+                                                            note_file: NoteFile::Note(0),
+                                                            via_shortcut: true,
+                                                        }
+                                                    }
+                                                    ["shelv", "note2", ..] => {
+                                                        AppAction::SwitchToNote {
+                                                            note_file: NoteFile::Note(1),
+                                                            via_shortcut: true,
+                                                        }
+                                                    }
+                                                    ["shelv", "note3", ..] => {
+                                                        AppAction::SwitchToNote {
+                                                            note_file: NoteFile::Note(2),
+                                                            via_shortcut: true,
+                                                        }
+                                                    }
+                                                    ["shelv", "note4", ..] => {
+                                                        AppAction::SwitchToNote {
+                                                            note_file: NoteFile::Note(3),
+                                                            via_shortcut: true,
+                                                        }
+                                                    }
+                                                    ["shelv", "settings", ..] => {
+                                                        AppAction::SwitchToNote {
+                                                            note_file: NoteFile::Settings,
+                                                            via_shortcut: true,
+                                                        }
+                                                    }
+                                                    _ => AppAction::OpenLink(url.to_string()),
                                                 };
-                                                output_actions
-                                                    .push(action)
+                                                output_actions.push(action)
                                             }
                                         }
                                     }
@@ -199,12 +229,19 @@ pub fn render_app(
                             }
                         }
 
-                        (changed, text_structure, layout, updated_cursor)
+                        (
+                            changed,
+                            text_structure,
+                            layout,
+                            updated_cursor,
+                            editor_actions,
+                        )
                     })
                     .inner
             })
             .inner;
 
+    output_actions.extend(editor_actions);
     RenderAppResult {
         requested_actions: output_actions,
         updated_text_structure: text_structure,
@@ -223,13 +260,18 @@ fn render_editor(
     syntax_set: &SyntaxSet,
     theme_set: &ThemeSet,
     text_edit_id: Id,
+    note_file: NoteFile,
+    command_list: &CommandList,
+    ctx: &egui::Context,
 ) -> (
     bool, // if the text was changed, TODO rework this mess
     Option<ComputedLayout>,
     TextStructure,
     Option<UnOrderedByteSpan>,
     egui::Pos2,
+    SmallVec<[AppAction; 1]>,
 ) {
+    let mut resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
     let mut structure_wrapper = Some(text_structure);
 
     let estimated_text_pos = ui.next_widget_position();
@@ -237,12 +279,14 @@ fn render_editor(
     let code_bg = ui.visuals().code_bg_color;
     let code_bg_rounding = ui.visuals().widgets.inactive.rounding;
     if let Some(computed_layout) = &computed_layout {
-        for &area in computed_layout.code_areas.iter() {
-            ui.painter().rect_filled(
-                area.shrink(0.5).translate(estimated_text_pos.to_vec2()),
-                code_bg_rounding,
-                code_bg,
-            );
+        for area in computed_layout.code_areas.iter() {
+            let background_rect = area
+                .rect
+                .shrink(0.5)
+                .translate(estimated_text_pos.to_vec2());
+
+            ui.painter()
+                .rect_filled(background_rect, code_bg_rounding, code_bg);
         }
     }
 
@@ -294,6 +338,65 @@ fn render_editor(
         .layouter(&mut layouter)
         .show(ui);
 
+    ui.scope(|ui| {
+        set_menu_bar_style(ui);
+
+        if let Some(computed_layout) = &computed_layout {
+            for (i, area) in computed_layout
+                .code_areas
+                .iter()
+                .filter(|area| &area.lang == LLM_LANG)
+                .enumerate()
+            {
+                let code_area = area.rect.translate(estimated_text_pos.to_vec2());
+
+                {
+                    let is_hovered = ui.rect_contains_pointer(code_area);
+
+                    let mut ui = ui.child_ui(
+                        code_area.translate(Vec2::new(-theme.sizes.xs, 0.0)),
+                        Layout::right_to_left(Align::TOP),
+                        Some(UiStackInfo::new(egui::UiKind::GenericArea)),
+                    );
+
+                    let alpha = ui
+                        .ctx()
+                        .animate_bool(ui.id().with("hover").with(i), is_hovered);
+
+                    let button_color = theme
+                        .colors
+                        .subtle_text_color
+                        .gamma_multiply(0.2)
+                        .lerp_to_gamma(theme.colors.button_fg, alpha);
+
+                    let run_btn = ui
+                        .button(AppIcon::Play.render(theme.sizes.toolbar_icon, button_color))
+                        .on_hover_ui(|ui| {
+                            let tooltip_text = "Execute code block";
+                            let tooltip_text = command_list
+                                .find(BuiltInCommand::RunLLMBlock)
+                                .and_then(|cmd| cmd.shortcut)
+                                .map(|shortcut| {
+                                    format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
+                                })
+                                .unwrap_or_else(|| tooltip_text.to_string());
+
+                            ui.label(
+                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
+                            );
+                        });
+
+                    if run_btn.clicked() {
+                        resulting_actions.push(AppAction::RunLLMBLock(
+                            note_file,
+                            area.code_block_span_index,
+                        ));
+                    }
+                }
+            }
+        }
+    });
+
     use egui::TextBuffer;
 
     let byte_cursor = cursor_range.map(|range| {
@@ -310,6 +413,7 @@ fn render_editor(
         text_structure,
         byte_cursor,
         galley_pos,
+        resulting_actions,
     )
 }
 
@@ -492,7 +596,8 @@ fn render_footer_panel(
 
 fn set_menu_bar_style(ui: &mut egui::Ui) {
     let style = ui.style_mut();
-    style.spacing.button_padding = vec2(0.0, 0.0);
+    // TODO 2 seems better (more square, but we need to take the value from theme or soemthing)
+    style.spacing.button_padding = vec2(2., 0.0);
     style.spacing.item_spacing = vec2(0.0, 0.0);
     style.visuals.widgets.active.bg_stroke = Stroke::NONE;
     style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;

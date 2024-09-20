@@ -24,7 +24,7 @@ use crate::{
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
-        run_llm::run_llm_block,
+        run_llm::{run_llm_block, CodeBlockAddress},
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
         toggle_code_block::toggle_code_block,
@@ -35,7 +35,7 @@ use crate::{
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::execute_code_blocks,
     settings::{LlmSettings, SettingsNoteEvalContext},
-    text_structure::{SpanKind, TextStructure},
+    text_structure::{SpanIndex, SpanKind, SpanMeta, TextStructure},
     theme::AppTheme,
 };
 
@@ -91,10 +91,17 @@ impl AppState {
     }
 }
 
+pub struct CodeArea {
+    pub rect: Rect,
+    // TODO: use small string
+    pub lang: String,
+    pub code_block_span_index: SpanIndex,
+}
+
 pub struct ComputedLayout {
     pub galley: Arc<Galley>,
     pub layout_params_hash: u64,
-    pub code_areas: SmallVec<[Rect; 6]>,
+    pub code_areas: SmallVec<[CodeArea; 6]>,
 }
 
 #[derive(Debug)]
@@ -143,13 +150,21 @@ impl ComputedLayout {
 
         let galley = ui.fonts(|f| f.layout_job(job));
 
-        let code_areas: SmallVec<[Rect; 6]> = text_structure
+        let code_areas: SmallVec<[CodeArea; 6]> = text_structure
             .iter()
-            .filter_map(|(_index, desc)| match desc.kind {
-                SpanKind::CodeBlock => Some(desc.byte_pos),
+            .filter_map(|(index, desc)| match desc.kind {
+                SpanKind::CodeBlock => {
+                    text_structure.find_meta(index).and_then(|meta| match meta {
+                        // TODO use small string instead
+                        SpanMeta::CodeBlock { lang } => {
+                            Some((desc.byte_pos, lang.to_owned(), index))
+                        }
+                        _ => None,
+                    })
+                }
                 _ => None,
             })
-            .map(|byte_span| {
+            .map(|(byte_span, lang, index)| {
                 let [mut r_start, r_end] = [byte_span.start, byte_span.end].map(|byte_pos| {
                     let char_pos = char_index_from_byte_index(layout_params.text, byte_pos);
                     galley.pos_from_ccursor(CCursor::new(char_pos))
@@ -159,7 +174,11 @@ impl ComputedLayout {
                 r_start.extend_with(r_end.min);
                 r_start.extend_with(r_end.max);
                 r_start.set_right(r_start.right().max(layout_params.wrap_width));
-                r_start
+                CodeArea {
+                    rect: r_start,
+                    lang,
+                    code_block_span_index: index,
+                }
             })
             .collect();
 
@@ -327,7 +346,7 @@ impl AppState {
 
         editor_commands.push(EditorCommand::built_in(
             BuiltInCommand::RunLLMBlock,
-            |ctx| run_llm_block(ctx).unwrap_or_default(),
+            |ctx| run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default(),
         ));
 
         let mut editor_commands = CommandList::new(editor_commands);

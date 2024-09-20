@@ -29,6 +29,7 @@ pub enum AppIcon {
     Tutorial,
     Menu,
     Folder,
+    Play,
 }
 
 impl AppIcon {
@@ -65,6 +66,7 @@ impl AppIcon {
             AppIcon::Tutorial => P::GRADUATION_CAP,
             AppIcon::Menu => P::LIST,
             AppIcon::Folder => P::FOLDER_SIMPLE,
+            AppIcon::Play => P::PLAY,
         }
     }
 }
@@ -335,6 +337,7 @@ pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
     style.text_styles = text_styles(&theme.fonts);
     style.visuals = visuals(&theme.colors);
     style.spacing.item_spacing = Vec2::splat(theme.sizes.s);
+    style.interaction.tooltip_delay = 0.05;
     ctx.set_style(style);
 }
 
