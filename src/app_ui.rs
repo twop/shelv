@@ -8,6 +8,7 @@ use eframe::{
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
+    Frame,
 };
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
@@ -275,6 +276,7 @@ fn render_editor(
     let mut structure_wrapper = Some(text_structure);
 
     let estimated_text_pos = ui.next_widget_position();
+    let available_width = ui.available_width();
 
     let code_bg = ui.visuals().code_bg_color;
     let code_bg_rounding = ui.visuals().widgets.inactive.rounding;
@@ -358,6 +360,68 @@ fn render_editor(
                         Layout::right_to_left(Align::TOP),
                         Some(UiStackInfo::new(egui::UiKind::GenericArea)),
                     );
+
+                    // let mut window = egui::Window::new("cmd_palette")
+                    //     .resizable(false)
+                    //     .collapsible(false)
+                    //     .title_bar(false)
+                    //     .scroll([false, false])
+                    //     .enabled(true);
+
+                    // let mut is_opened = true;
+                    // window = window.open(&mut is_opened);
+
+                    // window = window.anchor(Align2::CENTER_TOP, [available_width, area.rect.top() ]);
+
+                    // window.show(ctx, |ui| {
+                    //     ui.set_min_width(text_edit_response.rect.width());
+
+                    //     ui.label(RichText::new("line 1\n, line 2\n, line 3\n, long long long long long long long longlong long long long line"));
+                    //     // if let Some(cmd_pallete) = cmd_pallete {
+                    //     //     let palette_id = Id::new("cmd_palette_text_edit");
+                    //     //     let search_term = TextEdit::singleline(&mut cmd_pallete.search).id(palette_id);
+                    //     //     let resp = search_term.show(ui);
+
+                    //     //     if resp.response.changed() {
+                    //     //         output_actions.push(AppAction::PaletteAction(
+                    //     //             CommandPaletteAction::SearchTermChanged(cmd_pallete.search.to_string()),
+                    //     //         ))
+                    //     //     }
+
+                    //     //     if resp.response.lost_focus() {
+                    //     //         output_actions.push(AppAction::PaletteAction(CommandPaletteAction::LostFocus))
+                    //     //     }
+                    //     //     // resp.request_focus();
+                    //     // }
+                    // });
+
+                    // let mut ui = ui.child_ui(
+                    //     ,
+                    //     Layout::left_to_right(Align::TOP),
+                    //     Some(UiStackInfo::new(egui::UiKind::GenericArea)),
+                    // );
+
+                    {
+                        let mut ui = ui.child_ui(
+                            code_area,
+                            Layout::left_to_right(Align::TOP),
+                            Some(UiStackInfo::new(egui::UiKind::GenericArea)),
+                        );
+
+                        egui::Frame::none()
+                            .fill(ui.visuals().window_fill)
+                            .stroke(ui.visuals().window_stroke)
+                            .shadow(ui.visuals().window_shadow)
+                            .rounding(ui.visuals().window_rounding)
+                            .show(&mut ui, |ui| {
+                                ui.set_min_width(code_area.width());
+
+                                ui.label(RichText::new(
+                                    "line 1\n, line 2\n, line 3\n,
+                        long long long long long long long longlong long long long line",
+                                ));
+                            });
+                    }
 
                     let alpha = ui
                         .ctx()
