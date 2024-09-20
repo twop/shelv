@@ -280,13 +280,13 @@ fn render_editor(
     let code_bg_rounding = ui.visuals().widgets.inactive.rounding;
     if let Some(computed_layout) = &computed_layout {
         for area in computed_layout.code_areas.iter() {
-            ui.painter().rect_filled(
-                area.rect
-                    .shrink(0.5)
-                    .translate(estimated_text_pos.to_vec2()),
-                code_bg_rounding,
-                code_bg,
-            );
+            let background_rect = area
+                .rect
+                .shrink(0.5)
+                .translate(estimated_text_pos.to_vec2());
+
+            ui.painter()
+                .rect_filled(background_rect, code_bg_rounding, code_bg);
         }
     }
 
@@ -338,66 +338,64 @@ fn render_editor(
         .layouter(&mut layouter)
         .show(ui);
 
-    ui.with_layer_id(
-        // LayerId::new(ui.de, Id::new("buttons_overlay")),
-        LayerId::new(egui::Order::Foreground, Id::new("floating buttons")),
-        |ui| {
-            set_menu_bar_style(ui);
+    ui.scope(|ui| {
+        set_menu_bar_style(ui);
 
-            if let Some(computed_layout) = &computed_layout {
-                for area in computed_layout
-                    .code_areas
-                    .iter()
-                    .filter(|area| &area.lang == LLM_LANG)
+        if let Some(computed_layout) = &computed_layout {
+            for (i, area) in computed_layout
+                .code_areas
+                .iter()
+                .filter(|area| &area.lang == LLM_LANG)
+                .enumerate()
+            {
+                let code_area = area.rect.translate(estimated_text_pos.to_vec2());
+
                 {
-                    let code_area = area.rect.translate(estimated_text_pos.to_vec2());
-                    // ui.painter()
-                    //     .rect_filled(code_area.shrink(0.5), code_bg_rounding, code_bg);
+                    let is_hovered = ui.rect_contains_pointer(code_area);
 
-                    {
-                        let mut ui = ui.child_ui(
-                            code_area.translate(Vec2::new(-theme.sizes.xs, theme.sizes.xs)),
-                            Layout::right_to_left(Align::TOP),
-                            Some(UiStackInfo::new(egui::UiKind::GenericArea)),
-                        );
-                        let run_btn = ui
-                            .button(
-                                AppIcon::Play.render(
-                                    theme.sizes.toolbar_icon,
-                                    theme.colors.subtle_text_color,
-                                ),
-                            )
-                            .on_hover_ui(|ui| {
-                                let tooltip_text = "Execute code block";
-                                let tooltip_text = command_list
-                                    .find(BuiltInCommand::RunLLMBlock)
-                                    .and_then(|cmd| cmd.shortcut)
-                                    .map(|shortcut| {
-                                        format!(
-                                            "{} {}",
-                                            tooltip_text,
-                                            ctx.format_shortcut(&shortcut)
-                                        )
-                                    })
-                                    .unwrap_or_else(|| tooltip_text.to_string());
+                    let mut ui = ui.child_ui(
+                        code_area.translate(Vec2::new(-theme.sizes.xs, 0.0)),
+                        Layout::right_to_left(Align::TOP),
+                        Some(UiStackInfo::new(egui::UiKind::GenericArea)),
+                    );
 
-                                ui.label(
-                                    RichText::new(tooltip_text)
-                                        .color(theme.colors.subtle_text_color),
-                                );
-                            });
+                    let alpha = ui
+                        .ctx()
+                        .animate_bool(ui.id().with("hover").with(i), is_hovered);
 
-                        if run_btn.clicked() {
-                            resulting_actions.push(AppAction::RunLLMBLock(
-                                note_file,
-                                area.code_block_span_index,
-                            ));
-                        }
+                    let button_color = theme
+                        .colors
+                        .subtle_text_color
+                        .gamma_multiply(0.2)
+                        .lerp_to_gamma(theme.colors.button_fg, alpha);
+
+                    let run_btn = ui
+                        .button(AppIcon::Play.render(theme.sizes.toolbar_icon, button_color))
+                        .on_hover_ui(|ui| {
+                            let tooltip_text = "Execute code block";
+                            let tooltip_text = command_list
+                                .find(BuiltInCommand::RunLLMBlock)
+                                .and_then(|cmd| cmd.shortcut)
+                                .map(|shortcut| {
+                                    format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
+                                })
+                                .unwrap_or_else(|| tooltip_text.to_string());
+
+                            ui.label(
+                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
+                            );
+                        });
+
+                    if run_btn.clicked() {
+                        resulting_actions.push(AppAction::RunLLMBLock(
+                            note_file,
+                            area.code_block_span_index,
+                        ));
                     }
                 }
             }
-        },
-    );
+        }
+    });
 
     use egui::TextBuffer;
 
