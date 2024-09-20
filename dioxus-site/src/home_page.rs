@@ -14,7 +14,7 @@ pub fn HomePage() -> Element {
     rsx! {
         Theme { color: ThemeColor::Dark,
             Content { PageHeader {} }
-            Content { 
+            Content {
                 Block {
                     left: rsx! {
                         SloganAndMacStoreLink {}
@@ -32,7 +32,7 @@ pub fn HomePage() -> Element {
             }
         }
         Wave { path: UP_WAVE_PATH, top_color: ThemeColor::Dark }
-        Theme { color: ThemeColor::Light, Content { 
+        Theme { color: ThemeColor::Light, Content {
             Block {
                 left: rsx! {
                     BlockHeader { "Markdown Native" }
@@ -61,7 +61,7 @@ pub fn HomePage() -> Element {
                     BlockHeader { "Keyboard shortcuts" }
                     BlockText { "Show/Hide Shelv with a system wide shortcut, so it is there when you need it." }
                     Space { sm: true }
-                    BlockText { 
+                    BlockText {
                         "Annotation shortcuts for "
                         b { "Bold" }
                         ", "
@@ -75,7 +75,7 @@ pub fn HomePage() -> Element {
             Space { sm: true }
         } }
         Wave { path: DOWN_WAVE_PATH, top_color: ThemeColor::Light }
-        Theme { color: ThemeColor::Dark, Content { 
+        Theme { color: ThemeColor::Dark, Content {
             div { class: "w-full px-4",
                 div { class: "border-solid border-t-1 w-full border-nord-line-break mt-8 mb-6" }
                 div {
@@ -451,7 +451,7 @@ fn SloganAndMacStoreLink() -> Element {
         div { class: "text-center lg:text-left",
             div {
                 h2 { class: "text-4xl leading-10 font-semibold sm:text-5xl sm:leading-none lg:text-5xl text-nord-h1",
-                    "The ultimate playground for your ideas"
+                    "A local-first, collaborative, and hackable note-taking app for the AI era"
                 }
                 p { class: "mt-4 max-w-md mx-auto text-lg sm:text-xl md:mt-5 md:max-w-3xl",
                     "Capture your top-of-mind using ready-to-go shelvs. Whether you're planning a trip, organizing your daily tasks, or brainstorming your next big idea, our Markdown-enabled shelves allow for a fun and efficient way to capture your thoughts without taking you out of your task."
