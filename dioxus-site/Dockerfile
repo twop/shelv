@@ -20,7 +20,7 @@ COPY . .
 # RUN npx tailwindcss -i ./input.css -o ./assets/tailwind.css --minify
 
 # # Back to the builder stage
-# FROM builder AS build
+FROM builder AS build
 # COPY --from=tailwind /app/assets/tailwind.css ./public/tailwind.css
 
 # Build the project
