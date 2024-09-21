@@ -87,6 +87,7 @@ pub enum BuiltInCommand {
 
     // Async Code blocks
     RunLLMBlock,
+    TriggerInlinePrompt,
 }
 
 /// Commands that we promote in UI
@@ -132,6 +133,7 @@ impl BuiltInCommand {
             Self::PinWindow => "Toggle Always on Top".into(),
             Self::HideApp => "Hide Window".into(),
             Self::RunLLMBlock => "Execute AI Block".into(),
+            BuiltInCommand::TriggerInlinePrompt => "Inline Prompt".into(),
         }
     }
 
@@ -161,6 +163,7 @@ impl BuiltInCommand {
             PinWindow => shortcut(Modifiers::COMMAND, Key::P),
             HideApp => shortcut(Modifiers::NONE, Key::Escape),
             RunLLMBlock => shortcut(Modifiers::COMMAND, Key::Enter),
+            TriggerInlinePrompt => shortcut(Modifiers::CTRL, Key::Enter),
         }
     }
 }

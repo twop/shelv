@@ -12,7 +12,7 @@ use crate::{
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
     settings::SettingsNoteEvalContext,
-    text_structure::{SpanIndex, SpanKind, SpanMeta, TextStructure},
+    text_structure::{SpanIndex, SpanKind, SpanMeta, TextStructure, TextStructureVersion},
 };
 
 #[derive(Debug)]
@@ -39,6 +39,7 @@ pub enum AppAction {
     DeferToPostRender(Box<AppAction>),
     FocusOnEditor,
     OpenNotesInFinder,
+    TriggerInlinePrompt(ByteSpan, NoteFile, TextStructureVersion),
 }
 
 impl AppAction {
@@ -462,5 +463,13 @@ pub fn process_app_action(
             CodeBlockAddress::TargetBlock(note_file, span_index),
         )
         .unwrap_or_default(),
+
+        AppAction::TriggerInlinePrompt(byte_span, note_file, version) => {
+            println!(
+                "Triggering inline prompt at {:?} in {:?}, version={:?}",
+                byte_span, note_file, version
+            );
+            SmallVec::new()
+        }
     }
 }

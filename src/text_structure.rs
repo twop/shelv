@@ -127,7 +127,7 @@ pub struct TextStructure {
     raw_links: Vec<RawLink>,
     spans: Vec<SpanDesc>,
     metadata: Vec<(SpanIndex, SpanMeta)>,
-    generation: u64,
+    text_hash: u64,
 }
 
 #[derive(Debug)]
@@ -190,11 +190,12 @@ impl<'a> TextStructureBuilder<'a> {
         index
     }
 
-    fn finish(self, mut annotation_points: Vec<AnnotationPoint>, generation: u64) -> TextStructure {
+    fn finish(self, mut annotation_points: Vec<AnnotationPoint>) -> TextStructure {
         let Self {
             spans,
             metadata,
             raw_links,
+            text,
             ..
         } = self;
 
@@ -207,7 +208,7 @@ impl<'a> TextStructureBuilder<'a> {
             spans,
             metadata,
             raw_links,
-            generation,
+            text_hash: fxhash::hash64(text),
         }
     }
 
@@ -293,6 +294,9 @@ fn trim_trailing_new_lines(text: &str, pos: ByteSpan) -> ByteSpan {
     ByteSpan::new(start, end)
 }
 
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+pub struct TextStructureVersion(u64);
+
 impl TextStructure {
     pub fn new(text: &str) -> Self {
         let struture = Self {
@@ -300,13 +304,13 @@ impl TextStructure {
             raw_links: vec![],
             spans: vec![],
             metadata: vec![],
-            generation: 0,
+            text_hash: 0,
         };
         struture.recycle(text)
     }
 
-    pub fn opaque_version(&self) -> u64 {
-        self.generation
+    pub fn opaque_version(&self) -> TextStructureVersion {
+        TextStructureVersion(self.text_hash)
     }
 
     pub fn recycle(self, text: &str) -> Self {
@@ -315,7 +319,7 @@ impl TextStructure {
             raw_links,
             spans,
             metadata,
-            generation,
+            ..
         } = self;
 
         let mut builder = TextStructureBuilder::start(text, (spans, raw_links, metadata));
@@ -462,7 +466,7 @@ impl TextStructure {
 
         // builder.print_structure();
 
-        builder.finish(points, generation.wrapping_add(1))
+        builder.finish(points)
     }
 
     pub fn create_layout_job(
@@ -598,48 +602,56 @@ impl TextStructure {
         &self,
         byte_cursor_pos: usize,
     ) -> Option<InteractiveTextPart> {
-        let interactive_span = self
-            .spans
-            .iter()
-            .enumerate()
-            .find(|(_, SpanDesc { kind, byte_pos, .. })| match kind {
-                SpanKind::TaskMarker | SpanKind::MdLink if byte_pos.contains_pos(byte_cursor_pos) => true,
-                _ => false,
-            });
+        let interactive_span =
+            self.spans
+                .iter()
+                .enumerate()
+                .find(|(_, SpanDesc { kind, byte_pos, .. })| match kind {
+                    SpanKind::TaskMarker | SpanKind::MdLink
+                        if byte_pos.contains_pos(byte_cursor_pos) =>
+                    {
+                        true
+                    }
+                    _ => false,
+                });
 
-        interactive_span.map_or_else(|| {
-            // Raw links in a MD link won't be interactive, which is why this is only the default case
-            self.raw_links.iter().find_map(|RawLink { url, byte_pos }| {
-                if byte_pos.contains(&byte_cursor_pos) {
-                    Some(InteractiveTextPart::Link(url.as_str()))
-                } else {
-                    None
-                }
-            })
-        }, |(index, SpanDesc { kind, byte_pos, .. })| {
-            find_metadata(SpanIndex(index), &self.metadata).and_then(|meta| match (kind, meta) {
-                (SpanKind::TaskMarker, SpanMeta::TaskMarker { checked, .. }) => {
-                    Some(InteractiveTextPart::TaskMarker {
-                        byte_range: byte_pos.clone(),
-                        checked: *checked,
-                    })
-                }
-                (SpanKind::MdLink, SpanMeta::Link { url }) => {
-                    // Only the text part inside an MD link is interactive
-                    self.iterate_immediate_children_of(SpanIndex(index)).find_map(
-                        |(_, child_span)| {
-                            match child_span.kind {
-                                SpanKind::Text if child_span.byte_pos.contains_pos(byte_cursor_pos) => Some(InteractiveTextPart::Link(url.as_str())),
-                                _ => None
-                            }
-                     
-                        },
-                    )
-                   
-                }
-                _ => None,
-            })
-        })
+        interactive_span.map_or_else(
+            || {
+                // Raw links in a MD link won't be interactive, which is why this is only the default case
+                self.raw_links.iter().find_map(|RawLink { url, byte_pos }| {
+                    if byte_pos.contains(&byte_cursor_pos) {
+                        Some(InteractiveTextPart::Link(url.as_str()))
+                    } else {
+                        None
+                    }
+                })
+            },
+            |(index, SpanDesc { kind, byte_pos, .. })| {
+                find_metadata(SpanIndex(index), &self.metadata).and_then(|meta| {
+                    match (kind, meta) {
+                        (SpanKind::TaskMarker, SpanMeta::TaskMarker { checked, .. }) => {
+                            Some(InteractiveTextPart::TaskMarker {
+                                byte_range: byte_pos.clone(),
+                                checked: *checked,
+                            })
+                        }
+                        (SpanKind::MdLink, SpanMeta::Link { url }) => {
+                            // Only the text part inside an MD link is interactive
+                            self.iterate_immediate_children_of(SpanIndex(index))
+                                .find_map(|(_, child_span)| match child_span.kind {
+                                    SpanKind::Text
+                                        if child_span.byte_pos.contains_pos(byte_cursor_pos) =>
+                                    {
+                                        Some(InteractiveTextPart::Link(url.as_str()))
+                                    }
+                                    _ => None,
+                                })
+                        }
+                        _ => None,
+                    }
+                })
+            },
+        )
     }
 
     pub fn find_surrounding_span_with_meta(
