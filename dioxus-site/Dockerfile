@@ -13,15 +13,15 @@ WORKDIR /app
 # Copy the entire project
 COPY . .
 
-# Build Tailwind CSS
-FROM node:22-alpine as tailwind
-WORKDIR /app
-COPY . .
-RUN npx tailwindcss -i ./input.css -o ./assets/tailwind.css --minify
+# # Build Tailwind CSS
+# FROM node:22-alpine as tailwind
+# WORKDIR /app
+# COPY . .
+# RUN npx tailwindcss -i ./input.css -o ./assets/tailwind.css --minify
 
-# Back to the builder stage
-FROM builder AS build
-COPY --from=tailwind /app/assets/tailwind.css ./public/tailwind.css
+# # Back to the builder stage
+# FROM builder AS build
+# COPY --from=tailwind /app/assets/tailwind.css ./public/tailwind.css
 
 # Build the project
 RUN dx build --platform fullstack --release
