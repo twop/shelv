@@ -46,7 +46,8 @@ pub enum AppAction {
     DeferToPostRender(Box<AppAction>),
     FocusOnEditor,
     OpenNotesInFinder,
-    TriggerInlinePrompt(ByteSpan, NoteFile, TextStructureVersion),
+    TriggerInlinePromptUI(TextSelectionAddress),
+    RunInlineLLMPrompt,
 }
 
 impl AppAction {
@@ -337,6 +338,7 @@ pub fn process_app_action(
                             InlineLLMResponseChunk::Chunk(chunk) => {
                                 let InlineLLMPropmptState {
                                     mut response_text,
+                                    prompt,
                                     address,
                                     mut diff_parts,
                                     layout_job: _,
@@ -362,6 +364,8 @@ pub fn process_app_action(
                                         }),
                                 );
 
+                                println!("----diff_parts: {diff_parts:#?}");
+
                                 let layout_job =
                                     create_layout_job_from_text_diff(&diff_parts, &state.theme);
 
@@ -369,6 +373,7 @@ pub fn process_app_action(
                                     address,
                                     response_text,
                                     diff_parts,
+                                    prompt,
                                     layout_job,
                                 });
                                 SmallVec::new()
@@ -540,25 +545,24 @@ pub fn process_app_action(
         )
         .unwrap_or_default(),
 
-        AppAction::TriggerInlinePrompt(byte_span, note_file, version) => {
-            println!(
-                "Triggering inline prompt at {:?} in {:?}, version={:?}",
-                byte_span, note_file, version
-            );
-
-            // TODO clean it up when detecting changes
-            let address = TextSelectionAddress {
-                span: byte_span,
-                note_file,
-                text_version: version,
-            };
+        AppAction::TriggerInlinePromptUI(address) => {
+            println!("Triggering inline prompt {address:#?}",);
 
             state.inline_llm_prompt = Some(InlineLLMPropmptState {
                 address,
                 response_text: "".to_string(),
                 diff_parts: vec![],
                 layout_job: LayoutJob::default(),
+                prompt: "".to_string(),
             });
+
+            SmallVec::new()
+        }
+
+        AppAction::RunInlineLLMPrompt => {
+            let Some(prompt) = &mut state.inline_llm_prompt else {
+                return SmallVec::default();
+            };
 
             let model = state
                 .llm_settings
@@ -566,15 +570,20 @@ pub fn process_app_action(
                 .map(|s| s.model.clone())
                 .unwrap_or_else(|| DEFAULT_LLM_MODEL.to_string());
 
+            prompt.response_text = "".to_string();
+            prompt.layout_job = LayoutJob::default();
+
             app_io.ask_llm_inline(InlineLLMPromptRequest {
-                prompt: "Fix gramma, stylistic and spelling errors".to_string(),
-                selection: state.notes.get(&note_file).unwrap().text[byte_span.range()].to_string(),
+                prompt: prompt.prompt.clone(),
+                selection: state.notes.get(&prompt.address.note_file).unwrap().text
+                    [prompt.address.span.range()]
+                .to_string(),
                 model,
                 system_prompt: Some(
-                    "Answer ONLY what you have been asked for, no extra comments".to_string(),
+                    "Answer ONLY what you have been asked for, no extra comments or additional information".to_string(),
                 ),
 
-                selection_location: address,
+                selection_location: prompt.address,
             });
 
             SmallVec::new()

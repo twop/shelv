@@ -4,7 +4,7 @@ use eframe::{
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
         Context, FontFamily, Id, KeyboardShortcut, LayerId, Layout, Painter, RichText, Sense,
-        TopBottomPanel, Ui, UiStackInfo, Vec2, WidgetText, Window,
+        TextEdit, TopBottomPanel, Ui, UiStackInfo, Vec2, WidgetText, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
@@ -38,7 +38,7 @@ pub struct AppRenderData<'a> {
     pub syntax_set: &'a SyntaxSet,
     pub theme_set: &'a ThemeSet,
     pub computed_layout: Option<ComputedLayout>,
-    pub inline_llm_prompt: Option<&'a InlineLLMPropmptState>,
+    pub inline_llm_prompt: Option<&'a mut InlineLLMPropmptState>,
     pub is_window_pinned: bool,
 }
 
@@ -260,7 +260,7 @@ fn render_editor(
     editor_text: &mut String,
     text_structure: TextStructure,
     mut computed_layout: Option<ComputedLayout>,
-    inline_llm_prompt: Option<&InlineLLMPropmptState>,
+    inline_llm_prompt: Option<&mut InlineLLMPropmptState>,
     theme: &AppTheme,
     syntax_set: &SyntaxSet,
     theme_set: &ThemeSet,
@@ -405,12 +405,21 @@ fn render_editor(
     });
 
     if let Some(inline_llm_prompt) = inline_llm_prompt {
-        // let char_pos = char_index_from_byte_index(layout_params.text, byte_pos);
-        // galley.pos_from_ccursor(CCursor::new(char_pos))
+        let char_pos = char_index_from_byte_index(editor_text, inline_llm_prompt.address.span.end);
+        let selection_start = galley.pos_from_ccursor(CCursor::new(char_pos));
 
         let mut ui = ui.child_ui(
-            Rect::from_two_pos(pos2(10., 10.), pos2(galley.rect.width(), galley_pos.y)),
-            Layout::left_to_right(Align::TOP),
+            Rect::from_two_pos(
+                pos2(
+                    estimated_text_pos.x,
+                    selection_start.bottom() + estimated_text_pos.y,
+                ),
+                pos2(
+                    estimated_text_pos.x,
+                    selection_start.bottom() + estimated_text_pos.y,
+                ),
+            ),
+            Layout::top_down(Align::LEFT),
             Some(UiStackInfo::new(egui::UiKind::GenericArea)),
         );
 
@@ -420,9 +429,23 @@ fn render_editor(
             .shadow(ui.visuals().window_shadow)
             .rounding(ui.visuals().window_rounding)
             .show(&mut ui, |ui| {
-                ui.set_min_width(galley.rect.width());
+                ui.set_min_width(available_width);
 
-                ui.label(WidgetText::LayoutJob(inline_llm_prompt.layout_job.clone()));
+                TextEdit::multiline(&mut inline_llm_prompt.prompt)
+                    .desired_width(f32::INFINITY)
+                    .show(ui);
+
+                ui.separator();
+                if ui.button("Run").clicked() {
+                    resulting_actions.push(AppAction::RunInlineLLMPrompt);
+                }
+
+                ui.separator();
+
+                ui.scope(|ui| {
+                    ui.set_min_height(50.);
+                    ui.label(WidgetText::LayoutJob(inline_llm_prompt.layout_job.clone()));
+                })
             });
     }
 

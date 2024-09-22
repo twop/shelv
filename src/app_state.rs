@@ -55,6 +55,7 @@ pub struct TextSelectionAddress {
 
 #[derive(Debug)]
 pub struct InlineLLMPropmptState {
+    pub prompt: String,
     pub address: TextSelectionAddress,
     pub response_text: String,
     pub diff_parts: Vec<TextDiffPart>,
