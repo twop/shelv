@@ -13,6 +13,7 @@ use syntect::{
 
 use crate::{
     byte_span::ByteSpan,
+    nord::Nord,
     scripting::OUTPUT_LANG,
     theme::{AppTheme, ColorTheme, FontTheme},
 };
@@ -134,6 +135,14 @@ pub struct TextStructure {
 struct RawLink {
     url: String,
     byte_pos: Range<usize>,
+}
+
+/// this is for inline LLM prompts and suggestions in the future
+#[derive(Debug)]
+pub enum TextDiffPart {
+    Equal(String),
+    Delete(String),
+    Insert(String),
 }
 
 pub struct TextStructureBuilder<'a> {
@@ -1061,6 +1070,35 @@ impl MarkdownRunningState {
             ..Default::default()
         }
     }
+}
+
+pub fn create_layout_job_from_text_diff(parts: &[TextDiffPart], theme: &AppTheme) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    let normal_format = TextFormat::simple(
+        FontId::new(theme.fonts.size.normal, theme.fonts.family.normal.clone()),
+        theme.colors.normal_text_color,
+    );
+
+    let deletion_format = TextFormat {
+        background: Nord::NORD11.gamma_multiply(0.3),
+        color: theme.colors.subtle_text_color,
+        ..normal_format.clone()
+    };
+
+    let addition_format = TextFormat {
+        background: Nord::NORD14.gamma_multiply(0.3),
+        ..normal_format.clone()
+    };
+
+    for part in parts {
+        match part {
+            TextDiffPart::Equal(text) => job.append(text, 0.0, normal_format.clone()),
+            TextDiffPart::Delete(text) => job.append(text, 0.0, deletion_format.clone()),
+            TextDiffPart::Insert(text) => job.append(text, 0.0, addition_format.clone()),
+        }
+    }
+
+    job
 }
 
 #[cfg(test)]

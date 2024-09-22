@@ -60,6 +60,7 @@ tokio = { version = "1.40.0", features = ["full"] }
 tokio-stream = "0.1.15"
 sentry = "0.34.0"
 fxhash = "0.2.1"
+similar = "2.6.0"
 
 [patch.crates-io]
 winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.29.15" }

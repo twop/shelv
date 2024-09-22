@@ -1,7 +1,8 @@
 use std::{io, path::PathBuf};
 
-use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
+use eframe::egui::{text::LayoutJob, Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
 
+use similar::{ChangeTag, TextDiff};
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
@@ -15,7 +16,10 @@ use crate::{
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
     settings::SettingsNoteEvalContext,
-    text_structure::{SpanIndex, SpanKind, SpanMeta, TextStructure, TextStructureVersion},
+    text_structure::{
+        create_layout_job_from_text_diff, SpanIndex, SpanKind, SpanMeta, TextDiffPart,
+        TextStructure, TextStructureVersion,
+    },
 };
 
 #[derive(Debug)]
@@ -327,23 +331,60 @@ pub fn process_app_action(
                 MsgToApp::InlineLLMResponse {
                     response,
                     address: target_address,
-                } => match &mut state.inline_llm_prompt {
-                    Some(InlineLLMPropmptState {
-                        address,
-                        response_text,
-                        response_structure,
-                        computed_layout: _,
-                    }) if target_address == *address => match response {
-                        InlineLLMResponseChunk::Chunk(chunk) => {
-                            response_text.push_str(&chunk);
-                            *response_structure = TextStructure::new(response_text);
+                } => match state.inline_llm_prompt.take() {
+                    Some(prompt_state) if prompt_state.address == target_address => {
+                        match response {
+                            InlineLLMResponseChunk::Chunk(chunk) => {
+                                let InlineLLMPropmptState {
+                                    mut response_text,
+                                    address,
+                                    mut diff_parts,
+                                    layout_job: _,
+                                } = prompt_state;
 
-                            SmallVec::new()
+                                response_text.push_str(&chunk);
+
+                                diff_parts.clear();
+
+                                let selection = &state.notes.get(&address.note_file).unwrap().text
+                                    [address.span.range()];
+
+                                diff_parts.extend(
+                                    TextDiff::from_words(selection, &response_text)
+                                        .iter_all_changes()
+                                        .map(|change| {
+                                            let part_str = change.to_string_lossy().to_string();
+                                            match change.tag() {
+                                                ChangeTag::Equal => TextDiffPart::Equal(part_str),
+                                                ChangeTag::Delete => TextDiffPart::Delete(part_str),
+                                                ChangeTag::Insert => TextDiffPart::Insert(part_str),
+                                            }
+                                        }),
+                                );
+
+                                let layout_job =
+                                    create_layout_job_from_text_diff(&diff_parts, &state.theme);
+
+                                state.inline_llm_prompt = Some(InlineLLMPropmptState {
+                                    address,
+                                    response_text,
+                                    diff_parts,
+                                    layout_job,
+                                });
+                                SmallVec::new()
+                            }
+
+                            InlineLLMResponseChunk::End => {
+                                state.inline_llm_prompt = Some(prompt_state);
+                                SmallVec::new()
+                            }
                         }
+                    }
 
-                        InlineLLMResponseChunk::End => SmallVec::new(),
-                    },
-                    _ => SmallVec::new(),
+                    prompt_state => {
+                        state.inline_llm_prompt = prompt_state;
+                        SmallVec::new()
+                    }
                 },
             }
         }
@@ -515,8 +556,8 @@ pub fn process_app_action(
             state.inline_llm_prompt = Some(InlineLLMPropmptState {
                 address,
                 response_text: "".to_string(),
-                response_structure: TextStructure::new(""),
-                computed_layout: None,
+                diff_parts: vec![],
+                layout_job: LayoutJob::default(),
             });
 
             let model = state

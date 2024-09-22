@@ -422,14 +422,7 @@ fn render_editor(
             .show(&mut ui, |ui| {
                 ui.set_min_width(galley.rect.width());
 
-                ui.label(WidgetText::LayoutJob(
-                    inline_llm_prompt.response_structure.create_layout_job(
-                        &inline_llm_prompt.response_text,
-                        theme,
-                        syntax_set,
-                        theme_set,
-                    ),
-                ));
+                ui.label(WidgetText::LayoutJob(inline_llm_prompt.layout_job.clone()));
             });
     }
 

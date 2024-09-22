@@ -6,7 +6,11 @@ use std::{
 };
 
 use eframe::{
-    egui::{self, text::CCursor, Key, KeyboardShortcut, Modifiers, Rect, Ui},
+    egui::{
+        self,
+        text::{CCursor, LayoutJob},
+        Key, KeyboardShortcut, Modifiers, Rect, Ui,
+    },
     epaint::Galley,
 };
 use itertools::Itertools;
@@ -36,7 +40,9 @@ use crate::{
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::execute_code_blocks,
     settings::{LlmSettings, SettingsNoteEvalContext},
-    text_structure::{SpanIndex, SpanKind, SpanMeta, TextStructure, TextStructureVersion},
+    text_structure::{
+        SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextStructure, TextStructureVersion,
+    },
     theme::AppTheme,
 };
 
@@ -51,8 +57,8 @@ pub struct TextSelectionAddress {
 pub struct InlineLLMPropmptState {
     pub address: TextSelectionAddress,
     pub response_text: String,
-    pub response_structure: TextStructure,
-    pub computed_layout: Option<ComputedLayout>,
+    pub diff_parts: Vec<TextDiffPart>,
+    pub layout_job: LayoutJob,
 }
 
 #[derive(Debug)]
