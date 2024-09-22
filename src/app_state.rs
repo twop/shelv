@@ -46,7 +46,7 @@ use crate::{
     theme::AppTheme,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub struct TextSelectionAddress {
     pub span: ByteSpan,
     pub note_file: NoteFile,
@@ -60,6 +60,7 @@ pub struct InlineLLMPropmptState {
     pub response_text: String,
     pub diff_parts: Vec<TextDiffPart>,
     pub layout_job: LayoutJob,
+    pub done: bool,
 }
 
 #[derive(Debug)]
@@ -143,11 +144,11 @@ impl<'a> LayoutParams<'a> {
             text,
             wrap_width,
             hash: {
-                let mut s = DefaultHasher::new();
-                text.hash(&mut s);
+                let mut hasher = fxhash::FxHasher::default();
+                text.hash(&mut hasher);
                 // note that it is OK to round it up
-                ((wrap_width * 100.0) as i64).hash(&mut s);
-                s.finish()
+                ((wrap_width * 100.0) as i64).hash(&mut hasher);
+                hasher.finish()
             },
         }
     }

@@ -1,10 +1,12 @@
+use core::f32;
+
 use eframe::{
     egui::{
         self,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Context, FontFamily, Id, KeyboardShortcut, LayerId, Layout, Painter, RichText, Sense,
-        TextEdit, TopBottomPanel, Ui, UiStackInfo, Vec2, WidgetText, Window,
+        Context, FontFamily, Id, KeyboardShortcut, LayerId, Layout, ModifierNames, Painter,
+        RichText, Sense, TextEdit, TopBottomPanel, Ui, UiStackInfo, Vec2, WidgetText, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
@@ -407,46 +409,81 @@ fn render_editor(
     if let Some(inline_llm_prompt) = inline_llm_prompt {
         let char_pos = char_index_from_byte_index(editor_text, inline_llm_prompt.address.span.end);
         let selection_start = galley.pos_from_ccursor(CCursor::new(char_pos));
+        // TODO fix layout, I suspect that we need to subtract twice because of padding on each side
+        // BUT wtf?! it is not intuitive neither robust
+        let frame_width = galley.job.wrap.max_width - 2. * estimated_text_pos.x;
 
         let mut ui = ui.child_ui(
-            Rect::from_two_pos(
-                pos2(
-                    estimated_text_pos.x,
-                    selection_start.bottom() + estimated_text_pos.y,
-                ),
-                pos2(
-                    estimated_text_pos.x,
-                    selection_start.bottom() + estimated_text_pos.y,
-                ),
-            ),
+            Rect::from_pos(pos2(
+                estimated_text_pos.x,
+                selection_start.bottom() + estimated_text_pos.y + theme.sizes.xs,
+            )),
             Layout::top_down(Align::LEFT),
             Some(UiStackInfo::new(egui::UiKind::GenericArea)),
         );
 
-        egui::Frame::none()
-            .fill(ui.visuals().window_fill)
+        let resp = egui::Frame::none()
+            .fill(code_bg)
+            .inner_margin(theme.sizes.s)
             .stroke(ui.visuals().window_stroke)
             .shadow(ui.visuals().window_shadow)
             .rounding(ui.visuals().window_rounding)
             .show(&mut ui, |ui| {
-                ui.set_min_width(available_width);
-
+                ui.set_min_width(frame_width);
                 TextEdit::multiline(&mut inline_llm_prompt.prompt)
+                    .id(Id::new(inline_llm_prompt.address))
                     .desired_width(f32::INFINITY)
+                    .frame(false)
+                    .desired_rows(1)
+                    .desired_width(f32::INFINITY)
+                    .hint_text("Add an AI prompt")
                     .show(ui);
 
+                ui.add_space(theme.sizes.s);
                 ui.separator();
-                if ui.button("Run").clicked() {
+                ui.add_space(theme.sizes.s);
+                if ui
+                    .button(
+                        "Run", //     format!(
+                              //     "Run {}",
+                              //     KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Enter)
+                              //         .format(&ModifierNames::SYMBOLS, true)
+                              // )
+                    )
+                    .clicked()
+                {
                     resulting_actions.push(AppAction::RunInlineLLMPrompt);
                 }
 
-                ui.separator();
-
-                ui.scope(|ui| {
-                    ui.set_min_height(50.);
+                if !inline_llm_prompt.response_text.is_empty() {
+                    ui.add_space(theme.sizes.s);
+                    ui.separator();
+                    ui.add_space(theme.sizes.s);
                     ui.label(WidgetText::LayoutJob(inline_llm_prompt.layout_job.clone()));
-                })
+                }
+
+                if inline_llm_prompt.done {
+                    ui.add_space(theme.sizes.s);
+                    ui.separator();
+                    ui.add_space(theme.sizes.s);
+                    ui.horizontal(|ui| {
+                        if ui.button("Accept").clicked() {
+                            resulting_actions
+                                .push(AppAction::AcceptInlinePropmptResult { accept: true });
+                        }
+
+                        ui.add_space(theme.sizes.s);
+                        if ui.button("Reject").clicked() {
+                            resulting_actions
+                                .push(AppAction::AcceptInlinePropmptResult { accept: false });
+                        }
+                    });
+                }
             });
+
+        if resp.response.lost_focus() {
+            println!("lost focus from inline prompt overlay");
+        }
     }
 
     use egui::TextBuffer;
@@ -801,7 +838,7 @@ fn render_header_panel(
                         .button(AppIcon::Pin.render(
                             sizes.toolbar_icon,
                             if is_window_pinned {
-                                theme.colors.button_fg
+                                theme.colors.button_pressed_fg
                             } else {
                                 theme.colors.subtle_text_color
                             },

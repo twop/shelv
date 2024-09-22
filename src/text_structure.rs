@@ -303,7 +303,7 @@ fn trim_trailing_new_lines(text: &str, pos: ByteSpan) -> ByteSpan {
     ByteSpan::new(start, end)
 }
 
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+#[derive(Clone, Debug, Copy, Hash, PartialEq, Eq)]
 pub struct TextStructureVersion(u64);
 
 impl TextStructure {

@@ -48,6 +48,9 @@ pub enum AppAction {
     OpenNotesInFinder,
     TriggerInlinePromptUI(TextSelectionAddress),
     RunInlineLLMPrompt,
+    AcceptInlinePropmptResult {
+        accept: bool,
+    },
 }
 
 impl AppAction {
@@ -342,6 +345,7 @@ pub fn process_app_action(
                                     address,
                                     mut diff_parts,
                                     layout_job: _,
+                                    done,
                                 } = prompt_state;
 
                                 response_text.push_str(&chunk);
@@ -364,7 +368,7 @@ pub fn process_app_action(
                                         }),
                                 );
 
-                                println!("----diff_parts: {diff_parts:#?}");
+                                // println!("----diff_parts: {diff_parts:#?}");
 
                                 let layout_job =
                                     create_layout_job_from_text_diff(&diff_parts, &state.theme);
@@ -375,12 +379,16 @@ pub fn process_app_action(
                                     diff_parts,
                                     prompt,
                                     layout_job,
+                                    done,
                                 });
                                 SmallVec::new()
                             }
 
                             InlineLLMResponseChunk::End => {
-                                state.inline_llm_prompt = Some(prompt_state);
+                                state.inline_llm_prompt = Some(InlineLLMPropmptState {
+                                    done: true,
+                                    ..prompt_state
+                                });
                                 SmallVec::new()
                             }
                         }
@@ -554,6 +562,7 @@ pub fn process_app_action(
                 diff_parts: vec![],
                 layout_job: LayoutJob::default(),
                 prompt: "".to_string(),
+                done: false,
             });
 
             SmallVec::new()
@@ -587,6 +596,33 @@ pub fn process_app_action(
             });
 
             SmallVec::new()
+        }
+
+        AppAction::AcceptInlinePropmptResult { accept } => {
+            let mut resulting_actions = SmallVec::from_buf([AppAction::DeferToPostRender(
+                Box::new(AppAction::FocusOnEditor),
+            )]);
+
+            let Some(prompt) = state.inline_llm_prompt.take() else {
+                return resulting_actions;
+            };
+
+            if accept {
+                let changes = vec![TextChange::Replace(
+                    prompt.address.span,
+                    prompt.response_text,
+                )];
+
+                resulting_actions.push(AppAction::ApplyTextChanges {
+                    target: prompt.address.note_file,
+                    changes,
+                    should_trigger_eval: true,
+                });
+
+                resulting_actions
+            } else {
+                resulting_actions
+            }
         }
     }
 }
