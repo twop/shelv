@@ -4,7 +4,7 @@ use eframe::{
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
         Context, FontFamily, Id, KeyboardShortcut, LayerId, Layout, Painter, RichText, Sense,
-        TopBottomPanel, Ui, UiStackInfo, Vec2, Window,
+        TopBottomPanel, Ui, UiStackInfo, Vec2, WidgetText, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
@@ -18,10 +18,10 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     app_actions::AppAction,
-    app_state::{ComputedLayout, LayoutParams, MsgToApp},
+    app_state::{ComputedLayout, InlineLLMPropmptState, LayoutParams, MsgToApp},
     byte_span::UnOrderedByteSpan,
     command::{BuiltInCommand, CommandList, PROMOTED_COMMANDS},
-    commands::run_llm::LLM_LANG,
+    commands::{inline_llm_prompt, run_llm::LLM_LANG},
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
@@ -38,6 +38,7 @@ pub struct AppRenderData<'a> {
     pub syntax_set: &'a SyntaxSet,
     pub theme_set: &'a ThemeSet,
     pub computed_layout: Option<ComputedLayout>,
+    pub inline_llm_prompt: Option<&'a InlineLLMPropmptState>,
     pub is_window_pinned: bool,
 }
 
@@ -66,6 +67,7 @@ pub fn render_app(
         syntax_set,
         theme_set,
         is_window_pinned,
+        inline_llm_prompt,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
@@ -120,6 +122,7 @@ pub fn render_app(
                             editor_text,
                             text_structure,
                             computed_layout,
+                            inline_llm_prompt,
                             theme,
                             syntax_set,
                             theme_set,
@@ -257,6 +260,7 @@ fn render_editor(
     editor_text: &mut String,
     text_structure: TextStructure,
     mut computed_layout: Option<ComputedLayout>,
+    inline_llm_prompt: Option<&InlineLLMPropmptState>,
     theme: &AppTheme,
     syntax_set: &SyntaxSet,
     theme_set: &ThemeSet,
@@ -329,6 +333,7 @@ fn render_editor(
         response: text_edit_response,
         galley_pos,
         cursor_range,
+        galley,
         ..
     } = egui::TextEdit::multiline(editor_text)
         .font(egui::TextStyle::Monospace) // for cursor height
@@ -360,68 +365,6 @@ fn render_editor(
                         Layout::right_to_left(Align::TOP),
                         Some(UiStackInfo::new(egui::UiKind::GenericArea)),
                     );
-
-                    // let mut window = egui::Window::new("cmd_palette")
-                    //     .resizable(false)
-                    //     .collapsible(false)
-                    //     .title_bar(false)
-                    //     .scroll([false, false])
-                    //     .enabled(true);
-
-                    // let mut is_opened = true;
-                    // window = window.open(&mut is_opened);
-
-                    // window = window.anchor(Align2::CENTER_TOP, [available_width, area.rect.top() ]);
-
-                    // window.show(ctx, |ui| {
-                    //     ui.set_min_width(text_edit_response.rect.width());
-
-                    //     ui.label(RichText::new("line 1\n, line 2\n, line 3\n, long long long long long long long longlong long long long line"));
-                    //     // if let Some(cmd_pallete) = cmd_pallete {
-                    //     //     let palette_id = Id::new("cmd_palette_text_edit");
-                    //     //     let search_term = TextEdit::singleline(&mut cmd_pallete.search).id(palette_id);
-                    //     //     let resp = search_term.show(ui);
-
-                    //     //     if resp.response.changed() {
-                    //     //         output_actions.push(AppAction::PaletteAction(
-                    //     //             CommandPaletteAction::SearchTermChanged(cmd_pallete.search.to_string()),
-                    //     //         ))
-                    //     //     }
-
-                    //     //     if resp.response.lost_focus() {
-                    //     //         output_actions.push(AppAction::PaletteAction(CommandPaletteAction::LostFocus))
-                    //     //     }
-                    //     //     // resp.request_focus();
-                    //     // }
-                    // });
-
-                    // let mut ui = ui.child_ui(
-                    //     ,
-                    //     Layout::left_to_right(Align::TOP),
-                    //     Some(UiStackInfo::new(egui::UiKind::GenericArea)),
-                    // );
-
-                    {
-                        let mut ui = ui.child_ui(
-                            code_area,
-                            Layout::left_to_right(Align::TOP),
-                            Some(UiStackInfo::new(egui::UiKind::GenericArea)),
-                        );
-
-                        egui::Frame::none()
-                            .fill(ui.visuals().window_fill)
-                            .stroke(ui.visuals().window_stroke)
-                            .shadow(ui.visuals().window_shadow)
-                            .rounding(ui.visuals().window_rounding)
-                            .show(&mut ui, |ui| {
-                                ui.set_min_width(code_area.width());
-
-                                ui.label(RichText::new(
-                                    "line 1\n, line 2\n, line 3\n,
-                        long long long long long long long longlong long long long line",
-                                ));
-                            });
-                    }
 
                     let alpha = ui
                         .ctx()
@@ -460,6 +403,35 @@ fn render_editor(
             }
         }
     });
+
+    if let Some(inline_llm_prompt) = inline_llm_prompt {
+        // let char_pos = char_index_from_byte_index(layout_params.text, byte_pos);
+        // galley.pos_from_ccursor(CCursor::new(char_pos))
+
+        let mut ui = ui.child_ui(
+            Rect::from_two_pos(pos2(10., 10.), pos2(galley.rect.width(), galley_pos.y)),
+            Layout::left_to_right(Align::TOP),
+            Some(UiStackInfo::new(egui::UiKind::GenericArea)),
+        );
+
+        egui::Frame::none()
+            .fill(ui.visuals().window_fill)
+            .stroke(ui.visuals().window_stroke)
+            .shadow(ui.visuals().window_shadow)
+            .rounding(ui.visuals().window_rounding)
+            .show(&mut ui, |ui| {
+                ui.set_min_width(galley.rect.width());
+
+                ui.label(WidgetText::LayoutJob(
+                    inline_llm_prompt.response_structure.create_layout_job(
+                        &inline_llm_prompt.response_text,
+                        theme,
+                        syntax_set,
+                        theme_set,
+                    ),
+                ));
+            });
+    }
 
     use egui::TextBuffer;
 

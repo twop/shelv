@@ -5,9 +5,12 @@ use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
-    app_state::{AppState, MsgToApp, UnsavedChange},
+    app_state::{
+        AppState, InlineLLMPropmptState, InlineLLMResponseChunk, MsgToApp, TextSelectionAddress,
+        UnsavedChange,
+    },
     byte_span::{ByteSpan, UnOrderedByteSpan},
-    commands::run_llm::{run_llm_block, CodeBlockAddress},
+    commands::run_llm::{prepare_to_run_llm_block, CodeBlockAddress, DEFAULT_LLM_MODEL},
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
@@ -32,7 +35,7 @@ pub enum AppAction {
     },
     HandleMsgToApp(MsgToApp),
     EvalNote(NoteFile),
-    AskLLM(LLMRequest),
+    AskLLM(LLMBlockRequest),
     RunLLMBLock(NoteFile, SpanIndex),
     SendFeedback(NoteFile),
     StartTutorial,
@@ -65,12 +68,21 @@ pub struct Conversation {
 }
 
 #[derive(Debug)]
-pub struct LLMRequest {
+pub struct LLMBlockRequest {
     pub system_prompt: Option<String>,
     pub model: String,
     pub conversation: Conversation,
     pub output_code_block_address: String,
     pub note_id: NoteFile,
+}
+
+#[derive(Debug)]
+pub struct InlineLLMPromptRequest {
+    pub prompt: String,
+    pub selection: String,
+    pub model: String,
+    pub system_prompt: Option<String>,
+    pub selection_location: TextSelectionAddress,
 }
 
 // TODO consider focus, opening links etc as IO operations
@@ -93,7 +105,8 @@ pub trait AppIO {
         to: Box<dyn Fn() -> MsgToApp>,
     ) -> Result<(), String>;
 
-    fn ask_llm(&self, question: LLMRequest);
+    fn ask_llm(&self, question: LLMBlockRequest);
+    fn ask_llm_inline(&self, quesion: InlineLLMPromptRequest);
 }
 
 pub fn process_app_action(
@@ -244,7 +257,7 @@ pub fn process_app_action(
                     .map(|msg| [AppAction::HandleMsgToApp(msg)].into())
                     .unwrap_or_default(),
 
-                MsgToApp::LLMResponseChunk(resp) => {
+                MsgToApp::LLMBlockResponseChunk(resp) => {
                     // TODO(simon): this entire code is VERY ugly, and deserves to be better
                     let note = &mut state.notes.get_mut(&resp.note_id).unwrap();
                     let text = &mut note.text;
@@ -310,6 +323,28 @@ pub fn process_app_action(
                         })
                         .unwrap_or_default()
                 }
+
+                MsgToApp::InlineLLMResponse {
+                    response,
+                    address: target_address,
+                } => match &mut state.inline_llm_prompt {
+                    Some(InlineLLMPropmptState {
+                        address,
+                        response_text,
+                        response_structure,
+                        computed_layout: _,
+                    }) if target_address == *address => match response {
+                        InlineLLMResponseChunk::Chunk(chunk) => {
+                            response_text.push_str(&chunk);
+                            *response_structure = TextStructure::new(response_text);
+
+                            SmallVec::new()
+                        }
+
+                        InlineLLMResponseChunk::End => SmallVec::new(),
+                    },
+                    _ => SmallVec::new(),
+                },
             }
         }
 
@@ -458,7 +493,7 @@ pub fn process_app_action(
             SmallVec::new()
         }
 
-        AppAction::RunLLMBLock(note_file, span_index) => run_llm_block(
+        AppAction::RunLLMBLock(note_file, span_index) => prepare_to_run_llm_block(
             crate::command::CommandContext { app_state: state },
             CodeBlockAddress::TargetBlock(note_file, span_index),
         )
@@ -469,6 +504,38 @@ pub fn process_app_action(
                 "Triggering inline prompt at {:?} in {:?}, version={:?}",
                 byte_span, note_file, version
             );
+
+            // TODO clean it up when detecting changes
+            let address = TextSelectionAddress {
+                span: byte_span,
+                note_file,
+                text_version: version,
+            };
+
+            state.inline_llm_prompt = Some(InlineLLMPropmptState {
+                address,
+                response_text: "".to_string(),
+                response_structure: TextStructure::new(""),
+                computed_layout: None,
+            });
+
+            let model = state
+                .llm_settings
+                .as_ref()
+                .map(|s| s.model.clone())
+                .unwrap_or_else(|| DEFAULT_LLM_MODEL.to_string());
+
+            app_io.ask_llm_inline(InlineLLMPromptRequest {
+                prompt: "Fix gramma, stylistic and spelling errors".to_string(),
+                selection: state.notes.get(&note_file).unwrap().text[byte_span.range()].to_string(),
+                model,
+                system_prompt: Some(
+                    "Answer ONLY what you have been asked for, no extra comments".to_string(),
+                ),
+
+                selection_location: address,
+            });
+
             SmallVec::new()
         }
     }

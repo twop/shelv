@@ -312,6 +312,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             syntax_set: &app_state.syntax_set,
             theme_set: &app_state.theme_set,
             computed_layout: app_state.computed_layout.take(),
+            inline_llm_prompt: app_state.inline_llm_prompt.as_ref(),
         };
 
         let RenderAppResult {
