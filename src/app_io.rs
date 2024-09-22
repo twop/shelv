@@ -248,6 +248,7 @@ impl AppIO for RealAppIO {
                         "selection is  <selection>{selection_body}</selection>",
                         "prompt is marked as <prompt>{prompt_body}</prompt>",
                         "answer the prompt quesion, using selection as the context and source",
+                        "do not include <selection></selection> into response",
                         "AVOID any extra comments, output ONLY the result",
                     ]
                     .join("\n"),

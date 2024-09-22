@@ -5,8 +5,9 @@ use eframe::{
         self,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Context, FontFamily, Id, KeyboardShortcut, LayerId, Layout, ModifierNames, Painter,
-        RichText, Sense, TextEdit, TopBottomPanel, Ui, UiStackInfo, Vec2, WidgetText, Window,
+        Context, FontFamily, Id, KeyboardShortcut, LayerId, Layout, ModifierNames, Modifiers,
+        Painter, RichText, Sense, TextEdit, TopBottomPanel, Ui, UiStackInfo, Vec2, WidgetText,
+        Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
@@ -25,7 +26,10 @@ use crate::{
     },
     byte_span::UnOrderedByteSpan,
     command::{BuiltInCommand, CommandList, PROMOTED_COMMANDS},
-    commands::{inline_llm_prompt, run_llm::LLM_LANG},
+    commands::{
+        inline_llm_prompt::{self, compute_inline_prompt_text_input_id},
+        run_llm::LLM_LANG,
+    },
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
@@ -409,19 +413,39 @@ fn render_editor(
     });
 
     if let Some(inline_llm_prompt) = inline_llm_prompt {
-        let char_pos = char_index_from_byte_index(editor_text, inline_llm_prompt.address.span.end);
-        let selection_start = galley.pos_from_ccursor(CCursor::new(char_pos));
+        let [selection_rect_start, selection_rect_end] = [
+            inline_llm_prompt.address.span.start,
+            inline_llm_prompt.address.span.end,
+        ]
+        .map(|pos| {
+            let char_pos = char_index_from_byte_index(editor_text, pos);
+            galley.pos_from_ccursor(CCursor::new(char_pos))
+        });
+
+        // let char_pos = char_index_from_byte_index(editor_text, inline_llm_prompt.address.span.end);
+        // let selection_start = galley.pos_from_ccursor(CCursor::new(char_pos));
         // TODO fix layout, I suspect that we need to subtract twice because of padding on each side
         // BUT wtf?! it is not intuitive neither robust
         let frame_width = galley.job.wrap.max_width - 2. * estimated_text_pos.x;
+        let editor_start_y = estimated_text_pos.y;
 
         let mut ui = ui.child_ui(
             Rect::from_pos(pos2(
                 estimated_text_pos.x,
-                selection_start.bottom() + estimated_text_pos.y + theme.sizes.xs,
+                selection_rect_end.bottom() + editor_start_y + theme.sizes.xs,
             )),
             Layout::top_down(Align::LEFT),
             Some(UiStackInfo::new(egui::UiKind::GenericArea)),
+        );
+
+        let outline_x = estimated_text_pos.x; //- theme.sizes.xs;
+
+        ui.painter().line_segment(
+            [
+                pos2(outline_x, selection_rect_start.top() + editor_start_y),
+                pos2(outline_x, selection_rect_end.bottom() + editor_start_y),
+            ],
+            Stroke::new(1., code_bg),
         );
 
         let resp = egui::Frame::none()
@@ -432,14 +456,42 @@ fn render_editor(
             .rounding(ui.visuals().window_rounding)
             .show(&mut ui, |ui| {
                 ui.set_min_width(frame_width);
-                TextEdit::multiline(&mut inline_llm_prompt.prompt)
-                    .id(Id::new(inline_llm_prompt.address))
+                let inline_prompt_address = inline_llm_prompt.address;
+
+                let prompt_inpit_resp = TextEdit::multiline(&mut inline_llm_prompt.prompt)
+                    .id(compute_inline_prompt_text_input_id(inline_prompt_address))
                     .desired_width(f32::INFINITY)
                     .frame(false)
                     .desired_rows(1)
                     .desired_width(f32::INFINITY)
-                    .hint_text("Add an AI prompt")
+                    .hint_text("Prompt AI for something cool...")
                     .show(ui);
+
+                if prompt_inpit_resp.response.gained_focus() {
+                    // println!("prompt input gained focus");
+                    prompt_inpit_resp.response.scroll_to_me(Some(Align::TOP));
+                }
+
+                // if prompt_inpit_resp.response.has_focus() {
+                //     if ui.input_mut(|input| {
+                //         input.consume_shortcut(&KeyboardShortcut::new(
+                //             Modifiers::NONE,
+                //             egui::Key::Enter,
+                //         ))
+                //     }) {
+                //         resulting_actions.push(AppAction::RunInlineLLMPrompt);
+                //     }
+
+                //     if ui.input_mut(|input| {
+                //         input.consume_shortcut(&KeyboardShortcut::new(
+                //             Modifiers::NONE,
+                //             egui::Key::Escape,
+                //         ))
+                //     }) {
+                //         resulting_actions
+                //             .push(AppAction::AcceptInlinePropmptResult { accept: false });
+                //     }
+                // }
 
                 ui.add_space(theme.sizes.s);
                 ui.separator();
@@ -456,6 +508,18 @@ fn render_editor(
                             .clicked()
                         {
                             resulting_actions.push(AppAction::RunInlineLLMPrompt);
+                        }
+                        ui.add_space(theme.sizes.s);
+                        if ui
+                            .button(AppIcon::Close.render_with_text(
+                                theme.fonts.size.normal,
+                                theme.colors.normal_text_color,
+                                "Cancel",
+                            ))
+                            .clicked()
+                        {
+                            resulting_actions
+                                .push(AppAction::AcceptInlinePropmptResult { accept: false });
                         }
                     }
 

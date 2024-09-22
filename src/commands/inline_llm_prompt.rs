@@ -1,3 +1,5 @@
+use eframe::egui::Id;
+
 use crate::{
     app_actions::AppAction,
     app_state::TextSelectionAddress,
@@ -17,4 +19,8 @@ pub fn inline_llm_prompt_command_handler(
         })]
         .into(),
     )
+}
+
+pub fn compute_inline_prompt_text_input_id(inline_prompt_address: TextSelectionAddress) -> Id {
+    Id::new(inline_prompt_address)
 }

@@ -11,7 +11,10 @@ use crate::{
         TextSelectionAddress, UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
-    commands::run_llm::{prepare_to_run_llm_block, CodeBlockAddress, DEFAULT_LLM_MODEL},
+    commands::{
+        inline_llm_prompt::compute_inline_prompt_text_input_id,
+        run_llm::{prepare_to_run_llm_block, CodeBlockAddress, DEFAULT_LLM_MODEL},
+    },
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
@@ -22,6 +25,11 @@ use crate::{
     },
 };
 
+#[derive(Debug)]
+pub enum FocusTarget {
+    CurrentNote,
+    SpecificId(Id),
+}
 #[derive(Debug)]
 pub enum AppAction {
     SwitchToNote {
@@ -44,7 +52,7 @@ pub enum AppAction {
     SendFeedback(NoteFile),
     StartTutorial,
     DeferToPostRender(Box<AppAction>),
-    FocusOnEditor,
+    FocusRequest(FocusTarget),
     OpenNotesInFinder,
     TriggerInlinePromptUI(TextSelectionAddress),
     RunInlineLLMPrompt,
@@ -163,7 +171,7 @@ pub fn process_app_action(
 
             match via_shortcut {
                 true => [AppAction::DeferToPostRender(Box::new(
-                    AppAction::FocusOnEditor,
+                    AppAction::FocusRequest(FocusTarget::CurrentNote),
                 ))]
                 .into(),
                 false => SmallVec::new(),
@@ -533,10 +541,15 @@ pub fn process_app_action(
             SmallVec::new()
         }
 
-        AppAction::FocusOnEditor => {
+        AppAction::FocusRequest(target) => {
             // it is possible that text editing was out of focus
             // hence, refocus it again
-            ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+            ctx.memory_mut(|mem| {
+                mem.request_focus(match target {
+                    FocusTarget::CurrentNote => text_edit_id,
+                    FocusTarget::SpecificId(id) => id,
+                })
+            });
             SmallVec::new()
         }
 
@@ -565,7 +578,11 @@ pub fn process_app_action(
                 status: InlinePromptStatus::NotStarted,
             });
 
-            SmallVec::new()
+            SmallVec::from_buf([AppAction::DeferToPostRender(Box::new(
+                AppAction::FocusRequest(FocusTarget::SpecificId(
+                    compute_inline_prompt_text_input_id(address),
+                )),
+            ))])
         }
 
         AppAction::RunInlineLLMPrompt => {
@@ -601,7 +618,7 @@ pub fn process_app_action(
 
         AppAction::AcceptInlinePropmptResult { accept } => {
             let mut resulting_actions = SmallVec::from_buf([AppAction::DeferToPostRender(
-                Box::new(AppAction::FocusOnEditor),
+                Box::new(AppAction::FocusRequest(FocusTarget::CurrentNote)),
             )]);
 
             let Some(prompt) = state.inline_llm_prompt.take() else {
