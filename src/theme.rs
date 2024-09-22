@@ -30,6 +30,8 @@ pub enum AppIcon {
     Menu,
     Folder,
     Play,
+    Accept,
+    Refresh,
 }
 
 impl AppIcon {
@@ -41,7 +43,7 @@ impl AppIcon {
     }
 
     pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> RichText {
-        RichText::new(format!("{}  {text}", self.to_icon_str()))
+        RichText::new(format!("{} {text}", self.to_icon_str()))
             .family(eframe::epaint::FontFamily::Proportional)
             .color(color)
             .size(size)
@@ -67,6 +69,8 @@ impl AppIcon {
             AppIcon::Menu => P::LIST,
             AppIcon::Folder => P::FOLDER_SIMPLE,
             AppIcon::Play => P::PLAY,
+            AppIcon::Accept => P::CHECK,
+            AppIcon::Refresh => P::ARROW_CLOCKWISE,
         }
     }
 }

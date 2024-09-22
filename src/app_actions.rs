@@ -7,8 +7,8 @@ use smallvec::{smallvec, SmallVec};
 
 use crate::{
     app_state::{
-        AppState, InlineLLMPropmptState, InlineLLMResponseChunk, MsgToApp, TextSelectionAddress,
-        UnsavedChange,
+        AppState, InlineLLMPropmptState, InlineLLMResponseChunk, InlinePromptStatus, MsgToApp,
+        TextSelectionAddress, UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     commands::run_llm::{prepare_to_run_llm_block, CodeBlockAddress, DEFAULT_LLM_MODEL},
@@ -345,7 +345,7 @@ pub fn process_app_action(
                                     address,
                                     mut diff_parts,
                                     layout_job: _,
-                                    done,
+                                    status,
                                 } = prompt_state;
 
                                 response_text.push_str(&chunk);
@@ -379,14 +379,14 @@ pub fn process_app_action(
                                     diff_parts,
                                     prompt,
                                     layout_job,
-                                    done,
+                                    status,
                                 });
                                 SmallVec::new()
                             }
 
                             InlineLLMResponseChunk::End => {
                                 state.inline_llm_prompt = Some(InlineLLMPropmptState {
-                                    done: true,
+                                    status: InlinePromptStatus::Done,
                                     ..prompt_state
                                 });
                                 SmallVec::new()
@@ -562,7 +562,7 @@ pub fn process_app_action(
                 diff_parts: vec![],
                 layout_job: LayoutJob::default(),
                 prompt: "".to_string(),
-                done: false,
+                status: InlinePromptStatus::NotStarted,
             });
 
             SmallVec::new()
@@ -581,6 +581,7 @@ pub fn process_app_action(
 
             prompt.response_text = "".to_string();
             prompt.layout_job = LayoutJob::default();
+            prompt.status = InlinePromptStatus::Streaming;
 
             app_io.ask_llm_inline(InlineLLMPromptRequest {
                 prompt: prompt.prompt.clone(),

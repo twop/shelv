@@ -20,7 +20,9 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     app_actions::AppAction,
-    app_state::{ComputedLayout, InlineLLMPropmptState, LayoutParams, MsgToApp},
+    app_state::{
+        ComputedLayout, InlineLLMPropmptState, InlinePromptStatus, LayoutParams, MsgToApp,
+    },
     byte_span::UnOrderedByteSpan,
     command::{BuiltInCommand, CommandList, PROMOTED_COMMANDS},
     commands::{inline_llm_prompt, run_llm::LLM_LANG},
@@ -442,42 +444,68 @@ fn render_editor(
                 ui.add_space(theme.sizes.s);
                 ui.separator();
                 ui.add_space(theme.sizes.s);
-                if ui
-                    .button(
-                        "Run", //     format!(
-                              //     "Run {}",
-                              //     KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Enter)
-                              //         .format(&ModifierNames::SYMBOLS, true)
-                              // )
-                    )
-                    .clicked()
-                {
-                    resulting_actions.push(AppAction::RunInlineLLMPrompt);
-                }
+
+                ui.horizontal(|ui| match inline_llm_prompt.status {
+                    InlinePromptStatus::NotStarted => {
+                        if ui
+                            .button(AppIcon::Play.render_with_text(
+                                theme.fonts.size.normal,
+                                theme.colors.normal_text_color,
+                                "Run",
+                            ))
+                            .clicked()
+                        {
+                            resulting_actions.push(AppAction::RunInlineLLMPrompt);
+                        }
+                    }
+
+                    InlinePromptStatus::Streaming => {
+                        ui.spinner();
+                    }
+
+                    InlinePromptStatus::Done => {
+                        if ui
+                            .button(AppIcon::Accept.render_with_text(
+                                theme.fonts.size.normal,
+                                theme.colors.normal_text_color,
+                                "Accept",
+                            ))
+                            .clicked()
+                        {
+                            resulting_actions
+                                .push(AppAction::AcceptInlinePropmptResult { accept: true });
+                        }
+                        ui.add_space(theme.sizes.s);
+                        if ui
+                            .button(AppIcon::Close.render_with_text(
+                                theme.fonts.size.normal,
+                                theme.colors.normal_text_color,
+                                "Cancel",
+                            ))
+                            .clicked()
+                        {
+                            resulting_actions
+                                .push(AppAction::AcceptInlinePropmptResult { accept: false });
+                        }
+                        ui.add_space(theme.sizes.s);
+                        if ui
+                            .button(AppIcon::Play.render_with_text(
+                                theme.fonts.size.normal,
+                                theme.colors.normal_text_color,
+                                "Re-run",
+                            ))
+                            .clicked()
+                        {
+                            resulting_actions.push(AppAction::RunInlineLLMPrompt);
+                        }
+                    }
+                });
 
                 if !inline_llm_prompt.response_text.is_empty() {
                     ui.add_space(theme.sizes.s);
                     ui.separator();
                     ui.add_space(theme.sizes.s);
                     ui.label(WidgetText::LayoutJob(inline_llm_prompt.layout_job.clone()));
-                }
-
-                if inline_llm_prompt.done {
-                    ui.add_space(theme.sizes.s);
-                    ui.separator();
-                    ui.add_space(theme.sizes.s);
-                    ui.horizontal(|ui| {
-                        if ui.button("Accept").clicked() {
-                            resulting_actions
-                                .push(AppAction::AcceptInlinePropmptResult { accept: true });
-                        }
-
-                        ui.add_space(theme.sizes.s);
-                        if ui.button("Reject").clicked() {
-                            resulting_actions
-                                .push(AppAction::AcceptInlinePropmptResult { accept: false });
-                        }
-                    });
                 }
             });
 
