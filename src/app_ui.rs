@@ -92,26 +92,28 @@ pub fn render_app(
     let (text_has_changed, text_structure, computed_layout, updated_cursor, editor_actions) =
         egui::CentralPanel::default()
             .show(ctx, |ui| {
-                let avail_space = ui.available_rect_before_wrap();
+                {
+                    let avail_space = ui.available_rect_before_wrap();
 
-                let hints: Option<SmallVec<[(CowStr<'static>, KeyboardShortcut); 8]>> =
-                    editor_text.is_empty().then(|| {
-                        PROMOTED_COMMANDS
-                            .into_iter()
-                            .filter_map(|builtin| command_list.find(builtin))
-                            .filter_map(|cmd| {
-                                cmd.kind.map(|k| k.human_description()).zip(cmd.shortcut)
-                            })
-                            .collect()
-                    });
+                    let hints: Option<SmallVec<[(CowStr<'static>, KeyboardShortcut); 8]>> =
+                        editor_text.is_empty().then(|| {
+                            PROMOTED_COMMANDS
+                                .into_iter()
+                                .filter_map(|builtin| command_list.find(builtin))
+                                .filter_map(|cmd| {
+                                    cmd.kind.map(|k| k.human_description()).zip(cmd.shortcut)
+                                })
+                                .collect()
+                        });
 
-                render_hints(
-                    hints.as_ref().map(|hints| hints.as_slice()),
-                    avail_space,
-                    ui.painter(),
-                    ctx,
-                    &theme,
-                );
+                    render_hints(
+                        hints.as_ref().map(|hints| hints.as_slice()),
+                        avail_space,
+                        ui.painter(),
+                        ctx,
+                        &theme,
+                    );
+                }
 
                 egui::ScrollArea::vertical()
                     .id_source(text_edit_id)
@@ -289,10 +291,8 @@ fn render_editor(
     let mut resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
     let mut structure_wrapper = Some(text_structure);
 
-    // ui.memory(|m| m.data);
-
     let estimated_text_pos = ui.next_widget_position();
-    let available_width = ui.available_width();
+    // let available_width = ui.available_width();
 
     let code_bg = ui.visuals().code_bg_color;
     let code_bg_rounding = ui.visuals().widgets.inactive.rounding;
@@ -433,18 +433,20 @@ fn render_editor(
         let frame_width = galley.job.wrap.max_width - 2. * estimated_text_pos.x;
         let editor_start_y = estimated_text_pos.y;
 
-        let mut ui = ui.child_ui(
-            Rect::from_pos(pos2(
-                estimated_text_pos.x,
-                selection_rect_end.bottom() + editor_start_y + theme.sizes.xs,
-            )),
+        let prompt_ui_rect = Rect::from_pos(pos2(
+            estimated_text_pos.x,
+            selection_rect_end.bottom() + editor_start_y + theme.sizes.xs,
+        ));
+
+        let mut prompt_ui = ui.child_ui(
+            prompt_ui_rect,
             Layout::top_down(Align::LEFT),
             Some(UiStackInfo::new(egui::UiKind::GenericArea)),
         );
 
         let outline_x = estimated_text_pos.x; //- theme.sizes.xs;
 
-        ui.painter().line_segment(
+        prompt_ui.painter().line_segment(
             [
                 pos2(outline_x, selection_rect_start.top() + editor_start_y),
                 pos2(outline_x, selection_rect_end.bottom() + editor_start_y),
@@ -452,13 +454,13 @@ fn render_editor(
             Stroke::new(1., code_bg),
         );
 
-        let resp = egui::Frame::none()
+        let frame_resp = egui::Frame::none()
             .fill(code_bg)
             .inner_margin(theme.sizes.s)
-            .stroke(ui.visuals().window_stroke)
-            .shadow(ui.visuals().window_shadow)
-            .rounding(ui.visuals().window_rounding)
-            .show(&mut ui, |ui| {
+            .stroke(prompt_ui.visuals().window_stroke)
+            .shadow(prompt_ui.visuals().window_shadow)
+            .rounding(prompt_ui.visuals().window_rounding)
+            .show(&mut prompt_ui, |ui| {
                 ui.set_min_width(frame_width);
                 let inline_prompt_address = inline_llm_prompt.address;
                 // ui.memory(|m| m.set_focus_lock_filter(id, event_filter);)
@@ -467,6 +469,7 @@ fn render_editor(
 
                 let is_focused = ctx.memory(|m| m.focused()) == Some(prompt_text_id);
 
+                // TODO move that into a command instead
                 if is_focused {
                     if ui.input_mut(|input| {
                         input.consume_shortcut(&KeyboardShortcut::new(
@@ -578,10 +581,19 @@ fn render_editor(
                     ui.add_space(theme.sizes.s);
                     ui.label(WidgetText::LayoutJob(inline_llm_prompt.layout_job.clone()));
                 }
-            });
+            })
+            .response;
 
-        if resp.response.lost_focus() {
-            println!("lost focus from inline prompt overlay");
+        if inline_llm_prompt.fresh_response {
+            inline_llm_prompt.fresh_response = false;
+            frame_resp.scroll_to_me(Some(Align::BOTTOM));
+        }
+
+        let delta = frame_resp.rect.bottom() - text_edit_response.rect.bottom();
+        if delta > 0. {
+            // that means that overlay is outside text editor bounds
+            // hence add that delta + some margin to expand scroll view
+            ui.add_space(delta + theme.sizes.s);
         }
     }
 

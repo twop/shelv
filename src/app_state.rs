@@ -68,6 +68,7 @@ pub struct InlineLLMPropmptState {
     pub diff_parts: Vec<TextDiffPart>,
     pub layout_job: LayoutJob,
     pub status: InlinePromptStatus,
+    pub fresh_response: bool,
 }
 
 #[derive(Debug)]

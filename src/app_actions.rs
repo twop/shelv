@@ -359,6 +359,7 @@ pub fn process_app_action(
                                     mut diff_parts,
                                     layout_job: _,
                                     status,
+                                    fresh_response: _,
                                 } = prompt_state;
 
                                 response_text.push_str(&chunk);
@@ -393,6 +394,7 @@ pub fn process_app_action(
                                     prompt,
                                     layout_job,
                                     status,
+                                    fresh_response: true,
                                 });
                                 SmallVec::new()
                             }
@@ -584,6 +586,7 @@ pub fn process_app_action(
                 layout_job: LayoutJob::default(),
                 prompt: "".to_string(),
                 status: InlinePromptStatus::NotStarted,
+                fresh_response: false,
             });
 
             SmallVec::from_buf([AppAction::DeferToPostRender(Box::new(
