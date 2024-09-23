@@ -586,7 +586,7 @@ fn render_editor(
 
         if inline_llm_prompt.fresh_response {
             inline_llm_prompt.fresh_response = false;
-            frame_resp.scroll_to_me(Some(Align::BOTTOM));
+            frame_resp.scroll_to_me(None);
         }
 
         let delta = frame_resp.rect.bottom() - text_edit_response.rect.bottom();
