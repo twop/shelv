@@ -3,8 +3,11 @@ use pulldown_cmark::CowStr;
 use smallvec::SmallVec;
 
 use crate::{
-    app_actions::AppAction, app_state::AppState, byte_span::ByteSpan,
-    effects::text_change_effect::TextChange, persistent_state::NoteFile,
+    app_actions::{AppAction, FocusTarget},
+    app_state::AppState,
+    byte_span::ByteSpan,
+    effects::text_change_effect::TextChange,
+    persistent_state::NoteFile,
     text_structure::TextStructure,
 };
 
@@ -15,9 +18,22 @@ pub struct TextCommandContext<'a> {
     pub byte_cursor: ByteSpan,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum AppFocus {
+    NoteEditor,
+    InlinePropmptEditor,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AppFocusState {
+    pub is_menu_opened: bool,
+    pub focus: Option<AppFocus>,
+}
+
 #[derive(Clone, Copy)]
 pub struct CommandContext<'a> {
     pub app_state: &'a AppState,
+    pub app_focus: AppFocusState,
 }
 
 impl<'a> TextCommandContext<'a> {
@@ -84,6 +100,7 @@ pub enum BuiltInCommand {
     SwitchToSettings,
     PinWindow,
     HideApp,
+    CloseInlinePrompt,
 
     // Async Code blocks
     RunLLMBlock,
@@ -134,6 +151,8 @@ impl BuiltInCommand {
             Self::HideApp => "Hide Window".into(),
             Self::RunLLMBlock => "Execute AI Block".into(),
             BuiltInCommand::TriggerInlinePrompt => "Inline Prompt".into(),
+            // BuiltInCommand::ClosePopupMenu => "Close currently opened popup".into(),
+            BuiltInCommand::CloseInlinePrompt => "Close Inline Prompt".into(),
         }
     }
 
@@ -161,9 +180,10 @@ impl BuiltInCommand {
             SwitchToNote(_) => shortcut(Modifiers::COMMAND, Key::Num0),
             SwitchToSettings => shortcut(Modifiers::COMMAND, Key::Comma),
             PinWindow => shortcut(Modifiers::COMMAND, Key::P),
-            HideApp => shortcut(Modifiers::NONE, Key::Escape),
             RunLLMBlock => shortcut(Modifiers::COMMAND, Key::Enter),
             TriggerInlinePrompt => shortcut(Modifiers::CTRL, Key::Enter),
+            // AppAction::RunInlineLLMPrompt
+            HideApp | CloseInlinePrompt => shortcut(Modifiers::NONE, Key::Escape),
         }
     }
 }
@@ -220,7 +240,7 @@ impl CommandList {
 pub fn map_text_command_to_command_handler(
     f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
 ) -> Box<dyn Fn(CommandContext) -> EditorCommandOutput> {
-    Box::new(move |CommandContext { app_state }| {
+    Box::new(move |CommandContext { app_state, .. }| {
         let Some(text_command_context) = try_extract_text_command_context(app_state) else {
             return SmallVec::new();
         };

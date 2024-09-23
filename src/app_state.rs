@@ -9,7 +9,7 @@ use eframe::{
     egui::{
         self,
         text::{CCursor, LayoutJob},
-        Key, KeyboardShortcut, Modifiers, Rect, Ui,
+        Id, Key, KeyboardShortcut, Modifiers, Rect, Ui,
     },
     epaint::Galley,
 };
@@ -23,7 +23,7 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        map_text_command_to_command_handler, BuiltInCommand, CommandContext, CommandList,
+        map_text_command_to_command_handler, AppFocus, BuiltInCommand, CommandContext, CommandList,
         EditorCommand, EditorCommandOutput, TextCommandContext,
     },
     commands::{
@@ -385,9 +385,25 @@ impl AppState {
             [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into()
         }));
 
-        editor_commands.push(EditorCommand::built_in(BuiltInCommand::HideApp, |_| {
-            [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
-        }));
+        editor_commands.push(EditorCommand::built_in(
+            BuiltInCommand::HideApp,
+            |cx| match (cx.app_focus.is_menu_opened, cx.app_focus.focus) {
+                (false, None | Some(AppFocus::NoteEditor)) => {
+                    [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
+                }
+                _ => SmallVec::new(),
+            },
+        ));
+
+        editor_commands.push(EditorCommand::built_in(
+            BuiltInCommand::CloseInlinePrompt,
+            |cx| match cx.app_focus.focus {
+                Some(AppFocus::InlinePropmptEditor) => {
+                    [AppAction::AcceptInlinePropmptResult { accept: false }].into()
+                }
+                _ => SmallVec::new(),
+            },
+        ));
 
         editor_commands.push(EditorCommand::built_in(
             BuiltInCommand::RunLLMBlock,
@@ -493,4 +509,11 @@ fn number_to_key(key: u8) -> Option<Key> {
         9 => Some(Key::Num9),
         _ => None,
     }
+}
+
+pub fn compute_editor_text_id(selected_note_file: NoteFile) -> Id {
+    Id::new(match selected_note_file {
+        NoteFile::Note(index) => ("text_edit_id", index),
+        NoteFile::Settings => ("text_edit_id_settings", 4568),
+    })
 }

@@ -3,11 +3,11 @@
 #![feature(offset_of)]
 #![feature(generic_const_exprs)]
 
-use app_actions::{process_app_action, AppAction, AppIO};
+use app_actions::{compute_app_focus, process_app_action, AppAction, AppIO};
 use app_io::RealAppIO;
-use app_state::{AppInitData, AppState, MsgToApp};
+use app_state::{compute_editor_text_id, AppInitData, AppState, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
-use command::{CommandContext, EditorCommandOutput};
+use command::{AppFocusState, CommandContext, EditorCommandOutput};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use hotwatch::{
@@ -62,6 +62,9 @@ pub struct MyApp<IO: AppIO> {
     tray: TrayIcon,
     persistence_folder: PathBuf,
     app_io: IO,
+
+    // begining of the frame
+    app_focus_state: AppFocusState,
 }
 
 impl MyApp<RealAppIO> {
@@ -193,6 +196,10 @@ impl MyApp<RealAppIO> {
             state,
             app_io,
             tray: tray_icon,
+            app_focus_state: AppFocusState {
+                is_menu_opened: false,
+                focus: None,
+            },
             persistence_folder,
             hotwatch,
         }
@@ -200,12 +207,16 @@ impl MyApp<RealAppIO> {
 }
 
 impl<IO: AppIO> eframe::App for MyApp<IO> {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, _raw_input: &mut egui::RawInput) {
+        self.app_focus_state = compute_app_focus(ctx, &self.state);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let app_state = &mut self.state;
-        let text_edit_id = Id::new(match &app_state.selected_note {
-            NoteFile::Note(index) => format!("text_edit_id_{}", index),
-            NoteFile::Settings => "text_edit_id_settings".to_string(),
-        });
+
+        let selected_note_file = app_state.selected_note;
+
+        let text_edit_id = compute_editor_text_id(selected_note_file);
 
         // handling message queue
         let mut action_list = EditorCommandOutput::from_iter(
@@ -214,6 +225,9 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                 .try_iter()
                 .map(AppAction::HandleMsgToApp),
         );
+
+        let app_focus = self.app_focus_state.clone();
+        let focused_id = ctx.memory(|m| m.focused());
 
         // handling commands
         // sych as {tab, enter} inside a list
@@ -224,6 +238,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                 // }
 
                 // only one command can be handled at a time
+
                 app_state
                     .editor_commands
                     .slice()
@@ -234,17 +249,21 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                                 if is_shortcut_match(input, &keyboard_shortcut) =>
                             {
                                 println!(
-                                    "---Found a match for {:?}",
+                                    "---Found a match for {:?}, focus = {app_focus:#?}, focused_id = {focused_id:?}",
                                     editor_command.kind.map(|k| k.human_description())
                                 );
-                                let res = (editor_command.try_handle)(CommandContext { app_state });
+                                let res = (editor_command.try_handle)(CommandContext {
+                                    app_state,
+                                    app_focus,
+                                });
 
                                 if !res.is_empty() {
                                     // remove the keys from the input
                                     input.consume_shortcut(&keyboard_shortcut);
+                                    Some(res)
                                 }
+                                else {None}
 
-                                Some(res)
                             }
                             _ => None,
                         }

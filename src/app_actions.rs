@@ -1,16 +1,19 @@
 use std::{io, path::PathBuf};
 
-use eframe::egui::{text::LayoutJob, Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
+use eframe::egui::{
+    text::LayoutJob, Context, Id, KeyboardShortcut, Memory, OpenUrl, ViewportCommand,
+};
 
 use similar::{ChangeTag, TextDiff};
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
     app_state::{
-        AppState, InlineLLMPropmptState, InlineLLMResponseChunk, InlinePromptStatus, MsgToApp,
-        TextSelectionAddress, UnsavedChange,
+        compute_editor_text_id, AppState, InlineLLMPropmptState, InlineLLMResponseChunk,
+        InlinePromptStatus, MsgToApp, TextSelectionAddress, UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
+    command::{AppFocus, AppFocusState, CommandContext},
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
         run_llm::{prepare_to_run_llm_block, CodeBlockAddress, DEFAULT_LLM_MODEL},
@@ -25,11 +28,12 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum FocusTarget {
     CurrentNote,
     SpecificId(Id),
 }
+
 #[derive(Debug)]
 pub enum AppAction {
     SwitchToNote {
@@ -59,6 +63,7 @@ pub enum AppAction {
     AcceptInlinePropmptResult {
         accept: bool,
     },
+    ClosePopup,
 }
 
 impl AppAction {
@@ -561,7 +566,10 @@ pub fn process_app_action(
         }
 
         AppAction::RunLLMBLock(note_file, span_index) => prepare_to_run_llm_block(
-            crate::command::CommandContext { app_state: state },
+            CommandContext {
+                app_state: state,
+                app_focus: compute_app_focus(ctx, state),
+            },
             CodeBlockAddress::TargetBlock(note_file, span_index),
         )
         .unwrap_or_default(),
@@ -642,5 +650,33 @@ pub fn process_app_action(
                 resulting_actions
             }
         }
+
+        AppAction::ClosePopup => {
+            ctx.memory_mut(|m| m.close_popup());
+            SmallVec::new()
+        }
     }
+}
+
+pub fn compute_app_focus(ctx: &Context, app_state: &AppState) -> AppFocusState {
+    ctx.memory(|m| AppFocusState {
+        is_menu_opened: m.any_popup_open(),
+        focus: match m.focused() {
+            Some(id)
+                if app_state
+                    .inline_llm_prompt
+                    .as_ref()
+                    .map(|p| compute_inline_prompt_text_input_id(p.address))
+                    == Some(id) =>
+            {
+                Some(AppFocus::InlinePropmptEditor)
+            }
+
+            Some(id) if compute_editor_text_id(app_state.selected_note) == id => {
+                Some(AppFocus::NoteEditor)
+            }
+
+            _ => None,
+        },
+    })
 }

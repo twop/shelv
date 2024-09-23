@@ -5,9 +5,9 @@ use eframe::{
         self,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Context, FontFamily, Id, KeyboardShortcut, LayerId, Layout, ModifierNames, Modifiers,
-        Painter, RichText, Sense, TextEdit, TopBottomPanel, Ui, UiStackInfo, Vec2, WidgetText,
-        Window,
+        Context, EventFilter, FontFamily, Id, KeyboardShortcut, LayerId, Layout, ModifierNames,
+        Modifiers, Painter, RichText, Sense, TextEdit, TopBottomPanel, Ui, UiStackInfo, Vec2,
+        WidgetText, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
@@ -117,6 +117,8 @@ pub fn render_app(
                     .id_source(text_edit_id)
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+
+                        //                        ctx.memory_ui(ui);
 
                         let (
                             changed,
@@ -286,6 +288,8 @@ fn render_editor(
 ) {
     let mut resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
     let mut structure_wrapper = Some(text_structure);
+
+    // ui.memory(|m| m.data);
 
     let estimated_text_pos = ui.next_widget_position();
     let available_width = ui.available_width();
@@ -457,41 +461,44 @@ fn render_editor(
             .show(&mut ui, |ui| {
                 ui.set_min_width(frame_width);
                 let inline_prompt_address = inline_llm_prompt.address;
+                // ui.memory(|m| m.set_focus_lock_filter(id, event_filter);)
+
+                let prompt_text_id = compute_inline_prompt_text_input_id(inline_prompt_address);
+
+                let is_focused = ctx.memory(|m| m.focused()) == Some(prompt_text_id);
+
+                if is_focused {
+                    if ui.input_mut(|input| {
+                        input.consume_shortcut(&KeyboardShortcut::new(
+                            Modifiers::NONE,
+                            egui::Key::Enter,
+                        ))
+                    }) {
+                        resulting_actions.push(match inline_llm_prompt.status {
+                            InlinePromptStatus::NotStarted => AppAction::RunInlineLLMPrompt,
+                            InlinePromptStatus::Streaming => {
+                                AppAction::AcceptInlinePropmptResult { accept: false }
+                            }
+                            InlinePromptStatus::Done => {
+                                AppAction::AcceptInlinePropmptResult { accept: false }
+                            }
+                        });
+                    }
+                }
 
                 let prompt_inpit_resp = TextEdit::multiline(&mut inline_llm_prompt.prompt)
-                    .id(compute_inline_prompt_text_input_id(inline_prompt_address))
+                    .id(prompt_text_id)
                     .desired_width(f32::INFINITY)
                     .frame(false)
                     .desired_rows(1)
                     .desired_width(f32::INFINITY)
-                    .hint_text("Prompt AI for something cool...")
+                    .hint_text("Prompt AI ...")
                     .show(ui);
 
                 if prompt_inpit_resp.response.gained_focus() {
                     // println!("prompt input gained focus");
-                    prompt_inpit_resp.response.scroll_to_me(Some(Align::TOP));
+                    prompt_inpit_resp.response.scroll_to_me(Some(Align::Center));
                 }
-
-                // if prompt_inpit_resp.response.has_focus() {
-                //     if ui.input_mut(|input| {
-                //         input.consume_shortcut(&KeyboardShortcut::new(
-                //             Modifiers::NONE,
-                //             egui::Key::Enter,
-                //         ))
-                //     }) {
-                //         resulting_actions.push(AppAction::RunInlineLLMPrompt);
-                //     }
-
-                //     if ui.input_mut(|input| {
-                //         input.consume_shortcut(&KeyboardShortcut::new(
-                //             Modifiers::NONE,
-                //             egui::Key::Escape,
-                //         ))
-                //     }) {
-                //         resulting_actions
-                //             .push(AppAction::AcceptInlinePropmptResult { accept: false });
-                //     }
-                // }
 
                 ui.add_space(theme.sizes.s);
                 ui.separator();

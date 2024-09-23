@@ -24,7 +24,7 @@ pub(crate) const DEFAULT_LLM_MODEL: &str = "claude-3-haiku-20240307";
 pub(crate) const LLM_LANG: &str = "ai";
 
 pub fn prepare_to_run_llm_block(
-    CommandContext { app_state }: CommandContext,
+    CommandContext { app_state, .. }: CommandContext,
     address: CodeBlockAddress,
 ) -> Option<EditorCommandOutput> {
     const LLM_LANG_OLD: &str = "llm";

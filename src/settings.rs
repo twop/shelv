@@ -569,6 +569,7 @@ impl BuiltInCommand {
             HideApp => "HideApp",
             RunLLMBlock => "ExecutePrompt",
             TriggerInlinePrompt => "InlinePrompt",
+            CloseInlinePrompt => "CloseInlinePrompt",
         }
     }
 }

@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub fn inline_llm_prompt_command_handler(
-    CommandContext { app_state }: CommandContext,
+    CommandContext { app_state, .. }: CommandContext,
 ) -> Option<EditorCommandOutput> {
     let text_command_ctx = try_extract_text_command_context(app_state)?;
 
