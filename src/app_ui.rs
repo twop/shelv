@@ -480,7 +480,7 @@ fn render_editor(
                                 AppAction::AcceptInlinePropmptResult { accept: false }
                             }
                             InlinePromptStatus::Done => {
-                                AppAction::AcceptInlinePropmptResult { accept: false }
+                                AppAction::AcceptInlinePropmptResult { accept: true }
                             }
                         });
                     }
