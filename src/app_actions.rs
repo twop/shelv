@@ -643,10 +643,10 @@ pub fn process_app_action(
 
             let text_lenght = target_note.text.len();
             let ByteSpan { start, end, .. } = prompt.address.span;
-            target_note.cursor = Some(UnOrderedByteSpan::new(
+            target_note.cursor = target_note.cursor.or(Some(UnOrderedByteSpan::new(
                 start.min(text_lenght),
                 end.min(text_lenght),
-            ));
+            )));
 
             if accept {
                 let changes = vec![TextChange::Replace(
