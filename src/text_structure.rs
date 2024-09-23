@@ -17,7 +17,7 @@ use crate::{
     theme::{AppTheme, ColorTheme, FontTheme},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SpanIndex(usize);
 
 #[derive(Debug)]
@@ -73,12 +73,25 @@ pub enum SpanMeta {
     CodeBlock { lang: String },
     TaskMarker { checked: bool },
     List(ListDesc),
+    ListItem(ListItemDesc),
     Link { url: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListDesc {
     pub starting_index: Option<u64>,
+    // items_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListItemMarker {
+    Unordered(String),
+    Ordered,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListItemDesc {
+    pub list_item_marker: ListItemMarker,
     // items_count: u32,
 }
 
@@ -363,9 +376,25 @@ impl TextStructure {
                             },
                         )),
 
-                        Item => Some(
-                            builder.add(SpanKind::ListItem, trim_trailing_new_lines(&text, range)),
-                        ),
+                        Item => {
+                            let item_text = &text[trim_trailing_new_lines(&text, range).range()];
+
+                            Some(builder.add_with_meta(
+                                SpanKind::ListItem,
+                                trim_trailing_new_lines(&text, range),
+                                SpanMeta::ListItem(ListItemDesc {
+                                    list_item_marker: match &item_text.trim_start()[0..1] {
+                                        marker @ "-" | marker @ "+" | marker @ "*" => {
+                                            ListItemMarker::Unordered(marker.to_string())
+                                        }
+                                        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
+                                            ListItemMarker::Ordered
+                                        }
+                                        _ => panic!("todo"),
+                                    },
+                                }),
+                            ))
+                        }
                         Heading { level, .. } => Some(builder.add(
                             SpanKind::Heading(level),
                             trim_trailing_new_lines(&text, range),
@@ -460,7 +489,7 @@ impl TextStructure {
             }
         }
 
-        // builder.print_structure();
+        builder.print_structure();
 
         builder.finish(points, generation.wrapping_add(1))
     }
@@ -482,20 +511,19 @@ impl TextStructure {
             family: theme.fonts.family.code.clone(),
         };
 
-        // println!("points: {:#?}", self.points);
+        println!("points: {:#?}", self.points);
 
         for point in self.points.iter() {
-
-            // match point.kind {
-            //     PointKind::Start => {
-            //         print!("{}", text.get(pos..point.str_offset).unwrap_or(""));
-            //         print!("<{:?}>", point.annotation)
-            //     }
-            //     PointKind::End => {
-            //         print!("{}", text.get(pos..point.str_offset).unwrap_or(""));
-            //         print!("</{:?}>", point.annotation)
-            //     }
-            // }
+            match point.kind {
+                PointKind::Start => {
+                    print!("{}", text.get(pos..point.str_offset).unwrap_or(""));
+                    print!("<{:?}>", point.annotation)
+                }
+                PointKind::End => {
+                    print!("{}", text.get(pos..point.str_offset).unwrap_or(""));
+                    print!("</{:?}>", point.annotation)
+                }
+            }
 
             if state.code_block > 0 && state.text > 0 {
                 // means that we are inside code block body
@@ -599,48 +627,56 @@ impl TextStructure {
         &self,
         byte_cursor_pos: usize,
     ) -> Option<InteractiveTextPart> {
-        let interactive_span = self
-            .spans
-            .iter()
-            .enumerate()
-            .find(|(_, SpanDesc { kind, byte_pos, .. })| match kind {
-                SpanKind::TaskMarker | SpanKind::MdLink if byte_pos.contains_pos(byte_cursor_pos) => true,
-                _ => false,
-            });
+        let interactive_span =
+            self.spans
+                .iter()
+                .enumerate()
+                .find(|(_, SpanDesc { kind, byte_pos, .. })| match kind {
+                    SpanKind::TaskMarker | SpanKind::MdLink
+                        if byte_pos.contains_pos(byte_cursor_pos) =>
+                    {
+                        true
+                    }
+                    _ => false,
+                });
 
-        interactive_span.map_or_else(|| {
-            // Raw links in a MD link won't be interactive, which is why this is only the default case
-            self.raw_links.iter().find_map(|RawLink { url, byte_pos }| {
-                if byte_pos.contains(&byte_cursor_pos) {
-                    Some(InteractiveTextPart::Link(url.as_str()))
-                } else {
-                    None
-                }
-            })
-        }, |(index, SpanDesc { kind, byte_pos, .. })| {
-            find_metadata(SpanIndex(index), &self.metadata).and_then(|meta| match (kind, meta) {
-                (SpanKind::TaskMarker, SpanMeta::TaskMarker { checked, .. }) => {
-                    Some(InteractiveTextPart::TaskMarker {
-                        byte_range: byte_pos.clone(),
-                        checked: *checked,
-                    })
-                }
-                (SpanKind::MdLink, SpanMeta::Link { url }) => {
-                    // Only the text part inside an MD link is interactive
-                    self.iterate_immediate_children_of(SpanIndex(index)).find_map(
-                        |(_, child_span)| {
-                            match child_span.kind {
-                                SpanKind::Text if child_span.byte_pos.contains_pos(byte_cursor_pos) => Some(InteractiveTextPart::Link(url.as_str())),
-                                _ => None
-                            }
-                     
-                        },
-                    )
-                   
-                }
-                _ => None,
-            })
-        })
+        interactive_span.map_or_else(
+            || {
+                // Raw links in a MD link won't be interactive, which is why this is only the default case
+                self.raw_links.iter().find_map(|RawLink { url, byte_pos }| {
+                    if byte_pos.contains(&byte_cursor_pos) {
+                        Some(InteractiveTextPart::Link(url.as_str()))
+                    } else {
+                        None
+                    }
+                })
+            },
+            |(index, SpanDesc { kind, byte_pos, .. })| {
+                find_metadata(SpanIndex(index), &self.metadata).and_then(|meta| {
+                    match (kind, meta) {
+                        (SpanKind::TaskMarker, SpanMeta::TaskMarker { checked, .. }) => {
+                            Some(InteractiveTextPart::TaskMarker {
+                                byte_range: byte_pos.clone(),
+                                checked: *checked,
+                            })
+                        }
+                        (SpanKind::MdLink, SpanMeta::Link { url }) => {
+                            // Only the text part inside an MD link is interactive
+                            self.iterate_immediate_children_of(SpanIndex(index))
+                                .find_map(|(_, child_span)| match child_span.kind {
+                                    SpanKind::Text
+                                        if child_span.byte_pos.contains_pos(byte_cursor_pos) =>
+                                    {
+                                        Some(InteractiveTextPart::Link(url.as_str()))
+                                    }
+                                    _ => None,
+                                })
+                        }
+                        _ => None,
+                    }
+                })
+            },
+        )
     }
 
     pub fn find_surrounding_span_with_meta(
@@ -707,6 +743,13 @@ impl TextStructure {
         parent: SpanIndex,
     ) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
         iterate_immediate_children_of(parent, &self.spans)
+    }
+
+    pub fn iterate_immediate_siblings_before(
+        &self,
+        index: SpanIndex,
+    ) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
+        iterate_immediate_siblings_before(index, &self.spans)
     }
 
     pub fn iterate_children_recursively_of(
@@ -917,6 +960,20 @@ fn iterate_immediate_children_of(
     spans: &Vec<SpanDesc>,
 ) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
     iterate_children_recursively_of(index, spans).filter(move |(_, child)| child.parent == index)
+}
+
+fn iterate_immediate_siblings_before(
+    index: SpanIndex,
+    spans: &Vec<SpanDesc>,
+) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
+    let parent = spans[index.0].parent.0;
+    spans
+        .iter()
+        .enumerate()
+        .skip(parent + 1)
+        .map(|(i, desc)| (SpanIndex(i), desc))
+        .filter(move |(_, child)| child.parent.0 == parent)
+        .take_while(move |(child_index, _)| child_index.0 < index.0)
 }
 
 #[inline(always)]

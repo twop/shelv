@@ -3,7 +3,7 @@ use crate::{
     text_structure::SpanKind,
 };
 
-use super::select_unordered_list_marker;
+use super::default_unordered_list_marker;
 
 pub fn on_space_after_task_markers(context: TextCommandContext) -> Option<Vec<TextChange>> {
     let TextCommandContext {
@@ -43,7 +43,7 @@ pub fn on_space_after_task_markers(context: TextCommandContext) -> Option<Vec<Te
         // Ie. "[]{}" -> "- []{}"
         return Some(vec![TextChange::Replace(
             ByteSpan::new(cursor.start - 2, cursor.start),
-            select_unordered_list_marker(0).to_string() + " [ ]",
+            default_unordered_list_marker(0).to_string() + " [ ]",
         )]);
     }
 

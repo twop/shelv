@@ -55,7 +55,7 @@ pub fn on_shift_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextC
                 // move itself
                 changes.push(TextChange::Replace(
                     ByteSpan::new(span_range.start - 1, span_range.start + 1), //this is for "-" -> "*" replacement
-                    format!("{}", select_unordered_list_marker(depth - 1)),
+                    format!("{}", select_unordered_list_marker(structure, item_index, - 1)),
                 ));
             } else {
                 return None;
@@ -151,7 +151,7 @@ pub fn on_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>
             // move itself
             changes.push(TextChange::Replace(
                 ByteSpan::new(span_range.start, span_range.start + 1), //this is for "-" -> "*" replacement
-                format!("\t{}", select_unordered_list_marker(depth + 1)),
+                format!("\t{}", select_unordered_list_marker(structure, item_index, 1)),
             ));
 
             Some(changes)
@@ -195,7 +195,7 @@ fn increase_nesting_for_lists(
             //unordered need "-" -> "*" replacement
             _ => TextChange::Replace(
                 ByteSpan::new(nested_item_start, nested_item_start + 1),
-                format!("\t{}", select_unordered_list_marker(parents.len())),
+                format!("\t{}", select_unordered_list_marker(structure, item_index, 1)),
             ),
         });
     }
@@ -231,6 +231,16 @@ mod tests {
                 "-- tabbing inside list item not on the same line when it starts => goes to default beh --",
                 "- a\n\ta{||}",
                 None,
+            ),
+            (
+                "-- tabbing inside unordered list picks proper list item marker --",
+                "- a\n- b{||}\n\t- c\n\t\t 1. d",
+                Some("- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d"),
+            ),
+            (
+                "-- tabbing inside unordered list keeps list item marker consistent --",
+                "- a\n\t- b\n- c{||}",
+                Some("- a\n\t- b\n\t- c{||}"),
             ),
             //             (
             //                 "-- identing numbered lists honors nested indicies --",
@@ -294,6 +304,11 @@ mod tests {
                 "-- shift tab bails out if the list item is not on the same line as cursor --",
                 "- a\n\t* b\n\t\t*{||}",
                 None,
+            ),
+            (
+                "-- shift left unordered list item keeps marker consistent --",
+                "+ a\n\t* b{||}",
+                Some("+ a\n+ b{||}"),
             ),
         ];
 

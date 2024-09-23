@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use crate::{
-    byte_span::ByteSpan,
+    byte_span::{self, ByteSpan},
     command::TextCommandContext,
     effects::text_change_effect::TextChange,
     text_structure::{ListDesc, SpanKind, SpanMeta},
@@ -175,12 +175,16 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
                 let has_task_marker = structure
                     .iterate_immediate_children_of(item_index)
                     .any(|(_, desc)| desc.kind == SpanKind::TaskMarker);
+
+                let item_text = &text[span_range.range()];
+                let item_list_marker = &item_text.trim()[..1];
+
                 // cond ? the_true : the_false
                 Some(vec![TextChange::Replace(
                     cursor.clone(),
                     "\n".to_string()
                         + &"\t".repeat(depth)
-                        + select_unordered_list_marker(depth)
+                        + item_list_marker
                         + if has_task_marker { " [ ] " } else { " " }
                         + TextChange::CURSOR,
                 )])
@@ -248,17 +252,16 @@ mod tests {
                 "- [ ] {||}",
                 "{||}",
             ),
-            // TODO bullet continuation
-            // (
-            //     "## Continues with * bullets",
-            //     "* item{||}",
-            //     "* item\n* {||}"
-            // ),
-            // (
-            //     "## Continues with - sub-bullets",
-            //     "- parent\n\t- child{||}",
-            //     "- parent\n\t- child\n\t- {||}"
-            // )
+            (
+                "## Continues with * bullets",
+                "* item{||}",
+                "* item\n* {||}"
+            ),
+            (
+                "## Continues with - sub-bullets",
+                "- parent\n\t- child{||}",
+                "- parent\n\t- child\n\t- {||}"
+            )
         ];
 
         for (desc, input, expected) in test_cases {
