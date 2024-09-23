@@ -232,14 +232,17 @@ pub fn process_app_action(
                     if state.hidden {
                         println!("Toggle visibility: hide");
                         app_io.hide_app();
+                        SmallVec::new()
                     } else {
                         ctx.send_viewport_cmd(ViewportCommand::Visible(!state.hidden));
                         ctx.send_viewport_cmd(ViewportCommand::Focus);
-                        ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
+                        // ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
                         println!("Toggle visibility: show + focus");
-                    }
 
-                    SmallVec::new()
+                        SmallVec::from_buf([AppAction::DeferToPostRender(Box::new(
+                            AppAction::FocusRequest(FocusTarget::CurrentNote),
+                        ))])
+                    }
                 }
 
                 MsgToApp::NoteFileChanged(note_file, path) => {
@@ -555,8 +558,9 @@ pub fn process_app_action(
                 mem.request_focus(match target {
                     FocusTarget::CurrentNote => text_edit_id,
                     FocusTarget::SpecificId(id) => id,
-                })
+                });
             });
+
             SmallVec::new()
         }
 
@@ -635,6 +639,14 @@ pub fn process_app_action(
             let Some(prompt) = state.inline_llm_prompt.take() else {
                 return resulting_actions;
             };
+            let target_note = state.notes.get_mut(&prompt.address.note_file).unwrap();
+
+            let text_lenght = target_note.text.len();
+            let ByteSpan { start, end, .. } = prompt.address.span;
+            target_note.cursor = Some(UnOrderedByteSpan::new(
+                start.min(text_lenght),
+                end.min(text_lenght),
+            ));
 
             if accept {
                 let changes = vec![TextChange::Replace(
