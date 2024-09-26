@@ -63,7 +63,6 @@ pub enum AppAction {
     AcceptInlinePropmptResult {
         accept: bool,
     },
-    ClosePopup,
 }
 
 impl AppAction {
@@ -167,6 +166,9 @@ pub fn process_app_action(
                     }
                 }
 
+                // reset inline prompt state if we switched to a different note
+                state.inline_llm_prompt = None;
+
                 if let Some(cur_note) = state.notes.get(&note_file) {
                     let text = &cur_note.text;
                     state.selected_note = note_file;
@@ -213,6 +215,9 @@ pub fn process_app_action(
                     note.cursor = updated_cursor;
 
                     state.add_unsaved_change(UnsavedChange::NoteContentChanged(note_file));
+                    // reset the inline prompt state if any changes happened
+                    // it maybe a bit too  aggressive, but let's live with the simplest approach first
+                    state.inline_llm_prompt = None;
                     should_trigger_eval.then(|| AppAction::EvalNote(note_file))
                 }
                 Err(_) => None,
@@ -256,6 +261,16 @@ pub fn process_app_action(
                                         .text_structure
                                         .take()
                                         .map(|s| s.recycle(&note_content));
+                                }
+
+                                if Some(note_file)
+                                    == state
+                                        .inline_llm_prompt
+                                        .as_ref()
+                                        .map(|prompt| prompt.address.note_file)
+                                {
+                                    // if we get an external text change for the note we currently have an inline prompt reset the prompt
+                                    state.inline_llm_prompt = None;
                                 }
 
                                 note.text = note_content;
@@ -403,9 +418,36 @@ pub fn process_app_action(
                             }
 
                             InlineLLMResponseChunk::End => {
+                                let InlineLLMPropmptState {
+                                    response_text,
+                                    prompt,
+                                    address,
+                                    diff_parts,
+                                    layout_job,
+                                    status,
+                                    fresh_response,
+                                } = prompt_state;
+
+                                let status = match status {
+                                    InlinePromptStatus::NotStarted => InlinePromptStatus::Done {
+                                        prompt: prompt.clone(),
+                                    },
+                                    InlinePromptStatus::Streaming { prompt } => {
+                                        InlinePromptStatus::Done { prompt }
+                                    }
+                                    InlinePromptStatus::Done { prompt } => {
+                                        InlinePromptStatus::Done { prompt }
+                                    }
+                                };
+
                                 state.inline_llm_prompt = Some(InlineLLMPropmptState {
-                                    status: InlinePromptStatus::Done,
-                                    ..prompt_state
+                                    response_text,
+                                    prompt,
+                                    address,
+                                    diff_parts,
+                                    layout_job,
+                                    status,
+                                    fresh_response,
                                 });
                                 SmallVec::new()
                             }
@@ -613,7 +655,9 @@ pub fn process_app_action(
 
             prompt.response_text = "".to_string();
             prompt.layout_job = LayoutJob::default();
-            prompt.status = InlinePromptStatus::Streaming;
+            prompt.status = InlinePromptStatus::Streaming {
+                prompt: prompt.prompt.clone(),
+            };
 
             app_io.ask_llm_inline(InlineLLMPromptRequest {
                 prompt: prompt.prompt.clone(),
@@ -664,11 +708,6 @@ pub fn process_app_action(
             } else {
                 resulting_actions
             }
-        }
-
-        AppAction::ClosePopup => {
-            ctx.memory_mut(|m| m.close_popup());
-            SmallVec::new()
         }
     }
 }

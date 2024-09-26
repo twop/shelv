@@ -56,8 +56,8 @@ pub struct TextSelectionAddress {
 #[derive(Debug)]
 pub enum InlinePromptStatus {
     NotStarted,
-    Streaming,
-    Done,
+    Streaming { prompt: String },
+    Done { prompt: String },
 }
 
 #[derive(Debug)]
