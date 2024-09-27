@@ -30,6 +30,8 @@ pub enum AppIcon {
     Menu,
     Folder,
     Play,
+    Accept,
+    Refresh,
 }
 
 impl AppIcon {
@@ -41,7 +43,7 @@ impl AppIcon {
     }
 
     pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> RichText {
-        RichText::new(format!("{}  {text}", self.to_icon_str()))
+        RichText::new(format!("{} {text}", self.to_icon_str()))
             .family(eframe::epaint::FontFamily::Proportional)
             .color(color)
             .size(size)
@@ -67,6 +69,8 @@ impl AppIcon {
             AppIcon::Menu => P::LIST,
             AppIcon::Folder => P::FOLDER_SIMPLE,
             AppIcon::Play => P::PLAY,
+            AppIcon::Accept => P::CHECK,
+            AppIcon::Refresh => P::ARROW_CLOCKWISE,
         }
     }
 }
@@ -259,15 +263,22 @@ impl ColorTheme {
         let rounding_controls = Rounding::same(6.0);
         let rounding_window = Rounding::same(6.0);
 
+        let subtle_text_color = Nord::NORD4.shade(0.6);
+        let normal_text_color = Nord::NORD4;
+
         let button_bg = Nord::NORD1;
         let button_bg_stroke = Color32::TRANSPARENT; // Nord::NORD8.shade(0.7);
-        let button_fg = Nord::NORD8;
+        let button_fg = normal_text_color;
         let button_hover_bg = Nord::NORD1.shade(0.95);
-        let button_hover_bg_stroke = Nord::NORD8.shade(0.8);
+        let button_hover_bg_stroke = button_bg_stroke;
         let button_hover_fg = Nord::NORD8.shade(1.1);
+        // let button_hover_bg_stroke = subtle_text_color;
+        // let button_hover_fg = Nord::NORD4;
 
         let button_pressed_bg = Nord::NORD1.shade(0.9);
-        let button_pressed_bg_stroke = Nord::NORD8.shade(0.9);
+        //let button_pressed_bg_stroke = Nord::NORD8.shade(0.9);
+        let button_pressed_bg_stroke = subtle_text_color.shade(0.9);
+        // let button_pressed_fg = Nord::NORD4.shade(1.2);
         let button_pressed_fg = Nord::NORD8.shade(1.2);
 
         let main_bg = Nord::NORD0.shade(0.8);
@@ -275,8 +286,6 @@ impl ColorTheme {
         let selection_bg = Nord::NORD1;
         let selection_stroke = Nord::NORD6;
         let hyperlink_color = Nord::NORD7;
-        let normal_text_color = Nord::NORD4;
-        let subtle_text_color = Nord::NORD4.shade(0.6);
 
         // Something just barely different from the background color.
         // Used for [`crate::Grid::striped`].
@@ -288,8 +297,8 @@ impl ColorTheme {
         let extreme_bg_color = Nord::NORD0.shade(0.5);
 
         // Background color behind code-styled monospaced labels.
-        // let code_bg_color = Nord::NORD0.shade(0.6);
-        let code_bg_color = Color32::from_black_alpha(20);
+        let code_bg_color = Nord::NORD0;
+        // let code_bg_color = Color32::from_black_alpha(20);
 
         // A good color for warning text (e.g. orange).
         let warn_fg_color = Nord::NORD12;

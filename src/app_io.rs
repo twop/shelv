@@ -16,8 +16,8 @@ use genai::{
 use global_hotkey::GlobalHotKeyManager;
 
 use crate::{
-    app_actions::{AppIO, ConversationPart, LLMRequest},
-    app_state::{LLMResponseChunk, MsgToApp},
+    app_actions::{AppIO, ConversationPart, LLMBlockRequest, LLMPromptRequest},
+    app_state::{InlineLLMResponseChunk, LLMBlockResponseChunk, MsgToApp},
     persistent_state::get_utc_timestamp,
 };
 
@@ -106,13 +106,13 @@ impl AppIO for RealAppIO {
         Ok(())
     }
 
-    fn ask_llm(&self, question: LLMRequest) {
+    fn execute_llm_block(&self, question: LLMBlockRequest) {
         let egui_ctx = self.egui_ctx.clone();
         let sender = self.msg_queue.clone();
 
         // const MODEL_ANTHROPIC: &str = "claude-3-haiku-20240307";
 
-        let LLMRequest {
+        let LLMBlockRequest {
             conversation,
             output_code_block_address,
             note_id,
@@ -122,7 +122,7 @@ impl AppIO for RealAppIO {
 
         let send = move |chunk: String| {
             sender
-                .send(MsgToApp::LLMResponseChunk(LLMResponseChunk {
+                .send(MsgToApp::LLMBlockResponseChunk(LLMBlockResponseChunk {
                     chunk: chunk.to_string(),
                     address: output_code_block_address.clone(),
                     note_id,
@@ -177,24 +177,7 @@ impl AppIO for RealAppIO {
                     .insert(0, ChatMessage::system(system_prompt));
             }
 
-            let auth_resolver = AuthResolver::from_resolver_fn(
-                move |model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
-                    let genai::ModelIden {
-                        adapter_kind,
-                        model_name,
-                    } = model_iden;
-
-                    if adapter_kind != AdapterKind::Anthropic {
-                        return Err(genai::resolver::Error::Custom("Currently we only support Anthropic models".to_string()));
-                    }
-
-                    // YES it is OK to hardcode it here, it is heavily rate limited AND unique for this specific usage
-                    let key = "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";
-
-                    Ok(Some(genai::resolver::AuthData::from_single(key)))
-                },
-            );
-
+            let auth_resolver = prepare_auth_resolver();
             // println!("-----llm req: {chat_req:#?}");
             // -- Build the new client with this adapter_config
             let client = genai::Client::builder()
@@ -231,9 +214,116 @@ impl AppIO for RealAppIO {
         });
     }
 
+    fn execute_llm_prompt(&self, quesion: LLMPromptRequest) {
+        let egui_ctx = self.egui_ctx.clone();
+        let sender = self.msg_queue.clone();
+
+        let LLMPromptRequest {
+            prompt,
+            selection,
+            model,
+            system_prompt,
+            selection_location,
+            before_selection,
+            after_selection,
+        } = quesion;
+        // None -> end of the stream
+        let send = move |chunk: Option<String>| {
+            sender
+                .send(MsgToApp::InlineLLMResponse {
+                    response: (match chunk {
+                        Some(chunk) => InlineLLMResponseChunk::Chunk(chunk),
+                        None => InlineLLMResponseChunk::End,
+                    }),
+                    address: selection_location,
+                })
+                .unwrap();
+
+            egui_ctx.request_repaint();
+        };
+
+        tokio::spawn(async move {
+            let chat_req = ChatRequest::new(vec![
+                ChatMessage::system(system_prompt.unwrap_or_default()),
+                ChatMessage::system(
+                    [
+                        "selection is  <selection>{selection_body}</selection>",
+                        "prompt is marked as <prompt>{prompt_body}</prompt>",
+                        "content above selection marked as <before></before>",
+                        "content after selection marked as <after></after>",
+                        "answer the prompt quesion targeting <selection>, the asnwer will replace <selection> block",
+                        "using the context provided in <before> and <after>",
+                        "do not include <selection></selection> into response",
+                        "AVOID any extra comments or introductionary content, output ONLY the result",
+                    ]
+                    .join("\n"),
+                ),
+                ChatMessage::user(format!(
+                    "<before>{before_selection}</before>
+                    <selection>{selection}</selection>
+                    <after>{after_selection}</after>
+                    <prompt>{prompt}</prompt>"
+                )),
+            ]);
+
+            println!("-----llm inline req: {chat_req:#?}");
+
+            let auth_resolver = prepare_auth_resolver();
+
+            let client = genai::Client::builder()
+                .with_auth_resolver(auth_resolver)
+                .build();
+
+            let chat_res = client
+                .exec_chat_stream(model.as_str(), chat_req, None)
+                .await;
+
+            match chat_res {
+                Ok(mut stream) => {
+                    while let Some(stream_event) = stream.stream.next().await {
+                        match stream_event {
+                            Ok(ChatStreamEvent::Chunk(StreamChunk { content })) => {
+                                send(Some(content))
+                            }
+                            Ok(ChatStreamEvent::End(_)) => send(None),
+                            Ok(ChatStreamEvent::Start) => (),
+                            Err(e) => {
+                                send(Some(format!("Error getting response: {:#?}", e)));
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(err) => send(Some(format!("{:#?}", err))),
+            };
+        });
+    }
+
     fn open_shelv_folder(&self) -> Result<(), Box<dyn std::error::Error>> {
         open_folder_in_finder(&self.shelv_folder)
     }
+}
+
+fn prepare_auth_resolver() -> AuthResolver {
+    let auth_resolver = AuthResolver::from_resolver_fn(
+        move |model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
+            let genai::ModelIden {
+                adapter_kind,
+                model_name,
+            } = model_iden;
+
+            if adapter_kind != AdapterKind::Anthropic {
+                return Err(genai::resolver::Error::Custom("Currently we only support Anthropic models".to_string()));
+            }
+
+            // YES it is OK to hardcode it here, it is heavily rate limited AND unique for this specific usage
+            let key = "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";
+
+            Ok(Some(genai::resolver::AuthData::from_single(key)))
+        },
+    );
+
+    auth_resolver
 }
 
 fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<String>, io::Error> {

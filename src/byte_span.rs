@@ -1,7 +1,7 @@
 use std::{fmt::Pointer, marker::PhantomData, ops::Range, usize};
 
 /// Ordered byte span
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Hash, Eq)]
 pub struct ByteSpan {
     pub start: usize,
     pub end: usize,

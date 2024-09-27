@@ -3,7 +3,7 @@ use std::ops::Deref;
 use smallvec::SmallVec;
 
 use crate::{
-    app_actions::{AppAction, Conversation, ConversationPart, LLMRequest},
+    app_actions::{AppAction, Conversation, ConversationPart, LLMBlockRequest},
     byte_span::ByteSpan,
     command::{
         try_extract_text_command_context, CommandContext, EditorCommandOutput, TextCommandContext,
@@ -20,9 +20,11 @@ pub enum CodeBlockAddress {
     TargetBlock(NoteFile, SpanIndex),
 }
 
-pub const LLM_LANG: &str = "ai";
-pub fn run_llm_block(
-    CommandContext { app_state }: CommandContext,
+pub(crate) const DEFAULT_LLM_MODEL: &str = "claude-3-haiku-20240307";
+pub(crate) const LLM_LANG: &str = "ai";
+
+pub fn prepare_to_run_llm_block(
+    CommandContext { app_state, .. }: CommandContext,
     address: CodeBlockAddress,
 ) -> Option<EditorCommandOutput> {
     const LLM_LANG_OLD: &str = "llm";
@@ -162,9 +164,9 @@ pub fn run_llm_block(
         .llm_settings
         .as_ref()
         .map(|s| (s.model.clone(), s.system_prompt.clone()))
-        .unwrap_or_else(|| ("claude-3-haiku-20240307".to_string(), None));
+        .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None));
 
-    let llm_request = LLMRequest {
+    let llm_request = LLMBlockRequest {
         model,
         system_prompt,
         conversation,

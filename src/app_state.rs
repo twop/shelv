@@ -6,7 +6,11 @@ use std::{
 };
 
 use eframe::{
-    egui::{self, text::CCursor, Key, KeyboardShortcut, Modifiers, Rect, Ui},
+    egui::{
+        self,
+        text::{CCursor, LayoutJob},
+        Id, Key, KeyboardShortcut, Modifiers, Rect, Ui,
+    },
     epaint::Galley,
 };
 use itertools::Itertools;
@@ -19,12 +23,13 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        map_text_command_to_command_handler, BuiltInCommand, CommandContext, CommandList,
+        map_text_command_to_command_handler, AppFocus, BuiltInCommand, CommandContext, CommandList,
         EditorCommand, EditorCommandOutput, TextCommandContext,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
-        run_llm::{run_llm_block, CodeBlockAddress},
+        inline_llm_prompt::inline_llm_prompt_command_handler,
+        run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
         toggle_code_block::toggle_code_block,
@@ -35,9 +40,36 @@ use crate::{
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::execute_code_blocks,
     settings::{LlmSettings, SettingsNoteEvalContext},
-    text_structure::{SpanIndex, SpanKind, SpanMeta, TextStructure},
+    text_structure::{
+        SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextStructure, TextStructureVersion,
+    },
     theme::AppTheme,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
+pub struct TextSelectionAddress {
+    pub span: ByteSpan,
+    pub note_file: NoteFile,
+    pub text_version: TextStructureVersion,
+}
+
+#[derive(Debug)]
+pub enum InlinePromptStatus {
+    NotStarted,
+    Streaming { prompt: String },
+    Done { prompt: String },
+}
+
+#[derive(Debug)]
+pub struct InlineLLMPropmptState {
+    pub prompt: String,
+    pub address: TextSelectionAddress,
+    pub response_text: String,
+    pub diff_parts: Vec<TextDiffPart>,
+    pub layout_job: LayoutJob,
+    pub status: InlinePromptStatus,
+    pub fresh_response: bool,
+}
 
 #[derive(Debug)]
 pub struct Note {
@@ -75,6 +107,8 @@ pub struct AppState {
     pub editor_commands: CommandList,
     pub llm_settings: Option<LlmSettings>,
 
+    pub inline_llm_prompt: Option<InlineLLMPropmptState>,
+
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
     pub deferred_to_post_render: Vec<AppAction>,
@@ -90,7 +124,7 @@ impl AppState {
         self.unsaved_changes.push(change);
     }
 }
-
+#[derive(Debug)]
 pub struct CodeArea {
     pub rect: Rect,
     // TODO: use small string
@@ -98,6 +132,7 @@ pub struct CodeArea {
     pub code_block_span_index: SpanIndex,
 }
 
+#[derive(Debug)]
 pub struct ComputedLayout {
     pub galley: Arc<Galley>,
     pub layout_params_hash: u64,
@@ -117,11 +152,11 @@ impl<'a> LayoutParams<'a> {
             text,
             wrap_width,
             hash: {
-                let mut s = DefaultHasher::new();
-                text.hash(&mut s);
+                let mut hasher = fxhash::FxHasher::default();
+                text.hash(&mut hasher);
                 // note that it is OK to round it up
-                ((wrap_width * 100.0) as i64).hash(&mut s);
-                s.finish()
+                ((wrap_width * 100.0) as i64).hash(&mut hasher);
+                hasher.finish()
             },
         }
     }
@@ -197,10 +232,16 @@ impl ComputedLayout {
 }
 
 #[derive(Debug)]
-pub struct LLMResponseChunk {
+pub struct LLMBlockResponseChunk {
     pub chunk: String,
     pub address: String,
     pub note_id: NoteFile,
+}
+
+#[derive(Debug)]
+pub enum InlineLLMResponseChunk {
+    Chunk(String),
+    End,
 }
 
 #[derive(Debug)]
@@ -208,7 +249,12 @@ pub enum MsgToApp {
     ToggleVisibility,
     NoteFileChanged(NoteFile, PathBuf),
     GlobalHotkey(u32),
-    LLMResponseChunk(LLMResponseChunk),
+    LLMBlockResponseChunk(LLMBlockResponseChunk),
+
+    InlineLLMResponse {
+        response: InlineLLMResponseChunk,
+        address: TextSelectionAddress,
+    },
 }
 
 // struct MdAnnotationShortcut {
@@ -340,14 +386,35 @@ impl AppState {
             [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into()
         }));
 
-        editor_commands.push(EditorCommand::built_in(BuiltInCommand::HideApp, |_| {
-            [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
-        }));
+        editor_commands.push(EditorCommand::built_in(
+            BuiltInCommand::HideApp,
+            |cx| match (cx.app_focus.is_menu_opened, cx.app_focus.focus) {
+                (false, None | Some(AppFocus::NoteEditor)) => {
+                    [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
+                }
+                _ => SmallVec::new(),
+            },
+        ));
+
+        editor_commands.push(EditorCommand::built_in(
+            BuiltInCommand::HidePrompt,
+            |cx| match cx.app_focus.focus {
+                Some(AppFocus::InlinePropmptEditor) => {
+                    [AppAction::AcceptPromptSuggestion { accept: false }].into()
+                }
+                _ => SmallVec::new(),
+            },
+        ));
 
         editor_commands.push(EditorCommand::built_in(
             BuiltInCommand::RunLLMBlock,
-            |ctx| run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default(),
+            |ctx| {
+                prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default()
+            },
         ));
+        editor_commands.push(EditorCommand::built_in(BuiltInCommand::ShowPrompt, |ctx| {
+            inline_llm_prompt_command_handler(ctx).unwrap_or_default()
+        }));
 
         let mut editor_commands = CommandList::new(editor_commands);
         let mut llm_settings: Option<LlmSettings> = None;
@@ -394,6 +461,7 @@ impl AppState {
             editor_commands,
             llm_settings,
             deferred_to_post_render: vec![],
+            inline_llm_prompt: None,
         }
     }
 
@@ -441,4 +509,11 @@ fn number_to_key(key: u8) -> Option<Key> {
         9 => Some(Key::Num9),
         _ => None,
     }
+}
+
+pub fn compute_editor_text_id(selected_note_file: NoteFile) -> Id {
+    Id::new(match selected_note_file {
+        NoteFile::Note(index) => ("text_edit_id", index),
+        NoteFile::Settings => ("text_edit_id_settings", 4568),
+    })
 }
