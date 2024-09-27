@@ -40,6 +40,7 @@ enum Annotation {
     CodeBlock,
     // CodeBlockBody,
     InlineCode,
+    ListItemMarker,
 }
 
 #[derive(Debug)]
@@ -92,6 +93,7 @@ struct MarkdownRunningState {
     link: i8,
     raw_link: i8,
     task_marker: i8,
+    list_marker: i8,
     code: i8,
     code_block: i8,
     heading: [i8; 6],
@@ -111,6 +113,7 @@ impl MarkdownRunningState {
             link: 0,
             raw_link: 0,
             task_marker: 0,
+            list_marker: 0,
         }
     }
 }
@@ -585,6 +588,7 @@ impl TextStructure {
                 Annotation::Link => state.link += delta,
                 Annotation::RawLink => state.raw_link += delta,
                 Annotation::TaskMarker => state.task_marker += delta,
+                Annotation::ListItemMarker => state.list_marker += delta,
                 Annotation::Emphasis => state.emphasis += delta,
 
                 Annotation::Heading(level) => {
@@ -893,11 +897,22 @@ fn fill_annotation_points(
             //     _ => smallvec![(Annotation::CodeBlock, pos)],
             // },
             SpanKind::MdLink => smallvec![(Annotation::Link, pos)],
+            SpanKind::ListItem => smallvec![(
+                Annotation::ListItemMarker,
+                ByteSpan::new(
+                    pos.start,
+                    iterate_immediate_children_of(SpanIndex(index), spans)
+                        .map(|(_, desc)| &desc.byte_pos)
+                        .next()
+                        .unwrap_or(&pos)
+                        .start
+                        - 1
+                )
+            )],
             SpanKind::List
             | SpanKind::Root
             | SpanKind::Html
             | SpanKind::Image
-            | SpanKind::ListItem
             | SpanKind::Paragraph => smallvec![],
         };
 
@@ -994,6 +1009,7 @@ impl MarkdownRunningState {
             md_header,
             md_link,
             md_code,
+            subtle_text_color,
             ..
         } = colors;
 
@@ -1011,11 +1027,24 @@ impl MarkdownRunningState {
             _ => size.normal,
         };
 
+        let line_height = match self.heading {
+            [h1, ..] if h1 > 0 => size.h1 + 14.,
+            [_, h2, ..] if h2 > 0 => size.h2 + 14.,
+            [_, _, h3, ..] if h3 > 0 => size.h3 + 12.,
+            [_, _, _, h4, ..] if h4 > 0 => size.h4 + 10.,
+            [_, _, _, _, h5, ..] if h5 > 0 => size.h4 + 10.,
+            [_, _, _, _, _, h6] if h6 > 0 => size.h4 + 10.,
+            _ if self.code > 0 || self.code_block > 0 => 13. + 6.,
+            _ => size.normal + 6.,
+        };
+
         let is_link = match (self.link > 0, self.raw_link > 0, self.text > 0) {
             (true, _, true) => true,
             (false, true, _) => true,
             _ => false,
         };
+
+        let is_header = self.heading.iter().any(|h| *h > 0);
 
         let color = if is_link {
             *md_link
@@ -1026,15 +1055,32 @@ impl MarkdownRunningState {
                 *md_annotation
             }
         } else {
-            match (self.heading.iter().any(|h| *h > 0), self.text > 0) {
-                (_, false) => *md_annotation,
-                (true, true) => *md_header,
-                (false, true) => *md_body,
+            match (
+                is_header,
+                self.text > 0,
+                self.raw_link > 0,
+                self.list_marker > 0,
+            ) {
+                (_, false, false, false) => *md_annotation,
+                (_, false, true, _) | (_, false, _, true) => *subtle_text_color,
+                (true, true, _, _) => *md_header,
+                (false, true, _, _) => *md_body,
             }
         };
 
         let font_family = if self.code > 0 {
             &family.code
+        } else if is_header {
+            
+            match (emphasis, bold, self.text > 0) {
+                (_, _, false) => &family.normal,
+                (true, true,_) => &family.extra_bold_italic,
+                (false, true,_) => &family.extra_bold,
+                (true, false,_) => &family.italic,
+                (false, false,_) => &family.bold,
+            }
+        } else if self.list_marker > 0 {
+            &family.bold
         } else {
             match (emphasis, bold) {
                 (true, true) => &family.bold_italic,
@@ -1062,6 +1108,7 @@ impl MarkdownRunningState {
             } else {
                 Stroke::NONE
             },
+            line_height: Some(line_height),
             // background: if should_highlight_task {
             //     md_link.gamma_multiply(0.2)
             // } else {
