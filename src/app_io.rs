@@ -16,7 +16,7 @@ use genai::{
 use global_hotkey::GlobalHotKeyManager;
 
 use crate::{
-    app_actions::{AppIO, ConversationPart, InlineLLMPromptRequest, LLMBlockRequest},
+    app_actions::{AppIO, ConversationPart, LLMBlockRequest, LLMPromptRequest},
     app_state::{InlineLLMResponseChunk, LLMBlockResponseChunk, MsgToApp},
     persistent_state::get_utc_timestamp,
 };
@@ -106,7 +106,7 @@ impl AppIO for RealAppIO {
         Ok(())
     }
 
-    fn ask_llm(&self, question: LLMBlockRequest) {
+    fn execute_llm_block(&self, question: LLMBlockRequest) {
         let egui_ctx = self.egui_ctx.clone();
         let sender = self.msg_queue.clone();
 
@@ -214,16 +214,18 @@ impl AppIO for RealAppIO {
         });
     }
 
-    fn ask_llm_inline(&self, quesion: InlineLLMPromptRequest) {
+    fn execute_llm_prompt(&self, quesion: LLMPromptRequest) {
         let egui_ctx = self.egui_ctx.clone();
         let sender = self.msg_queue.clone();
 
-        let InlineLLMPromptRequest {
+        let LLMPromptRequest {
             prompt,
             selection,
             model,
             system_prompt,
             selection_location,
+            before_selection,
+            after_selection,
         } = quesion;
         // None -> end of the stream
         let send = move |chunk: Option<String>| {
@@ -247,14 +249,20 @@ impl AppIO for RealAppIO {
                     [
                         "selection is  <selection>{selection_body}</selection>",
                         "prompt is marked as <prompt>{prompt_body}</prompt>",
-                        "answer the prompt quesion, using selection as the context and source",
+                        "content above selection marked as <before></before>",
+                        "content after selection marked as <after></after>",
+                        "answer the prompt quesion targeting <selection>, the asnwer will replace <selection> block",
+                        "using the context provided in <before> and <after>",
                         "do not include <selection></selection> into response",
-                        "AVOID any extra comments, output ONLY the result",
+                        "AVOID any extra comments or introductionary content, output ONLY the result",
                     ]
                     .join("\n"),
                 ),
                 ChatMessage::user(format!(
-                    "<selectio>{selection}</selection>\n<prompt>{prompt}</prompt>"
+                    "<before>{before_selection}</before>
+                    <selection>{selection}</selection>
+                    <after>{after_selection}</after>
+                    <prompt>{prompt}</prompt>"
                 )),
             ]);
 

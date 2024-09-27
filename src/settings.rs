@@ -568,8 +568,8 @@ impl BuiltInCommand {
             PinWindow => "PinWindow",
             HideApp => "HideApp",
             RunLLMBlock => "ExecutePrompt",
-            TriggerInlinePrompt => "InlinePrompt",
-            CloseInlinePrompt => "CloseInlinePrompt",
+            ShowPrompt => "ShowPrompt",
+            HidePrompt => "HidePrompt",
         }
     }
 }

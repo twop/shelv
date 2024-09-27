@@ -58,9 +58,9 @@ pub enum AppAction {
     DeferToPostRender(Box<AppAction>),
     FocusRequest(FocusTarget),
     OpenNotesInFinder,
-    TriggerInlinePromptUI(TextSelectionAddress),
-    RunInlineLLMPrompt,
-    AcceptInlinePropmptResult {
+    ShowPrompt(TextSelectionAddress),
+    ExecutePrompt,
+    AcceptPromptSuggestion {
         accept: bool,
     },
 }
@@ -97,8 +97,10 @@ pub struct LLMBlockRequest {
 }
 
 #[derive(Debug)]
-pub struct InlineLLMPromptRequest {
+pub struct LLMPromptRequest {
     pub prompt: String,
+    pub before_selection: String,
+    pub after_selection: String,
     pub selection: String,
     pub model: String,
     pub system_prompt: Option<String>,
@@ -125,8 +127,8 @@ pub trait AppIO {
         to: Box<dyn Fn() -> MsgToApp>,
     ) -> Result<(), String>;
 
-    fn ask_llm(&self, question: LLMBlockRequest);
-    fn ask_llm_inline(&self, quesion: InlineLLMPromptRequest);
+    fn execute_llm_block(&self, question: LLMBlockRequest);
+    fn execute_llm_prompt(&self, quesion: LLMPromptRequest);
 }
 
 pub fn process_app_action(
@@ -504,7 +506,7 @@ pub fn process_app_action(
         }
 
         AppAction::AskLLM(question) => {
-            app_io.ask_llm(question);
+            app_io.execute_llm_block(question);
             SmallVec::new()
         }
         AppAction::SendFeedback(selected) => {
@@ -622,7 +624,7 @@ pub fn process_app_action(
         )
         .unwrap_or_default(),
 
-        AppAction::TriggerInlinePromptUI(address) => {
+        AppAction::ShowPrompt(address) => {
             println!("Triggering inline prompt {address:#?}",);
 
             state.inline_llm_prompt = Some(InlineLLMPropmptState {
@@ -642,7 +644,7 @@ pub fn process_app_action(
             ))])
         }
 
-        AppAction::RunInlineLLMPrompt => {
+        AppAction::ExecutePrompt => {
             let Some(prompt) = &mut state.inline_llm_prompt else {
                 return SmallVec::default();
             };
@@ -659,23 +661,29 @@ pub fn process_app_action(
                 prompt: prompt.prompt.clone(),
             };
 
-            app_io.ask_llm_inline(InlineLLMPromptRequest {
-                prompt: prompt.prompt.clone(),
-                selection: state.notes.get(&prompt.address.note_file).unwrap().text
-                    [prompt.address.span.range()]
-                .to_string(),
-                model,
-                system_prompt: Some(
-                    "Answer ONLY what you have been asked for, no extra comments or additional information".to_string(),
-                ),
+            let prompt_span = prompt.address.span;
+            let note_text = &state.notes.get(&prompt.address.note_file).unwrap().text;
+            let selection = note_text[prompt_span.range()].to_string();
+            let before_selection = note_text[..prompt_span.start].to_string();
+            let after_selection = note_text[prompt_span.end..].to_string();
 
+            app_io.execute_llm_prompt(LLMPromptRequest {
+                prompt: prompt.prompt.clone(),
+                selection,
+                model,
+                system_prompt: state
+                    .llm_settings
+                    .as_ref()
+                    .and_then(|settings| settings.system_prompt.clone()),
                 selection_location: prompt.address,
+                before_selection,
+                after_selection,
             });
 
             SmallVec::new()
         }
 
-        AppAction::AcceptInlinePropmptResult { accept } => {
+        AppAction::AcceptPromptSuggestion { accept } => {
             let mut resulting_actions = SmallVec::from_buf([AppAction::DeferToPostRender(
                 Box::new(AppAction::FocusRequest(FocusTarget::CurrentNote)),
             )]);

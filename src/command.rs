@@ -100,11 +100,11 @@ pub enum BuiltInCommand {
     SwitchToSettings,
     PinWindow,
     HideApp,
-    CloseInlinePrompt,
+    HidePrompt,
 
     // Async Code blocks
     RunLLMBlock,
-    TriggerInlinePrompt,
+    ShowPrompt,
 }
 
 /// Commands that we promote in UI
@@ -150,9 +150,9 @@ impl BuiltInCommand {
             Self::PinWindow => "Toggle Always on Top".into(),
             Self::HideApp => "Hide Window".into(),
             Self::RunLLMBlock => "Execute AI Block".into(),
-            BuiltInCommand::TriggerInlinePrompt => "Inline Prompt".into(),
+            BuiltInCommand::ShowPrompt => "Show AI Prompt".into(),
             // BuiltInCommand::ClosePopupMenu => "Close currently opened popup".into(),
-            BuiltInCommand::CloseInlinePrompt => "Close Inline Prompt".into(),
+            BuiltInCommand::HidePrompt => "Hide Prompt".into(),
         }
     }
 
@@ -181,9 +181,9 @@ impl BuiltInCommand {
             SwitchToSettings => shortcut(Modifiers::COMMAND, Key::Comma),
             PinWindow => shortcut(Modifiers::COMMAND, Key::P),
             RunLLMBlock => shortcut(Modifiers::COMMAND, Key::Enter),
-            TriggerInlinePrompt => shortcut(Modifiers::CTRL, Key::Enter),
+            ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
             // AppAction::RunInlineLLMPrompt
-            HideApp | CloseInlinePrompt => shortcut(Modifiers::NONE, Key::Escape),
+            HideApp | HidePrompt => shortcut(Modifiers::NONE, Key::Escape),
         }
     }
 }

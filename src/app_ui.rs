@@ -485,15 +485,22 @@ fn render_editor(
                             ))
                         }) {
                             resulting_actions.push(match &inline_llm_prompt.status {
-                                InlinePromptStatus::NotStarted => AppAction::RunInlineLLMPrompt,
+                                InlinePromptStatus::NotStarted => {
+                                    if inline_llm_prompt.prompt.is_empty() {
+                                        // that will hide the UI
+                                        AppAction::AcceptPromptSuggestion { accept: false }
+                                    } else {
+                                        AppAction::ExecutePrompt
+                                    }
+                                }
                                 InlinePromptStatus::Streaming { .. } => {
-                                    AppAction::AcceptInlinePropmptResult { accept: false }
+                                    AppAction::AcceptPromptSuggestion { accept: false }
                                 }
                                 InlinePromptStatus::Done { prompt } => {
                                     if prompt == &inline_llm_prompt.prompt {
-                                        AppAction::AcceptInlinePropmptResult { accept: true }
+                                        AppAction::AcceptPromptSuggestion { accept: true }
                                     } else {
-                                        AppAction::RunInlineLLMPrompt
+                                        AppAction::ExecutePrompt
                                     }
                                 }
                             });
@@ -552,7 +559,7 @@ fn render_editor(
                                     })
                                     .clicked()
                                 {
-                                    resulting_actions.push(AppAction::RunInlineLLMPrompt);
+                                    resulting_actions.push(AppAction::ExecutePrompt);
                                 }
                                 ui.add_space(theme.sizes.s);
                                 if render_btn(ui, AppIcon::Close, "Cancel")
@@ -561,15 +568,14 @@ fn render_editor(
                                             ui,
                                             "Cancel prompt",
                                             command_list
-                                                .find(BuiltInCommand::CloseInlinePrompt)
+                                                .find(BuiltInCommand::HidePrompt)
                                                 .and_then(|cmd| cmd.shortcut),
                                         );
                                     })
                                     .clicked()
                                 {
-                                    resulting_actions.push(AppAction::AcceptInlinePropmptResult {
-                                        accept: false,
-                                    });
+                                    resulting_actions
+                                        .push(AppAction::AcceptPromptSuggestion { accept: false });
                                 }
                             }
 
@@ -589,9 +595,8 @@ fn render_editor(
                                         })
                                         .clicked()
                                 {
-                                    resulting_actions.push(AppAction::AcceptInlinePropmptResult {
-                                        accept: true,
-                                    });
+                                    resulting_actions
+                                        .push(AppAction::AcceptPromptSuggestion { accept: true });
                                 }
 
                                 if prompt != &inline_llm_prompt.prompt
@@ -605,7 +610,7 @@ fn render_editor(
                                         })
                                         .clicked()
                                 {
-                                    resulting_actions.push(AppAction::RunInlineLLMPrompt);
+                                    resulting_actions.push(AppAction::ExecutePrompt);
                                 }
 
                                 ui.add_space(theme.sizes.s);
@@ -615,15 +620,14 @@ fn render_editor(
                                             ui,
                                             "Reject changes",
                                             command_list
-                                                .find(BuiltInCommand::CloseInlinePrompt)
+                                                .find(BuiltInCommand::HidePrompt)
                                                 .and_then(|cmd| cmd.shortcut),
                                         );
                                     })
                                     .clicked()
                                 {
-                                    resulting_actions.push(AppAction::AcceptInlinePropmptResult {
-                                        accept: false,
-                                    });
+                                    resulting_actions
+                                        .push(AppAction::AcceptPromptSuggestion { accept: false });
                                 }
                             }
                         }
@@ -653,7 +657,7 @@ fn render_editor(
 
         Some(_) => {
             // reset inline prompt in case the text was modified
-            resulting_actions.push(AppAction::AcceptInlinePropmptResult { accept: false });
+            resulting_actions.push(AppAction::AcceptPromptSuggestion { accept: false });
         }
 
         None => (),

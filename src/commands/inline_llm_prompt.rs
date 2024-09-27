@@ -12,7 +12,7 @@ pub fn inline_llm_prompt_command_handler(
     let text_command_ctx = try_extract_text_command_context(app_state)?;
 
     Some(
-        [AppAction::TriggerInlinePromptUI(TextSelectionAddress {
+        [AppAction::ShowPrompt(TextSelectionAddress {
             span: text_command_ctx.byte_cursor,
             note_file: app_state.selected_note,
             text_version: text_command_ctx.text_structure.opaque_version(),

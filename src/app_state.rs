@@ -397,10 +397,10 @@ impl AppState {
         ));
 
         editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::CloseInlinePrompt,
+            BuiltInCommand::HidePrompt,
             |cx| match cx.app_focus.focus {
                 Some(AppFocus::InlinePropmptEditor) => {
-                    [AppAction::AcceptInlinePropmptResult { accept: false }].into()
+                    [AppAction::AcceptPromptSuggestion { accept: false }].into()
                 }
                 _ => SmallVec::new(),
             },
@@ -412,10 +412,9 @@ impl AppState {
                 prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default()
             },
         ));
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::TriggerInlinePrompt,
-            |ctx| inline_llm_prompt_command_handler(ctx).unwrap_or_default(),
-        ));
+        editor_commands.push(EditorCommand::built_in(BuiltInCommand::ShowPrompt, |ctx| {
+            inline_llm_prompt_command_handler(ctx).unwrap_or_default()
+        }));
 
         let mut editor_commands = CommandList::new(editor_commands);
         let mut llm_settings: Option<LlmSettings> = None;
