@@ -781,10 +781,10 @@ fn render_footer_panel(
                         // TODO why the button icons are rendered with h3 font size?
                         item_size: theme.fonts.size.h3,
                         inactive_color: theme.colors.subtle_text_color,
-                        hover_color: theme.colors.button_hover_bg_stroke,
+                        hover_color: theme.colors.button_hover_fg,
                         pressed_color: theme.colors.button_pressed_fg,
-                        selected_stroke_color: theme.colors.button_fg,
-                        selected_fill_color: theme.colors.button_bg,
+                        selected_stroke_color: theme.colors.button_pressed_fg,
+                        selected_fill_color: theme.colors.button_pressed_fg,
                         outline: PathStroke::new(1.0, theme.colors.outline_fg),
                         tooltip_text_color: theme.colors.subtle_text_color,
                     };
