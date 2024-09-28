@@ -123,9 +123,9 @@ pub struct FontSizes {
 impl FontSizes {
     pub fn new() -> Self {
         Self {
-            h1: 24.,
-            h2: 20.,
-            h3: 18.,
+            h1: 72.,
+            h2: 36.,
+            h3: 22.,
             h4: 16.,
             normal: 14.,
             small: 8.,
@@ -158,6 +158,8 @@ pub struct FontFamilies {
     pub normal: FontFamily,
     pub italic: FontFamily,
     pub bold: FontFamily,
+    pub extra_bold: FontFamily,
+    pub extra_bold_italic: FontFamily,
     pub bold_italic: FontFamily,
     pub code: FontFamily,
 }
@@ -168,6 +170,8 @@ impl FontFamilies {
             normal: FontFamily::Name("inter".into()),
             italic: FontFamily::Name("inter-italic".into()),
             bold: FontFamily::Name("inter-bold".into()),
+            extra_bold: FontFamily::Name("inter-extra-bold".into()),
+            extra_bold_italic: FontFamily::Name("inter-extra-bold-italic".into()),
             bold_italic: FontFamily::Name("inter-bold-italic".into()),
             code: FontFamily::Monospace,
         }
@@ -249,7 +253,7 @@ impl ColorTheme {
         // ---------
         // editor specific colors
         let md_strike: Color32 = Nord::NORD4;
-        let md_annotation: Color32 = Nord::NORD4.shade(0.5);
+        let md_annotation: Color32 = Nord::NORD1;
         let md_body = Nord::NORD4;
         let md_header = Nord::NORD6;
         // same as hyperlink_color
@@ -368,26 +372,36 @@ pub fn get_font_definitions() -> FontDefinitions {
     // .ttf and .otf files supported.
     fonts.font_data.insert(
         "inter".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/Inter-Light.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-Regular.otf")),
     );
 
     fonts.font_data.insert(
         "inter-italic".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/Inter-LightItalic.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-Italic.otf")),
     );
 
     fonts.font_data.insert(
         "inter-bold".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/Inter-SemiBold.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-Bold.otf")),
+    );
+
+    fonts.font_data.insert(
+        "inter-extra-bold".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-ExtraBold.otf")),
     );
     fonts.font_data.insert(
+        "inter-extra-bold-italic".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-ExtraBoldItalic.otf")),
+    );
+
+    fonts.font_data.insert(
         "inter-bold-italic".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/Inter-SemiBoldItalic.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-BoldItalic.otf")),
     );
     fonts.font_data.insert(
         "jetbrains-mono".to_owned(),
         egui::FontData::from_static(include_bytes!(
-            "../assets/JetBrainsMonoNerdFontMono-ExtraLight.ttf"
+            "../assets/JetBrainsMonoNerdFontMono-Regular.ttf"
         )),
     );
 
@@ -416,6 +430,18 @@ pub fn get_font_definitions() -> FontDefinitions {
         .entry(egui::FontFamily::Name("inter-bold".into()))
         .or_default()
         .push("inter-bold".to_owned());
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("inter-extra-bold".into()))
+        .or_default()
+        .push("inter-extra-bold".to_owned());
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Name("inter-extra-bold-italic".into()))
+        .or_default()
+        .push("inter-extra-bold-italic".to_owned());
 
     fonts
         .families
