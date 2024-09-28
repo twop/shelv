@@ -899,14 +899,15 @@ fn fill_annotation_points(
             SpanKind::MdLink => smallvec![(Annotation::Link, pos)],
             SpanKind::ListItem => smallvec![(
                 Annotation::ListItemMarker,
+                // We annotate only the bullet (*, -, or +) or number ('1.') as the ListItemMarker
+                // This ends up being a span (start of the list item, end of the list item OR right before Text span)
                 ByteSpan::new(
                     pos.start,
                     iterate_immediate_children_of(SpanIndex(index), spans)
                         .map(|(_, desc)| &desc.byte_pos)
                         .next()
-                        .unwrap_or(&pos)
-                        .start
-                        - 1
+                        .map(|pos| pos.start.saturating_sub(1))
+                        .unwrap_or(pos.end)
                 )
             )],
             SpanKind::List
