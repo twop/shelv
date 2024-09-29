@@ -1,12 +1,16 @@
 use std::{
     collections::BTreeMap,
-    ffi::CString,
+    ffi::{c_void, CString},
     fs::{self, File},
     io::{self, Read},
     path::PathBuf,
     sync::mpsc::SyncSender,
 };
 
+use accessibility_sys::{
+    AXUIElementCreateSystemWide, AXUIElementGetTypeID, __AXUIElement, kAXTitleAttribute,
+    kAXURLAttribute,
+};
 use eframe::egui;
 use genai::{
     adapter::AdapterKind,
@@ -357,6 +361,311 @@ fn hide_app_on_macos() {
         let _: () = msg_send![&app, hide:arg];
     }
 }
+
+// Swift code:
+// extension AXUIElement {
+//   static var focusedElement: AXUIElement? {
+//     systemWide.element(for: kAXFocusedUIElementAttribute)
+//   }
+
+//   var selectedText: String? {
+//     rawValue(for: kAXSelectedTextAttribute) as? String
+//   }
+
+//   private static var systemWide = AXUIElementCreateSystemWide()
+
+//   private func element(for attribute: String) -> AXUIElement? {
+//     guard let rawValue = rawValue(for: attribute), CFGetTypeID(rawValue) == AXUIElementGetTypeID() else { return nil }
+//     return (rawValue as! AXUIElement)
+//   }
+
+//   private func rawValue(for attribute: String) -> AnyObject? {
+//     var rawValue: AnyObject?
+//     let error = AXUIElementCopyAttributeValue(self, attribute as CFString, &rawValue)
+//     return error == .success ? rawValue : nil
+//   }
+// }
+use accessibility_sys::{
+    kAXFocusedUIElementAttribute, kAXSelectedTextAttribute, AXUIElementCopyAttributeValue,
+};
+use core_foundation::{
+    array::{CFArray, CFArrayGetValueAtIndex, CFArrayRef}, base::{
+        CFCopyTypeIDDescription, CFGetTypeID, CFIndex, CFRange, CFRelease, CFTypeRef, FromVoid, TCFType, TCFTypeRef
+    }, string::{CFString, CFStringGetTypeID, CFStringRef}, url::{CFURLGetTypeID, CFURL}
+};
+use std::ptr;
+
+#[derive(Debug)]
+pub struct CoppiedTextContext {
+    pub selected_text: Option<String>,
+    pub url: Option<String>,
+    pub document: Option<String>,
+    pub window_title: Option<String>,
+    pub application_title: Option<String>,
+}
+
+pub fn get_focused_element_text() -> Option<CoppiedTextContext> {
+    use accessibility_sys::*;
+
+    fn get_element(system_wide: *mut __AXUIElement, attribute: &str) -> Option<*mut __AXUIElement> {
+        unsafe {
+            let mut raw_value: CFTypeRef = ptr::null();
+            let cf_string = CFString::new(attribute);
+            let result = AXUIElementCopyAttributeValue(
+                system_wide,
+                cf_string.as_concrete_TypeRef(),
+                &mut raw_value,
+            );
+
+            if result != 0
+                || raw_value.is_null()
+                || CFGetTypeID(raw_value) != AXUIElementGetTypeID()
+            {
+                return None;
+            }
+
+            Some(raw_value as *mut __AXUIElement)
+        }
+    }
+
+    fn get_attribute(element: *mut __AXUIElement, attribute: &str) -> Option<String> {
+        unsafe {
+            let mut raw_value: CFTypeRef = ptr::null();
+            let cf_string = CFString::new(attribute);
+            let result = AXUIElementCopyAttributeValue(
+                element,
+                cf_string.as_concrete_TypeRef(),
+                &mut raw_value,
+            );
+
+            if result != 0 || raw_value.is_null() || CFGetTypeID(raw_value) != CFStringGetTypeID() {
+                return None;
+            }
+
+            let rust_string = CFString::from_void(raw_value).to_string();
+
+            CFRelease(raw_value);
+
+            Some(rust_string)
+        }
+    }
+
+    fn get_url_attribute(element: *mut __AXUIElement, attribute: &str) -> Option<String> {
+        unsafe {
+            let mut raw_value: CFTypeRef = ptr::null();
+            let cf_string = CFString::new(attribute);
+            let result = AXUIElementCopyAttributeValue(
+                element,
+                cf_string.as_concrete_TypeRef(),
+                &mut raw_value,
+            );
+
+            if result != 0 || raw_value.is_null() || CFGetTypeID(raw_value) != CFURLGetTypeID() {
+                return None;
+            }
+
+            let rust_string = CFURL::from_void(raw_value).get_string().to_string();
+
+            CFRelease(raw_value);
+
+            Some(rust_string)
+        }
+    }
+
+    fn get_children_elements(element: *mut __AXUIElement) -> Option<Vec<*mut __AXUIElement>> {
+        unsafe {
+            let mut raw_value: CFTypeRef = ptr::null();
+            let cf_string = CFString::new(kAXChildrenAttribute);
+            let result = AXUIElementCopyAttributeValue(
+                element,
+                cf_string.as_concrete_TypeRef(),
+                &mut raw_value,
+            );
+
+            let mut cfindex: CFIndex = 0;
+            let cfindex_ptr: *mut CFIndex = &mut cfindex as *mut _ as *mut CFIndex;
+            let children_count = AXUIElementGetAttributeValueCount(element, cf_string.as_concrete_TypeRef(), cfindex_ptr);
+
+            if result != 0 || raw_value.is_null() {
+                return None;
+            }
+
+            let children = CFArray::<CFTypeRef>::from_void(raw_value);
+
+            let mut elements = Vec::new();
+            for i in 0..children_count {
+                let child = CFArrayGetValueAtIndex(raw_value as CFArrayRef, CFIndex::from(i as isize));
+                if CFGetTypeID(child) == AXUIElementGetTypeID() {
+                    elements.push(child as *mut __AXUIElement);
+                }
+            }
+
+            CFRelease(raw_value);
+
+            Some(elements)
+        }
+    }
+
+    fn get_range_attribute(element: *mut __AXUIElement, attribute: &str) -> Option<CFRange> {
+        unsafe {
+            let mut raw_value: CFTypeRef = ptr::null();
+            let cf_string = CFString::new(attribute);
+            let result = AXUIElementCopyAttributeValue(
+                element,
+                cf_string.as_concrete_TypeRef(),
+                &mut raw_value,
+            );
+
+            if result != 0 || raw_value.is_null() {
+                println!("Error getting range attribute");
+                return None;
+            }
+
+            println!("Found Range");
+
+
+            let mut selectedCFRange: CFRange = CFRange {
+                location: 0,
+                length: 0,
+            };
+            let cfrange_ptr: *mut c_void = &mut selectedCFRange as *mut _ as *mut c_void;
+            let selectedRangeValue: AXValueRef = raw_value as AXValueRef;
+            AXValueGetValue(selectedRangeValue, kAXValueTypeCFRange,cfrange_ptr );
+
+            CFRelease(raw_value);
+
+            Some(selectedCFRange)
+        }
+    }
+
+    pub fn cfstring_to_string(r: CFStringRef) -> String {
+        format!("{}", unsafe { &*CFString::from_void(r.as_void_ptr()) })
+    }
+
+    fn scan_hieararchy_for_attribute(
+        element: *mut __AXUIElement,
+        attribute: &str,
+    ) -> Option<String> {
+        let mut current_element = element;
+
+        loop {
+            println!(
+                "Scanning {} {} {}",
+                get_attribute(current_element, kAXRoleAttribute).unwrap_or_default(),
+                get_attribute(current_element, kAXTitleAttribute).unwrap_or_default(),
+                get_attribute(current_element, kAXDescriptionAttribute).unwrap_or_default()
+            );
+
+            let value = get_url_attribute(current_element, attribute).or(get_attribute(current_element, attribute));
+            
+            if value.is_some() {
+                println!("Found Attribute!");
+
+                return value;
+            }
+
+            let Some(parent_element) = get_element(current_element, kAXParentAttribute) else {
+                println!("Reached the top of the hierarchy");
+                return None;
+            };
+
+            current_element = parent_element;
+        }
+
+        
+    }
+
+    unsafe {
+        // 1. Get the system-wide AXUIElement
+        let system_wide_element = AXUIElementCreateSystemWide();
+
+        // 2. Get the focused UI element
+        let focused_element = get_element(system_wide_element, kAXFocusedUIElementAttribute)?;
+
+        // 3. Get the selected text
+        let selected_text = get_attribute(focused_element, kAXSelectedTextAttribute);
+
+        let children_elements = get_children_elements(focused_element);
+
+        println!("Found {:?} children", children_elements.as_ref().map(|c| c.len()).unwrap_or(0));
+        if let Some(children_elements) = children_elements {
+            for child in children_elements {
+                let value = get_attribute(child, kAXSelectedTextAttribute);
+                if value.is_some() {
+                    println!("Child has selected text!");
+                }
+            }
+        }
+
+        // 4. Additional attributes
+        let window_element = get_element(focused_element, kAXWindowAttribute);
+
+        let window_title = get_element(focused_element, kAXWindowAttribute)
+            .map(|window| get_attribute(window, kAXTitleAttribute))
+            .flatten();
+        let application_title = window_element
+            .map(|window_element| {
+                get_element(window_element, kAXParentAttribute).map(|application_element| {
+                    get_attribute(application_element, kAXTitleAttribute)
+                }).flatten()
+            })
+            .flatten();
+        
+        let url = scan_hieararchy_for_attribute(focused_element, kAXURLAttribute);
+        let document = scan_hieararchy_for_attribute(focused_element, kAXDocumentAttribute);
+
+        let selected_range = get_range_attribute(focused_element, kAXSelectedTextRangeAttribute);
+        println!("Selected Range: {:?}", selected_range);
+
+        Some(CoppiedTextContext {
+            selected_text,
+            url,
+            document,
+            window_title,
+            application_title
+        })
+    }
+}
+
+// CFRange selectedCFRange;
+// AXValueRef selectedRangeValue = NULL;
+
+// // Access selected range attribute from focused element
+// AXError selectedRangeError = AXUIElementCopyAttributeValue(focussedElement, kAXSelectedTextRangeAttribute, (CFTypeRef *)&selectedRangeValue);
+// if (selectedRangeError == kAXErrorSuccess)
+
+// {
+
+// NSLog(@”\nSelected Range: %@”,selectedRangeValue);
+
+// //Selected Range is retrieved successfully, then get the range into CFRange type object
+
+// AXValueGetValue(selectedRangeValue, kAXValueCFRangeType, &selectedCFRange);
+// }
+// else
+// {
+// NSLog(@”Error while retrieving selected range”);
+// }
+
+// // The length and location of the selected text will be selectedCFRange.length and selectedCFRange.location
+
+// NSLog(@”\nLength: %ld, Location: %ld”,selectedCFRange.length, selectedCFRange.location);
+
+// CGRect selectedRect;
+
+// AXValueRef selectedBounds = NULL;
+// // Get the selected bounds value from the selected range
+
+// AXError selectedBoundsError = AXUIElementCopyParameterizedAttributeValue(focussedElement, kAXBoundsForRangeParameterizedAttribute, selectedRangeValue, (CFTypeRef *)&selectedBounds);
+// CFRelease(selectedRangeValue);
+
+// if (selectedBoundsError == kAXErrorSuccess)
+
+// {
+
+// AXValueGetValue(selectedBounds, kAXValueCGRectType, &selectedRect);
+// NSLog(@”Selection bounds: %@”, NSStringFromRect(NSRectFromCGRect(selectedRect)));   // Selection Rect retrieved
+// }
 
 fn open_folder_in_finder(path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     use objc2::rc::Id;

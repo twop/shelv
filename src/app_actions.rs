@@ -8,6 +8,7 @@ use similar::{ChangeTag, TextDiff};
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
+    app_io::{get_focused_element_text, CoppiedTextContext},
     app_state::{
         compute_editor_text_id, AppState, InlineLLMPropmptState, InlineLLMResponseChunk,
         InlinePromptStatus, MsgToApp, TextSelectionAddress, UnsavedChange,
@@ -461,6 +462,80 @@ pub fn process_app_action(
                         SmallVec::new()
                     }
                 },
+                MsgToApp::CopyToNote => {
+                    let focussed_text = get_focused_element_text();
+                    println!("focussed_text: {:#?}", focussed_text);
+                    focussed_text
+                        .map(|focussed_text| {
+                            let text_to_insert = match focussed_text {
+                                CoppiedTextContext {
+                                    selected_text: Some(selected_text),
+                                    document: Some(url),
+                                    ..
+                                }
+                                | CoppiedTextContext {
+                                    selected_text: Some(selected_text),
+                                    url: Some(url),
+                                    ..
+                                } => Ok(format!("{} [source]({})", selected_text, url)),
+
+                                CoppiedTextContext {
+                                    selected_text: Some(selected_text),
+                                    ..
+                                } => Ok(selected_text),
+
+                                CoppiedTextContext {
+                                    url: Some(url),
+                                    window_title: Some(title),
+                                    ..
+                                }
+                                | CoppiedTextContext {
+                                    url: Some(url),
+                                    application_title: Some(title),
+                                    ..
+                                } => Ok(format!("[{}]({})", title, url)),
+
+                                CoppiedTextContext {
+                                    selected_text: None,
+                                    url: None,
+                                    window_title: Some(title),
+                                    ..
+                                }
+                                | CoppiedTextContext {
+                                    selected_text: None,
+                                    url: None,
+                                    application_title: Some(title),
+                                    ..
+                                } => Err(format!("Failed to copy text from {}", title)),
+
+                                _ => Err(format!("Failed to copy text")),
+                            };
+
+                            let Ok(text_to_insert) = text_to_insert else {
+                                // probably should warn user
+                                println!("Error copying text: {:#?}", text_to_insert);
+                                return smallvec![];
+                            };
+
+                            let text_to_insert = format!("{}\n", text_to_insert);
+
+                            let note = &state.notes.get(&state.selected_note).unwrap();
+                            let text = &note.text;
+                            let cursor = note
+                                .cursor
+                                .unwrap_or_else(|| UnOrderedByteSpan::new(text.len(), text.len()));
+
+                            [AppAction::ApplyTextChanges {
+                                target: state.selected_note,
+                                changes: [TextChange::Replace(cursor.ordered(), text_to_insert)]
+                                    .into(),
+
+                                should_trigger_eval: false,
+                            }]
+                            .into()
+                        })
+                        .unwrap_or_default()
+                }
             }
         }
 

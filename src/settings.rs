@@ -51,6 +51,7 @@ enum Command {
 #[derive(Debug, PartialEq, Eq)]
 enum GlobalCommand {
     ShowHideApp,
+    CopyFocusedText,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -165,6 +166,7 @@ fn try_parse_builtin_command(name: &str, entries: &[KdlEntry]) -> Option<BuiltIn
 fn parse_global_command(node: &KdlNode) -> Result<GlobalCommand, SettingsParseError> {
     match node.name().value() {
         "ToggleAppVisibility" | "ShowHideApp" => Ok(GlobalCommand::ShowHideApp),
+        "CopyFocusedText" => Ok(GlobalCommand::CopyFocusedText),
         name => Err(SettingsParseError::UnknownCommand(name.to_string())),
     }
 }
@@ -447,6 +449,25 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                                 }
                             }
                         }
+                        GlobalCommand::CopyFocusedText => {
+                            match self.app_io.bind_global_hotkey(
+                                *shortcut,
+                                Box::new(|| MsgToApp::CopyToNote),
+                            ) {
+                                Ok(_) => {
+                                    println!("registered global {shortcut:?} to copy focused text");
+                                }
+
+                                Err(err) => {
+                                    println!("error registering global {shortcut:?} to copy focused text, err = {err:?}");
+
+                                    return BlockEvalResult {
+                                        body: format!("error: {:#?}", err),
+                                        output_lang: format!("settings#{}", hash.to_string()),
+                                    };
+                                }
+                            }
+                        },
                     }
                 }
 
@@ -482,6 +503,7 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                             settings.global_bindings.into_iter().map(|binding| {
                                 match binding.command {
                                     GlobalCommand::ShowHideApp => ("ShowHideApp", binding.shortcut),
+                                    GlobalCommand::CopyFocusedText => ("CopyFocusedText", binding.shortcut),
                                 }
                             })
                         {

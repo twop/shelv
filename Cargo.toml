@@ -63,6 +63,10 @@ fxhash = "0.2.1"
 similar = "2.6.0"
 tree-sitter-highlight = "0.20.1"
 tree-sitter-kdl = "1.1.0"
+objc-foundation = "0.1.1"
+accessibility-sys = "0.1.3"
+core-foundation = "0.10.0"
+objc2-accessibility = "0.2.2"
 
 [patch.crates-io]
 winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.29.15" }

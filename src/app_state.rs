@@ -248,6 +248,7 @@ pub enum InlineLLMResponseChunk {
 #[derive(Debug)]
 pub enum MsgToApp {
     ToggleVisibility,
+    CopyToNote,
     NoteFileChanged(NoteFile, PathBuf),
     GlobalHotkey(u32),
     LLMBlockResponseChunk(LLMBlockResponseChunk),
