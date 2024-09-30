@@ -298,10 +298,10 @@ impl ColorTheme {
         // Very dark or light color (for corresponding theme).
         // Used as the background of text edits, scroll bars and others things
         // that needs to look different from other interactive stuff.
-        let extreme_bg_color = Nord::NORD0.shade(0.5);
+        let extreme_bg_color = Nord::NORD0.shade(0.45);
 
         // Background color behind code-styled monospaced labels.
-        let code_bg_color = Nord::NORD0;
+        let code_bg_color = Nord::NORD0.shade(0.6);
         // let code_bg_color = Color32::from_black_alpha(20);
 
         // A good color for warning text (e.g. orange).

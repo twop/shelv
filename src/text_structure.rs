@@ -11,11 +11,13 @@ use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
 
+use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
+
 use crate::{
     byte_span::ByteSpan,
     nord::Nord,
     scripting::OUTPUT_LANG,
-    theme::{AppTheme, ColorTheme, FontTheme},
+    theme::{AppTheme, ColorManipulation, ColorTheme, FontTheme},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -561,6 +563,80 @@ impl TextStructure {
                         }
                     }
 
+                    None if lang == "settings" => {
+                        let mut highlighter = Highlighter::new();
+
+                        let kdl_lang = tree_sitter_kdl::language();
+
+                        let mut kdl_config = HighlightConfiguration::new(
+                            kdl_lang,
+                            tree_sitter_kdl::HIGHLIGHTS_QUERY,
+                            tree_sitter_kdl::INJECTIONS_QUERY,
+                            tree_sitter_kdl::LOCALS_QUERY,
+                        )
+                        .unwrap();
+
+                        let highlight_pairs = [
+                            ("type", Nord::NORD6),
+                            ("type.builtin", Nord::NORD9),
+                            ("property", Nord::NORD8),
+                            ("variable", Nord::NORD4),
+                            ("string", Nord::NORD14),
+                            ("string.escape", Nord::NORD13),
+                            ("number", Nord::NORD15),
+                            ("float", Nord::NORD15),
+                            ("boolean", Nord::NORD9),
+                            ("constant.builtin", Nord::NORD9),
+                            ("punctuation.bracket", Nord::NORD10),
+                            ("punctuation.delimiter", Nord::NORD9),
+                            ("comment", Nord::NORD3.shade(1.2)),
+                            ("spell", Nord::NORD3.shade(1.2)),
+                        ];
+
+                        let highlight_names = highlight_pairs.map(|(name, _)| name);
+
+                        kdl_config.configure(&highlight_names);
+
+                        let highlights = highlighter
+                            .highlight(&kdl_config, code.as_bytes(), None, |_| None)
+                            .unwrap();
+
+                        let mut color = Nord::NORD4;
+                        let mut ident = 0;
+
+                        for event in highlights {
+                            match event.unwrap() {
+                                HighlightEvent::Source { start, end } => {
+                                    eprintln!("{}{}", "  ".repeat(ident), &code[start..end]);
+
+                                    job.append(
+                                        &code[start..end],
+                                        0.0,
+                                        TextFormat::simple(code_font_id.clone(), color),
+                                    )
+                                }
+                                HighlightEvent::HighlightStart(s) => {
+                                    color = highlight_pairs[s.0].1;
+                                    eprintln!("{}{} {{", "  ".repeat(ident), highlight_names[s.0]);
+                                    ident = ident + 1;
+                                }
+                                HighlightEvent::HighlightEnd => {
+                                    ident = ident - 1;
+                                    eprintln!("{}}}", "  ".repeat(ident));
+                                }
+                            }
+                        }
+
+                        // job.append(
+                        //     code,
+                        //     0.0,
+                        //     TextFormat::simple(
+                        //         code_font_id.clone(),
+                        //         theme.colors.normal_text_color,
+                        //     ),
+                        // )
+                    }
+
                     None => job.append(
                         code,
                         0.0,
@@ -1072,13 +1148,12 @@ impl MarkdownRunningState {
         let font_family = if self.code > 0 {
             &family.code
         } else if is_header {
-            
             match (emphasis, bold, self.text > 0) {
                 (_, _, false) => &family.normal,
-                (true, true,_) => &family.extra_bold_italic,
-                (false, true,_) => &family.extra_bold,
-                (true, false,_) => &family.italic,
-                (false, false,_) => &family.bold,
+                (true, true, _) => &family.extra_bold_italic,
+                (false, true, _) => &family.extra_bold,
+                (true, false, _) => &family.italic,
+                (false, false, _) => &family.bold,
             }
         } else if self.list_marker > 0 {
             &family.bold
