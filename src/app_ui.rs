@@ -783,7 +783,7 @@ fn render_footer_panel(
                         items: &items,
                         gap: sizes.s,
                         // TODO why the button icons are rendered with h3 font size?
-                        item_size: theme.fonts.size.h3,
+                        item_size: theme.sizes.toolbar_icon,
                         inactive_color: theme.colors.subtle_text_color,
                         hover_color: theme.colors.button_hover_fg,
                         pressed_color: theme.colors.button_pressed_fg,
