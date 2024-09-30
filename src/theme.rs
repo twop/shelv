@@ -42,7 +42,7 @@ impl AppIcon {
             .size(size)
     }
 
-    pub fn render_with_icon_and_text(&self, size: f32, color: Color32, text: &str) -> WidgetText {
+    pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> WidgetText {
         use egui::{text::LayoutJob, FontId, TextFormat};
 
         let mut job = LayoutJob::default();
