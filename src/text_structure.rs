@@ -1104,22 +1104,33 @@ impl MarkdownRunningState {
             _ => size.normal,
         };
 
-        let line_height = match self.heading {
-            [h1, ..] if h1 > 0 => size.h1 + 14.,
-            [_, h2, ..] if h2 > 0 => size.h2 + 14.,
-            [_, _, h3, ..] if h3 > 0 => size.h3 + 12.,
-            [_, _, _, h4, ..] if h4 > 0 => size.h4 + 10.,
-            [_, _, _, _, h5, ..] if h5 > 0 => size.h4 + 10.,
-            [_, _, _, _, _, h6] if h6 > 0 => size.h4 + 10.,
-            _ if self.code > 0 || self.code_block > 0 => 13. + 6.,
-            _ => size.normal + 6.,
-        };
-
         let is_link = match (self.link > 0, self.raw_link > 0, self.text > 0) {
             (true, _, true) => true,
             (false, true, _) => true,
             _ => false,
         };
+
+        let line_height_addition = match self.heading {
+            [h1, ..] if h1 > 0 => 14.,
+            [_, h2, ..] if h2 > 0 => 14.,
+            [_, _, h3, ..] if h3 > 0 => 12.,
+            [_, _, _, h4, ..] if h4 > 0 => 10.,
+            [_, _, _, _, h5, ..] if h5 > 0 => 10.,
+            [_, _, _, _, _, h6] if h6 > 0 => 10.,
+            _ if self.code > 0 || self.code_block > 0 => 6.,
+            _ => 6.,
+        };
+
+        let line_height = match self.heading {
+            [h1, ..] if h1 > 0 => size.h1,
+            [_, h2, ..] if h2 > 0 => size.h2,
+            [_, _, h3, ..] if h3 > 0 => size.h3,
+            [_, _, _, h4, ..] if h4 > 0 => size.h4,
+            [_, _, _, _, h5, ..] if h5 > 0 => size.h4,
+            [_, _, _, _, _, h6] if h6 > 0 => size.h4,
+            _ if self.code > 0 || self.code_block > 0 => 13.,
+            _ => size.normal,
+        } + line_height_addition;
 
         let is_header = self.heading.iter().any(|h| *h > 0);
 
@@ -1184,7 +1195,11 @@ impl MarkdownRunningState {
             } else {
                 Stroke::NONE
             },
-            line_height: Some(line_height),
+            line_height: if is_link {
+                None
+            } else {
+                Some(line_height)
+            },
             // background: if should_highlight_task {
             //     md_link.gamma_multiply(0.2)
             // } else {
