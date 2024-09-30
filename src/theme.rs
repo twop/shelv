@@ -4,7 +4,7 @@ use eframe::{
     egui::{
         self,
         style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets},
-        vec2, FontDefinitions, Margin, RichText, TextStyle, Vec2, Visuals,
+        vec2, FontDefinitions, Margin, RichText, TextStyle, Vec2, Visuals, WidgetText,
     },
     epaint::{Color32, FontFamily, FontId, Rounding, Shadow, Stroke},
 };
@@ -42,11 +42,45 @@ impl AppIcon {
             .size(size)
     }
 
-    pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> RichText {
-        RichText::new(format!("{} {text}", self.to_icon_str()))
-            .family(eframe::epaint::FontFamily::Proportional)
-            .color(color)
-            .size(size)
+    pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> WidgetText {
+        use egui::{text::LayoutJob, FontId, TextFormat};
+
+        let mut job = LayoutJob::default();
+
+        // Add icon
+        job.append(
+            self.to_icon_str(),
+            0.0,
+            TextFormat {
+                font_id: FontId::new(size, FontFamily::Name("phosphor".into())),
+                color,
+                ..Default::default()
+            },
+        );
+
+        // Add a space between icon and text
+        job.append(
+            " ",
+            0.0,
+            TextFormat {
+                font_id: FontId::new(size, FontFamily::Name("inter".into())),
+                color,
+                ..Default::default()
+            },
+        );
+
+        // Add text
+        job.append(
+            text,
+            0.0,
+            TextFormat {
+                font_id: FontId::new(size, FontFamily::Name("inter".into())),
+                color,
+                ..Default::default()
+            },
+        );
+
+        WidgetText::LayoutJob(job)
     }
 
     pub fn to_icon_str(&self) -> &'static str {
@@ -367,6 +401,12 @@ pub fn get_font_definitions() -> FontDefinitions {
         .entry(egui::FontFamily::Proportional)
         .or_default()
         .push("phosphor".to_owned());
+
+    fonts
+        .families
+        .entry(FontFamily::Name("phosphor".into()))
+        .or_default()
+        .insert(0, "phosphor".to_owned());
 
     // Install my own font (maybe supporting non-latin characters).
     // .ttf and .otf files supported.
