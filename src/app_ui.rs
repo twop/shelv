@@ -525,7 +525,7 @@ fn render_editor(
                     ui.separator();
                     ui.add_space(theme.sizes.s);
                     let render_btn = |ui: &mut Ui, icon: AppIcon, text| {
-                        ui.button(icon.render_with_text(
+                        ui.button(icon.render_with_icon_and_text(
                             theme.fonts.size.normal,
                             theme.colors.normal_text_color,
                             text,
@@ -944,7 +944,7 @@ fn render_header_panel(
                             ui.set_max_width(200.0);
 
                             if ui
-                                .button(AppIcon::Tutorial.render_with_text(
+                                .button(AppIcon::Tutorial.render_with_icon_and_text(
                                     theme.fonts.size.normal,
                                     theme.colors.normal_text_color,
                                     "Start tutorial",
@@ -975,7 +975,7 @@ fn render_header_panel(
                                 ),
                             ] {
                                 if ui
-                                    .button(icon.render_with_text(
+                                    .button(icon.render_with_icon_and_text(
                                         theme.fonts.size.normal,
                                         theme.colors.normal_text_color,
                                         text,
@@ -990,7 +990,7 @@ fn render_header_panel(
                             ui.separator();
 
                             if ui
-                                .button(AppIcon::Folder.render_with_text(
+                                .button(AppIcon::Folder.render_with_icon_and_text(
                                     theme.fonts.size.normal,
                                     theme.colors.normal_text_color,
                                     "Open notes folder",
