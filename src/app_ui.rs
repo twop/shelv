@@ -309,7 +309,7 @@ fn render_editor(
     }
 
     let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-        let layout_cache_params = LayoutParams::new(text, wrap_width);
+        let layout_cache_params = LayoutParams::new(text, wrap_width, ctx.pixels_per_point());
 
         let layout = match computed_layout.take() {
             Some(layout) if !layout.should_recompute(&layout_cache_params) => layout,

@@ -147,7 +147,7 @@ pub struct LayoutParams<'a> {
 }
 
 impl<'a> LayoutParams<'a> {
-    pub fn new(text: &'a str, wrap_width: f32) -> Self {
+    pub fn new(text: &'a str, wrap_width: f32, dpi: f32) -> Self {
         Self {
             text,
             wrap_width,
@@ -156,6 +156,7 @@ impl<'a> LayoutParams<'a> {
                 text.hash(&mut hasher);
                 // note that it is OK to round it up
                 ((wrap_width * 100.0) as i64).hash(&mut hasher);
+                ((dpi * 100.0) as i64).hash(&mut hasher);
                 hasher.finish()
             },
         }
