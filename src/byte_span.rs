@@ -61,6 +61,13 @@ impl ByteSpan {
         self.end == self.start
     }
 
+    pub fn move_by(&self, amount: isize) -> Self {
+        let start = (self.start as isize) + amount;
+        let end = (self.end as isize) + amount;
+
+        Self::new(start.max(0) as usize, end.max(0) as usize)
+    }
+
     pub fn unordered(&self) -> UnOrderedByteSpan {
         UnOrderedByteSpan::new(self.start, self.end)
     }

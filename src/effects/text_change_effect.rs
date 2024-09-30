@@ -5,7 +5,7 @@ use crate::byte_span::{ByteSpan, RangeRelation, UnOrderedByteSpan};
 #[derive(Debug)]
 pub enum TextChange {
     // Delete(ByteRange),
-    Replace(ByteSpan, String),
+    Insert(ByteSpan, String),
     // Insert { insertion: String, byte_pos: usize },
 }
 
@@ -143,7 +143,7 @@ pub fn apply_text_changes(
 
     for change in changes.into_iter() {
         match change {
-            TextChange::Replace(range, with) => {
+            TextChange::Insert(range, with) => {
                 let (with, extracted_cursor) = TextChange::try_extract_cursor(with);
                 let to_insert = with.len();
                 let (new_logs, target) = append(range, to_insert, &logs)?;
@@ -154,7 +154,7 @@ pub fn apply_text_changes(
                         target.start + extracted_cursor.end,
                     ));
                 }
-                actual_changes.push(TextChange::Replace(target, with));
+                actual_changes.push(TextChange::Insert(target, with));
             }
         }
     }
@@ -168,7 +168,7 @@ pub fn apply_text_changes(
             let (cursor_start, cursor_end) = actual_changes.iter().fold(
                 (ordered.start, ordered.end),
                 |(cursor_start, cursor_end), change| match change {
-                    TextChange::Replace(change_range, with) => {
+                    TextChange::Insert(change_range, with) => {
                         let byte_delta: isize =
                             with.len() as isize - change_range.range().len() as isize;
 
@@ -258,7 +258,7 @@ pub fn apply_text_changes(
     // finally apply all the precomputed changes
     for change in actual_changes.into_iter() {
         match change {
-            TextChange::Replace(byte_span, with) => {
+            TextChange::Insert(byte_span, with) => {
                 text.replace_range(byte_span.range(), &with);
             }
         }
@@ -296,9 +296,9 @@ mod tests {
         let b_pos = text.find("b").unwrap();
 
         let changes = [
-            TextChange::Replace(ByteSpan::new(a_pos, a_pos + 1), "hello".into()),
-            TextChange::Replace(ByteSpan::new(b_pos, b_pos + 1), "world".into()),
-            TextChange::Replace(ByteSpan::new(b_pos + 1, b_pos + 1), "!".into()),
+            TextChange::Insert(ByteSpan::new(a_pos, a_pos + 1), "hello".into()),
+            TextChange::Insert(ByteSpan::new(b_pos, b_pos + 1), "world".into()),
+            TextChange::Insert(ByteSpan::new(b_pos + 1, b_pos + 1), "!".into()),
         ];
 
         apply_text_changes(&mut text, Some(UnOrderedByteSpan::new(0, 0)), changes).unwrap();
@@ -313,9 +313,9 @@ mod tests {
         let b_pos = text.find("b").unwrap();
 
         let changes = [
-            TextChange::Replace(ByteSpan::new(b_pos + 1, b_pos + 1), "!".into()),
-            TextChange::Replace(ByteSpan::new(b_pos, b_pos + 1), "world".into()),
-            TextChange::Replace(ByteSpan::new(a_pos, a_pos + 1), "hello".into()),
+            TextChange::Insert(ByteSpan::new(b_pos + 1, b_pos + 1), "!".into()),
+            TextChange::Insert(ByteSpan::new(b_pos, b_pos + 1), "world".into()),
+            TextChange::Insert(ByteSpan::new(a_pos, a_pos + 1), "hello".into()),
         ];
 
         apply_text_changes(&mut text, Some(UnOrderedByteSpan::new(0, 0)), changes).unwrap();
@@ -331,9 +331,9 @@ mod tests {
 
         let changes = [
             // captures "a b"
-            TextChange::Replace(ByteSpan::new(a_pos, b_pos + 1), "hello".into()),
+            TextChange::Insert(ByteSpan::new(a_pos, b_pos + 1), "hello".into()),
             // captures "b"
-            TextChange::Replace(ByteSpan::new(b_pos, b_pos + 1), "world".into()),
+            TextChange::Insert(ByteSpan::new(b_pos, b_pos + 1), "world".into()),
         ];
 
         let cursor = apply_text_changes(&mut text, Some(UnOrderedByteSpan::new(0, 0)), changes);
@@ -354,9 +354,9 @@ mod tests {
         let end = text.find("d").unwrap();
 
         let changes = [
-            TextChange::Replace(ByteSpan::new(start, end), "oops".into()),
+            TextChange::Insert(ByteSpan::new(start, end), "oops".into()),
             // delete "a", to test out cursor adjecement that are out of range
-            TextChange::Replace(ByteSpan::new(0, 1), "".into()),
+            TextChange::Insert(ByteSpan::new(0, 1), "".into()),
         ];
 
         let cursor =
@@ -378,12 +378,12 @@ mod tests {
         let (mut text, cursor) = TextChange::try_extract_cursor("a{|}bcde{|}f".to_string());
 
         let changes = [
-            TextChange::Replace(
+            TextChange::Insert(
                 ByteSpan::new(text.find("c").unwrap(), text.find("f").unwrap()),
                 "oops".into(),
             ),
             // delete "a", to test out cursor adjecement that are out of range
-            TextChange::Replace(ByteSpan::new(0, 1), "".into()),
+            TextChange::Insert(ByteSpan::new(0, 1), "".into()),
         ];
 
         let cursor =
@@ -405,11 +405,11 @@ mod tests {
         let (mut text, cursor) = TextChange::try_extract_cursor("ab{|}cd{|}e".to_string());
 
         let changes = [
-            TextChange::Replace(
+            TextChange::Insert(
                 ByteSpan::new(text.find("b").unwrap(), text.find("d").unwrap()),
                 "oops".into(),
             ),
-            TextChange::Replace(ByteSpan::new(text.len(), text.len()), "!".into()),
+            TextChange::Insert(ByteSpan::new(text.len(), text.len()), "!".into()),
         ];
 
         let cursor =
@@ -431,11 +431,11 @@ mod tests {
         let (mut text, cursor) = TextChange::try_extract_cursor("ab{|}cd{|}efj".to_string());
 
         let changes = [
-            TextChange::Replace(
+            TextChange::Insert(
                 ByteSpan::new(text.find("d").unwrap(), text.find("j").unwrap()),
                 "oops".into(),
             ),
-            TextChange::Replace(ByteSpan::new(0, 1), "!!".into()),
+            TextChange::Insert(ByteSpan::new(0, 1), "!!".into()),
         ];
 
         let cursor =

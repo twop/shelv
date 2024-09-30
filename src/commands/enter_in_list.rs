@@ -76,7 +76,7 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
                 let trimmed_to_new_line = parent_text_before_span
                     .trim_end_matches(|c: char| c.is_whitespace() && c != '\n');
 
-                let mut changes = vec![TextChange::Replace(
+                let mut changes = vec![TextChange::Insert(
                     ByteSpan::new(
                         span_range.start + trimmed_to_new_line.len()
                             - parent_text_before_span.len(),
@@ -99,7 +99,7 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
                     // println!("list_items.enumerate(): item=`{}`", item_text);
 
                     if let Some(dot_pos) = item_text.find(".") {
-                        changes.push(TextChange::Replace(
+                        changes.push(TextChange::Insert(
                             ByteSpan::new(
                                 list_item.byte_pos.start,
                                 list_item.byte_pos.start + dot_pos,
@@ -117,7 +117,7 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
                 let item_pos_in_list = *item_pos_in_list;
 
                 // first split the first one in half
-                let mut changes = vec![TextChange::Replace(
+                let mut changes = vec![TextChange::Insert(
                     cursor.clone(),
                     format!(
                         "\n{dep}{n}. {cur}",
@@ -138,7 +138,7 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
                     // TODO only modify items that actually need adjustments
                     let item_text = &text[list_item.byte_pos.range()];
                     if let Some(dot_pos) = item_text.find(".") {
-                        changes.push(TextChange::Replace(
+                        changes.push(TextChange::Insert(
                             ByteSpan::new(
                                 list_item.byte_pos.start,
                                 list_item.byte_pos.start + dot_pos,
@@ -163,7 +163,7 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
                     .trim_end_matches(|c: char| c.is_whitespace() && c != '\n');
                 // println!("$$ {trimmed_to_new_line}\n##{parent_text_before_span}");
 
-                Some(vec![TextChange::Replace(
+                Some(vec![TextChange::Insert(
                     ByteSpan::new(
                         span_range.start + trimmed_to_new_line.len()
                             - parent_text_before_span.len(),
@@ -176,7 +176,7 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
                     .iterate_immediate_children_of(item_index)
                     .any(|(_, desc)| desc.kind == SpanKind::TaskMarker);
                 // cond ? the_true : the_false
-                Some(vec![TextChange::Replace(
+                Some(vec![TextChange::Insert(
                     cursor.clone(),
                     "\n".to_string()
                         + &"\t".repeat(depth)

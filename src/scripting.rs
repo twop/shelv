@@ -155,7 +155,7 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
             CodeBlock::Source(current_block_range, current_hash) => {
                 // this branch means that we are missing an ouput block => add it
                 if let Some((source_hash, block_range, prev_block_body)) = last_was_source.take() {
-                    changes.push(TextChange::Replace(
+                    changes.push(TextChange::Insert(
                         ByteSpan::point(block_range.end),
                         "\n".to_string()
                             + &print_output_block(cx.eval_block(prev_block_body, source_hash)),
@@ -171,7 +171,7 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
                     if eval_res.as_str() != inner_body {
                         // don't add a text change if the result is the same
                         // note that we still need to compute JS for JS context to be consistent
-                        changes.push(TextChange::Replace(output_range, eval_res));
+                        changes.push(TextChange::Insert(output_range, eval_res));
                     }
                 }
                 None => {
@@ -183,7 +183,7 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
     }
 
     if let Some((source_hash, range, body)) = last_was_source {
-        changes.push(TextChange::Replace(
+        changes.push(TextChange::Insert(
             ByteSpan::new(range.end, range.end),
             "\n".to_string() + &print_output_block(cx.eval_block(body, source_hash)),
         ));

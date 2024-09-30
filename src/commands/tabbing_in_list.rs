@@ -53,7 +53,7 @@ pub fn on_shift_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextC
 
             if depth > 0 && t.ends_with("\t") {
                 // move itself
-                changes.push(TextChange::Replace(
+                changes.push(TextChange::Insert(
                     ByteSpan::new(span_range.start - 1, span_range.start + 1), //this is for "-" -> "*" replacement
                     format!("{}", select_unordered_list_marker(depth - 1)),
                 ));
@@ -122,7 +122,7 @@ pub fn on_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>
                 // TODO only modify items that actually need adjustments
                 let item_text = &text[list_item.byte_pos.range()];
                 if let Some(dot_pos) = item_text.find(".") {
-                    changes.push(TextChange::Replace(
+                    changes.push(TextChange::Insert(
                         ByteSpan::new(list_item.byte_pos.start, list_item.byte_pos.start + dot_pos),
                         format!("{}", intended_number),
                     ))
@@ -131,7 +131,7 @@ pub fn on_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>
 
             // move itself, note that now the index starts with "1"
             if let Some(dot_pos) = &text[span_range.range()].find(".") {
-                changes.push(TextChange::Replace(
+                changes.push(TextChange::Insert(
                     ByteSpan::new(span_range.start, span_range.start + dot_pos),
                     format!("\t{}", 1),
                 ))
@@ -149,7 +149,7 @@ pub fn on_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>
             let mut changes = increase_nesting_for_lists(structure, item_index);
 
             // move itself
-            changes.push(TextChange::Replace(
+            changes.push(TextChange::Insert(
                 ByteSpan::new(span_range.start, span_range.start + 1), //this is for "-" -> "*" replacement
                 format!("\t{}", select_unordered_list_marker(depth + 1)),
             ));
@@ -186,14 +186,14 @@ fn increase_nesting_for_lists(
             } =>
             // numbered lists do not need modifications
             {
-                TextChange::Replace(
+                TextChange::Insert(
                     ByteSpan::new(nested_item_start, nested_item_start),
                     "\t".to_string(),
                 )
             }
 
             //unordered need "-" -> "*" replacement
-            _ => TextChange::Replace(
+            _ => TextChange::Insert(
                 ByteSpan::new(nested_item_start, nested_item_start + 1),
                 format!("\t{}", select_unordered_list_marker(parents.len())),
             ),

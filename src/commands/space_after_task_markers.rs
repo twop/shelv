@@ -26,7 +26,7 @@ pub fn on_space_after_task_markers(context: TextCommandContext) -> Option<Vec<Te
         })
     {
         // Ie. "- []{}" -> "- [ ]{}"
-        return Some(vec![TextChange::Replace(
+        return Some(vec![TextChange::Insert(
             ByteSpan::new(cursor.start - 2, cursor.start),
             "[ ]".to_string(),
         )]);
@@ -41,7 +41,7 @@ pub fn on_space_after_task_markers(context: TextCommandContext) -> Option<Vec<Te
         })
     {
         // Ie. "[]{}" -> "- []{}"
-        return Some(vec![TextChange::Replace(
+        return Some(vec![TextChange::Insert(
             ByteSpan::new(cursor.start - 2, cursor.start),
             select_unordered_list_marker(0).to_string() + " [ ]",
         )]);

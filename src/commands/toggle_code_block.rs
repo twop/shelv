@@ -14,7 +14,7 @@ pub fn toggle_code_block(
         .map(|(span_range, idx)| (span_range, text_structure.get_span_inner_content(idx)))
     {
         // replace block with the inner content, note that the cursor will be expanded automatically
-        Some((span_byte_range, content_byte_range)) => Some(vec![TextChange::Replace(
+        Some((span_byte_range, content_byte_range)) => Some(vec![TextChange::Insert(
             span_byte_range,
             text[content_byte_range.range()].to_string(),
         )]),
@@ -52,7 +52,7 @@ pub fn toggle_code_block(
                 replacement.push('\n');
             }
 
-            Some(Vec::from([TextChange::Replace(byte_cursor, replacement)]))
+            Some(Vec::from([TextChange::Insert(byte_cursor, replacement)]))
         }
     }
 }

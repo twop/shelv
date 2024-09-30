@@ -102,6 +102,9 @@ pub enum BuiltInCommand {
     HideApp,
     HidePrompt,
 
+    // Lang specific
+    EnterInsideKDL,
+
     // Async Code blocks
     RunLLMBlock,
     ShowPrompt,
@@ -153,37 +156,38 @@ impl BuiltInCommand {
             BuiltInCommand::ShowPrompt => "Show AI Prompt".into(),
             // BuiltInCommand::ClosePopupMenu => "Close currently opened popup".into(),
             BuiltInCommand::HidePrompt => "Hide Prompt".into(),
+            BuiltInCommand::EnterInsideKDL => "Auto indent KDL".into(),
         }
     }
 
     pub fn default_keybinding(self) -> eframe::egui::KeyboardShortcut {
         use eframe::egui::{Key, Modifiers};
-        use BuiltInCommand::*;
+        use BuiltInCommand as C;
         let shortcut = KeyboardShortcut::new;
         match self {
-            ExpandTaskMarker => shortcut(Modifiers::NONE, Key::Space),
-            IndentListItem => shortcut(Modifiers::NONE, Key::Tab),
-            UnindentListItem => shortcut(Modifiers::SHIFT, Key::Tab),
-            SplitListItem => shortcut(Modifiers::NONE, Key::Enter),
-            MarkdownCodeBlock => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::B),
-            MarkdownBold => shortcut(Modifiers::COMMAND, Key::B),
-            MarkdownItalic => shortcut(Modifiers::COMMAND, Key::I),
-            MarkdownStrikethrough => shortcut(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::E),
-            MarkdownH1 => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num1),
-            MarkdownH2 => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num2),
-            MarkdownH3 => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num3),
-            SwitchToNote(0) => shortcut(Modifiers::COMMAND, Key::Num1),
-            SwitchToNote(1) => shortcut(Modifiers::COMMAND, Key::Num2),
-            SwitchToNote(2) => shortcut(Modifiers::COMMAND, Key::Num3),
-            SwitchToNote(3) => shortcut(Modifiers::COMMAND, Key::Num4),
+            C::ExpandTaskMarker => shortcut(Modifiers::NONE, Key::Space),
+            C::IndentListItem => shortcut(Modifiers::NONE, Key::Tab),
+            C::UnindentListItem => shortcut(Modifiers::SHIFT, Key::Tab),
+            C::SplitListItem => shortcut(Modifiers::NONE, Key::Enter),
+            C::MarkdownCodeBlock => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::B),
+            C::MarkdownBold => shortcut(Modifiers::COMMAND, Key::B),
+            C::MarkdownItalic => shortcut(Modifiers::COMMAND, Key::I),
+            C::MarkdownStrikethrough => shortcut(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::E),
+            C::MarkdownH1 => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num1),
+            C::MarkdownH2 => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num2),
+            C::MarkdownH3 => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Num3),
+            C::SwitchToNote(0) => shortcut(Modifiers::COMMAND, Key::Num1),
+            C::SwitchToNote(1) => shortcut(Modifiers::COMMAND, Key::Num2),
+            C::SwitchToNote(2) => shortcut(Modifiers::COMMAND, Key::Num3),
+            C::SwitchToNote(3) => shortcut(Modifiers::COMMAND, Key::Num4),
             // TODO figure out how to make it more bulletproof, option maybe?
-            SwitchToNote(_) => shortcut(Modifiers::COMMAND, Key::Num0),
-            SwitchToSettings => shortcut(Modifiers::COMMAND, Key::Comma),
-            PinWindow => shortcut(Modifiers::COMMAND, Key::P),
-            RunLLMBlock => shortcut(Modifiers::COMMAND, Key::Enter),
-            ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
-            // AppAction::RunInlineLLMPrompt
-            HideApp | HidePrompt => shortcut(Modifiers::NONE, Key::Escape),
+            C::SwitchToNote(_) => shortcut(Modifiers::COMMAND, Key::Num0),
+            C::SwitchToSettings => shortcut(Modifiers::COMMAND, Key::Comma),
+            C::PinWindow => shortcut(Modifiers::COMMAND, Key::P),
+            C::RunLLMBlock => shortcut(Modifiers::COMMAND, Key::Enter),
+            C::ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
+            C::EnterInsideKDL => shortcut(Modifiers::NONE, Key::Enter),
+            C::HideApp | C::HidePrompt => shortcut(Modifiers::NONE, Key::Escape),
         }
     }
 }

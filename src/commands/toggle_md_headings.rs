@@ -35,7 +35,7 @@ pub fn toggle_md_heading(
             .rfind("\n")
             .map(|pos| pos + 1)
             .unwrap_or(0);
-        return Some(Vec::from([TextChange::Replace(
+        return Some(Vec::from([TextChange::Insert(
             ByteSpan::point(annotation_insertion_pos),
             format!("{} ", heading_level_to_annotation(level)),
         )]));
@@ -75,7 +75,7 @@ pub fn toggle_md_heading(
                             heading_full_body[cur_heading_annotation.len()..].trim_start();
 
                         // just remove the annotations for the current level
-                        Some(Vec::from([TextChange::Replace(
+                        Some(Vec::from([TextChange::Insert(
                             ByteSpan::new(
                                 heading_byte_span.start,
                                 heading_byte_span.start + heading_full_body.len()
@@ -98,7 +98,7 @@ pub fn toggle_md_heading(
             let parent_inner_conent = text_structure.get_span_inner_content(index);
 
             // just remove the annotations for the current level
-            Some(Vec::from([TextChange::Replace(
+            Some(Vec::from([TextChange::Insert(
                 ByteSpan::new(heading_byte_span.start, parent_inner_conent.start),
                 match *heading_level == level {
                     // just toggle the annotations
@@ -119,7 +119,7 @@ pub fn toggle_md_heading(
                     _ => None,
                 })
                 .map(|paragraph_byte_span| {
-                    Vec::from([TextChange::Replace(
+                    Vec::from([TextChange::Insert(
                         ByteSpan::point(paragraph_byte_span.start),
                         format!("{} ", heading_level_to_annotation(level)),
                     )])

@@ -188,7 +188,7 @@ pub fn render_app(
                                             } => {
                                                 output_actions.push(AppAction::apply_text_changes(
                                                     selected_note,
-                                                    [TextChange::Replace(
+                                                    [TextChange::Insert(
                                                         byte_range,
                                                         (if checked { "[ ]" } else { "[x]" })
                                                             .to_string(),

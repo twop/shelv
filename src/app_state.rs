@@ -29,6 +29,7 @@ use crate::{
     commands::{
         enter_in_list::on_enter_inside_list_item,
         inline_llm_prompt::inline_llm_prompt_command_handler,
+        kdl_lang::on_enter_inside_kdl_block,
         run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
@@ -355,6 +356,10 @@ impl AppState {
                 map_text_command_to_command_handler(|text_context| {
                     toggle_md_heading(text_context, HeadingLevel::H3)
                 }),
+            ),
+            (
+                BuiltInCommand::EnterInsideKDL,
+                map_text_command_to_command_handler(on_enter_inside_kdl_block),
             ),
         ]
         .into_iter()

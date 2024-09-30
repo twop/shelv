@@ -18,6 +18,9 @@ use crate::{
     text_structure::{SpanKind, TextStructure},
 };
 
+pub const SETTINGS_BLOCK_LANG: &str = "settings";
+pub const SETTINGS_BLOCK_LANG_OUTPUT: &str = "settings#";
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct LlmSettings {
     pub model: String,
@@ -404,10 +407,10 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
 
     fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind> {
         match lang {
-            "settings" => Some(CodeBlockKind::Source),
+            SETTINGS_BLOCK_LANG => Some(CodeBlockKind::Source),
 
-            output if output.starts_with("settings#") => {
-                let hex_str = &output.strip_prefix("settings#")?;
+            output if output.starts_with(SETTINGS_BLOCK_LANG_OUTPUT) => {
+                let hex_str = &output.strip_prefix(SETTINGS_BLOCK_LANG_OUTPUT)?;
                 Some(CodeBlockKind::Output(SourceHash::parse(hex_str)))
             }
 
@@ -544,7 +547,7 @@ fn run_replace_text_cmd(
     };
 
     match target {
-        InsertTextTarget::Selection => Some([TextChange::Replace(byte_cursor, replacement)].into()),
+        InsertTextTarget::Selection => Some([TextChange::Insert(byte_cursor, replacement)].into()),
     }
 }
 
@@ -570,6 +573,7 @@ impl BuiltInCommand {
             RunLLMBlock => "ExecutePrompt",
             ShowPrompt => "ShowPrompt",
             HidePrompt => "HidePrompt",
+            EnterInsideKDL => "EnterInsideKDL",
         }
     }
 }

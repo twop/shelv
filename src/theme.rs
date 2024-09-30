@@ -4,6 +4,7 @@ use eframe::{
     egui::{
         self,
         style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets},
+        text::LayoutJob,
         vec2, FontDefinitions, Margin, RichText, TextStyle, Vec2, Visuals, WidgetText,
     },
     epaint::{Color32, FontFamily, FontId, Rounding, Shadow, Stroke},

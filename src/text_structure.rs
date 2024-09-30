@@ -11,6 +11,7 @@ use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
 
+use tree_sitter::{Node, Parser, Query, QueryCursor};
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 use crate::{
@@ -607,7 +608,7 @@ impl TextStructure {
                         for event in highlights {
                             match event.unwrap() {
                                 HighlightEvent::Source { start, end } => {
-                                    eprintln!("{}{}", "  ".repeat(ident), &code[start..end]);
+                                    // eprintln!("{}{}", "  ".repeat(ident), &code[start..end]);
 
                                     job.append(
                                         &code[start..end],
@@ -617,15 +618,60 @@ impl TextStructure {
                                 }
                                 HighlightEvent::HighlightStart(s) => {
                                     color = highlight_pairs[s.0].1;
-                                    eprintln!("{}{} {{", "  ".repeat(ident), highlight_names[s.0]);
+                                    // eprintln!("{}{} {{", "  ".repeat(ident), highlight_names[s.0]);
                                     ident = ident + 1;
                                 }
                                 HighlightEvent::HighlightEnd => {
                                     ident = ident - 1;
-                                    eprintln!("{}}}", "  ".repeat(ident));
+                                    // eprintln!("{}}}", "  ".repeat(ident));
                                 }
                             }
                         }
+
+                        let mut parser = Parser::new();
+                        parser
+                            .set_language(kdl_lang)
+                            .expect("Error setting language");
+
+                        // fn calculate_indentation(node: Node, source_code: &str) -> usize {
+                        //     let mut depth = 0;
+                        //     let mut current = Some(node);
+
+                        //     while let Some(n) = current {
+                        //         if n.kind() == "object" || n.kind() == "block" {
+                        //             depth += 1;
+                        //         }
+                        //         current = n.parent();
+                        //     }
+
+                        //     depth
+                        // }
+
+                        // let tree = parser.parse(code, None).unwrap();
+                        // println!("Tree structure:");
+                        // println!("{}", tree.root_node().to_sexp());
+
+                        // // println!("{tree:#?}");
+
+                        // fn format_code(parser: &mut Parser, source_code: &str) {
+                        //     let tree = parser.parse(source_code, None).unwrap();
+                        //     let query =
+                        //         Query::new(parser.language().unwrap(), "(object) @obj").unwrap();
+                        //     let mut cursor = QueryCursor::new();
+
+                        //     for m in
+                        //         cursor.matches(&query, tree.root_node(), source_code.as_bytes())
+                        //     {
+                        //         let node = m.captures[0].node;
+                        //         let indent = calculate_indentation(node, source_code);
+                        //         println!(
+                        //             "Node at {}: {} should be indented {} levels",
+                        //             node.start_position(),
+                        //             node.kind(),
+                        //             indent
+                        //         );
+                        //     }
+                        // }
 
                         // job.append(
                         //     code,
