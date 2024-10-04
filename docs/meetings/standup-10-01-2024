@@ -1,0 +1,21 @@
+### Current plan
+- [x] KDL syntax highlighting (nice to have)
+- [x] Menu icon bug
+- [x] UI font ratio to text
+- After getting a build...
+	* Mirza and Simon share w/ their friends
+	* Still "Friends"
+		* James
+		* Evangeline (and tricks her coworkers too)
+		* Matt
+		* etc...
+	* Ultimate goal: Indie.vc application
+		* The reason we delayed was to get more user signals
+		* Current pitch idea: "Shelv is the best way to capture information"
+			* "Hackable", "Collaborative" + "ADHD-approved" -> distraction-free, elegant and intuitive API, bloat-free, 
+			* Maybe reach out to Stefan?
+		* Strategy: Lean in on our strengths
+	* 
+- Other notable bugs
+	* underlined links with larger line-height
+	* collapsible text
