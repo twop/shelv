@@ -76,7 +76,7 @@ jobs:
         uses: actions-rs/install@v0.1
         with:
           crate: cargo-bundle
-          use-tool-cache: true
+          use-tool-cache: false
 
       - name: 🔨 Build Bundle
         uses: actions-rs/cargo@v1
