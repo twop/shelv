@@ -8,7 +8,6 @@ use similar::{ChangeTag, TextDiff};
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
-    app_io::{get_focused_element_text, CoppiedTextContext},
     app_state::{
         compute_editor_text_id, AppState, InlineLLMPropmptState, InlineLLMResponseChunk,
         InlinePromptStatus, MsgToApp, TextSelectionAddress, UnsavedChange,
@@ -23,6 +22,7 @@ use crate::{
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
     settings::SettingsNoteEvalContext,
+    system_io::{get_focused_element_text, CoppiedTextContext},
     text_structure::{
         create_layout_job_from_text_diff, SpanIndex, SpanKind, SpanMeta, TextDiffPart,
         TextStructure, TextStructureVersion,
@@ -463,8 +463,13 @@ pub fn process_app_action(
                     }
                 },
                 MsgToApp::CopyToNote => {
-                    let focussed_text = get_focused_element_text();
+                    let focussed_text = get_focused_element_text().unwrap_or_else(|e| {
+                        println!("Err: {:?}", e);
+                        None
+                    });
+
                     println!("focussed_text: {:#?}", focussed_text);
+
                     focussed_text
                         .map(|focussed_text| {
                             let text_to_insert = match focussed_text {
