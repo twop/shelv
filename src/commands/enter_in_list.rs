@@ -17,7 +17,7 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
         byte_cursor: cursor,
     } = context;
 
-    let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
+    let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor)?;
 
     // TODO actually check if the cursor inside a symbol
     // like `{||}-` or `1{||}2.`, note that the latter will likely break

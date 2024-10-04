@@ -258,11 +258,18 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                                 });
 
                                 if !res.is_empty() {
+                                    println!(
+                                        "---command {:?} consumed input {:?}\nres_actions={res:#?}",
+                                        editor_command.kind.map(|k| k.human_description()),
+                                        keyboard_shortcut
+                                    );
+
                                     // remove the keys from the input
+
                                     input.consume_shortcut(&keyboard_shortcut);
                                     Some(res)
                                 }
-                                else {None}
+                                else { None }
 
                             }
                             _ => None,
@@ -277,11 +284,16 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
         // now apply prepared changes, and update text structure and cursor appropriately
         for action in action_list {
+            println!("---processing action = {action:#?}");
             let mut action_buffer: SmallVec<[AppAction; 4]> = SmallVec::from_iter([action]);
 
             while let Some(to_process) = action_buffer.pop() {
                 let new_actions =
                     process_app_action(to_process, ctx, app_state, text_edit_id, &mut self.app_io);
+
+                if new_actions.len() > 0 {
+                    println!("---enqueued actions = {new_actions:#?}");
+                }
 
                 action_buffer.extend(new_actions);
             }
@@ -349,6 +361,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         );
 
         if text_changed {
+            println!("----note changed during render");
             app_state
                 .add_unsaved_change(UnsavedChange::NoteContentChanged(app_state.selected_note));
         }

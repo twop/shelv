@@ -104,6 +104,7 @@ pub enum BuiltInCommand {
 
     // Lang specific
     EnterInsideKDL,
+    BracketAutoclosingInsideKDL,
 
     // Async Code blocks
     RunLLMBlock,
@@ -157,6 +158,7 @@ impl BuiltInCommand {
             // BuiltInCommand::ClosePopupMenu => "Close currently opened popup".into(),
             BuiltInCommand::HidePrompt => "Hide Prompt".into(),
             BuiltInCommand::EnterInsideKDL => "Auto indent KDL".into(),
+            BuiltInCommand::BracketAutoclosingInsideKDL => "Auto closing of '{' inside KDL".into(),
         }
     }
 
@@ -187,6 +189,7 @@ impl BuiltInCommand {
             C::RunLLMBlock => shortcut(Modifiers::COMMAND, Key::Enter),
             C::ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
             C::EnterInsideKDL => shortcut(Modifiers::NONE, Key::Enter),
+            C::BracketAutoclosingInsideKDL => shortcut(Modifiers::SHIFT, Key::OpenBracket),
             C::HideApp | C::HidePrompt => shortcut(Modifiers::NONE, Key::Escape),
         }
     }

@@ -574,6 +574,7 @@ impl BuiltInCommand {
             ShowPrompt => "ShowPrompt",
             HidePrompt => "HidePrompt",
             EnterInsideKDL => "EnterInsideKDL",
+            BracketAutoclosingInsideKDL => "BracketAutoclosingInsideKDL",
         }
     }
 }

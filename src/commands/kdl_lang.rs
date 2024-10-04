@@ -27,15 +27,13 @@ pub fn on_enter_inside_kdl_block(
         byte_cursor: cursor,
     }: TextCommandContext,
 ) -> Option<Vec<TextChange>> {
-    let (span_range, item_index) = structure.find_span_at(SpanKind::CodeBlock, cursor.clone())?;
-
-    println!("found code block span");
-
-    match structure.find_meta(item_index) {
-        Some(SpanMeta::CodeBlock { lang }) if lang == SETTINGS_BLOCK_LANG => {}
-        _ => return None,
-    }
-    println!("found settings block");
+    let settings_block_span = structure
+        .find_span_at(SpanKind::CodeBlock, cursor)
+        .and_then(|(span_range, item_index)| structure.find_meta(item_index).zip(Some(span_range)))
+        .and_then(|(meta, span_range)| match meta {
+            SpanMeta::CodeBlock { lang } if lang == SETTINGS_BLOCK_LANG => Some(span_range),
+            _ => None,
+        })?;
 
     let query = r#"
     (node_children (
@@ -44,9 +42,9 @@ pub fn on_enter_inside_kdl_block(
     )) @scope
     "#;
 
-    let settings_body = &text[span_range.range()];
+    let settings_body = &text[settings_block_span.range()];
 
-    let relative_cursor = cursor.move_by(-(span_range.start as isize));
+    let relative_cursor = cursor.move_by(-(settings_block_span.start as isize));
     let language = tree_sitter_kdl::language();
     let query = tree_sitter::Query::new(language, query).unwrap();
 
@@ -99,7 +97,8 @@ pub fn on_enter_inside_kdl_block(
         .sorted_by(|a, b| a.byte_span.range().len().cmp(&b.byte_span.range().len()))
         .collect();
 
-    println!("found {} scopes", kdl_scopes.len());
+    println!("found {kdl_scopes:#?} scopes, relative cursor = {relative_cursor:?}");
+
     if kdl_scopes.is_empty() {
         return None;
     }
@@ -122,12 +121,46 @@ pub fn on_enter_inside_kdl_block(
                 .right_bracket
                 .0
                 // shift back from relateto absolute position within a note
-                .move_by(span_range.start as isize),
+                .move_by(settings_block_span.start as isize),
             format!("\n{indent}}}"),
         ));
     }
 
     Some(changes)
+}
+
+pub fn autoclose_bracket_inside_kdl_block(
+    TextCommandContext {
+        text_structure: structure,
+        text,
+        byte_cursor: cursor,
+    }: TextCommandContext,
+) -> Option<Vec<TextChange>> {
+    structure
+        .find_span_at(SpanKind::CodeBlock, cursor.clone())
+        .and_then(|(_, item_index)| structure.find_meta(item_index))
+        .and_then(|meta| match meta {
+            SpanMeta::CodeBlock { lang } if lang == SETTINGS_BLOCK_LANG => {
+                if cursor.is_empty() {
+                    Some(
+                        [TextChange::Insert(
+                            cursor,
+                            format!("{{{caret}}}", caret = TextChange::CURSOR),
+                        )]
+                        .into(),
+                    )
+                } else {
+                    Some(
+                        [TextChange::Insert(
+                            cursor,
+                            format!("{{{selection}}}", selection = &text[cursor.range()]),
+                        )]
+                        .into(),
+                    )
+                }
+            }
+            _ => None,
+        })
 }
 
 #[cfg(test)]
@@ -153,6 +186,16 @@ global "Cmd Ctrl Option Shift S" {
 }
 ```"#,
                 ),
+            ),
+            (
+                "Cursor is just outside '}' should not trigger",
+                r#"
+```settings
+block {
+    child
+}{||}
+```"#,
+                None,
             ),
             (
                 "preserve indentation",
@@ -211,5 +254,80 @@ global "Cmd Ctrl Option Shift S" {
             changes.is_none(),
             "Should not handle enter outside KDL block"
         );
+    }
+
+    #[test]
+    fn test_autoclose_bracket_inside_kdl_block() {
+        let test_cases = [
+            (
+                "Simple autoclose",
+                r#"
+```settings
+node {||}
+```"#,
+                Some(
+                    r#"
+```settings
+node {{||}}
+```"#,
+                ),
+            ),
+            (
+                "Autoclose with selection",
+                r#"
+```settings
+{|}selection{|}
+```"#,
+                Some(
+                    r#"
+```settings
+{|}{selection}{|}
+```"#,
+                ),
+            ),
+            (
+                "No autoclose outside settings block",
+                r#"Some text {||}
+```settings
+node
+```"#,
+                None,
+            ),
+            (
+                "No autoclose in different code block",
+                r#"```javascript
+function() {||}
+```"#,
+                None,
+            ),
+        ];
+
+        for (desc, input, expected) in test_cases {
+            let (mut text, cursor) = TextChange::try_extract_cursor(input.to_string());
+            let cursor = cursor.unwrap();
+
+            let structure = TextStructure::new(&text);
+
+            let changes = autoclose_bracket_inside_kdl_block(TextCommandContext::new(
+                &structure,
+                &text,
+                cursor.clone(),
+            ));
+
+            if let Some(expected_result) = expected {
+                let changes = changes.expect("Expected changes, but got None");
+                let cursor =
+                    apply_text_changes(&mut text, Some(cursor.unordered()), changes).unwrap();
+                let res = TextChange::encode_cursor(&text, cursor.unwrap());
+
+                assert_eq!(res, expected_result, "Test case: {}", desc);
+            } else {
+                assert!(
+                    changes.is_none(),
+                    "Test case: {} - Expected None, but got Some",
+                    desc
+                );
+            }
+        }
     }
 }

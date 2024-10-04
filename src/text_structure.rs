@@ -4,6 +4,7 @@ use eframe::{
     egui::TextFormat,
     epaint::{text::LayoutJob, Color32, FontId, Stroke},
 };
+use itertools::Itertools;
 use linkify::LinkFinder;
 use pulldown_cmark::{CodeBlockKind, HeadingLevel};
 use smallvec::{smallvec, SmallVec};
@@ -123,9 +124,24 @@ impl MarkdownRunningState {
 
 #[derive(Debug, Clone, Copy)]
 pub struct SpanDesc {
-    pub kind: SpanKind,
-    pub byte_pos: ByteSpan,
-    pub parent: SpanIndex,
+    pub kind: SpanKind,         // 1
+    pub byte_pos: ByteSpan,     // 16
+    pub parent: SpanIndex,      // 8
+    pub line_loc: LineLocation, // 8
+}
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LineLocation {
+    pub line_start: u32, // 4
+    pub line_end: u32,   // 4
+}
+
+impl LineLocation {
+    pub fn new(line_start: u32, line_end: u32) -> Self {
+        Self {
+            line_start,
+            line_end,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -135,6 +151,7 @@ pub struct TextStructure {
     spans: Vec<SpanDesc>,
     metadata: Vec<(SpanIndex, SpanMeta)>,
     text_hash: u64,
+    lines: Vec<ByteSpan>,
 }
 
 #[derive(Debug)]
@@ -157,6 +174,7 @@ pub struct TextStructureBuilder<'a> {
     spans: Vec<SpanDesc>,
     raw_links: Vec<RawLink>,
     metadata: Vec<(SpanIndex, SpanMeta)>,
+    lines: Vec<ByteSpan>,
 }
 
 pub enum InteractiveTextPart<'a> {
@@ -168,15 +186,43 @@ pub enum InteractiveTextPart<'a> {
 impl<'a> TextStructureBuilder<'a> {
     fn start(
         text: &'a str,
-        recycled: (Vec<SpanDesc>, Vec<RawLink>, Vec<(SpanIndex, SpanMeta)>),
+        recycled: (
+            Vec<SpanDesc>,
+            Vec<RawLink>,
+            Vec<(SpanIndex, SpanMeta)>,
+            Vec<ByteSpan>,
+        ),
     ) -> Self {
-        let (mut spans, mut raw_links, mut metadata) = recycled;
+        let (mut spans, mut raw_links, mut metadata, mut lines) = recycled;
+
+        lines.clear();
+        let mut pos = 0;
+        for step in text.char_indices().map(Some).chain([None]) {
+            match step {
+                Some((index, char)) if char == '\n' => {
+                    println!("## adding {}", &text[pos..index]);
+                    lines.push(ByteSpan::new(pos, index));
+                    pos = index + 1;
+                }
+
+                // if pos != text.len()
+                None => {
+                    println!("## adding at the end {}", &text[pos..text.len()]);
+                    lines.push(ByteSpan::new(pos, text.len()));
+                }
+
+                _ => {}
+            }
+        }
+
         spans.clear();
         spans.push(SpanDesc {
             kind: SpanKind::Root,
             byte_pos: ByteSpan::new(0, 0),
             parent: SpanIndex(0),
+            line_loc: LineLocation::new(0, 0),
         });
+
         raw_links.clear();
         metadata.clear();
 
@@ -186,14 +232,71 @@ impl<'a> TextStructureBuilder<'a> {
             metadata,
             container_stack: smallvec![SpanIndex(0)],
             raw_links,
+            lines,
         }
     }
 
     fn add(&mut self, kind: SpanKind, pos: ByteSpan) -> SpanIndex {
         let index = SpanIndex(self.spans.len());
+
+        enum EndPos {
+            Initial,
+            WithinLine(u32),
+            PositionBeforeLine,
+            PositionAfterLine(u32),
+        }
+
+        use EndPos::*;
+
+        let (line_start, line_end) = self
+            .lines
+            .iter()
+            .enumerate()
+            .fold_while((None, Initial), |(start, end), (i, line_span)| {
+                let line = i as u32;
+
+                let new_start = line_span.contains_pos(pos.start).then(|| line);
+                let new_end = match line_span.contains_pos(pos.end) {
+                    true => WithinLine(line),
+                    false if pos.end < line_span.start => PositionBeforeLine,
+                    // imply: pos.end >= line_span.end
+                    false => PositionAfterLine(line),
+                };
+
+                use itertools::FoldWhile::*;
+
+                match (start, end, new_start, new_end) {
+                    (Some(s), WithinLine(e), _, _) => Done((Some(s), WithinLine(e))),
+                    (_, _, Some(s), WithinLine(e)) => Done((Some(s), WithinLine(e))),
+
+                    // if "after line" switched to "before line"
+                    // then it means that we crossed the edge and thus treat it as prev line
+                    (Some(s), PositionAfterLine(prev_end), _, PositionBeforeLine) => {
+                        Done((Some(s), WithinLine(prev_end)))
+                    }
+                    // if we found the start line => keep it
+                    (Some(s), _, _, e) => Continue((Some(s), e)),
+
+                    // if nothing else happened just keep iterating
+                    (_, _, s, e) => Continue((s, e)),
+                }
+            })
+            .into_inner();
+
+        let line_start = line_start.unwrap_or(0);
+
+        let line_loc = LineLocation::new(
+            line_start,
+            match line_end {
+                WithinLine(line_end) => line_end,
+                _ => line_start,
+            },
+        );
+
         self.spans.push(SpanDesc {
             kind,
             byte_pos: pos,
+            line_loc,
             parent: self.container_stack.last().unwrap().clone(),
         });
         index
@@ -211,6 +314,7 @@ impl<'a> TextStructureBuilder<'a> {
             metadata,
             raw_links,
             text,
+            lines,
             ..
         } = self;
 
@@ -223,6 +327,7 @@ impl<'a> TextStructureBuilder<'a> {
             spans,
             metadata,
             raw_links,
+            lines,
             text_hash: fxhash::hash64(text),
         }
     }
@@ -231,6 +336,16 @@ impl<'a> TextStructureBuilder<'a> {
         println!("\n\n-----parser-----");
         println!("text: {:?}", self.text);
         println!("-----text-end-----\n");
+        for (i, line) in self.lines.iter().enumerate() {
+            println!(
+                "{:2} [{}..{}) {:?}",
+                i,
+                line.start,
+                line.end,
+                &self.text[line.start..line.end]
+            );
+        }
+        println!("-----lines-end-----\n");
 
         let mut container_stack: SmallVec<[SpanIndex; 8]> = Default::default();
 
@@ -238,6 +353,7 @@ impl<'a> TextStructureBuilder<'a> {
             let SpanDesc {
                 kind,
                 byte_pos: range,
+                line_loc,
                 parent,
             } = span;
 
@@ -261,15 +377,17 @@ impl<'a> TextStructureBuilder<'a> {
             }
 
             println!(
-                "{}{kind:?} ({}-{})-> {:?}",
-                "  ".repeat(container_stack.len() - 1),
-                range.start,
-                range.end,
-                &self.text[range.start..range.end]
+                "{offset}{kind:?} (pos:[{start},{end}), lines:[{line_start}, {line_end}])-> {text:?}",
+                offset = "  ".repeat(container_stack.len() - 1),
+                start = range.start,
+                end = range.end,
+                line_start = line_loc.line_start,
+                line_end = line_loc.line_end,
+                text = &self.text[range.start..range.end]
             );
         }
 
-        // println!("---structure-end---\n");
+        println!("---structure-end---\n");
 
         let md_parser_options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
             | pulldown_cmark::Options::ENABLE_TASKLISTS
@@ -319,6 +437,7 @@ impl TextStructure {
             raw_links: vec![],
             spans: vec![],
             metadata: vec![],
+            lines: vec![],
             text_hash: 0,
         };
         struture.recycle(text)
@@ -334,10 +453,11 @@ impl TextStructure {
             raw_links,
             spans,
             metadata,
+            lines,
             ..
         } = self;
 
-        let mut builder = TextStructureBuilder::start(text, (spans, raw_links, metadata));
+        let mut builder = TextStructureBuilder::start(text, (spans, raw_links, metadata, lines));
         let finder = LinkFinder::new();
 
         for link in finder.links(text) {
@@ -479,7 +599,7 @@ impl TextStructure {
             }
         }
 
-        // builder.print_structure();
+        builder.print_structure();
 
         builder.finish(points)
     }
@@ -969,6 +1089,7 @@ fn fill_annotation_points(
             kind,
             byte_pos,
             parent,
+            line_loc: _,
         },
     ) in spans.iter().enumerate()
     {
