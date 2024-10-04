@@ -3,6 +3,9 @@ name: Rust
 on:
   push:
     branches: ["main"]
+    paths:
+      - '**.rs'
+      - '**.toml'
   # https://github.com/briskmode/shelv/issues/112
   # TODO: Enable after migrating to linux runners rather than mac OS (just to avoid sky-rocketing costs)
   # pull_request:
