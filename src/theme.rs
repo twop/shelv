@@ -4,8 +4,7 @@ use eframe::{
     egui::{
         self,
         style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets},
-        text::LayoutJob,
-        vec2, FontDefinitions, Margin, RichText, TextStyle, Vec2, Visuals, WidgetText,
+        vec2, FontDefinitions, RichText, TextStyle, ThemePreference, Vec2, Visuals, WidgetText,
     },
     epaint::{Color32, FontFamily, FontId, Rounding, Shadow, Stroke},
 };
@@ -387,6 +386,7 @@ pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
     style.spacing.item_spacing = Vec2::splat(theme.sizes.s);
     style.interaction.tooltip_delay = 0.05;
     ctx.set_style(style);
+    ctx.set_theme(ThemePreference::Dark);
 }
 
 pub fn get_font_definitions() -> FontDefinitions {

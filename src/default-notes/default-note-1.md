@@ -27,7 +27,7 @@ Shelv lives in the tray (the top menu bar by the clock) as an icon. You can alwa
 
 ## Explore other topics!
 - [ ] Watch a [demo on Shelv](https://youtu.be/VjS5IcnDAyU)
-- [ ] Learn how to use [AI prompts](https://youtu.be/VjS5IcnDAyU)
+- [ ] Learn how to use [AI prompts](https://youtu.be/f_SGua4rp7Q)
 
 ## Links
 - [shelv.app](https://shelv.app)
