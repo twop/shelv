@@ -16,11 +16,10 @@ pub fn on_shift_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextC
         byte_cursor: cursor,
     } = context;
 
-    let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
+    let (line_loc, _, _) = structure.find_line_location(cursor)?;
 
-    if text.get(span_range.start..cursor.start)?.contains("\n") {
-        return None;
-    }
+    let (span_range, item_index) =
+        structure.find_span_on_the_line(SpanKind::ListItem, line_loc.line_start)?;
 
     let parents: SmallVec<[_; 4]> = structure
         .iterate_parents_of(item_index)
@@ -72,11 +71,10 @@ pub fn on_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>
         byte_cursor: cursor,
     } = context;
 
-    let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
+    let (line_loc, _, _) = structure.find_line_location(cursor)?;
 
-    if text.get(span_range.start..cursor.start)?.contains("\n") {
-        return None;
-    }
+    let (span_range, item_index) =
+        structure.find_span_on_the_line(SpanKind::ListItem, line_loc.line_start)?;
 
     let parents: SmallVec<[_; 4]> = structure
         .iterate_parents_of(item_index)
@@ -214,13 +212,35 @@ mod tests {
         let test_cases = [
             (
                 "-- tabs in ordered lists modify numbers --",
-                "1. a\n2. b{||}\n\t- c\n\t\t 1. d\n4. d",
-                Some("1. a\n\t1. b{||}\n\t\t* c\n\t\t\t 1. d\n2. d"),
+                r#"
+1. a
+2. b{||}
+    - c
+        1. d
+4. d
+"#,
+                Some(r#"
+1. a
+    1. b{||}
+        * c
+            1. d
+2. d
+"#),
             ),
             (
                 "-- tabbing inside nested unordered list --",
-                "- a\n\t* b\n\t* c{||}\n- d \n",
-                Some("- a\n\t* b\n\t\t* c{||}\n- d \n"),
+                r#"
+- a
+    * b
+    * c{||}
+- d
+"#,
+                Some(r#"
+- a
+    * b
+        * c{||}
+- d
+"#),
             ),
             (
                 "-- tabbing inside unordered list picks proper list item marker --",
