@@ -983,6 +983,33 @@ impl TextStructure {
         )
     }
 
+    #[inline(always)]
+    pub fn find_map_span_on_the_line<T, F>(
+        &self,
+        line: u32,
+        test: F,
+    ) -> Option<(ByteSpan, SpanIndex, T)>
+    where
+        F: Fn(&SpanDesc) -> Option<T>,
+    {
+        self.spans.iter().enumerate().rev().find_map(
+            |(
+                i,
+                span @ &SpanDesc {
+                    line_loc, byte_pos, ..
+                },
+            )| match line_loc {
+                LineLocation {
+                    line_start,
+                    line_end,
+                } if line_start >= line && line_end <= line => {
+                    test(span).map(|result| (byte_pos, SpanIndex(i), result))
+                }
+                _ => None,
+            },
+        )
+    }
+
     pub fn iterate_parents_of(
         &self,
         index: SpanIndex,
