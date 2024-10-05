@@ -351,10 +351,10 @@ pub fn process_app_action(
                                 target: resp.note_id,
                                 changes: [match insert_mode {
                                     InsertMode::Initial { pos } => {
-                                        TextChange::Replace(ByteSpan::point(pos), chunk + "\n")
+                                        TextChange::Insert(ByteSpan::point(pos), chunk + "\n")
                                     }
                                     InsertMode::Subsequent { pos } => {
-                                        TextChange::Replace(ByteSpan::point(pos), chunk)
+                                        TextChange::Insert(ByteSpan::point(pos), chunk)
                                     }
                                 }]
                                 .into(),
@@ -538,7 +538,7 @@ pub fn process_app_action(
 
                 [AppAction::ApplyTextChanges {
                     target: selected,
-                    changes: vec![TextChange::Replace(
+                    changes: vec![TextChange::Insert(
                         ByteSpan::point(note.text.len()),
                         // TODO Add a link to join the discord server (as a way to encourage feedback discussion)
                         format!(
@@ -575,7 +575,7 @@ pub fn process_app_action(
                                 format!("{cursor}{tutorial_conent}\n\n-------end of tutorial-------\n\n", cursor=TextChange::CURSOR)
                             }
                         };
-                        Some((id, TextChange::Replace(ByteSpan::point(0), to_insert)))
+                        Some((id, TextChange::Insert(ByteSpan::point(0), to_insert)))
                     }
                 })
                 .map(|(target, change)| AppAction::ApplyTextChanges {
@@ -701,7 +701,7 @@ pub fn process_app_action(
             )));
 
             if accept {
-                let changes = vec![TextChange::Replace(
+                let changes = vec![TextChange::Insert(
                     prompt.address.span,
                     prompt.response_text,
                 )];

@@ -17,21 +17,21 @@ pub fn toggle_simple_md_annotations(
         .map(|(span_range, idx)| (span_range, text_structure.get_span_inner_content(idx)))
     {
         // replace block with the inner content, note that the cursor will be expanded automatically
-        Some((span_byte_range, content_byte_range)) => Some(vec![TextChange::Replace(
+        Some((span_byte_range, content_byte_range)) => Some(vec![TextChange::Insert(
             span_byte_range,
             text[content_byte_range.range()].to_string(),
         )]),
 
         None => {
             if byte_cursor.is_empty() {
-                Some(Vec::from([TextChange::Replace(
+                Some(Vec::from([TextChange::Insert(
                     byte_cursor,
                     format!("{start}{{||}}{end}", start = annotation, end = annotation),
                 )]))
             } else {
                 Some(Vec::from([
-                    TextChange::Replace(ByteSpan::point(byte_cursor.start), annotation.to_string()),
-                    TextChange::Replace(ByteSpan::point(byte_cursor.end), annotation.to_string()),
+                    TextChange::Insert(ByteSpan::point(byte_cursor.start), annotation.to_string()),
+                    TextChange::Insert(ByteSpan::point(byte_cursor.end), annotation.to_string()),
                 ]))
             }
         }

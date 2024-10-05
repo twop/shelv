@@ -124,7 +124,7 @@ pub fn prepare_to_run_llm_block(
         ),
     };
 
-    let text_change = TextChange::Replace(replacemen_pos, output_block);
+    let text_change = TextChange::Insert(replacemen_pos, output_block);
 
     let target = app_state.selected_note;
 

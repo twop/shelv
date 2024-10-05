@@ -1,6 +1,7 @@
 use std::{fmt::Pointer, marker::PhantomData, ops::Range, usize};
 
 /// Ordered byte span
+/// end is exclusive
 #[derive(Clone, Copy, PartialEq, Hash, Eq)]
 pub struct ByteSpan {
     pub start: usize,
@@ -45,20 +46,41 @@ impl ByteSpan {
         Self::new(range.start, range.end)
     }
 
+    #[inline(always)]
     pub fn range(&self) -> Range<usize> {
         self.start..self.end
     }
 
+    #[inline(always)]
     pub fn contains_pos(&self, pos: usize) -> bool {
         self.range().contains(&pos)
     }
 
     pub fn contains(&self, other: ByteSpan) -> bool {
-        self.start <= other.start && self.end >= other.end
+        if other.start == self.start && other.end == self.end {
+            true
+        } else if other.is_empty() {
+            self.contains_pos(other.start)
+        } else {
+            // note the last condition
+            // let's imagine that
+            // self : [1..4)       (ranges are not inclusive)
+            // other:      [2..4]  (just a point)
+            // in that case we should not consider point to be included
+            self.start <= other.start && self.end >= other.end
+        }
     }
 
+    #[inline(always)]
     pub fn is_empty(self) -> bool {
         self.end == self.start
+    }
+
+    pub fn move_by(&self, amount: isize) -> Self {
+        let start = (self.start as isize) + amount;
+        let end = (self.end as isize) + amount;
+
+        Self::new(start.max(0) as usize, end.max(0) as usize)
     }
 
     pub fn unordered(&self) -> UnOrderedByteSpan {

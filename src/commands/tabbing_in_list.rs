@@ -16,12 +16,15 @@ pub fn on_shift_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextC
         byte_cursor: cursor,
     } = context;
 
-    let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
+    let (line_loc, _, _) = structure.find_line_location(cursor)?;
 
-    if text.get(span_range.start..cursor.start)?.contains("\n") {
+    let (span_range, item_index, desc) =
+        structure.find_span_on_the_line(SpanKind::ListItem, line_loc.line_start)?;
+
+    // if the cursor is not on the same line as the ListItem => use the default behaviour
+    if desc.line_loc.line_start != line_loc.line_start {
         return None;
     }
-
     let parents: SmallVec<[_; 4]> = structure
         .iterate_parents_of(item_index)
         .filter(|(_, desc)| desc.kind == SpanKind::List)
@@ -53,7 +56,7 @@ pub fn on_shift_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextC
 
             if depth > 0 && t.ends_with("\t") {
                 // move itself
-                changes.push(TextChange::Replace(
+                changes.push(TextChange::Insert(
                     ByteSpan::new(span_range.start - 1, span_range.start + 1), //this is for "-" -> "*" replacement
                     format!("{}", select_unordered_list_marker(depth - 1)),
                 ));
@@ -72,9 +75,13 @@ pub fn on_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>
         byte_cursor: cursor,
     } = context;
 
-    let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor.clone())?;
+    let (line_loc, _, _) = structure.find_line_location(cursor)?;
 
-    if text.get(span_range.start..cursor.start)?.contains("\n") {
+    let (span_range, item_index, desc) =
+        structure.find_span_on_the_line(SpanKind::ListItem, line_loc.line_start)?;
+
+    // if the cursor is not on the same line as the ListItem => use the default behaviour
+    if desc.line_loc.line_start != line_loc.line_start {
         return None;
     }
 
@@ -122,7 +129,7 @@ pub fn on_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>
                 // TODO only modify items that actually need adjustments
                 let item_text = &text[list_item.byte_pos.range()];
                 if let Some(dot_pos) = item_text.find(".") {
-                    changes.push(TextChange::Replace(
+                    changes.push(TextChange::Insert(
                         ByteSpan::new(list_item.byte_pos.start, list_item.byte_pos.start + dot_pos),
                         format!("{}", intended_number),
                     ))
@@ -131,7 +138,7 @@ pub fn on_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>
 
             // move itself, note that now the index starts with "1"
             if let Some(dot_pos) = &text[span_range.range()].find(".") {
-                changes.push(TextChange::Replace(
+                changes.push(TextChange::Insert(
                     ByteSpan::new(span_range.start, span_range.start + dot_pos),
                     format!("\t{}", 1),
                 ))
@@ -149,7 +156,7 @@ pub fn on_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>
             let mut changes = increase_nesting_for_lists(structure, item_index);
 
             // move itself
-            changes.push(TextChange::Replace(
+            changes.push(TextChange::Insert(
                 ByteSpan::new(span_range.start, span_range.start + 1), //this is for "-" -> "*" replacement
                 format!("\t{}", select_unordered_list_marker(depth + 1)),
             ));
@@ -186,14 +193,14 @@ fn increase_nesting_for_lists(
             } =>
             // numbered lists do not need modifications
             {
-                TextChange::Replace(
+                TextChange::Insert(
                     ByteSpan::new(nested_item_start, nested_item_start),
                     "\t".to_string(),
                 )
             }
 
             //unordered need "-" -> "*" replacement
-            _ => TextChange::Replace(
+            _ => TextChange::Insert(
                 ByteSpan::new(nested_item_start, nested_item_start + 1),
                 format!("\t{}", select_unordered_list_marker(parents.len())),
             ),
@@ -214,22 +221,63 @@ mod tests {
         let test_cases = [
             (
                 "-- tabs in ordered lists modify numbers --",
-                "1. a\n2. b{||}\n\t- c\n\t\t 1. d\n4. d",
-                Some("1. a\n\t1. b{||}\n\t\t* c\n\t\t\t 1. d\n2. d"),
+                r#"
+1. a
+2. b{||}
+	- c
+		1. d
+4. d
+"#,
+                Some(
+                    r#"
+1. a
+	1. b{||}
+		* c
+			1. d
+2. d
+"#,
+                ),
             ),
             (
                 "-- tabbing inside nested unordered list --",
-                "- a\n\t* b\n\t* c{||}\n- d \n",
-                Some("- a\n\t* b\n\t\t* c{||}\n- d \n"),
+                r#"
+- a
+	* b
+	* c{||}
+- d
+"#,
+                Some(
+                    r#"
+- a
+	* b
+		* c{||}
+- d
+"#,
+                ),
             ),
             (
                 "-- tabbing inside unordered list picks proper list item marker --",
-                "- a\n- b{||}\n\t- c\n\t\t 1. d",
-                Some("- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d"),
+                r#"
+- a
+- b{||}
+	- c
+		1. d
+"#,
+                Some(
+                    r#"
+- a
+	* b{||}
+		* c
+			1. d
+"#,
+                ),
             ),
             (
-                "-- tabbing inside list item not on the same line when it starts => goes to default beh --",
-                "- a\n\ta{||}",
+                "-- tabbing inside list item not on the same line when it starts doesn't trigger the beh --",
+                r#"
+- a
+	a{||}
+"#,
                 None,
             ),
             //             (
@@ -287,12 +335,21 @@ mod tests {
         let test_cases = [
             (
                 "-- shift left unordered list item --",
-                "- a\n\t* b{||}",
-                Some("- a\n- b{||}"),
+                r#"
+- a
+	* b{||}"#,
+                Some(
+                    r#"
+- a
+- b{||}"#,
+                ),
             ),
             (
                 "-- shift tab bails out if the list item is not on the same line as cursor --",
-                "- a\n\t* b\n\t\t*{||}",
+                r#"
+- a
+	* b
+		*{||}"#,
                 None,
             ),
         ];

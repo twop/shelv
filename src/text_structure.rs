@@ -4,6 +4,7 @@ use eframe::{
     egui::TextFormat,
     epaint::{text::LayoutJob, Color32, FontId, Stroke},
 };
+use itertools::Itertools;
 use linkify::LinkFinder;
 use pulldown_cmark::{CodeBlockKind, HeadingLevel};
 use smallvec::{smallvec, SmallVec};
@@ -11,6 +12,7 @@ use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
 
+use tree_sitter::{Node, Parser, Query, QueryCursor};
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 use crate::{
@@ -122,9 +124,24 @@ impl MarkdownRunningState {
 
 #[derive(Debug, Clone, Copy)]
 pub struct SpanDesc {
-    pub kind: SpanKind,
-    pub byte_pos: ByteSpan,
-    pub parent: SpanIndex,
+    pub kind: SpanKind,         // 1
+    pub byte_pos: ByteSpan,     // 16
+    pub parent: SpanIndex,      // 8
+    pub line_loc: LineLocation, // 8
+}
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LineLocation {
+    pub line_start: u32, // 4
+    pub line_end: u32,   // 4
+}
+
+impl LineLocation {
+    pub fn new(line_start: u32, line_end: u32) -> Self {
+        Self {
+            line_start,
+            line_end,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -134,6 +151,7 @@ pub struct TextStructure {
     spans: Vec<SpanDesc>,
     metadata: Vec<(SpanIndex, SpanMeta)>,
     text_hash: u64,
+    lines: Vec<ByteSpan>,
 }
 
 #[derive(Debug)]
@@ -156,6 +174,7 @@ pub struct TextStructureBuilder<'a> {
     spans: Vec<SpanDesc>,
     raw_links: Vec<RawLink>,
     metadata: Vec<(SpanIndex, SpanMeta)>,
+    lines: Vec<ByteSpan>,
 }
 
 pub enum InteractiveTextPart<'a> {
@@ -167,15 +186,43 @@ pub enum InteractiveTextPart<'a> {
 impl<'a> TextStructureBuilder<'a> {
     fn start(
         text: &'a str,
-        recycled: (Vec<SpanDesc>, Vec<RawLink>, Vec<(SpanIndex, SpanMeta)>),
+        recycled: (
+            Vec<SpanDesc>,
+            Vec<RawLink>,
+            Vec<(SpanIndex, SpanMeta)>,
+            Vec<ByteSpan>,
+        ),
     ) -> Self {
-        let (mut spans, mut raw_links, mut metadata) = recycled;
+        let (mut spans, mut raw_links, mut metadata, mut lines) = recycled;
+
+        lines.clear();
+        let mut pos = 0;
+        for step in text.char_indices().map(Some).chain([None]) {
+            match step {
+                Some((index, char)) if char == '\n' => {
+                    println!("## adding {}", &text[pos..index]);
+                    lines.push(ByteSpan::new(pos, index));
+                    pos = index + 1;
+                }
+
+                // if pos != text.len()
+                None => {
+                    println!("## adding at the end {}", &text[pos..text.len()]);
+                    lines.push(ByteSpan::new(pos, text.len()));
+                }
+
+                _ => {}
+            }
+        }
+
         spans.clear();
         spans.push(SpanDesc {
             kind: SpanKind::Root,
             byte_pos: ByteSpan::new(0, 0),
             parent: SpanIndex(0),
+            line_loc: LineLocation::new(0, 0),
         });
+
         raw_links.clear();
         metadata.clear();
 
@@ -185,14 +232,21 @@ impl<'a> TextStructureBuilder<'a> {
             metadata,
             container_stack: smallvec![SpanIndex(0)],
             raw_links,
+            lines,
         }
     }
 
     fn add(&mut self, kind: SpanKind, pos: ByteSpan) -> SpanIndex {
         let index = SpanIndex(self.spans.len());
+
+        let line_loc = find_span_line_location(&self.lines, pos)
+            .map(|(location, _, _)| location)
+            .unwrap_or(LineLocation::new(0, 0));
+
         self.spans.push(SpanDesc {
             kind,
             byte_pos: pos,
+            line_loc,
             parent: self.container_stack.last().unwrap().clone(),
         });
         index
@@ -210,6 +264,7 @@ impl<'a> TextStructureBuilder<'a> {
             metadata,
             raw_links,
             text,
+            lines,
             ..
         } = self;
 
@@ -222,6 +277,7 @@ impl<'a> TextStructureBuilder<'a> {
             spans,
             metadata,
             raw_links,
+            lines,
             text_hash: fxhash::hash64(text),
         }
     }
@@ -230,6 +286,16 @@ impl<'a> TextStructureBuilder<'a> {
         println!("\n\n-----parser-----");
         println!("text: {:?}", self.text);
         println!("-----text-end-----\n");
+        for (i, line) in self.lines.iter().enumerate() {
+            println!(
+                "{:2} [{}..{}) {:?}",
+                i,
+                line.start,
+                line.end,
+                &self.text[line.start..line.end]
+            );
+        }
+        println!("-----lines-end-----\n");
 
         let mut container_stack: SmallVec<[SpanIndex; 8]> = Default::default();
 
@@ -237,6 +303,7 @@ impl<'a> TextStructureBuilder<'a> {
             let SpanDesc {
                 kind,
                 byte_pos: range,
+                line_loc,
                 parent,
             } = span;
 
@@ -260,15 +327,17 @@ impl<'a> TextStructureBuilder<'a> {
             }
 
             println!(
-                "{}{kind:?} ({}-{})-> {:?}",
-                "  ".repeat(container_stack.len() - 1),
-                range.start,
-                range.end,
-                &self.text[range.start..range.end]
+                "{offset}{kind:?} (pos:[{start},{end}), lines:[{line_start}, {line_end}])-> {text:?}",
+                offset = "  ".repeat(container_stack.len() - 1),
+                start = range.start,
+                end = range.end,
+                line_start = line_loc.line_start,
+                line_end = line_loc.line_end,
+                text = &self.text[range.start..range.end]
             );
         }
 
-        // println!("---structure-end---\n");
+        println!("---structure-end---\n");
 
         let md_parser_options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
             | pulldown_cmark::Options::ENABLE_TASKLISTS
@@ -308,6 +377,66 @@ fn trim_trailing_new_lines(text: &str, pos: ByteSpan) -> ByteSpan {
     ByteSpan::new(start, end)
 }
 
+fn find_span_line_location(
+    lines: &[ByteSpan],
+    span: ByteSpan,
+) -> Option<(LineLocation, ByteSpan, ByteSpan)> {
+    fn find_line(lines: &[ByteSpan], byte_position: usize) -> Option<(u32, ByteSpan)> {
+        enum BytePosition {
+            Initial,
+            WithinLine(u32, ByteSpan),
+            PositionIsBeforeLine,
+            PositionIsAfterLine(u32, ByteSpan),
+        }
+        use BytePosition::*;
+
+        let pos = lines
+            .iter()
+            .enumerate()
+            .fold_while(Initial, |pos, (i, &line_span)| {
+                let line = i as u32;
+
+                let new_pos = match line_span.contains_pos(byte_position) {
+                    true => WithinLine(line, line_span),
+                    false if byte_position < line_span.start => PositionIsBeforeLine,
+                    // imply: pos >= line_span.end
+                    false => PositionIsAfterLine(line, line_span),
+                };
+
+                use itertools::FoldWhile::*;
+
+                match (pos, new_pos) {
+                    (WithinLine(prev, span), _) => Done(WithinLine(prev, span)),
+                    (_, WithinLine(cur, span)) => Done(WithinLine(cur, span)),
+
+                    // if "after line" switched to "before line"
+                    // then it means that we crossed the edge and thus treat it as prev line
+                    (PositionIsAfterLine(prev_end, span), PositionIsBeforeLine) => {
+                        Done(WithinLine(prev_end, span))
+                    }
+
+                    (_, new_pos) => Continue(new_pos),
+                }
+            })
+            .into_inner();
+
+        match pos {
+            PositionIsAfterLine(line, span) | WithinLine(line, span) => Some((line, span)),
+            _ => None,
+        }
+    }
+
+    // TODO merge these two into a single iteration
+    let line_start = find_line(lines, span.start);
+    let line_end = find_line(lines, span.end);
+
+    line_start
+        .zip(line_end)
+        .map(|((start, start_span), (end, end_span))| {
+            (LineLocation::new(start, end), start_span, end_span)
+        })
+}
+
 #[derive(Clone, Debug, Copy, Hash, PartialEq, Eq)]
 pub struct TextStructureVersion(u64);
 
@@ -318,6 +447,7 @@ impl TextStructure {
             raw_links: vec![],
             spans: vec![],
             metadata: vec![],
+            lines: vec![],
             text_hash: 0,
         };
         struture.recycle(text)
@@ -333,10 +463,11 @@ impl TextStructure {
             raw_links,
             spans,
             metadata,
+            lines,
             ..
         } = self;
 
-        let mut builder = TextStructureBuilder::start(text, (spans, raw_links, metadata));
+        let mut builder = TextStructureBuilder::start(text, (spans, raw_links, metadata, lines));
         let finder = LinkFinder::new();
 
         for link in finder.links(text) {
@@ -478,7 +609,7 @@ impl TextStructure {
             }
         }
 
-        // builder.print_structure();
+        builder.print_structure();
 
         builder.finish(points)
     }
@@ -607,7 +738,7 @@ impl TextStructure {
                         for event in highlights {
                             match event.unwrap() {
                                 HighlightEvent::Source { start, end } => {
-                                    eprintln!("{}{}", "  ".repeat(ident), &code[start..end]);
+                                    // eprintln!("{}{}", "  ".repeat(ident), &code[start..end]);
 
                                     job.append(
                                         &code[start..end],
@@ -617,15 +748,60 @@ impl TextStructure {
                                 }
                                 HighlightEvent::HighlightStart(s) => {
                                     color = highlight_pairs[s.0].1;
-                                    eprintln!("{}{} {{", "  ".repeat(ident), highlight_names[s.0]);
+                                    // eprintln!("{}{} {{", "  ".repeat(ident), highlight_names[s.0]);
                                     ident = ident + 1;
                                 }
                                 HighlightEvent::HighlightEnd => {
                                     ident = ident - 1;
-                                    eprintln!("{}}}", "  ".repeat(ident));
+                                    // eprintln!("{}}}", "  ".repeat(ident));
                                 }
                             }
                         }
+
+                        let mut parser = Parser::new();
+                        parser
+                            .set_language(kdl_lang)
+                            .expect("Error setting language");
+
+                        // fn calculate_indentation(node: Node, source_code: &str) -> usize {
+                        //     let mut depth = 0;
+                        //     let mut current = Some(node);
+
+                        //     while let Some(n) = current {
+                        //         if n.kind() == "object" || n.kind() == "block" {
+                        //             depth += 1;
+                        //         }
+                        //         current = n.parent();
+                        //     }
+
+                        //     depth
+                        // }
+
+                        // let tree = parser.parse(code, None).unwrap();
+                        // println!("Tree structure:");
+                        // println!("{}", tree.root_node().to_sexp());
+
+                        // // println!("{tree:#?}");
+
+                        // fn format_code(parser: &mut Parser, source_code: &str) {
+                        //     let tree = parser.parse(source_code, None).unwrap();
+                        //     let query =
+                        //         Query::new(parser.language().unwrap(), "(object) @obj").unwrap();
+                        //     let mut cursor = QueryCursor::new();
+
+                        //     for m in
+                        //         cursor.matches(&query, tree.root_node(), source_code.as_bytes())
+                        //     {
+                        //         let node = m.captures[0].node;
+                        //         let indent = calculate_indentation(node, source_code);
+                        //         println!(
+                        //             "Node at {}: {} should be indented {} levels",
+                        //             node.start_position(),
+                        //             node.kind(),
+                        //             indent
+                        //         );
+                        //     }
+                        // }
 
                         // job.append(
                         //     code,
@@ -770,6 +946,65 @@ impl TextStructure {
                     None
                 }
             })
+    }
+
+    pub fn find_line_location(
+        &self,
+        byte_cursor: ByteSpan,
+    ) -> Option<(LineLocation, ByteSpan, ByteSpan)> {
+        find_span_line_location(&self.lines, byte_cursor)
+    }
+
+    pub fn find_span_on_the_line(
+        &self,
+        span_kind: SpanKind,
+        target_line: u32,
+    ) -> Option<(ByteSpan, SpanIndex, &SpanDesc)> {
+        self.spans.iter().enumerate().rev().find_map(|(i, desc)| {
+            let &SpanDesc {
+                kind,
+                byte_pos,
+                line_loc,
+                ..
+            } = desc;
+
+            match line_loc {
+                LineLocation {
+                    line_start,
+                    line_end,
+                } if span_kind == kind && line_start <= target_line && line_end >= target_line => {
+                    Some((byte_pos, SpanIndex(i), desc))
+                }
+                _ => None,
+            }
+        })
+    }
+
+    #[inline(always)]
+    pub fn find_map_span_on_the_line<T, F>(
+        &self,
+        line: u32,
+        test: F,
+    ) -> Option<(ByteSpan, SpanIndex, T)>
+    where
+        F: Fn(&SpanDesc) -> Option<T>,
+    {
+        self.spans.iter().enumerate().rev().find_map(
+            |(
+                i,
+                span @ &SpanDesc {
+                    line_loc, byte_pos, ..
+                },
+            )| match line_loc {
+                LineLocation {
+                    line_start,
+                    line_end,
+                } if line_start >= line && line_end <= line => {
+                    test(span).map(|result| (byte_pos, SpanIndex(i), result))
+                }
+                _ => None,
+            },
+        )
     }
 
     pub fn iterate_parents_of(
@@ -923,6 +1158,7 @@ fn fill_annotation_points(
             kind,
             byte_pos,
             parent,
+            line_loc: _,
         },
     ) in spans.iter().enumerate()
     {

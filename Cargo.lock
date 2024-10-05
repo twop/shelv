@@ -4355,6 +4355,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tray-icon",
+ "tree-sitter",
  "tree-sitter-highlight",
  "tree-sitter-kdl",
  "winit",
