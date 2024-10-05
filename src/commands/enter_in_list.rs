@@ -17,7 +17,10 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
         byte_cursor: cursor,
     } = context;
 
-    let (span_range, item_index) = structure.find_span_at(SpanKind::ListItem, cursor)?;
+    let (line_loc, _, _) = structure.find_line_location(cursor)?;
+
+    let (span_range, item_index) =
+        structure.find_span_on_the_line(SpanKind::ListItem, line_loc.line_start)?;
 
     // TODO actually check if the cursor inside a symbol
     // like `{||}-` or `1{||}2.`, note that the latter will likely break
@@ -118,7 +121,7 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
 
                 // first split the first one in half
                 let mut changes = vec![TextChange::Insert(
-                    cursor.clone(),
+                    cursor,
                     format!(
                         "\n{dep}{n}. {cur}",
                         dep = "\t".repeat(depth),
@@ -302,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_adding_list_item_with_enter_on_complex_list_item() {
+    pub fn test_adding_list_item_on_complex_list_item() {
         let (mut text, cursor) = TextChange::try_extract_cursor("- *item*{||}".to_string());
         let cursor = cursor.unwrap();
 

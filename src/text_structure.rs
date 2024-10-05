@@ -239,59 +239,9 @@ impl<'a> TextStructureBuilder<'a> {
     fn add(&mut self, kind: SpanKind, pos: ByteSpan) -> SpanIndex {
         let index = SpanIndex(self.spans.len());
 
-        enum EndPos {
-            Initial,
-            WithinLine(u32),
-            PositionBeforeLine,
-            PositionAfterLine(u32),
-        }
-
-        use EndPos::*;
-
-        let (line_start, line_end) = self
-            .lines
-            .iter()
-            .enumerate()
-            .fold_while((None, Initial), |(start, end), (i, line_span)| {
-                let line = i as u32;
-
-                let new_start = line_span.contains_pos(pos.start).then(|| line);
-                let new_end = match line_span.contains_pos(pos.end) {
-                    true => WithinLine(line),
-                    false if pos.end < line_span.start => PositionBeforeLine,
-                    // imply: pos.end >= line_span.end
-                    false => PositionAfterLine(line),
-                };
-
-                use itertools::FoldWhile::*;
-
-                match (start, end, new_start, new_end) {
-                    (Some(s), WithinLine(e), _, _) => Done((Some(s), WithinLine(e))),
-                    (_, _, Some(s), WithinLine(e)) => Done((Some(s), WithinLine(e))),
-
-                    // if "after line" switched to "before line"
-                    // then it means that we crossed the edge and thus treat it as prev line
-                    (Some(s), PositionAfterLine(prev_end), _, PositionBeforeLine) => {
-                        Done((Some(s), WithinLine(prev_end)))
-                    }
-                    // if we found the start line => keep it
-                    (Some(s), _, _, e) => Continue((Some(s), e)),
-
-                    // if nothing else happened just keep iterating
-                    (_, _, s, e) => Continue((s, e)),
-                }
-            })
-            .into_inner();
-
-        let line_start = line_start.unwrap_or(0);
-
-        let line_loc = LineLocation::new(
-            line_start,
-            match line_end {
-                WithinLine(line_end) => line_end,
-                _ => line_start,
-            },
-        );
+        let line_loc = find_span_line_location(&self.lines, pos)
+            .map(|(location, _, _)| location)
+            .unwrap_or(LineLocation::new(0, 0));
 
         self.spans.push(SpanDesc {
             kind,
@@ -425,6 +375,66 @@ fn trim_trailing_new_lines(text: &str, pos: ByteSpan) -> ByteSpan {
     }
 
     ByteSpan::new(start, end)
+}
+
+fn find_span_line_location(
+    lines: &[ByteSpan],
+    span: ByteSpan,
+) -> Option<(LineLocation, ByteSpan, ByteSpan)> {
+    fn find_line(lines: &[ByteSpan], byte_position: usize) -> Option<(u32, ByteSpan)> {
+        enum BytePosition {
+            Initial,
+            WithinLine(u32, ByteSpan),
+            PositionIsBeforeLine,
+            PositionIsAfterLine(u32, ByteSpan),
+        }
+        use BytePosition::*;
+
+        let pos = lines
+            .iter()
+            .enumerate()
+            .fold_while(Initial, |pos, (i, &line_span)| {
+                let line = i as u32;
+
+                let new_pos = match line_span.contains_pos(byte_position) {
+                    true => WithinLine(line, line_span),
+                    false if byte_position < line_span.start => PositionIsBeforeLine,
+                    // imply: pos >= line_span.end
+                    false => PositionIsAfterLine(line, line_span),
+                };
+
+                use itertools::FoldWhile::*;
+
+                match (pos, new_pos) {
+                    (WithinLine(prev, span), _) => Done(WithinLine(prev, span)),
+                    (_, WithinLine(cur, span)) => Done(WithinLine(cur, span)),
+
+                    // if "after line" switched to "before line"
+                    // then it means that we crossed the edge and thus treat it as prev line
+                    (PositionIsAfterLine(prev_end, span), PositionIsBeforeLine) => {
+                        Done(WithinLine(prev_end, span))
+                    }
+
+                    (_, new_pos) => Continue(new_pos),
+                }
+            })
+            .into_inner();
+
+        match pos {
+            PositionIsAfterLine(line, span) | WithinLine(line, span) => Some((line, span)),
+            _ => None,
+        }
+    }
+
+    // TODO merge these two into a single iteration
+    let line_start = find_line(lines, span.start);
+    let line_end = find_line(lines, span.end);
+
+    line_start
+        .zip(line_end)
+        .map(|((start, start_span), (end, end_span))| {
+            (LineLocation::new(start, end), start_span, end_span)
+        })
 }
 
 #[derive(Clone, Debug, Copy, Hash, PartialEq, Eq)]
@@ -936,6 +946,41 @@ impl TextStructure {
                     None
                 }
             })
+    }
+
+    pub fn find_line_location(
+        &self,
+        byte_cursor: ByteSpan,
+    ) -> Option<(LineLocation, ByteSpan, ByteSpan)> {
+        find_span_line_location(&self.lines, byte_cursor)
+    }
+
+    pub fn find_span_on_the_line(
+        &self,
+        span_kind: SpanKind,
+        line: u32,
+    ) -> Option<(ByteSpan, SpanIndex)> {
+        self.spans.iter().enumerate().rev().find_map(
+            |(
+                i,
+                &SpanDesc {
+                    kind,
+                    byte_pos,
+                    line_loc,
+                    ..
+                },
+            )| {
+                match line_loc {
+                    LineLocation {
+                        line_start,
+                        line_end,
+                    } if span_kind == kind && line_start >= line && line_end <= line => {
+                        Some((byte_pos, SpanIndex(i)))
+                    }
+                    _ => None,
+                }
+            },
+        )
     }
 
     pub fn iterate_parents_of(

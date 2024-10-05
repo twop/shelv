@@ -12,42 +12,42 @@ pub fn on_space_after_task_markers(context: TextCommandContext) -> Option<Vec<Te
         byte_cursor: cursor,
     } = context;
 
-    let unexpanded_task_markers = &text[..cursor.start].ends_with("[]");
+    let unexpanded_task_markers = text[..cursor.start].ends_with("[]");
 
     if !unexpanded_task_markers {
         return None;
     }
 
-    if structure
-        .find_span_at(SpanKind::ListItem, cursor.clone())
-        .is_some_and(|(span, _)| {
-            // At the beggining of a list item with unexpanded task markers "- []{}"
-            cursor.start == span.start + 4
-        })
-    {
-        // Ie. "- []{}" -> "- [ ]{}"
-        return Some(vec![TextChange::Insert(
-            ByteSpan::new(cursor.start - 2, cursor.start),
-            "[ ]".to_string(),
-        )]);
-    }
+    let (line_loc, start_line_span, _) = structure.find_line_location(cursor)?;
 
-    if structure
-        .find_span_at(SpanKind::Paragraph, cursor.clone())
-        .is_some_and(|(_, _)| {
-            // Start of the file or a new line, so we must add a new list item
-            let text_before_task_markers = &text[..cursor.start - 2];
-            text_before_task_markers.len() == 0 || text_before_task_markers.ends_with("\n")
-        })
+    match structure
+        .find_span_on_the_line(SpanKind::ListItem, line_loc.line_start)
+        .map(|(_range, idx)| structure.get_span_inner_content(idx))
     {
-        // Ie. "[]{}" -> "- []{}"
-        return Some(vec![TextChange::Insert(
-            ByteSpan::new(cursor.start - 2, cursor.start),
-            select_unordered_list_marker(0).to_string() + " [ ]",
-        )]);
+        Some(inner_content_span) if inner_content_span.start + "[]".len() == cursor.start => {
+            {
+                // At the beginning of a list item with unexpanded task markers "- []{}"
+                Some(vec![TextChange::Insert(
+                    ByteSpan::new(inner_content_span.start, cursor.start),
+                    "[ ]".to_string(),
+                )])
+            }
+        }
+        _ => None,
     }
-
-    None
+    .or_else(
+        || match structure.find_span_at(SpanKind::CodeBlock, cursor) {
+            // do nothing inside code blocks
+            None if start_line_span.start + "[]".len() == cursor.start => {
+                // Start of the line, so we must add a new list item
+                Some(vec![TextChange::Insert(
+                    ByteSpan::new(start_line_span.start, cursor.start),
+                    format!("{} [ ]", select_unordered_list_marker(0)),
+                )])
+            }
+            _ => None,
+        },
+    )
 }
 
 #[cfg(test)]
