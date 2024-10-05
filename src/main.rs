@@ -419,8 +419,8 @@ fn main() {
     let _enter = rt.enter();
 
     let options = eframe::NativeOptions {
-        default_theme: eframe::Theme::Dark,
-        follow_system_theme: false,
+        // default_theme: eframe::Theme::Dark,
+        // follow_system_theme: false,
         viewport: egui::ViewportBuilder::default()
             .with_resizable(true)
             .with_always_on_top()
