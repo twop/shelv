@@ -19,7 +19,7 @@ pub fn on_enter_inside_list_item(context: TextCommandContext) -> Option<Vec<Text
 
     let (line_loc, _, _) = structure.find_line_location(cursor)?;
 
-    let (span_range, item_index) =
+    let (span_range, item_index, _) =
         structure.find_span_on_the_line(SpanKind::ListItem, line_loc.line_start)?;
 
     // TODO actually check if the cursor inside a symbol

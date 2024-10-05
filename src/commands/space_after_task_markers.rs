@@ -22,7 +22,7 @@ pub fn on_space_after_task_markers(context: TextCommandContext) -> Option<Vec<Te
 
     match structure
         .find_span_on_the_line(SpanKind::ListItem, line_loc.line_start)
-        .map(|(_range, idx)| structure.get_span_inner_content(idx))
+        .map(|(_range, idx, _)| structure.get_span_inner_content(idx))
     {
         Some(inner_content_span) if inner_content_span.start + "[]".len() == cursor.start => {
             {

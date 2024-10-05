@@ -361,10 +361,11 @@ impl AppState {
                 BuiltInCommand::EnterInsideKDL,
                 map_text_command_to_command_handler(on_enter_inside_kdl_block),
             ),
-            (
-                BuiltInCommand::BracketAutoclosingInsideKDL,
-                map_text_command_to_command_handler(autoclose_bracket_inside_kdl_block),
-            ),
+            // Disable for now
+            // (
+            //     BuiltInCommand::BracketAutoclosingInsideKDL,
+            //     map_text_command_to_command_handler(autoclose_bracket_inside_kdl_block),
+            // ),
         ]
         .into_iter()
         .map(|(cmd, handler)| EditorCommand::built_in(cmd, handler))

@@ -18,9 +18,13 @@ pub fn on_shift_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextC
 
     let (line_loc, _, _) = structure.find_line_location(cursor)?;
 
-    let (span_range, item_index) =
+    let (span_range, item_index, desc) =
         structure.find_span_on_the_line(SpanKind::ListItem, line_loc.line_start)?;
 
+    // if the cursor is not on the same line as the ListItem => use the default behaviour
+    if desc.line_loc.line_start != line_loc.line_start {
+        return None;
+    }
     let parents: SmallVec<[_; 4]> = structure
         .iterate_parents_of(item_index)
         .filter(|(_, desc)| desc.kind == SpanKind::List)
@@ -73,8 +77,13 @@ pub fn on_tab_inside_list(context: TextCommandContext) -> Option<Vec<TextChange>
 
     let (line_loc, _, _) = structure.find_line_location(cursor)?;
 
-    let (span_range, item_index) =
+    let (span_range, item_index, desc) =
         structure.find_span_on_the_line(SpanKind::ListItem, line_loc.line_start)?;
+
+    // if the cursor is not on the same line as the ListItem => use the default behaviour
+    if desc.line_loc.line_start != line_loc.line_start {
+        return None;
+    }
 
     let parents: SmallVec<[_; 4]> = structure
         .iterate_parents_of(item_index)
@@ -215,41 +224,60 @@ mod tests {
                 r#"
 1. a
 2. b{||}
-    - c
-        1. d
+	- c
+		1. d
 4. d
 "#,
-                Some(r#"
+                Some(
+                    r#"
 1. a
-    1. b{||}
-        * c
-            1. d
+	1. b{||}
+		* c
+			1. d
 2. d
-"#),
+"#,
+                ),
             ),
             (
                 "-- tabbing inside nested unordered list --",
                 r#"
 - a
-    * b
-    * c{||}
+	* b
+	* c{||}
 - d
 "#,
-                Some(r#"
+                Some(
+                    r#"
 - a
-    * b
-        * c{||}
+	* b
+		* c{||}
 - d
-"#),
+"#,
+                ),
             ),
             (
                 "-- tabbing inside unordered list picks proper list item marker --",
-                "- a\n- b{||}\n\t- c\n\t\t 1. d",
-                Some("- a\n\t* b{||}\n\t\t* c\n\t\t\t 1. d"),
+                r#"
+- a
+- b{||}
+	- c
+		1. d
+"#,
+                Some(
+                    r#"
+- a
+	* b{||}
+		* c
+			1. d
+"#,
+                ),
             ),
             (
-                "-- tabbing inside list item not on the same line when it starts => goes to default beh --",
-                "- a\n\ta{||}",
+                "-- tabbing inside list item not on the same line when it starts doesn't trigger the beh --",
+                r#"
+- a
+	a{||}
+"#,
                 None,
             ),
             //             (
@@ -307,12 +335,21 @@ mod tests {
         let test_cases = [
             (
                 "-- shift left unordered list item --",
-                "- a\n\t* b{||}",
-                Some("- a\n- b{||}"),
+                r#"
+- a
+	* b{||}"#,
+                Some(
+                    r#"
+- a
+- b{||}"#,
+                ),
             ),
             (
                 "-- shift tab bails out if the list item is not on the same line as cursor --",
-                "- a\n\t* b\n\t\t*{||}",
+                r#"
+- a
+	* b
+		*{||}"#,
                 None,
             ),
         ];
