@@ -27,25 +27,9 @@ pub fn show_slash_pallete(
                 note_file: app_state.selected_note,
                 // TODO verify + 1 thing, seems sketchy
                 // it relies that this will be done before rendering
-                slash_byte_pos: byte_cursor.start + 1,
+                slash_byte_pos: byte_cursor.start,
                 search_term: "".to_string(),
-                options: Vec::from([
-                    SlashPaletteCmd {
-                        font_awesome_icon: Some("\u{ed0d}".to_string()),
-                        prefix: "js".to_string(),
-                        description: "inserts markdown javascript code block".to_string(),
-                    },
-                    SlashPaletteCmd {
-                        font_awesome_icon: Some("\u{ec10}".to_string()),
-                        prefix: "ai".to_string(),
-                        description: "inserts ai code block".to_string(),
-                    },
-                    SlashPaletteCmd {
-                        font_awesome_icon: Some("\u{f133}".to_string()),
-                        prefix: "date".to_string(),
-                        description: "inserts current date".to_string(),
-                    },
-                ]),
+                options: generate_test_slash_palette_commands(),
                 selected: 0,
             })),
         ]
@@ -57,6 +41,26 @@ pub fn show_slash_pallete(
                 .then(|| AppAction::AcceptPromptSuggestion { accept: false }),
         ),
     ))
+}
+
+pub fn generate_test_slash_palette_commands() -> Vec<SlashPaletteCmd> {
+    Vec::from([
+        SlashPaletteCmd {
+            font_awesome_icon: Some("\u{ed0d}".to_string()),
+            prefix: "js".to_string(),
+            description: "inserts markdown javascript code block".to_string(),
+        },
+        SlashPaletteCmd {
+            font_awesome_icon: Some("\u{ec10}".to_string()),
+            prefix: "ai".to_string(),
+            description: "inserts ai code block".to_string(),
+        },
+        SlashPaletteCmd {
+            font_awesome_icon: Some("\u{f133}".to_string()),
+            prefix: "date".to_string(),
+            description: "inserts current date".to_string(),
+        },
+    ])
 }
 
 pub fn next_slash_cmd(

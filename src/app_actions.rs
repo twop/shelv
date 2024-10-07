@@ -1,7 +1,8 @@
 use std::{io, path::PathBuf};
 
-use eframe::egui::{
-    text::LayoutJob, Context, Id, KeyboardShortcut, Memory, OpenUrl, ViewportCommand,
+use eframe::{
+    egui::{text::LayoutJob, Context, Id, KeyboardShortcut, Memory, OpenUrl, ViewportCommand},
+    wgpu::naga::Range,
 };
 
 use similar::{ChangeTag, TextDiff};
@@ -17,6 +18,7 @@ use crate::{
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
         run_llm::{prepare_to_run_llm_block, CodeBlockAddress, DEFAULT_LLM_MODEL},
+        slash_pallete::generate_test_slash_palette_commands,
     },
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{get_tutorial_note_content, NoteFile},
@@ -263,8 +265,8 @@ pub fn process_app_action(
                         // ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
                         println!("Toggle visibility: show + focus");
 
-                        SmallVec::from_buf([AppAction::DeferToPostRender(Box::new(
-                            AppAction::FocusRequest(FocusTarget::CurrentNote),
+                        SmallVec::from_buf([AppAction::defer(AppAction::FocusRequest(
+                            FocusTarget::CurrentNote,
                         ))])
                     }
                 }
@@ -743,12 +745,15 @@ pub fn process_app_action(
                     SmallVec::from_buf([AppAction::defer(AppAction::SlashPalette(SP::Update))])
                 }
                 SP::Update => {
-                    // TODO figure out when to hide the slash pallete
-                    // TODO2 update search term + options
+                    let focus_state = compute_app_focus(ctx, state);
+                    let palette = state.slash_palette.take();
 
-                    match state.slash_palette {
-                        Some(_) => {
-                            // this one just loops over until we need to hide it
+                    let new_palette = palette
+                        .and_then(|palette| update_slash_palette(focus_state, palette, state));
+
+                    match new_palette {
+                        Some(palette) => {
+                            state.slash_palette = Some(palette);
                             SmallVec::from_buf([AppAction::defer(AppAction::SlashPalette(
                                 SP::Update,
                             ))])
@@ -787,6 +792,72 @@ pub fn process_app_action(
             }
         }
     }
+}
+fn update_slash_palette(
+    focus_state: AppFocusState,
+    mut palette: SlashPalette,
+    state: &AppState,
+) -> Option<SlashPalette> {
+    // TODO figure out when to hide the slash pallete
+    // TODO2 update search term + options
+    // let focus_state = compute_app_focus(ctx, state);
+
+    let Some(AppFocus::NoteEditor) = focus_state.focus else {
+        // if we lost focus from the editor just hide the palette
+        println!("## hide Slash Palette: Focus is not on NoteEditor");
+        return None;
+    };
+
+    if palette.note_file != state.selected_note {
+        println!("## hide Slash Palette: Palette note file doesn't match selected note");
+        return None;
+    }
+
+    // if some => means that we still have focus cursor
+    let (note_cursor, text_part) = state.notes.get(&state.selected_note).and_then(|note| {
+        note.cursor
+            .map(|c| c.ordered())
+            .map(|cursor| (cursor, &note.text[palette.slash_byte_pos..]))
+    })?;
+
+    if !text_part.starts_with("/") {
+        // it means that either text was modified above or user deleted the "/"
+        println!("## hide Slash Palette: Text doesn't start with '/'\nterm={text_part}");
+        return None;
+    };
+
+    let word_end = text_part
+        .find(|c: char| c.is_whitespace() || c == '\n')
+        .unwrap_or(text_part.len());
+
+    let term_span = ByteSpan::new(palette.slash_byte_pos, palette.slash_byte_pos + word_end);
+
+    // needs to be either inside the palette term or immidiately touching it
+    if !(term_span.contains(note_cursor)
+        || (note_cursor.is_empty() && term_span.end == note_cursor.start))
+    {
+        println!("## hide Slash Palette: Cursor is not within or touching the palette term");
+        return None;
+    }
+
+    let search_term = &text_part[1..word_end];
+
+    // if it is exactly the same term just do nothing
+    if search_term == palette.search_term {
+        return Some(palette);
+    }
+
+    // Update options based on search term
+    // This is a placeholder - implement actual filtering logic
+    palette.options = generate_test_slash_palette_commands()
+        .into_iter()
+        .filter(|option| option.prefix.starts_with(search_term))
+        .collect();
+
+    palette.search_term = search_term.to_string();
+    palette.selected = 0;
+
+    Some(palette)
 }
 
 pub fn compute_app_focus(ctx: &Context, app_state: &AppState) -> AppFocusState {
