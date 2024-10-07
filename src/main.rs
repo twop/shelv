@@ -1,4 +1,4 @@
-#![feature(iter_intersperse)]
+// #![feature(iter_intersperse)]
 #![feature(let_chains)]
 #![feature(offset_of)]
 #![feature(generic_const_exprs)]
@@ -344,6 +344,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             theme_set: &app_state.theme_set,
             computed_layout: app_state.computed_layout.take(),
             inline_llm_prompt: (&mut app_state.inline_llm_prompt).as_mut(),
+            slash_palette: app_state.slash_palette.as_ref(),
         };
 
         let RenderAppResult {

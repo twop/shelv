@@ -9,8 +9,8 @@ use smallvec::{smallvec, SmallVec};
 
 use crate::{
     app_state::{
-        compute_editor_text_id, AppState, InlineLLMPropmptState, InlineLLMResponseChunk,
-        InlinePromptStatus, MsgToApp, TextSelectionAddress, UnsavedChange,
+        compute_editor_text_id, AppState, InlineLLMPromptState, InlineLLMResponseChunk,
+        InlinePromptStatus, MsgToApp, SlashPalette, TextSelectionAddress, UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext},
@@ -32,6 +32,17 @@ use crate::{
 pub enum FocusTarget {
     CurrentNote,
     SpecificId(Id),
+}
+
+#[derive(Debug)]
+pub enum SlashPaletteAction {
+    // Slash Palette
+    Show(SlashPalette),
+    Hide,
+    Update,
+    NextCommand,
+    PrevCommand,
+    ExecuteCommand(usize),
 }
 
 #[derive(Debug)]
@@ -63,6 +74,8 @@ pub enum AppAction {
     AcceptPromptSuggestion {
         accept: bool,
     },
+
+    SlashPalette(SlashPaletteAction),
 }
 
 impl AppAction {
@@ -72,6 +85,10 @@ impl AppAction {
             changes,
             should_trigger_eval: true,
         }
+    }
+
+    fn defer(action: Self) -> Self {
+        Self::DeferToPostRender(Box::new(action))
     }
 }
 
@@ -372,7 +389,7 @@ pub fn process_app_action(
                     Some(prompt_state) if prompt_state.address == target_address => {
                         match response {
                             InlineLLMResponseChunk::Chunk(chunk) => {
-                                let InlineLLMPropmptState {
+                                let InlineLLMPromptState {
                                     mut response_text,
                                     prompt,
                                     address,
@@ -407,7 +424,7 @@ pub fn process_app_action(
                                 let layout_job =
                                     create_layout_job_from_text_diff(&diff_parts, &state.theme);
 
-                                state.inline_llm_prompt = Some(InlineLLMPropmptState {
+                                state.inline_llm_prompt = Some(InlineLLMPromptState {
                                     address,
                                     response_text,
                                     diff_parts,
@@ -420,7 +437,7 @@ pub fn process_app_action(
                             }
 
                             InlineLLMResponseChunk::End => {
-                                let InlineLLMPropmptState {
+                                let InlineLLMPromptState {
                                     response_text,
                                     prompt,
                                     address,
@@ -442,7 +459,7 @@ pub fn process_app_action(
                                     }
                                 };
 
-                                state.inline_llm_prompt = Some(InlineLLMPropmptState {
+                                state.inline_llm_prompt = Some(InlineLLMPromptState {
                                     response_text,
                                     prompt,
                                     address,
@@ -627,7 +644,7 @@ pub fn process_app_action(
         AppAction::ShowPrompt(address) => {
             println!("Triggering inline prompt {address:#?}",);
 
-            state.inline_llm_prompt = Some(InlineLLMPropmptState {
+            state.inline_llm_prompt = Some(InlineLLMPromptState {
                 address,
                 response_text: "".to_string(),
                 diff_parts: vec![],
@@ -715,6 +732,58 @@ pub fn process_app_action(
                 resulting_actions
             } else {
                 resulting_actions
+            }
+        }
+
+        AppAction::SlashPalette(slash_pallete_actions) => {
+            use SlashPaletteAction as SP;
+            match slash_pallete_actions {
+                SP::Show(slash_palette) => {
+                    state.slash_palette = Some(slash_palette);
+                    SmallVec::from_buf([AppAction::defer(AppAction::SlashPalette(SP::Update))])
+                }
+                SP::Update => {
+                    // TODO figure out when to hide the slash pallete
+                    // TODO2 update search term + options
+
+                    match state.slash_palette {
+                        Some(_) => {
+                            // this one just loops over until we need to hide it
+                            SmallVec::from_buf([AppAction::defer(AppAction::SlashPalette(
+                                SP::Update,
+                            ))])
+                        }
+                        None => SmallVec::new(),
+                    }
+                }
+
+                SP::NextCommand => {
+                    if let Some(pallete) = state.slash_palette.as_mut() {
+                        pallete.selected = (pallete.selected + 1) % pallete.options.len()
+                    }
+
+                    SmallVec::new()
+                }
+                SP::PrevCommand => {
+                    if let Some(pallete) = state.slash_palette.as_mut() {
+                        pallete.selected =
+                            (pallete.selected + pallete.options.len() - 1) % pallete.options.len()
+                    }
+
+                    SmallVec::new()
+                }
+
+                SP::ExecuteCommand(index) => {
+                    println!("Execute slash command: {index}");
+                    SmallVec::new()
+                }
+
+                SP::Hide => {
+                    state.slash_palette = None;
+                    SmallVec::from_iter([AppAction::defer(AppAction::FocusRequest(
+                        FocusTarget::CurrentNote,
+                    ))])
+                }
             }
         }
     }

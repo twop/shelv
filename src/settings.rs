@@ -575,6 +575,11 @@ impl BuiltInCommand {
             HidePrompt => "HidePrompt",
             EnterInsideKDL => "EnterInsideKDL",
             BracketAutoclosingInsideKDL => "BracketAutoclosingInsideKDL",
+            ShowSlashPallete => "ShowSlashPallete",
+            NextSlashPalleteCmd => "NextSlashPalleteCmd",
+            PrevSlashPalleteCmd => "PrevSlashPalleteCmd",
+            ExecuteSlashPalleteCmd => "ExecuteSlashPalleteCmd",
+            HideSlashPallete => "HideSlashPallete",
         }
     }
 }

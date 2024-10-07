@@ -31,6 +31,10 @@ use crate::{
         inline_llm_prompt::inline_llm_prompt_command_handler,
         kdl_lang::{autoclose_bracket_inside_kdl_block, on_enter_inside_kdl_block},
         run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
+        slash_pallete::{
+            execute_slash_cmd, hide_slash_pallete, next_slash_cmd, prev_slash_cmd,
+            show_slash_pallete,
+        },
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
         toggle_code_block::toggle_code_block,
@@ -62,7 +66,7 @@ pub enum InlinePromptStatus {
 }
 
 #[derive(Debug)]
-pub struct InlineLLMPropmptState {
+pub struct InlineLLMPromptState {
     pub prompt: String,
     pub address: TextSelectionAddress,
     pub response_text: String,
@@ -84,6 +88,22 @@ pub enum UnsavedChange {
     SelectionChanged,
     LastUpdated,
     PinStateChanged,
+}
+
+#[derive(Debug)]
+pub struct SlashPaletteCmd {
+    pub font_awesome_icon: Option<String>,
+    pub prefix: String,
+    pub description: String,
+}
+
+#[derive(Debug)]
+pub struct SlashPalette {
+    pub note_file: NoteFile,
+    pub slash_byte_pos: usize,
+    pub search_term: String,
+    pub options: Vec<SlashPaletteCmd>,
+    pub selected: usize,
 }
 
 pub struct AppState {
@@ -108,7 +128,8 @@ pub struct AppState {
     pub editor_commands: CommandList,
     pub llm_settings: Option<LlmSettings>,
 
-    pub inline_llm_prompt: Option<InlineLLMPropmptState>,
+    pub inline_llm_prompt: Option<InlineLLMPromptState>,
+    pub slash_palette: Option<SlashPalette>,
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
@@ -399,8 +420,12 @@ impl AppState {
 
         editor_commands.push(EditorCommand::built_in(
             BuiltInCommand::HideApp,
-            |cx| match (cx.app_focus.is_menu_opened, cx.app_focus.focus) {
-                (false, None | Some(AppFocus::NoteEditor)) => {
+            |cx| match (
+                cx.app_focus.is_menu_opened,
+                &cx.app_state.slash_palette,
+                cx.app_focus.focus,
+            ) {
+                (false, None, None | Some(AppFocus::NoteEditor)) => {
                     [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
                 }
                 _ => SmallVec::new(),
@@ -426,6 +451,34 @@ impl AppState {
         editor_commands.push(EditorCommand::built_in(BuiltInCommand::ShowPrompt, |ctx| {
             inline_llm_prompt_command_handler(ctx).unwrap_or_default()
         }));
+
+        // Slash Pallete
+        // TODO is there a betterway to organize those?
+        editor_commands.push(EditorCommand::built_in(
+            BuiltInCommand::ShowSlashPallete,
+            |ctx| show_slash_pallete(ctx).unwrap_or_default(),
+        ));
+
+        editor_commands.push(EditorCommand::built_in(
+            BuiltInCommand::HideSlashPallete,
+            |ctx| hide_slash_pallete(ctx).unwrap_or_default(),
+        ));
+
+        editor_commands.push(EditorCommand::built_in(
+            BuiltInCommand::NextSlashPalleteCmd,
+            |ctx| next_slash_cmd(ctx).unwrap_or_default(),
+        ));
+
+        editor_commands.push(EditorCommand::built_in(
+            BuiltInCommand::PrevSlashPalleteCmd,
+            |ctx| prev_slash_cmd(ctx).unwrap_or_default(),
+        ));
+
+        editor_commands.push(EditorCommand::built_in(
+            BuiltInCommand::ExecuteSlashPalleteCmd,
+            |ctx| execute_slash_cmd(ctx).unwrap_or_default(),
+        ));
+        // ------
 
         let mut editor_commands = CommandList::new(editor_commands);
         let mut llm_settings: Option<LlmSettings> = None;
@@ -473,6 +526,7 @@ impl AppState {
             llm_settings,
             deferred_to_post_render: vec![],
             inline_llm_prompt: None,
+            slash_palette: None,
         }
     }
 

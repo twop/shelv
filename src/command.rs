@@ -102,6 +102,12 @@ pub enum BuiltInCommand {
     HideApp,
     HidePrompt,
 
+    // SlashPallete
+    ShowSlashPallete,
+    NextSlashPalleteCmd,
+    PrevSlashPalleteCmd,
+    ExecuteSlashPalleteCmd,
+    HideSlashPallete,
     // Lang specific
     EnterInsideKDL,
     BracketAutoclosingInsideKDL,
@@ -159,6 +165,15 @@ impl BuiltInCommand {
             BuiltInCommand::HidePrompt => "Hide Prompt".into(),
             BuiltInCommand::EnterInsideKDL => "Auto indent KDL".into(),
             BuiltInCommand::BracketAutoclosingInsideKDL => "Auto closing of '{' inside KDL".into(),
+            BuiltInCommand::ShowSlashPallete => "Show slash command palette".into(),
+            BuiltInCommand::NextSlashPalleteCmd => "Select next command in slash palette".into(),
+            BuiltInCommand::PrevSlashPalleteCmd => {
+                "Select previous command in slash palette".into()
+            }
+            BuiltInCommand::ExecuteSlashPalleteCmd => {
+                "Execute selected command in slash palette".into()
+            }
+            BuiltInCommand::HideSlashPallete => "Hide slash command palette".into(),
         }
     }
 
@@ -191,6 +206,11 @@ impl BuiltInCommand {
             C::EnterInsideKDL => shortcut(Modifiers::NONE, Key::Enter),
             C::BracketAutoclosingInsideKDL => shortcut(Modifiers::SHIFT, Key::OpenBracket),
             C::HideApp | C::HidePrompt => shortcut(Modifiers::NONE, Key::Escape),
+            C::ShowSlashPallete => shortcut(Modifiers::NONE, Key::Slash),
+            C::NextSlashPalleteCmd => shortcut(Modifiers::NONE, Key::ArrowDown),
+            C::PrevSlashPalleteCmd => shortcut(Modifiers::NONE, Key::ArrowUp),
+            C::ExecuteSlashPalleteCmd => shortcut(Modifiers::NONE, Key::Enter),
+            C::HideSlashPallete => shortcut(Modifiers::NONE, Key::Escape),
         }
     }
 }

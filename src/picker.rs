@@ -8,6 +8,7 @@ use eframe::{
         Pos2, Rect, Shape, Stroke, Vec2,
     },
 };
+use itertools::Itertools;
 
 pub enum PickerItemKind {
     Dot,
@@ -90,7 +91,7 @@ impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
             let mut offset = rect.min.x;
 
             let ctx = ui.ctx();
-            for i in items.iter().enumerate().map(Some).intersperse_with(|| None) {
+            for i in Itertools::intersperse(items.iter().enumerate().map(Some), None) {
                 match i {
                     Some((i, item)) => {
                         let center = pos2(offset + radius, rect.center().y);

@@ -30,7 +30,6 @@ description = "Note taking app optimized for capturing phase."
 eframe = { version = "0.29.1", default-features = false, features = [
     "wgpu",
     "persistence",
-    "ron",
 ] }
 egui_extras = { version = "0.29.1", features = ["svg"] }
 serde = { version = "1.0.197", features = ["derive"] }
