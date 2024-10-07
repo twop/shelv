@@ -47,6 +47,7 @@ mod command;
 mod commands;
 mod effects;
 mod egui_hotkey;
+mod feedback;
 mod settings;
 
 mod nord;
@@ -212,6 +213,8 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // ctx.set_visuals(egui::Visuals::dark());
+
         let app_state = &mut self.state;
 
         let selected_note_file = app_state.selected_note;
@@ -344,6 +347,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             theme_set: &app_state.theme_set,
             computed_layout: app_state.computed_layout.take(),
             inline_llm_prompt: (&mut app_state.inline_llm_prompt).as_mut(),
+            feedback: (&mut app_state.feedback).as_mut(),
         };
 
         let RenderAppResult {

@@ -43,7 +43,7 @@ syntect = { version = "5.0.0", default-features = false, features = [
 ] }
 smallvec = "1.10.0"
 tray-icon = "0.14.0"
-egui-phosphor = { version = "0.7.1", features = ["light"] }
+egui-phosphor = { version = "0.7.1", features = ["light", "thin"] }
 # tray-item = "0.7.1"
 winit = "0.30.5"
 linkify = "0.10.0"
@@ -64,6 +64,7 @@ similar = "2.6.0"
 tree-sitter-highlight = "0.20.1"
 tree-sitter-kdl = "1.1.0"
 tree-sitter = "0.20.10"
+egui_flex = "0.1.1"
 
 [patch.crates-io]
 winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.5" }
