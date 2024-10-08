@@ -15,6 +15,7 @@ use eframe::{
 };
 use itertools::Itertools;
 use pulldown_cmark::HeadingLevel;
+use similar::DiffableStr;
 use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
@@ -90,11 +91,42 @@ pub enum UnsavedChange {
     PinStateChanged,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SlashPaletteCmd {
-    pub font_awesome_icon: Option<String>,
+    pub phosphor_icon: Option<String>,
+    pub shortcut: Option<KeyboardShortcut>,
     pub prefix: String,
     pub description: String,
+    pub editor_cmd: EditorCommand,
+}
+
+impl SlashPaletteCmd {
+    pub fn from_editor_cmd(prefix: impl Into<String>, editor_cmd: &EditorCommand) -> Self {
+        Self {
+            phosphor_icon: None,
+            prefix: prefix.into(),
+            shortcut: editor_cmd.shortcut.clone(),
+            description: editor_cmd
+                .kind
+                .map(|kind| kind.human_description().to_string())
+                .unwrap_or_else(|| "".to_string()),
+            editor_cmd: editor_cmd.clone(),
+        }
+    }
+    pub fn icon(mut self, icon: String) -> Self {
+        self.phosphor_icon = Some(icon);
+        self
+    }
+
+    pub fn shortcut(mut self, shortcut: KeyboardShortcut) -> Self {
+        self.shortcut = Some(shortcut);
+        self
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
+    }
 }
 
 #[derive(Debug)]
@@ -130,6 +162,7 @@ pub struct AppState {
 
     pub inline_llm_prompt: Option<InlineLLMPromptState>,
     pub slash_palette: Option<SlashPalette>,
+    pub slash_palette_commands: Vec<SlashPaletteCmd>,
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
@@ -448,9 +481,11 @@ impl AppState {
                 prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default()
             },
         ));
-        editor_commands.push(EditorCommand::built_in(BuiltInCommand::ShowPrompt, |ctx| {
+        let show_prompt_cmd = EditorCommand::built_in(BuiltInCommand::ShowPrompt, |ctx| {
             inline_llm_prompt_command_handler(ctx).unwrap_or_default()
-        }));
+        });
+
+        editor_commands.push(show_prompt_cmd.clone());
 
         // Slash Pallete
         // TODO is there a betterway to organize those?
@@ -481,6 +516,7 @@ impl AppState {
         // ------
 
         let mut editor_commands = CommandList::new(editor_commands);
+
         let mut llm_settings: Option<LlmSettings> = None;
 
         // TODO this is ugly, refactor this to be a bit nicer
@@ -507,6 +543,34 @@ impl AppState {
             }
         }
 
+        use egui_phosphor::light as P;
+        let slash_palette_commands = []
+            .into_iter()
+            .chain(
+                [
+                    ("ai", BuiltInCommand::ShowPrompt, P::SPARKLE),
+                    ("code", BuiltInCommand::MarkdownCodeBlock, P::CODE_BLOCK),
+                    ("h1", BuiltInCommand::MarkdownH1, P::TEXT_H_ONE),
+                    ("h2", BuiltInCommand::MarkdownH2, P::TEXT_H_TWO),
+                    ("h3", BuiltInCommand::MarkdownH3, P::TEXT_H_THREE),
+                    ("bold", BuiltInCommand::MarkdownBold, P::TEXT_BOLDER),
+                    ("italic", BuiltInCommand::MarkdownItalic, P::TEXT_ITALIC),
+                    (
+                        "strike",
+                        BuiltInCommand::MarkdownStrikethrough,
+                        P::TEXT_STRIKETHROUGH,
+                    ),
+                ]
+                .into_iter()
+                .filter_map(|(prefix, builtin, phosphor_icon)| {
+                    editor_commands.find(builtin).map(|cmd| {
+                        SlashPaletteCmd::from_editor_cmd(prefix, cmd)
+                            .icon(phosphor_icon.to_string())
+                    })
+                }),
+            )
+            .collect();
+
         Self {
             is_pinned: is_window_pinned,
             unsaved_changes: Default::default(),
@@ -527,6 +591,7 @@ impl AppState {
             deferred_to_post_render: vec![],
             inline_llm_prompt: None,
             slash_palette: None,
+            slash_palette_commands,
         }
     }
 

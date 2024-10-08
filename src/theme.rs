@@ -164,7 +164,7 @@ impl FontSizes {
             h3: 22.,
             h4: 16.,
             normal: 14.,
-            small: 10.,
+            small: 12.,
         }
     }
 }

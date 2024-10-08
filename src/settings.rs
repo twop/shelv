@@ -584,7 +584,7 @@ impl BuiltInCommand {
     }
 }
 
-fn format_mac_shortcut(shortcut: KeyboardShortcut) -> String {
+pub fn format_mac_shortcut(shortcut: KeyboardShortcut) -> String {
     const SPACED_NAMES: ModifierNames = ModifierNames {
         concat: " ",
         ..ModifierNames::SYMBOLS

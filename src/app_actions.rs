@@ -18,7 +18,6 @@ use crate::{
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
         run_llm::{prepare_to_run_llm_block, CodeBlockAddress, DEFAULT_LLM_MODEL},
-        slash_pallete::generate_test_slash_palette_commands,
     },
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{get_tutorial_note_content, NoteFile},
@@ -780,7 +779,53 @@ pub fn process_app_action(
 
                 SP::ExecuteCommand(index) => {
                     println!("Execute slash command: {index}");
-                    SmallVec::new()
+
+                    let Some(SlashPalette {
+                        note_file,
+                        slash_byte_pos,
+                        search_term,
+                        options,
+                        ..
+                    }) = state.slash_palette.take()
+                    else {
+                        return SmallVec::new();
+                    };
+
+                    let Some(cmd) = options.get(index) else {
+                        return SmallVec::new();
+                    };
+
+                    let action_after_text_changes = process_app_action(
+                        AppAction::ApplyTextChanges {
+                            target: note_file,
+                            changes: [TextChange::Insert(
+                                ByteSpan::new(
+                                    slash_byte_pos,
+                                    slash_byte_pos + search_term.len() + 1,
+                                ),
+                                "".to_string(),
+                            )]
+                            .into(),
+                            should_trigger_eval: false,
+                        },
+                        ctx,
+                        state,
+                        text_edit_id,
+                        app_io,
+                    );
+
+                    let cmd_context = CommandContext {
+                        app_state: state,
+                        app_focus: compute_app_focus(ctx, state),
+                    };
+
+                    let actions_from_cmd = (cmd.editor_cmd.try_handle)(cmd_context);
+
+                    SmallVec::from_iter(
+                        action_after_text_changes
+                            .into_iter()
+                            .chain(actions_from_cmd),
+                    )
                 }
 
                 SP::Hide => {
@@ -849,9 +894,11 @@ fn update_slash_palette(
 
     // Update options based on search term
     // This is a placeholder - implement actual filtering logic
-    palette.options = generate_test_slash_palette_commands()
-        .into_iter()
+    palette.options = state
+        .slash_palette_commands
+        .iter()
         .filter(|option| option.prefix.starts_with(search_term))
+        .cloned()
         .collect();
 
     palette.search_term = search_term.to_string();

@@ -1,3 +1,5 @@
+use std::{fmt::Debug, rc::Rc};
+
 use eframe::egui::KeyboardShortcut;
 use pulldown_cmark::CowStr;
 use smallvec::SmallVec;
@@ -48,10 +50,20 @@ impl<'a> TextCommandContext<'a> {
 
 pub type EditorCommandOutput = SmallVec<[AppAction; 1]>;
 
+#[derive(Clone)]
 pub struct EditorCommand {
     pub kind: Option<BuiltInCommand>,
     pub shortcut: Option<KeyboardShortcut>,
-    pub try_handle: Box<dyn Fn(CommandContext) -> EditorCommandOutput>,
+    pub try_handle: Rc<dyn Fn(CommandContext) -> EditorCommandOutput>,
+}
+
+impl Debug for EditorCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EditorCommand")
+            .field("kind", &self.kind)
+            .field("shortcut", &self.shortcut)
+            .finish()
+    }
 }
 
 impl EditorCommand {
@@ -62,7 +74,7 @@ impl EditorCommand {
         Self {
             kind: Some(kind),
             shortcut: Some(kind.default_keybinding()),
-            try_handle: Box::new(try_handle),
+            try_handle: Rc::new(try_handle),
         }
     }
 
@@ -73,7 +85,7 @@ impl EditorCommand {
         Self {
             kind: None,
             shortcut: Some(shortcut),
-            try_handle: Box::new(try_handle),
+            try_handle: Rc::new(try_handle),
         }
     }
 }

@@ -34,6 +34,7 @@ use crate::{
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
+    settings::format_mac_shortcut,
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme},
 };
@@ -796,7 +797,11 @@ fn render_slash_palette(
                         responses.push(resp);
                     }
 
-                    None => ui.add_space(theme.sizes.s),
+                    None => {
+                        ui.add_space(theme.sizes.s);
+                        ui.separator();
+                        ui.add_space(theme.sizes.s)
+                    }
                 }
             }
 
@@ -822,29 +827,44 @@ fn render_slash_palette(
 fn render_slash_cmd(ui: &mut Ui, theme: &AppTheme, cmd: &SlashPaletteCmd) -> egui::Response {
     let mut layout_job = LayoutJob::default();
 
-    let nerd_icons = TextFormat::simple(
-        FontId::new(theme.fonts.size.normal, theme.fonts.family.code.clone()),
+    let phosphor_icon_font = TextFormat::simple(
+        FontId::new(theme.fonts.size.h4, FontFamily::Name("phosphor".into())),
         theme.colors.normal_text_color,
     );
 
-    let header = TextFormat::simple(
+    let header_font = TextFormat::simple(
         FontId::new(theme.fonts.size.normal, theme.fonts.family.normal.clone()),
         theme.colors.normal_text_color,
     );
 
-    let description = TextFormat::simple(
+    let shortcut_font = TextFormat::simple(
+        FontId::new(theme.fonts.size.small, theme.fonts.family.italic.clone()),
+        theme.colors.subtle_text_color,
+    );
+
+    let description_font = TextFormat::simple(
         FontId::new(theme.fonts.size.small, theme.fonts.family.normal.clone()),
         theme.colors.subtle_text_color,
     );
 
-    if let Some(icon) = &cmd.font_awesome_icon {
-        layout_job.append(&icon, 0., nerd_icons.clone());
-        layout_job.append(" ", 0., nerd_icons.clone());
+    if let Some(icon) = &cmd.phosphor_icon {
+        layout_job.append(&icon, 0., phosphor_icon_font.clone());
+        layout_job.append(" ", 0., phosphor_icon_font.clone());
     }
 
-    layout_job.append(&cmd.prefix, 0., header.clone());
-    layout_job.append("\n", 0., header);
-    layout_job.append(&cmd.description, 0., description);
+    layout_job.append(&cmd.prefix, 0., header_font.clone());
+
+    if let Some(shortcut) = &cmd.shortcut {
+        layout_job.append("\t", 0., header_font.clone());
+        layout_job.append(
+            &format!("{}", format_mac_shortcut(*shortcut)),
+            0.,
+            shortcut_font.clone(),
+        );
+    }
+
+    layout_job.append("\n", 0., header_font);
+    layout_job.append(&cmd.description, 0., description_font);
 
     ui.button(WidgetText::LayoutJob(layout_job))
 }

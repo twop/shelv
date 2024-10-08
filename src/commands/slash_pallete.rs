@@ -29,7 +29,7 @@ pub fn show_slash_pallete(
                 // it relies that this will be done before rendering
                 slash_byte_pos: byte_cursor.start,
                 search_term: "".to_string(),
-                options: generate_test_slash_palette_commands(),
+                options: app_state.slash_palette_commands.clone(),
                 selected: 0,
             })),
         ]
@@ -43,25 +43,25 @@ pub fn show_slash_pallete(
     ))
 }
 
-pub fn generate_test_slash_palette_commands() -> Vec<SlashPaletteCmd> {
-    Vec::from([
-        SlashPaletteCmd {
-            font_awesome_icon: Some("\u{ed0d}".to_string()),
-            prefix: "js".to_string(),
-            description: "inserts markdown javascript code block".to_string(),
-        },
-        SlashPaletteCmd {
-            font_awesome_icon: Some("\u{ec10}".to_string()),
-            prefix: "ai".to_string(),
-            description: "inserts ai code block".to_string(),
-        },
-        SlashPaletteCmd {
-            font_awesome_icon: Some("\u{f133}".to_string()),
-            prefix: "date".to_string(),
-            description: "inserts current date".to_string(),
-        },
-    ])
-}
+// pub fn generate_test_slash_palette_commands() -> Vec<SlashPaletteCmd> {
+//     Vec::from([
+//         SlashPaletteCmd {
+//             font_awesome_icon: Some("\u{ed0d}".to_string()),
+//             prefix: "js".to_string(),
+//             description: "inserts markdown javascript code block".to_string(),
+//         },
+//         SlashPaletteCmd {
+//             font_awesome_icon: Some("\u{ec10}".to_string()),
+//             prefix: "ai".to_string(),
+//             description: "inserts ai code block".to_string(),
+//         },
+//         SlashPaletteCmd {
+//             font_awesome_icon: Some("\u{f133}".to_string()),
+//             prefix: "date".to_string(),
+//             description: "inserts current date".to_string(),
+//         },
+//     ])
+// }
 
 pub fn next_slash_cmd(
     CommandContext { app_state, .. }: CommandContext,
