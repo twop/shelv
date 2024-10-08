@@ -31,6 +31,7 @@ pub fn show_slash_pallete(
                 search_term: "".to_string(),
                 options: app_state.slash_palette_commands.clone(),
                 selected: 0,
+                update_count: 0,
             })),
         ]
         .into_iter()

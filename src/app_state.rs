@@ -136,6 +136,7 @@ pub struct SlashPalette {
     pub search_term: String,
     pub options: Vec<SlashPaletteCmd>,
     pub selected: usize,
+    pub update_count: u32,
 }
 
 pub struct AppState {

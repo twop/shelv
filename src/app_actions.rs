@@ -887,6 +887,8 @@ fn update_slash_palette(
 
     let search_term = &text_part[1..word_end];
 
+    palette.update_count = palette.update_count.wrapping_add(1);
+
     // if it is exactly the same term just do nothing
     if search_term == palette.search_term {
         return Some(palette);

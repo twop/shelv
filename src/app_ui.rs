@@ -478,6 +478,13 @@ fn render_editor(
         let (palette_rect, palette_actions) =
             render_slash_palette(palette, top_of_frame, theme, ui);
 
+        // TODO hack, only scroll to it on post render
+        // Possibly makt it an app action maybe?
+        if palette.update_count == 1 {
+            // frame_resp.scroll_to_me(None);
+            ui.scroll_to_rect(palette_rect, None);
+        }
+
         let delta = palette_rect.bottom() - text_edit_response.rect.bottom();
         if delta > 0. {
             // that means that overlay is outside text editor bounds
@@ -743,13 +750,14 @@ fn render_slash_palette(
     let point = pos2(top_of_frame.left(), top_of_frame.top() + theme.sizes.xs);
     let prompt_ui_rect = Rect::from_min_max(
         point,
-        point + vec2(theme.sizes.menu_width, theme.sizes.menu_height),
+        point + vec2(top_of_frame.width(), theme.sizes.menu_height),
     );
 
     let mut prompt_ui = ui.new_child(
         UiBuilder::new()
             // .max_rect(Rect::from_pos(point))
             .max_rect(prompt_ui_rect)
+            .id_salt("slash_palette_ui")
             .layout(Layout::top_down(Align::LEFT))
             .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
     );
@@ -760,16 +768,19 @@ fn render_slash_palette(
         .stroke(prompt_ui.visuals().window_stroke)
         .shadow(prompt_ui.visuals().window_shadow)
         .rounding(prompt_ui.visuals().window_rounding)
+        // .id_salt("slash_palette_frame")
         .show(&mut prompt_ui, |ui| {
             set_menu_bar_style(ui);
 
-            ui.set_min_width(top_of_frame.width());
+            // ui.set_min_width(top_of_frame.width());
 
             ScrollArea::vertical()
                 .max_height(theme.sizes.menu_height)
                 .min_scrolled_height(theme.sizes.menu_height)
-                .stick_to_bottom(false)
                 .scroll_bar_visibility(ScrollBarVisibility::AlwaysVisible)
+                .stick_to_bottom(false)
+                .stick_to_right(false)
+                .id_salt("slash_palette_scroll")
                 .show(ui, |ui| {
                     let mut responses: SmallVec<[Response; 10]> = SmallVec::new();
 
@@ -800,7 +811,8 @@ fn render_slash_palette(
                     }
 
                     let is_any_hovered = responses.iter().any(|r| r.hovered());
-                    if !is_any_hovered {
+                    // let is_any_hovered = false;
+                    if !is_any_hovered && slash_palette.update_count > 2 {
                         for (i, resp) in responses.into_iter().enumerate() {
                             if i == slash_palette.selected {
                                 resp.highlight().scroll_to_me(Some(Align::Center));
