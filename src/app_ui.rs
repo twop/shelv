@@ -471,12 +471,23 @@ fn render_editor(
         let slash_char_pos = char_index_from_byte_index(editor_text, palette.slash_byte_pos);
         let relative_slash_pos = galley.pos_from_ccursor(CCursor::new(slash_char_pos));
 
-        let mut top_of_frame =
-            Rect::from_pos(estimated_text_pos + vec2(0., relative_slash_pos.bottom()));
-        top_of_frame.set_width(overlay_layer_width.min(theme.sizes.menu_width));
+        let frame_width = theme.sizes.menu_width;
+        let frame_height = theme.sizes.menu_height;
 
-        let (palette_rect, palette_actions) =
-            render_slash_palette(palette, top_of_frame, theme, ui);
+        let frame_right = estimated_text_pos.x
+            + (overlay_layer_width).min(relative_slash_pos.left() + frame_width);
+
+        let frame_left = frame_right - frame_width;
+
+        let frame_rect = Rect::from_min_size(
+            pos2(
+                frame_left,
+                estimated_text_pos.y + relative_slash_pos.bottom(),
+            ),
+            vec2(frame_width, frame_height),
+        );
+
+        let (palette_rect, palette_actions) = render_slash_palette(palette, frame_rect, theme, ui);
 
         // TODO hack, only scroll to it on post render
         // Possibly makt it an app action maybe?
@@ -740,18 +751,18 @@ fn render_inline_prompt(
 
 fn render_slash_palette(
     slash_palette: &SlashPalette,
-    top_of_frame: Rect,
+    allocated_frame: Rect,
     theme: &AppTheme,
     ui: &mut Ui,
-    // command_list: &CommandList,
 ) -> (Rect, SmallVec<[AppAction; 1]>) {
     let mut resulting_actions = SmallVec::new();
 
-    let point = pos2(top_of_frame.left(), top_of_frame.top() + theme.sizes.xs);
-    let prompt_ui_rect = Rect::from_min_max(
-        point,
-        point + vec2(top_of_frame.width(), theme.sizes.menu_height),
+    let starting_point = pos2(
+        allocated_frame.left(),
+        allocated_frame.top() + theme.sizes.xs,
     );
+
+    let prompt_ui_rect = Rect::from_min_size(starting_point, allocated_frame.size());
 
     let mut prompt_ui = ui.new_child(
         UiBuilder::new()
@@ -775,8 +786,8 @@ fn render_slash_palette(
             // ui.set_min_width(top_of_frame.width());
 
             ScrollArea::vertical()
-                .max_height(theme.sizes.menu_height)
-                .min_scrolled_height(theme.sizes.menu_height)
+                .max_height(allocated_frame.height())
+                .min_scrolled_height(allocated_frame.height())
                 .scroll_bar_visibility(ScrollBarVisibility::AlwaysVisible)
                 .stick_to_bottom(false)
                 .stick_to_right(false)
