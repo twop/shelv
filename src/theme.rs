@@ -119,6 +119,7 @@ pub struct Sizes {
     pub xl: f32,
 
     pub menu_width: f32,
+    pub menu_height: f32,
 
     // semantic
     pub header_footer: f32,
@@ -176,7 +177,9 @@ impl Sizes {
         let m = 12.0;
         let l = 16.0;
         let xl = 24.0;
+
         let menu_width = xl * 10.;
+        let menu_height = xl * 10.;
 
         Self {
             xs,
@@ -185,6 +188,7 @@ impl Sizes {
             l,
             xl,
             menu_width,
+            menu_height,
             header_footer: xl + xs,
             toolbar_icon: l + xs / 2.,
         }

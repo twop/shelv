@@ -3,11 +3,12 @@ use core::f32;
 use eframe::{
     egui::{
         self,
+        scroll_area::ScrollBarVisibility,
         text::{CCursor, CCursorRange, LayoutJob},
         text_edit::TextEditOutput,
         Context, EventFilter, FontFamily, Id, Key, KeyboardShortcut, LayerId, Layout,
-        ModifierNames, Modifiers, Painter, Response, RichText, Sense, TextEdit, TextFormat,
-        TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText, Window,
+        ModifierNames, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit,
+        TextFormat, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
@@ -739,31 +740,19 @@ fn render_slash_palette(
 ) -> (Rect, SmallVec<[AppAction; 1]>) {
     let mut resulting_actions = SmallVec::new();
 
-    let prompt_ui_rect = Rect::from_pos(pos2(
-        top_of_frame.left(),
-        top_of_frame.top() + theme.sizes.xs,
-    ));
+    let point = pos2(top_of_frame.left(), top_of_frame.top() + theme.sizes.xs);
+    let prompt_ui_rect = Rect::from_min_max(
+        point,
+        point + vec2(theme.sizes.menu_width, theme.sizes.menu_height),
+    );
 
     let mut prompt_ui = ui.new_child(
         UiBuilder::new()
+            // .max_rect(Rect::from_pos(point))
             .max_rect(prompt_ui_rect)
             .layout(Layout::top_down(Align::LEFT))
             .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
     );
-
-    // prompt_ui.painter().line_segment(
-    //     [
-    //         pos2(
-    //             top_of_frame.left(),
-    //             relative_selection_start.top() + top_of_frame.top(),
-    //         ),
-    //         pos2(
-    //             top_of_frame.left(),
-    //             relative_selection_end.bottom() + top_of_frame.top(),
-    //         ),
-    //     ],
-    //     Stroke::new(1., theme.colors.subtle_text_color),
-    // );
 
     let frame_resp = egui::Frame::none()
         .fill(theme.colors.code_bg_color)
@@ -774,45 +763,51 @@ fn render_slash_palette(
         .show(&mut prompt_ui, |ui| {
             set_menu_bar_style(ui);
 
-            ui.layout();
-
             ui.set_min_width(top_of_frame.width());
 
-            let mut responses: SmallVec<[Response; 10]> = SmallVec::new();
+            ScrollArea::vertical()
+                .max_height(theme.sizes.menu_height)
+                .min_scrolled_height(theme.sizes.menu_height)
+                .stick_to_bottom(false)
+                .scroll_bar_visibility(ScrollBarVisibility::AlwaysVisible)
+                .show(ui, |ui| {
+                    let mut responses: SmallVec<[Response; 10]> = SmallVec::new();
 
-            for item in
-                Itertools::intersperse(slash_palette.options.iter().enumerate().map(Some), None)
-            {
-                match item {
-                    Some((i, cmd)) => {
-                        let resp = render_slash_cmd(ui, theme, cmd);
+                    for item in Itertools::intersperse(
+                        slash_palette.options.iter().enumerate().map(Some),
+                        None,
+                    ) {
+                        match item {
+                            Some((i, cmd)) => {
+                                let resp = render_slash_cmd(ui, theme, cmd);
 
-                        if resp.clicked() {
-                            println!("clicked on {cmd:#?}");
-                            resulting_actions.push(AppAction::SlashPalette(
-                                SlashPaletteAction::ExecuteCommand(i),
-                            ));
+                                if resp.clicked() {
+                                    println!("clicked on {cmd:#?}");
+                                    resulting_actions.push(AppAction::SlashPalette(
+                                        SlashPaletteAction::ExecuteCommand(i),
+                                    ));
+                                }
+
+                                responses.push(resp);
+                            }
+
+                            None => {
+                                ui.add_space(theme.sizes.s);
+                                ui.separator();
+                                ui.add_space(theme.sizes.s)
+                            }
                         }
-
-                        responses.push(resp);
                     }
 
-                    None => {
-                        ui.add_space(theme.sizes.s);
-                        ui.separator();
-                        ui.add_space(theme.sizes.s)
+                    let is_any_hovered = responses.iter().any(|r| r.hovered());
+                    if !is_any_hovered {
+                        for (i, resp) in responses.into_iter().enumerate() {
+                            if i == slash_palette.selected {
+                                resp.highlight().scroll_to_me(Some(Align::Center));
+                            }
+                        }
                     }
-                }
-            }
-
-            let is_any_hovered = responses.iter().any(|r| r.hovered());
-            if !is_any_hovered {
-                for (i, resp) in responses.into_iter().enumerate() {
-                    if i == slash_palette.selected {
-                        resp.highlight();
-                    }
-                }
-            }
+                });
         })
         .response;
 
@@ -834,7 +829,7 @@ fn render_slash_cmd(ui: &mut Ui, theme: &AppTheme, cmd: &SlashPaletteCmd) -> egu
 
     let header_font = TextFormat::simple(
         FontId::new(theme.fonts.size.normal, theme.fonts.family.normal.clone()),
-        theme.colors.normal_text_color,
+        theme.colors.md_code,
     );
 
     let shortcut_font = TextFormat::simple(
