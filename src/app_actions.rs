@@ -39,6 +39,7 @@ pub enum SlashPaletteAction {
     Update,
     NextCommand,
     PrevCommand,
+    SelectCommand(usize),
     ExecuteCommand(usize),
 }
 
@@ -804,6 +805,13 @@ pub fn process_app_action(
 
                     SmallVec::new()
                 }
+                SP::SelectCommand(i) => {
+                    if let Some(pallete) = state.slash_palette.as_mut() {
+                        pallete.selected = i
+                    }
+
+                    SmallVec::new()
+                },
 
                 SP::ExecuteCommand(index) => {
                     println!("Execute slash command: {index}");
@@ -870,6 +878,7 @@ pub fn process_app_action(
                         FocusTarget::CurrentNote,
                     ))])
                 }
+            
             }
         }
     }

@@ -493,6 +493,7 @@ fn render_editor(
         // Possibly makt it an app action maybe?
         if palette.update_count == 1 {
             // frame_resp.scroll_to_me(None);
+            println!("scrolling to palette");
             ui.scroll_to_rect(palette_rect, None);
         }
 
@@ -627,6 +628,7 @@ fn render_inline_prompt(
 
             if prompt_input_resp.response.gained_focus() {
                 // println!("prompt input gained focus");
+                println!("prompt input gained focus");
                 prompt_input_resp.response.scroll_to_me(Some(Align::Center));
             }
 
@@ -810,6 +812,15 @@ fn render_slash_palette(
                                     ));
                                 }
 
+                                ui.input(|input| {
+                                    if input.pointer.is_moving() && resp.hovered() {
+                                        println!("hovered on {cmd:#?} AND MOVING");
+                                        resulting_actions.push(AppAction::SlashPalette(
+                                            SlashPaletteAction::SelectCommand(i),
+                                        ));
+                                    }
+                                });
+
                                 responses.push(resp);
                             }
 
@@ -826,7 +837,12 @@ fn render_slash_palette(
                     if !is_any_hovered && slash_palette.update_count > 2 {
                         for (i, resp) in responses.into_iter().enumerate() {
                             if i == slash_palette.selected {
-                                resp.highlight().scroll_to_me(Some(Align::Center));
+                                println!("scroll_to_me {i}");
+                                let is_visible = ui.is_rect_visible(resp.rect);
+                                let resp = resp.highlight();
+                                if !is_visible {
+                                    resp.scroll_to_me(Some(Align::Center));
+                                }
                             }
                         }
                     }
