@@ -244,6 +244,7 @@ impl AppIO for RealAppIO {
 
         tokio::spawn(async move {
             let chat_req = ChatRequest::new(vec![
+                ChatMessage::system(include_str!("./default-notes/shelv-system-prompt.md")),
                 ChatMessage::system(system_prompt.unwrap_or_default()),
                 ChatMessage::system(
                     [
