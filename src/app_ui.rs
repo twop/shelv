@@ -23,7 +23,7 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    app_actions::{AppAction, SlashPaletteAction},
+    app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
         ComputedLayout, InlineLLMPromptState, InlinePromptStatus, LayoutParams, MsgToApp,
         SlashPalette, SlashPaletteCmd,
@@ -828,9 +828,13 @@ fn render_slash_palette(
 
                                 if resp.clicked() {
                                     println!("clicked on {cmd:#?}");
-                                    resulting_actions.push(AppAction::SlashPalette(
+
+                                    resulting_actions.push(AppAction::FocusRequest(FocusTarget::CurrentNote));
+                                    // TODO fix
+                                    // This is quite silly, but it seems to take a few renders before the cursor is properly restored.
+                                    resulting_actions.push(AppAction::DeferToPostRender(Box::new(AppAction::DeferToPostRender(Box::new(AppAction::SlashPalette(
                                         SlashPaletteAction::ExecuteCommand(i),
-                                    ));
+                                    ))))));
                                 }
 
                                 ui.input(|input| {

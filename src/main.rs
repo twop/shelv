@@ -316,13 +316,23 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                     match new_actions.first() {
                         Some(AppAction::SlashPalette(SlashPaletteAction::Update)) => {
                             // Comment out to stop the spammy logging
-                            // println!("---enqueued actions = {new_actions:#?}");
+                            println!("---enqueued actions = AppAction::SlashPalette(SlashPaletteAction::Update)");
                         }
-                        Some(AppAction::DeferToPostRender(_)) => {
+                        Some(AppAction::DeferToPostRender(new_actions)) => {
+                            match new_actions.as_ref() {
+                                AppAction::SlashPalette(SlashPaletteAction::Update) => {
+                                    // do nothing
+                                }
+                                _ => {
+                                    println!("---enqueued actions = {new_actions:#?}");
+                                }
+                            };
                             // Comment out to stop the spammy logging
-                            // println!("---enqueued actions = {new_actions:#?}");
+                            //println!("---enqueued actions = {new_actions:#?}");
                         }
-                        _ => println!("---enqueued actions = {new_actions:#?}"),
+                        _ => {
+                            println!("---enqueued actions = {new_actions:#?}");
+                        }
                     }
                 }
 
@@ -334,7 +344,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         let note_count = app_state.notes.len() - 1;
 
         let note = &app_state.notes.get(&app_state.selected_note).unwrap();
-        let cursor = note.cursor;
+        let cursor = note.cursor().or(note.last_cursor());
 
         let editor_text = &note.text;
 
@@ -401,11 +411,21 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         // TODO it seems that this can be done inside process_app_action
         app_state.text_structure = Some(updated_structure);
         app_state.computed_layout = updated_layout;
-        app_state
-            .notes
-            .get_mut(&app_state.selected_note)
-            .unwrap()
-            .cursor = byte_cursor;
+        let note = app_state.notes.get_mut(&app_state.selected_note).unwrap();
+        match byte_cursor {
+            Some(cursor) => {
+                if note.cursor().is_none() {
+                    println!("[MAIN] Restored cursor from rendered data");
+                }
+                note.update_cursor(cursor)
+            },
+            None => {
+                if note.cursor().is_some() {
+                    println!("[MAIN] Reseting cursor from rendered data");
+                }
+                note.reset_cursor()
+            }
+        }
 
         // post render processing
         for action in actions {

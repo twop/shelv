@@ -333,7 +333,7 @@ pub fn map_text_command_to_command_handler(
 pub fn try_extract_text_command_context(app_state: &AppState) -> Option<TextCommandContext<'_>> {
     let note = app_state.notes.get(&app_state.selected_note).unwrap();
 
-    let cursor = note.cursor?;
+    let cursor = note.cursor().or(note.last_cursor())?;
 
     let text_structure = app_state.text_structure.as_ref()?;
 
