@@ -811,7 +811,7 @@ pub fn process_app_action(
                     }
 
                     SmallVec::new()
-                },
+                }
 
                 SP::ExecuteCommand(index) => {
                     println!("Execute slash command: {index}");
@@ -878,7 +878,6 @@ pub fn process_app_action(
                         FocusTarget::CurrentNote,
                     ))])
                 }
-            
             }
         }
     }
@@ -905,11 +904,18 @@ fn update_slash_palette(
     }
 
     // if some => means that we still have focus cursor
-    let (note_cursor, text_part) = state.notes.get(&state.selected_note).and_then(|note| {
-        note.cursor
-            .map(|c| c.ordered())
-            .map(|cursor| (cursor, &note.text[palette.slash_byte_pos..]))
-    })?;
+    let (note_cursor, text_part) = state
+        .notes
+        .get(&state.selected_note)
+        .and_then(|note| {
+            note.cursor
+                .map(|c| c.ordered())
+                .map(|cursor| (cursor, &note.text[palette.slash_byte_pos..]))
+        })
+        .or_else(|| {
+            println!("## hide Slash Palette: Cursor changed position");
+            return None;
+        })?;
 
     if !text_part.starts_with("/") {
         // it means that either text was modified above or user deleted the "/"

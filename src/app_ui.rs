@@ -6,14 +6,16 @@ use eframe::{
         scroll_area::ScrollBarVisibility,
         text::{CCursor, CCursorRange, LayoutJob},
         text_edit::TextEditOutput,
-        Context, EventFilter, FontFamily, Id, Key, KeyboardShortcut, LayerId, Layout,
-        ModifierNames, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit,
-        TextFormat, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText, Window,
+        Button, Context, CursorIcon, EventFilter, FontFamily, Id, Key, KeyboardShortcut, Label,
+        LayerId, Layout, Margin, ModifierNames, Modifiers, Painter, Pos2, Response, RichText,
+        Rounding, ScrollArea, Sense, TextEdit, TextFormat, TopBottomPanel, Ui, UiBuilder,
+        UiStackInfo, Vec2, WidgetText, Window,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
     Frame,
 };
+use egui_flex::{item, Flex, FlexItem};
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
 // use itertools::Itertools;
@@ -803,7 +805,26 @@ fn render_slash_palette(
                     ) {
                         match item {
                             Some((i, cmd)) => {
-                                let resp = render_slash_cmd(ui, theme, cmd);
+                                let selected = i == slash_palette.selected;
+                                let mut resp = render_slash_cmd(ui, theme, cmd, selected)
+                                    .interact(Sense {
+                                        click: true,
+                                        drag: false,
+                                        focusable: false,
+                                    })
+                                    .on_hover_cursor(CursorIcon::PointingHand);
+
+                                if selected {
+                                    let is_visible = ui.is_rect_visible(resp.rect);
+                                    if !is_visible {
+                                        resp.scroll_to_me(Some(Align::Center));
+                                    }
+                                }
+
+                                if resp.gained_focus() {
+                                    // TODO remove, trying to debug what is getting focus
+                                    println!("has focus!!")
+                                }
 
                                 if resp.clicked() {
                                     println!("clicked on {cmd:#?}");
@@ -813,11 +834,15 @@ fn render_slash_palette(
                                 }
 
                                 ui.input(|input| {
-                                    if input.pointer.is_moving() && resp.hovered() {
-                                        println!("hovered on {cmd:#?} AND MOVING");
-                                        resulting_actions.push(AppAction::SlashPalette(
-                                            SlashPaletteAction::SelectCommand(i),
-                                        ));
+                                    if input.pointer.is_moving()
+                                        || input.smooth_scroll_delta != Vec2::ZERO
+                                        || input.raw_scroll_delta != Vec2::ZERO
+                                    {
+                                        if resp.contains_pointer() {
+                                            resulting_actions.push(AppAction::SlashPalette(
+                                                SlashPaletteAction::SelectCommand(i),
+                                            ));
+                                        }
                                     }
                                 });
 
@@ -825,24 +850,7 @@ fn render_slash_palette(
                             }
 
                             None => {
-                                ui.add_space(theme.sizes.s);
                                 ui.separator();
-                                ui.add_space(theme.sizes.s)
-                            }
-                        }
-                    }
-
-                    let is_any_hovered = responses.iter().any(|r| r.hovered());
-                    // let is_any_hovered = false;
-                    if !is_any_hovered && slash_palette.update_count > 2 {
-                        for (i, resp) in responses.into_iter().enumerate() {
-                            if i == slash_palette.selected {
-                                println!("scroll_to_me {i}");
-                                let is_visible = ui.is_rect_visible(resp.rect);
-                                let resp = resp.highlight();
-                                if !is_visible {
-                                    resp.scroll_to_me(Some(Align::Center));
-                                }
                             }
                         }
                     }
@@ -858,9 +866,12 @@ fn render_slash_palette(
     (frame_resp.rect, resulting_actions)
 }
 
-fn render_slash_cmd(ui: &mut Ui, theme: &AppTheme, cmd: &SlashPaletteCmd) -> egui::Response {
-    let mut layout_job = LayoutJob::default();
-
+fn render_slash_cmd(
+    ui: &mut Ui,
+    theme: &AppTheme,
+    cmd: &SlashPaletteCmd,
+    selected: bool,
+) -> egui::Response {
     let phosphor_icon_font = TextFormat::simple(
         FontId::new(theme.fonts.size.h4, FontFamily::Name("phosphor".into())),
         theme.colors.normal_text_color,
@@ -881,26 +892,92 @@ fn render_slash_cmd(ui: &mut Ui, theme: &AppTheme, cmd: &SlashPaletteCmd) -> egu
         theme.colors.subtle_text_color,
     );
 
-    if let Some(icon) = &cmd.phosphor_icon {
-        layout_job.append(&icon, 0., phosphor_icon_font.clone());
-        layout_job.append(" ", 0., phosphor_icon_font.clone());
-    }
+    ui.scope(|ui| {
+        let hover_visuals = ui.visuals_mut().widgets.hovered;
+        ui.visuals_mut().widgets.hovered = ui.visuals().widgets.inactive;
 
-    layout_job.append(&cmd.prefix, 0., header_font.clone());
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+        ui.style_mut().interaction.selectable_labels = false;
 
-    if let Some(shortcut) = &cmd.shortcut {
-        layout_job.append("\t", 0., header_font.clone());
-        layout_job.append(
-            &format!("{}", format_mac_shortcut(*shortcut)),
-            0.,
-            shortcut_font.clone(),
-        );
-    }
+        // let label = Label::new(WidgetText::LayoutJob(layout_job)).sense(Sense::click());
 
-    layout_job.append("\n", 0., header_font);
-    layout_job.append(&cmd.description, 0., description_font);
+        Flex::vertical()
+            .align_content(egui_flex::FlexAlignContent::Stretch)
+            .wrap(false)
+            .show(ui, |flex| {
+                let mut frame = egui::Frame::group(flex.ui().style())
+                    .outer_margin(Margin::same(0.))
+                    .inner_margin(Margin::same(4.))
+                    // .rounding(Rounding::ZERO)
+                    .stroke(Stroke::new(0., Color32::TRANSPARENT));
+                if selected {
+                    frame = frame.fill(hover_visuals.bg_fill);
+                }
 
-    ui.button(WidgetText::LayoutJob(layout_job))
+                flex.add_flex_frame(
+                    item(),
+                    Flex::vertical()
+                        .align_content(egui_flex::FlexAlignContent::Stretch)
+                        .wrap(false),
+                    frame,
+                    |flex| {
+                        flex.add_flex(item().grow(1.), Flex::horizontal(), |flex| {
+                            if let Some(icon) = &cmd.phosphor_icon {
+                                flex.add(
+                                    item(),
+                                    Label::new(
+                                        RichText::new(icon)
+                                            .font(phosphor_icon_font.font_id)
+                                            .color(phosphor_icon_font.color),
+                                    ),
+                                );
+                            }
+                            flex.add_simple(item().basis(8.), |ui| {});
+                            flex.add(
+                                item(),
+                                Label::new(
+                                    RichText::new(&cmd.prefix)
+                                        .font(header_font.font_id)
+                                        .color(header_font.color),
+                                ),
+                            );
+
+                            flex.grow();
+
+                            if let Some(shortcut) = &cmd.shortcut {
+                                flex.add(
+                                    item(),
+                                    Label::new(
+                                        RichText::new(format!(
+                                            "{}",
+                                            format_mac_shortcut(*shortcut)
+                                        ))
+                                        .font(shortcut_font.font_id)
+                                        .color(shortcut_font.color),
+                                    ),
+                                );
+                            }
+                        });
+                        flex.add_simple(item().basis(4.), |ui| {});
+                        // layout_job.append(&cmd.description, 0., description_font);
+                        flex.add_flex(item().grow(1.), Flex::horizontal(), |flex| {
+                            flex.add(
+                                item(),
+                                Label::new(
+                                    RichText::new(&cmd.description)
+                                        .font(description_font.font_id)
+                                        .color(description_font.color),
+                                ),
+                            );
+                            flex.grow();
+                        });
+                    },
+                )
+                .response
+            })
+            .response
+    })
+    .response
 }
 
 fn restore_cursor_from_note_state(

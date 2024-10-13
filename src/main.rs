@@ -3,7 +3,7 @@
 #![feature(offset_of)]
 #![feature(generic_const_exprs)]
 
-use app_actions::{compute_app_focus, process_app_action, AppAction, AppIO};
+use app_actions::{compute_app_focus, process_app_action, AppAction, AppIO, SlashPaletteAction};
 use app_io::RealAppIO;
 use app_state::{compute_editor_text_id, AppInitData, AppState, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
@@ -298,7 +298,14 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
         // now apply prepared changes, and update text structure and cursor appropriately
         for action in action_list {
-            println!("---processing action = {action:#?}");
+            match action {
+                AppAction::SlashPalette(SlashPaletteAction::Update) => {
+                    // Comment out to stop the spammy logging
+                    //  println!("---processing action = {action:#?}")
+                }
+                _ => println!("---processing action = {action:#?}"),
+            }
+
             let mut action_buffer: SmallVec<[AppAction; 4]> = SmallVec::from_iter([action]);
 
             while let Some(to_process) = action_buffer.pop() {
@@ -306,7 +313,17 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                     process_app_action(to_process, ctx, app_state, text_edit_id, &mut self.app_io);
 
                 if new_actions.len() > 0 {
-                    println!("---enqueued actions = {new_actions:#?}");
+                    match new_actions.first() {
+                        Some(AppAction::SlashPalette(SlashPaletteAction::Update)) => {
+                            // Comment out to stop the spammy logging
+                            // println!("---enqueued actions = {new_actions:#?}");
+                        }
+                        Some(AppAction::DeferToPostRender(_)) => {
+                            // Comment out to stop the spammy logging
+                            // println!("---enqueued actions = {new_actions:#?}");
+                        }
+                        _ => println!("---enqueued actions = {new_actions:#?}"),
+                    }
                 }
 
                 action_buffer.extend(new_actions);
