@@ -518,9 +518,9 @@ pub fn process_app_action(
                 return SmallVec::new();
             };
 
-            if feedback.feedback_data.include_current_note {
-                sentry::configure_scope(|scope| {
-                    let mut map = std::collections::BTreeMap::new();
+            sentry::configure_scope(|scope| {
+                let mut map = std::collections::BTreeMap::new();
+                if feedback.feedback_data.include_current_note {
                     map.insert(
                         String::from("text_structure"),
                         format!("{:#?}", state.text_structure).into(),
@@ -529,38 +529,38 @@ pub fn process_app_action(
                         String::from("selected_note"),
                         format!("{:?}", state.selected_note).into(),
                     );
+                }
 
-                    map.insert(
-                        String::from("feedback"),
-                        to_value(feedback.feedback_data.clone()).unwrap_or_default(),
-                    );
-
-                    scope.set_context("state", sentry::protocol::Context::Other(map));
-
-                    let mut map = std::collections::BTreeMap::new();
-                    map.insert(
-                        String::from("contact"),
-                        feedback.feedback_data.contact_info.clone().into(),
-                    );
-                    scope.set_user(Some(sentry::User {
-                        other: map,
-                        ..Default::default()
-                    }));
-                });
-
-                let result = sentry::capture_message(
-                    format!("Feedback: {:?}", feedback.feedback_data.feedback_text).as_str(),
-                    match feedback.feedback_data.feedback_type {
-                        Some(FeedbackType::Negative) => sentry::Level::Warning,
-                        _ => sentry::Level::Info,
-                    },
+                map.insert(
+                    String::from("feedback"),
+                    to_value(feedback.feedback_data.clone()).unwrap_or_default(),
                 );
 
-                println!("Feedback sent: {:?}", result);
+                scope.set_context("state", sentry::protocol::Context::Other(map));
 
-                feedback.is_sent = true;
-                feedback.is_feedback_open = false;
-            }
+                let mut map = std::collections::BTreeMap::new();
+                map.insert(
+                    String::from("contact"),
+                    feedback.feedback_data.contact_info.clone().into(),
+                );
+                scope.set_user(Some(sentry::User {
+                    other: map,
+                    ..Default::default()
+                }));
+            });
+
+            let result = sentry::capture_message(
+                format!("Feedback: {:?}", feedback.feedback_data.feedback_text).as_str(),
+                match feedback.feedback_data.feedback_type {
+                    Some(FeedbackType::Negative) => sentry::Level::Warning,
+                    _ => sentry::Level::Info,
+                },
+            );
+
+            println!("Feedback sent: {:?}", result);
+
+            feedback.is_sent = true;
+            feedback.is_feedback_open = false;
             SmallVec::new()
         }
 

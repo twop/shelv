@@ -60,60 +60,13 @@ impl<'a> Feedback<'a> {
         let avail_rect = ui.available_rect_before_wrap();
 
         ui.painter().line_segment(
-            [avail_rect.left(), avail_rect.right()].map(|x| pos2(x, avail_rect.top() + 22.)),
+            [avail_rect.left(), avail_rect.right()]
+                .map(|x| pos2(x, avail_rect.top() + self.theme.sizes.header_footer)),
             Stroke::new(1.0, self.theme.colors.outline_fg),
         );
 
         fn flex_spacer(flex: &mut FlexInstance) -> InnerResponse<()> {
             flex.add_simple(item().grow(1.0).basis(0.0), |_| {})
-        }
-
-        fn add_flex_justified<W: egui::Widget>(
-            flex: &mut FlexInstance,
-            justification: FlexJustify,
-            widgets: Vec<W>,
-        ) -> InnerResponse<()>
-        where
-            W: FlexWidget,
-        {
-            let widgets: Vec<_> = match justification {
-                FlexJustify::Start => widgets.into_iter().map(Some).chain([None]).collect(),
-                FlexJustify::End => [None]
-                    .into_iter()
-                    .chain(widgets.into_iter().map(Some))
-                    .collect(),
-                FlexJustify::Center => [None]
-                    .into_iter()
-                    .chain(widgets.into_iter().map(Some))
-                    .chain(None)
-                    .collect(),
-                FlexJustify::SpaceBetween => {
-                    Iterator::intersperse_with(widgets.into_iter().map(Some), || None)
-                        .collect::<Vec<_>>()
-                }
-                FlexJustify::SpaceAround => todo!(),
-                FlexJustify::SpaceEvenly => [None]
-                    .into_iter()
-                    .chain(Iterator::intersperse_with(
-                        widgets.into_iter().map(Some),
-                        || None,
-                    ))
-                    .chain(None)
-                    .collect::<Vec<_>>(),
-            };
-
-            flex.add_flex(item(), Flex::horizontal(), |flex| {
-                for widget_fn in widgets {
-                    match widget_fn {
-                        Some(widget) => {
-                            flex.add(item(), widget);
-                        }
-                        None => {
-                            flex.add_simple(item().grow(1.0).basis(0.0), |_| {});
-                        }
-                    }
-                }
-            })
         }
 
         let resp = ui.scope(|ui| {
@@ -169,7 +122,7 @@ impl<'a> Feedback<'a> {
                                         Label::new(
                                             RichText::new("Name / Email")
                                                 .font(FontId {
-                                                    size: 12.,
+                                                    size: self.theme.fonts.size.normal2,
                                                     family: self.theme.fonts.family.bold.clone(),
                                                 })
                                                 .color(self.theme.colors.subtle_text_color),
@@ -199,7 +152,7 @@ impl<'a> Feedback<'a> {
                                         Label::new(
                                             RichText::new("Feedback")
                                                 .font(FontId {
-                                                    size: 12.,
+                                                    size: self.theme.fonts.size.normal2,
                                                     family: self.theme.fonts.family.bold.clone(),
                                                 })
                                                 .color(self.theme.colors.subtle_text_color),
@@ -214,7 +167,7 @@ impl<'a> Feedback<'a> {
                                             &mut self.data.include_current_note,
                                             RichText::new("Include current note")
                                                 .font(FontId {
-                                                    size: 10.,
+                                                    size: self.theme.fonts.size.normal2,
                                                     family: self.theme.fonts.family.normal.clone(),
                                                 })
                                                 .color(self.theme.colors.subtle_text_color),
@@ -240,7 +193,7 @@ impl<'a> Feedback<'a> {
                                     Label::new(
                                         RichText::new("Experience?")
                                             .font(FontId {
-                                                size: 12.,
+                                                size: self.theme.fonts.size.normal2,
                                                 family: self.theme.fonts.family.bold.clone(),
                                             })
                                             .color(self.theme.colors.subtle_text_color),
@@ -309,7 +262,7 @@ impl<'a> Feedback<'a> {
                             let send_btn_res = flex.add(
                                 item(),
                                 Button::new(AppIcon::Send.render_with_text(
-                                    12.,
+                                    self.theme.fonts.size.normal2,
                                     self.theme.colors.md_body,
                                     "Send Feedback",
                                 ))

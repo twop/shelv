@@ -165,6 +165,7 @@ pub struct FontSizes {
     pub h3: f32,
     pub h4: f32,
     pub normal: f32,
+    pub normal2: f32,
     pub small: f32,
 }
 
@@ -176,6 +177,7 @@ impl FontSizes {
             h3: 22.,
             h4: 16.,
             normal: 14.,
+            normal2: 12.,
             small: 8.,
         }
     }
