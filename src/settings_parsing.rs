@@ -18,9 +18,6 @@ use crate::{
     text_structure::{SpanKind, TextStructure},
 };
 
-pub const SETTINGS_BLOCK_LANG: &str = "settings";
-pub const SETTINGS_BLOCK_LANG_OUTPUT: &str = "settings#";
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct LlmSettings {
     pub model: String,
@@ -28,44 +25,54 @@ pub struct LlmSettings {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct TopLevelKdlSettings {
-    bindings: Vec<Binding>,
-    global_bindings: Vec<GlobalBinding>,
-    llm_settings: Vec<LlmSettings>,
+pub struct TopLevelKdlSettings {
+    pub bindings: Vec<LocalBinding>,
+    pub global_bindings: Vec<GlobalBinding>,
+    pub llm_settings: Vec<LlmSettings>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum InsertTextTarget {
+pub enum InsertTextTarget {
     Selection,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct InsertText {
-    target: InsertTextTarget,
-    text: String,
+pub struct ScriptCall {
+    func_name: String,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum Command {
+pub enum TextSource {
+    Inline(String),
+    Script(String),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParsedCmdInsertText {
+    pub target: InsertTextTarget,
+    pub text: TextSource,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ParsedCommand {
     Predefined(BuiltInCommand),
-    InsertText(InsertText),
+    InsertText(ParsedCmdInsertText),
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum GlobalCommand {
+pub enum GlobalCommand {
     ShowHideApp,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct Binding {
-    shortcut: KeyboardShortcut,
-    command: Command,
+pub struct LocalBinding {
+    pub shortcut: KeyboardShortcut,
+    pub command: ParsedCommand,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct GlobalBinding {
-    shortcut: KeyboardShortcut,
-    command: GlobalCommand,
+pub struct GlobalBinding {
+    pub shortcut: KeyboardShortcut,
+    pub command: GlobalCommand,
 }
 
 fn try_parse_modifier(mod_str: &str) -> Option<Modifiers> {
@@ -80,7 +87,7 @@ fn try_parse_modifier(mod_str: &str) -> Option<Modifiers> {
 }
 
 #[derive(Debug)]
-enum SettingsParseError {
+pub enum SettingsParseError {
     UnexpectedNode(SourceSpan, &'static str),
     MismatchedArgsCount(SourceSpan, usize),
     MismatchedType {
@@ -125,11 +132,11 @@ fn parse_keyboard_shortcut(attr: &str) -> Result<KeyboardShortcut, String> {
     Ok(KeyboardShortcut::new(modifiers, key))
 }
 
-fn parse_command(node: &KdlNode) -> Result<Command, SettingsParseError> {
+fn parse_command(node: &KdlNode) -> Result<ParsedCommand, SettingsParseError> {
     match node.name().value() {
-        "InsertText" => parse_replace_text_command(node).map(Command::InsertText),
+        "InsertText" => parse_replace_text_command(node).map(ParsedCommand::InsertText),
         name => match try_parse_builtin_command(name, node.entries()) {
-            Some(cmd) => Ok(Command::Predefined(cmd)),
+            Some(cmd) => Ok(ParsedCommand::Predefined(cmd)),
             None => Err(SettingsParseError::UnknownCommand(node.name().to_string())),
         },
     }
@@ -172,7 +179,7 @@ fn parse_global_command(node: &KdlNode) -> Result<GlobalCommand, SettingsParseEr
     }
 }
 
-fn parse_replace_text_command(node: &KdlNode) -> Result<InsertText, SettingsParseError> {
+fn parse_replace_text_command(node: &KdlNode) -> Result<ParsedCmdInsertText, SettingsParseError> {
     use SettingsParseError as PE;
     if node.entries().len() > 0 {
         Err(PE::MismatchedArgsCount(node.span().clone(), 0))
@@ -193,11 +200,8 @@ InsertText {
 
         let target = children
             .get("target")
-            .ok_or_else(|| PE::MissingNode {
-                span: children.span().clone(),
-                node: "target".to_string(),
-            })
-            .and_then(parse_replace_text_target)?;
+            .map(parse_replace_text_target)
+            .unwrap_or(Ok(InsertTextTarget::Selection))?;
 
         let text = children
             .get("text")
@@ -205,9 +209,55 @@ InsertText {
                 span: children.span().clone(),
                 node: "text".to_string(),
             })
-            .and_then(parse_replace_text_with)?;
+            .and_then(parse_text_source)?;
 
-        Ok(InsertText { target, text })
+        Ok(ParsedCmdInsertText { target, text })
+    }
+}
+
+fn parse_text_source(source_node: &KdlNode) -> Result<TextSource, SettingsParseError> {
+    use SettingsParseError as PE;
+
+    match source_node.entries() {
+        [entry] => {
+            // Parse inline text
+            match &entry.value() {
+                KdlValue::String(s) | KdlValue::RawString(s) => Ok(TextSource::Inline(s.clone())),
+                _ => Err(PE::MismatchedType {
+                    span: entry.span().clone(),
+                    expected: "String",
+                }),
+            }
+        }
+        [] => {
+            // Parse script call
+            let children = source_node.children().ok_or_else(|| {
+                PE::MismatchedChildren(
+                    source_node.span().clone(),
+                    "Expected either a string or a 'call' node".to_string(),
+                )
+            })?;
+
+            let call_node = children.get("call").ok_or_else(|| PE::MissingNode {
+                span: children.span().clone(),
+                node: "call".to_string(),
+            })?;
+
+            match call_node.entries() {
+                [entry] => match &entry.value() {
+                    KdlValue::String(s) | KdlValue::RawString(s) => {
+                        Ok(TextSource::Script(s.clone()))
+                    }
+
+                    _ => Err(PE::MismatchedType {
+                        span: entry.span().clone(),
+                        expected: "String",
+                    }),
+                },
+                _ => Err(PE::MismatchedArgsCount(call_node.span().clone(), 1)),
+            }
+        }
+        _ => Err(PE::MismatchedArgsCount(source_node.span().clone(), 1)),
     }
 }
 
@@ -217,6 +267,7 @@ fn parse_replace_text_target(target: &KdlNode) -> Result<InsertTextTarget, Setti
     if target.entries().len() != 1 {
         return Err(PE::MismatchedArgsCount(target.span().clone(), 1));
     }
+
     let target_entry = &target.entries()[0];
     if target_entry.name().is_some() {
         return Err(PE::CoulndntParseCommand(
@@ -227,10 +278,10 @@ fn parse_replace_text_target(target: &KdlNode) -> Result<InsertTextTarget, Setti
     let target = match target_entry.value() {
         kdl::KdlValue::RawString(s) | kdl::KdlValue::String(s) => s.as_str(),
         _ => {
-            return (Err(PE::MismatchedType {
+            return Err(PE::MismatchedType {
                 span: target_entry.span().clone(),
                 expected: "String",
-            }))
+            })
         }
     };
 
@@ -314,16 +365,18 @@ fn parse_binding<Cmd>(
     Ok((shortcut, command))
 }
 
-fn parse_top_level(block_str: &str) -> Result<TopLevelKdlSettings, SettingsParseError> {
+pub fn parse_top_level_settings_block(
+    block_str: &str,
+) -> Result<TopLevelKdlSettings, SettingsParseError> {
     let doc = KdlDocument::from_str(block_str).map_err(SettingsParseError::ParseKdlErro)?;
 
-    let bindings: Result<Vec<Binding>, SettingsParseError> = doc
+    let bindings: Result<Vec<LocalBinding>, SettingsParseError> = doc
         .nodes()
         .iter()
         .filter(|node| node.name().value() == "bind")
         .map(|node| {
             parse_binding(node, parse_command)
-                .map(|(shortcut, command)| Binding { shortcut, command })
+                .map(|(shortcut, command)| LocalBinding { shortcut, command })
         })
         .collect();
 
@@ -386,204 +439,6 @@ fn parse_llm_block(node: &KdlNode) -> Result<LlmSettings, SettingsParseError> {
     })
 }
 
-pub struct SettingsNoteEvalContext<'cx, IO: AppIO> {
-    // parsed_bindings: Vec<Result<TopLevelKdlSettings, SettingsParseError>>,
-    pub cmd_list: &'cx mut CommandList,
-    pub should_force_eval: bool,
-    pub app_io: &'cx mut IO,
-    pub llm_settings: &'cx mut Option<LlmSettings>,
-}
-
-impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
-    fn begin(&mut self) {
-        println!("##### STARTING settings eval");
-
-        self.cmd_list.retain_only(|cmd| cmd.kind.is_some());
-        self.cmd_list.reset_builtins_to_default_keybindings();
-
-        // TODO handle error case
-        self.app_io.cleanup_all_global_hotkeys().unwrap();
-    }
-
-    fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind> {
-        match lang {
-            SETTINGS_BLOCK_LANG => Some(CodeBlockKind::Source),
-
-            output if output.starts_with(SETTINGS_BLOCK_LANG_OUTPUT) => {
-                let hex_str = &output.strip_prefix(SETTINGS_BLOCK_LANG_OUTPUT)?;
-                Some(CodeBlockKind::Output(SourceHash::parse(hex_str)))
-            }
-
-            _ => None,
-        }
-    }
-
-    fn eval_block(&mut self, body: &str, hash: SourceHash) -> BlockEvalResult {
-        let result = parse_top_level(body);
-
-        // TODO report if applying bindings failed
-
-        match result {
-            Ok(mut settings) => {
-                let has_any_bindings =
-                    !(settings.global_bindings.is_empty() && settings.bindings.is_empty());
-
-                for GlobalBinding { shortcut, command } in settings.global_bindings.iter() {
-                    println!("applying global {shortcut:?} to {command:?}");
-                    match command {
-                        GlobalCommand::ShowHideApp => {
-                            match self.app_io.bind_global_hotkey(
-                                *shortcut,
-                                Box::new(|| MsgToApp::ToggleVisibility),
-                            ) {
-                                Ok(_) => {
-                                    println!("registered global {shortcut:?} to show/hide Shelv");
-                                }
-
-                                Err(err) => {
-                                    println!("error registering global {shortcut:?} to show/hide Shelv, err = {err:?}");
-
-                                    return BlockEvalResult {
-                                        body: format!("error: {:#?}", err),
-                                        output_lang: format!("settings#{}", hash.to_string()),
-                                    };
-                                }
-                            }
-                        }
-                    }
-                }
-
-                for Binding { shortcut, command } in settings.bindings {
-                    println!("applying {shortcut:?} to {command:?}");
-                    match command {
-                        Command::Predefined(kind) => {
-                            self.cmd_list
-                                .set_or_replace_builtin_shortcut(shortcut, kind);
-                        }
-
-                        Command::InsertText(cmd) => self.cmd_list.add(EditorCommand::user_defined(
-                            // "replace text", // TODO figure out the name
-                            shortcut,
-                            map_text_command_to_command_handler(move |ctx| {
-                                run_replace_text_cmd(ctx, &cmd)
-                            }),
-                        )),
-                    }
-                }
-
-                if let Some(last_llm_settings) = settings.llm_settings.pop() {
-                    *self.llm_settings = Some(last_llm_settings);
-                }
-
-                // TODO temporarily disabled until we improve
-                let has_any_bindings = false;
-
-                let body = match has_any_bindings {
-                    true => {
-                        let mut body = "applied\n\nEffective bindings after the block:".to_string();
-                        for (binding_name, shortcut) in
-                            settings.global_bindings.into_iter().map(|binding| {
-                                match binding.command {
-                                    GlobalCommand::ShowHideApp => ("ShowHideApp", binding.shortcut),
-                                }
-                            })
-                        {
-                            body.push_str(&format!(
-                                "\n{} -> {}",
-                                binding_name,
-                                format_mac_shortcut(shortcut)
-                            ));
-                        }
-
-                        for (promoted_cmd, shortcut) in
-                            PROMOTED_COMMANDS.into_iter().filter_map(|cmd| {
-                                self.cmd_list
-                                    .find(cmd)
-                                    .and_then(|editor_cmd| editor_cmd.kind.zip(editor_cmd.shortcut))
-                            })
-                        {
-                            body.push_str(&format!(
-                                "\n{} -> {}",
-                                promoted_cmd.name(),
-                                format_mac_shortcut(shortcut)
-                            ));
-                        }
-                        body
-                    }
-                    false => format!("applied"),
-                };
-
-                BlockEvalResult {
-                    body,
-                    output_lang: format!("settings#{}", hash.to_string()),
-                }
-            }
-            Err(err) => BlockEvalResult {
-                body: format!("error: {:#?}", err),
-                output_lang: format!("settings#{}", hash.to_string()),
-            },
-        }
-    }
-
-    fn should_force_eval(&self) -> bool {
-        self.should_force_eval
-    }
-}
-
-fn run_replace_text_cmd(
-    context: TextCommandContext,
-    InsertText { target, text }: &InsertText,
-) -> Option<Vec<TextChange>> {
-    let TextCommandContext {
-        text_structure: _,
-        text: source_text,
-        byte_cursor,
-    } = context;
-
-    let replacement = if text.contains("{{selection}}") {
-        text.replace("{{selection}}", &source_text[byte_cursor.range()])
-    } else {
-        text.clone()
-    };
-
-    match target {
-        InsertTextTarget::Selection => Some([TextChange::Insert(byte_cursor, replacement)].into()),
-    }
-}
-
-impl BuiltInCommand {
-    fn name(&self) -> &'static str {
-        use BuiltInCommand::*;
-        match self {
-            ExpandTaskMarker => "ExpandTaskMarker",
-            IndentListItem => "IndentListItem",
-            UnindentListItem => "UnindentListItem",
-            SplitListItem => "SplitListItem",
-            MarkdownBold => "MarkdownBold",
-            MarkdownItalic => "MarkdownItalic",
-            MarkdownStrikethrough => "MarkdownStrikethrough",
-            MarkdownCodeBlock => "MarkdownCodeBlock",
-            MarkdownH1 => "MarkdownH1",
-            MarkdownH2 => "MarkdownH2",
-            MarkdownH3 => "MarkdownH3",
-            SwitchToNote(_) => "SwitchToNote",
-            SwitchToSettings => "SwitchToSettings",
-            PinWindow => "PinWindow",
-            HideApp => "HideApp",
-            RunLLMBlock => "ExecutePrompt",
-            ShowPrompt => "ShowPrompt",
-            HidePrompt => "HidePrompt",
-            EnterInsideKDL => "EnterInsideKDL",
-            BracketAutoclosingInsideKDL => "BracketAutoclosingInsideKDL",
-            ShowSlashPallete => "ShowSlashPallete",
-            NextSlashPalleteCmd => "NextSlashPalleteCmd",
-            PrevSlashPalleteCmd => "PrevSlashPalleteCmd",
-            ExecuteSlashPalleteCmd => "ExecuteSlashPalleteCmd",
-            HideSlashPallete => "HideSlashPallete",
-        }
-    }
-}
-
 pub fn format_mac_shortcut(shortcut: KeyboardShortcut) -> String {
     const SPACED_NAMES: ModifierNames = ModifierNames {
         concat: " ",
@@ -604,14 +459,14 @@ mod tests {
         bind "Cmd A" { HideApp;}
         "#;
 
-        let keybindings = parse_top_level(doc_str).unwrap();
+        let keybindings = parse_top_level_settings_block(doc_str).unwrap();
 
         assert_eq!(
             keybindings,
             TopLevelKdlSettings {
-                bindings: [Binding {
+                bindings: [LocalBinding {
                     shortcut: KeyboardShortcut::new(Modifiers::MAC_CMD, Key::A),
-                    command: Command::Predefined(BuiltInCommand::HideApp),
+                    command: ParsedCommand::Predefined(BuiltInCommand::HideApp),
                 }]
                 .into(),
                 global_bindings: vec![],
@@ -621,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_replace_text_cmd_parsing() {
+    pub fn test_insert_text_cmd_parsing() {
         let doc_str = r#"
         bind "Cmd J" {
             InsertText {
@@ -631,16 +486,47 @@ mod tests {
         }
         "#;
 
-        let keybindings = parse_top_level(doc_str).unwrap();
+        let keybindings = parse_top_level_settings_block(doc_str).unwrap();
 
         assert_eq!(
             keybindings,
             TopLevelKdlSettings {
-                bindings: [Binding {
+                bindings: [LocalBinding {
                     shortcut: KeyboardShortcut::new(Modifiers::MAC_CMD, Key::J),
-                    command: Command::InsertText(InsertText {
+                    command: ParsedCommand::InsertText(ParsedCmdInsertText {
                         target: InsertTextTarget::Selection,
-                        text: "something else".to_string()
+                        text: TextSource::Inline("something else".to_string())
+                    })
+                }]
+                .into(),
+                global_bindings: vec![],
+                llm_settings: vec![]
+            }
+        );
+    }
+
+    #[test]
+    pub fn test_insert_text_cmd_parsing_with_script() {
+        let doc_str = r#"
+        bind "Cmd K" {
+            InsertText {
+                text {
+                    call "my_script_function"
+                }
+            }
+        }
+        "#;
+
+        let keybindings = parse_top_level_settings_block(doc_str).unwrap();
+
+        assert_eq!(
+            keybindings,
+            TopLevelKdlSettings {
+                bindings: [LocalBinding {
+                    shortcut: KeyboardShortcut::new(Modifiers::MAC_CMD, Key::K),
+                    command: ParsedCommand::InsertText(ParsedCmdInsertText {
+                        target: InsertTextTarget::Selection,
+                        text: TextSource::Script("my_script_function".to_string())
                     })
                 }]
                 .into(),

@@ -8,7 +8,7 @@ use crate::{
     byte_span::{self, ByteSpan},
     command::TextCommandContext,
     effects::text_change_effect::TextChange,
-    settings::SETTINGS_BLOCK_LANG,
+    settings_eval::SETTINGS_BLOCK_LANG,
     text_structure::{SpanKind, SpanMeta},
 };
 

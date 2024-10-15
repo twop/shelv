@@ -50,9 +50,15 @@ pub struct BlockEvalResult {
 }
 
 pub trait NoteEvalContext {
-    fn begin(&mut self) {}
+    type State;
+    fn begin(&mut self) -> Self::State;
     fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind>;
-    fn eval_block(&mut self, body: &str, hash: SourceHash) -> BlockEvalResult;
+    fn eval_block(
+        &mut self,
+        body: &str,
+        hash: SourceHash,
+        state: &mut Self::State,
+    ) -> BlockEvalResult;
     fn should_force_eval(&self) -> bool;
 }
 
@@ -61,6 +67,8 @@ struct JsNoteEvalContext {
 }
 
 impl NoteEvalContext for JsNoteEvalContext {
+    type State = ();
+
     fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind> {
         match lang {
             "js" => Some(CodeBlockKind::Source),
@@ -74,7 +82,7 @@ impl NoteEvalContext for JsNoteEvalContext {
         }
     }
 
-    fn eval_block(&mut self, body: &str, hash: SourceHash) -> BlockEvalResult {
+    fn eval_block(&mut self, body: &str, hash: SourceHash, _: &mut Self::State) -> BlockEvalResult {
         let result = self.context.eval(Source::from_bytes(body));
 
         BlockEvalResult {
@@ -89,6 +97,10 @@ impl NoteEvalContext for JsNoteEvalContext {
 
     fn should_force_eval(&self) -> bool {
         false
+    }
+
+    fn begin(&mut self) -> Self::State {
+        ()
     }
 }
 
@@ -148,7 +160,7 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
         return None;
     }
 
-    cx.begin();
+    let mut state = cx.begin();
 
     for (_, block, inner_body) in script_blocks {
         match block {
@@ -158,7 +170,11 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
                     changes.push(TextChange::Insert(
                         ByteSpan::point(block_range.end),
                         "\n".to_string()
-                            + &print_output_block(cx.eval_block(prev_block_body, source_hash)),
+                            + &print_output_block(cx.eval_block(
+                                prev_block_body,
+                                source_hash,
+                                &mut state,
+                            )),
                     ));
                 };
 
@@ -167,7 +183,8 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
             CodeBlock::Output(output_range, _) => match last_was_source.take() {
                 Some((source_hash, _, source_code)) => {
                     // this branch means that we have a corresponding output block
-                    let eval_res = print_output_block(cx.eval_block(source_code, source_hash));
+                    let eval_res =
+                        print_output_block(cx.eval_block(source_code, source_hash, &mut state));
                     if eval_res.as_str() != inner_body {
                         // don't add a text change if the result is the same
                         // note that we still need to compute JS for JS context to be consistent
@@ -185,7 +202,7 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
     if let Some((source_hash, range, body)) = last_was_source {
         changes.push(TextChange::Insert(
             ByteSpan::new(range.end, range.end),
-            "\n".to_string() + &print_output_block(cx.eval_block(body, source_hash)),
+            "\n".to_string() + &print_output_block(cx.eval_block(body, source_hash, &mut state)),
         ));
     };
 

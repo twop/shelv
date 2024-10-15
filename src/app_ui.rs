@@ -35,7 +35,7 @@ use crate::{
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
-    settings::format_mac_shortcut,
+    settings_parsing::format_mac_shortcut,
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme},
 };

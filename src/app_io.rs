@@ -252,10 +252,10 @@ impl AppIO for RealAppIO {
                         "prompt is marked as <prompt>{prompt_body}</prompt>",
                         "content above selection marked as <before></before>",
                         "content after selection marked as <after></after>",
-                        "answer the prompt quesion targeting <selection>, the asnwer will replace <selection> block",
+                        "answer the prompt question targeting <selection>, the answer will replace <selection> block",
                         "using the context provided in <before> and <after>",
                         "do not include <selection></selection> into response",
-                        "AVOID any extra comments or introductionary content, output ONLY the result",
+                        "AVOID any extra comments or introductory content, output ONLY the result",
                     ]
                     .join("\n"),
                 ),

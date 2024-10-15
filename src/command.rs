@@ -10,6 +10,7 @@ use crate::{
     byte_span::ByteSpan,
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
+    settings_eval::SettingsScript,
     text_structure::TextStructure,
 };
 
@@ -32,10 +33,11 @@ pub struct AppFocusState {
     pub focus: Option<AppFocus>,
 }
 
-#[derive(Clone, Copy)]
+// #[derive(Clone, Copy)]
 pub struct CommandContext<'a> {
     pub app_state: &'a AppState,
     pub app_focus: AppFocusState,
+    pub scripts: &'a mut SettingsScript,
 }
 
 impl<'a> TextCommandContext<'a> {
@@ -223,6 +225,39 @@ impl BuiltInCommand {
             C::PrevSlashPalleteCmd => shortcut(Modifiers::NONE, Key::ArrowUp),
             C::ExecuteSlashPalleteCmd => shortcut(Modifiers::NONE, Key::Enter),
             C::HideSlashPallete => shortcut(Modifiers::NONE, Key::Escape),
+        }
+    }
+}
+
+impl BuiltInCommand {
+    pub fn name(&self) -> &'static str {
+        use BuiltInCommand::*;
+        match self {
+            ExpandTaskMarker => "ExpandTaskMarker",
+            IndentListItem => "IndentListItem",
+            UnindentListItem => "UnindentListItem",
+            SplitListItem => "SplitListItem",
+            MarkdownBold => "MarkdownBold",
+            MarkdownItalic => "MarkdownItalic",
+            MarkdownStrikethrough => "MarkdownStrikethrough",
+            MarkdownCodeBlock => "MarkdownCodeBlock",
+            MarkdownH1 => "MarkdownH1",
+            MarkdownH2 => "MarkdownH2",
+            MarkdownH3 => "MarkdownH3",
+            SwitchToNote(_) => "SwitchToNote",
+            SwitchToSettings => "SwitchToSettings",
+            PinWindow => "PinWindow",
+            HideApp => "HideApp",
+            RunLLMBlock => "ExecutePrompt",
+            ShowPrompt => "ShowPrompt",
+            HidePrompt => "HidePrompt",
+            EnterInsideKDL => "EnterInsideKDL",
+            BracketAutoclosingInsideKDL => "BracketAutoclosingInsideKDL",
+            ShowSlashPallete => "ShowSlashPallete",
+            NextSlashPalleteCmd => "NextSlashPalleteCmd",
+            PrevSlashPalleteCmd => "PrevSlashPalleteCmd",
+            ExecuteSlashPalleteCmd => "ExecuteSlashPalleteCmd",
+            HideSlashPallete => "HideSlashPallete",
         }
     }
 }

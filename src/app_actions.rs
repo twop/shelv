@@ -5,6 +5,7 @@ use eframe::{
     wgpu::naga::Range,
 };
 
+use itertools::Itertools;
 use similar::{ChangeTag, TextDiff};
 use smallvec::{smallvec, SmallVec};
 
@@ -22,7 +23,10 @@ use crate::{
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
-    settings::SettingsNoteEvalContext,
+    settings_eval::{
+        parse_and_eval_settings_scripts, SettingsNoteEvalContext, SettingsScript,
+        SETTINGS_SCRIPT_BLOCK_LANG,
+    },
     text_structure::{
         create_layout_job_from_text_diff, SpanIndex, SpanKind, SpanMeta, TextDiffPart,
         TextStructure, TextStructureVersion,
@@ -498,8 +502,26 @@ pub fn process_app_action(
                 NoteFile::Note(_) => execute_live_scripts(&text_structure, text),
 
                 NoteFile::Settings => {
+                    let scripts = text_structure
+                        .filter_map_codeblocks(|lang| {
+                            (lang == SETTINGS_SCRIPT_BLOCK_LANG).then(|| true)
+                        })
+                        .map(|(index, _, _)| {
+                            &text[text_structure.get_span_inner_content(index).range()]
+                        })
+                        .join("\n");
+
+                    let settings_scripts = match parse_and_eval_settings_scripts(&scripts) {
+                        Ok(parsed) => parsed,
+                        Err(err) => {
+                            print!("parsing err {err}");
+                            return SmallVec::new();
+                        }
+                    };
+
                     let mut cx = SettingsNoteEvalContext {
                         cmd_list: &mut state.editor_commands,
+                        scripts: &settings_scripts,
                         should_force_eval: false,
                         app_io,
                         llm_settings: &mut state.llm_settings,
@@ -633,14 +655,28 @@ pub fn process_app_action(
             SmallVec::new()
         }
 
-        AppAction::RunLLMBLock(note_file, span_index) => prepare_to_run_llm_block(
-            CommandContext {
-                app_state: state,
-                app_focus: compute_app_focus(ctx, state),
-            },
-            CodeBlockAddress::TargetBlock(note_file, span_index),
-        )
-        .unwrap_or_default(),
+        AppAction::RunLLMBLock(note_file, span_index) => {
+            //
+
+            let mut scripts = state
+                .settings_scripts
+                .take()
+                .unwrap_or_else(|| SettingsScript::empty());
+
+            let result = prepare_to_run_llm_block(
+                CommandContext {
+                    app_state: state,
+                    app_focus: compute_app_focus(ctx, state),
+                    scripts: &mut scripts,
+                },
+                CodeBlockAddress::TargetBlock(note_file, span_index),
+            )
+            .unwrap_or_default();
+
+            state.settings_scripts = Some(scripts);
+
+            result
+        }
 
         AppAction::ShowPrompt(address) => {
             println!("Triggering inline prompt {address:#?}",);
@@ -814,12 +850,20 @@ pub fn process_app_action(
                         app_io,
                     );
 
+                    let mut scripts = state
+                        .settings_scripts
+                        .take()
+                        .unwrap_or_else(|| SettingsScript::empty());
+
                     let cmd_context = CommandContext {
                         app_state: state,
                         app_focus: compute_app_focus(ctx, state),
+                        scripts: &mut scripts,
                     };
 
                     let actions_from_cmd = (cmd.editor_cmd.try_handle)(cmd_context);
+
+                    state.settings_scripts = Some(scripts);
 
                     SmallVec::from_iter(
                         action_after_text_changes

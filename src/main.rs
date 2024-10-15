@@ -17,6 +17,7 @@ use hotwatch::{
 use image::ImageFormat;
 use itertools::Itertools;
 use persistent_state::{load_and_migrate, try_save, v1, NoteFile};
+use settings_eval::SettingsScript;
 use smallvec::SmallVec;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
@@ -47,12 +48,13 @@ mod command;
 mod commands;
 mod effects;
 mod egui_hotkey;
-mod settings;
+mod settings_parsing;
 
 mod nord;
 mod persistent_state;
 mod picker;
 mod scripting;
+mod settings_eval;
 mod text_structure;
 mod theme;
 
@@ -229,6 +231,11 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         let app_focus = self.app_focus_state.clone();
         let focused_id = ctx.memory(|m| m.focused());
 
+        let mut scripts = app_state
+            .settings_scripts
+            .take()
+            .unwrap_or_else(|| SettingsScript::empty());
+
         // handling commands
         // sych as {tab, enter} inside a list
         let actions_from_keyboard_commands = ctx
@@ -238,6 +245,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                 // }
 
                 // only one command can be handled at a time
+
 
                 app_state
                     .editor_commands
@@ -252,10 +260,14 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                                     "---Found a match for {:?}, focus = {app_focus:#?}, focused_id = {focused_id:?}",
                                     editor_command.kind.map(|k| k.human_description())
                                 );
+
+
                                 let res = (editor_command.try_handle)(CommandContext {
                                     app_state,
                                     app_focus,
+                                    scripts:&mut scripts
                                 });
+
 
                                 if !res.is_empty() {
                                     println!(
@@ -275,8 +287,10 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                             _ => None,
                         }
                     })
-            })
-            .unwrap_or_default();
+                })
+                .unwrap_or_default();
+
+        app_state.settings_scripts = Some(scripts);
 
         action_list.extend(actions_from_keyboard_commands.into_iter());
 
