@@ -1,11 +1,9 @@
 use std::{io, path::PathBuf};
 
-use eframe::{
-    egui::{text::LayoutJob, Context, Id, KeyboardShortcut, Memory, OpenUrl, ViewportCommand},
-    wgpu::naga::Range,
+use eframe::egui::{
+    text::LayoutJob, Context, Id, KeyboardShortcut, Memory, OpenUrl, ViewportCommand,
 };
 
-use itertools::Itertools;
 use similar::{ChangeTag, TextDiff};
 use smallvec::{smallvec, SmallVec};
 
@@ -24,8 +22,8 @@ use crate::{
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
     settings_eval::{
-        parse_and_eval_settings_scripts, SettingsNoteEvalContext, SettingsScript,
-        SETTINGS_SCRIPT_BLOCK_LANG,
+        merge_scripts_in_note, parse_and_eval_settings_scripts, SettingsNoteEvalContext,
+        SettingsScript, SETTINGS_SCRIPT_BLOCK_LANG,
     },
     text_structure::{
         create_layout_job_from_text_diff, SpanIndex, SpanKind, SpanMeta, TextDiffPart,
@@ -502,14 +500,9 @@ pub fn process_app_action(
                 NoteFile::Note(_) => execute_live_scripts(&text_structure, text),
 
                 NoteFile::Settings => {
-                    let scripts = text_structure
-                        .filter_map_codeblocks(|lang| {
-                            (lang == SETTINGS_SCRIPT_BLOCK_LANG).then(|| true)
-                        })
-                        .map(|(index, _, _)| {
-                            &text[text_structure.get_span_inner_content(index).range()]
-                        })
-                        .join("\n");
+                    println!("####### evasettings");
+
+                    let scripts = merge_scripts_in_note(&text_structure, text);
 
                     let settings_scripts = match parse_and_eval_settings_scripts(&scripts) {
                         Ok(parsed) => parsed,
@@ -522,12 +515,14 @@ pub fn process_app_action(
                     let mut cx = SettingsNoteEvalContext {
                         cmd_list: &mut state.editor_commands,
                         scripts: &settings_scripts,
-                        should_force_eval: false,
+                        should_force_eval: true,
                         app_io,
                         llm_settings: &mut state.llm_settings,
                     };
 
-                    execute_code_blocks(&mut cx, &text_structure, &text)
+                    let resulting_actions = execute_code_blocks(&mut cx, &text_structure, &text);
+                    state.settings_scripts = Some(settings_scripts);
+                    resulting_actions
                 }
             };
 
@@ -631,7 +626,7 @@ pub fn process_app_action(
         }
 
         AppAction::DeferToPostRender(action) => {
-            state.deferred_to_post_render.push(*action);
+            state.deferred_actions.push(*action);
             SmallVec::new()
         }
 
@@ -882,6 +877,7 @@ pub fn process_app_action(
         }
     }
 }
+
 fn update_slash_palette(
     focus_state: AppFocusState,
     mut palette: SlashPalette,

@@ -5,6 +5,7 @@ use boa_engine::{
     Context, JsError, JsNativeError, JsResult, JsValue, Module, NativeFunction,
 };
 use boa_parser::Source;
+use itertools::Itertools;
 use smallvec::SmallVec;
 
 use crate::{
@@ -22,6 +23,7 @@ use crate::{
         InsertTextTarget, LlmSettings, LocalBinding, ParsedCmdInsertText, ParsedCommand,
         TextSource,
     },
+    text_structure::TextStructure,
 };
 
 pub const SETTINGS_BLOCK_LANG: &str = "settings";
@@ -268,7 +270,7 @@ fn call_replace_text(
         return SmallVec::new();
     };
 
-    run_replace_text_cmd(text, byte_cursor, scripts, cmd)
+    run_insert_text_cmd(text, byte_cursor, scripts, cmd)
         .map(|changes| {
             SmallVec::from([AppAction::apply_text_changes(
                 app_state.selected_note,
@@ -473,7 +475,7 @@ pub fn parse_and_eval_settings_scripts(
     Ok(result)
 }
 
-fn run_replace_text_cmd(
+fn run_insert_text_cmd(
     note_text: &str,
     byte_cursor: ByteSpan,
     scripts: &mut SettingsScript,
@@ -529,6 +531,19 @@ fn run_replace_text_cmd(
     match target {
         InsertTextTarget::Selection => Some([TextChange::Insert(byte_cursor, replacement)].into()),
     }
+}
+
+pub fn merge_scripts_in_note(text_structure: &TextStructure, text: &str) -> String {
+    text_structure
+        .filter_map_codeblocks(|lang| (lang == SETTINGS_SCRIPT_BLOCK_LANG).then(|| true))
+        .filter_map(
+            |(index, desc, _)| match text_structure.get_span_inner_content(index) {
+                inner_content_span if inner_content_span == desc.byte_pos => None,
+                inner_content_span => Some(inner_content_span),
+            },
+        )
+        .filter_map(|span| text.get(span.range()))
+        .join("\n")
 }
 
 #[test]

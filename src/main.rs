@@ -294,7 +294,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
         action_list.extend(actions_from_keyboard_commands.into_iter());
 
-        action_list.insert_many(0, app_state.deferred_to_post_render.drain(0..));
+        action_list.insert_many(0, app_state.deferred_actions.drain(0..));
 
         // now apply prepared changes, and update text structure and cursor appropriately
         for action in action_list {

@@ -46,8 +46,8 @@ use crate::{
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::execute_code_blocks,
     settings_eval::{
-        parse_and_eval_settings_scripts, SettingsNoteEvalContext, SettingsScript,
-        SETTINGS_SCRIPT_BLOCK_LANG,
+        merge_scripts_in_note, parse_and_eval_settings_scripts, SettingsNoteEvalContext,
+        SettingsScript, SETTINGS_SCRIPT_BLOCK_LANG,
     },
     settings_parsing::LlmSettings,
     text_structure::{
@@ -172,7 +172,7 @@ pub struct AppState {
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
     pub settings_scripts: Option<SettingsScript>,
-    pub deferred_to_post_render: Vec<AppAction>,
+    pub deferred_actions: Vec<AppAction>,
 }
 
 impl AppState {
@@ -521,62 +521,7 @@ impl AppState {
         ));
         // ------
 
-        let mut editor_commands = CommandList::new(editor_commands);
-
-        let mut llm_settings: Option<LlmSettings> = None;
-
-        // TODO this is ugly, refactor this to be a bit nicer
-        // at least from the error reporting point of view
-        let scripts = match notes.get_mut(&NoteFile::Settings) {
-            Some(settings) => {
-                let text = &settings.text;
-                let scripts = text_structure
-                    .filter_map_codeblocks(|lang| {
-                        (lang == SETTINGS_SCRIPT_BLOCK_LANG).then(|| true)
-                    })
-                    .map(|(index, desc, _)| {
-                        &text[text_structure.get_span_inner_content(index).range()]
-                    })
-                    .join("\n");
-
-                println!("%%%% init scripts = {scripts}");
-                let settings_scripts = match parse_and_eval_settings_scripts(&scripts) {
-                    Ok(parsed) => parsed,
-                    Err(err) => {
-                        println!("parsing err {err}");
-                        SettingsScript::empty()
-                    }
-                };
-
-                let potential_text_changes = {
-                    let mut cx = SettingsNoteEvalContext {
-                        cmd_list: &mut editor_commands,
-                        should_force_eval: true,
-                        app_io,
-                        llm_settings: &mut llm_settings,
-                        scripts: &settings_scripts,
-                    };
-
-                    execute_code_blocks(
-                        &mut cx,
-                        &TextStructure::new(&settings.text),
-                        &settings.text,
-                    )
-                };
-
-                if let Some(requested_changes) = potential_text_changes {
-                    match apply_text_changes(&mut settings.text, settings.cursor, requested_changes)
-                    {
-                        Ok(_) => println!("applied settings note successfully"),
-                        Err(err) => println!("failed to write back settings results {:#?}", err),
-                    }
-                }
-
-                dbg!(&settings_scripts.exports);
-                settings_scripts
-            }
-            _ => SettingsScript::empty(),
-        };
+        let editor_commands = CommandList::new(editor_commands);
 
         use egui_phosphor::light as P;
         let slash_palette_commands = []
@@ -606,6 +551,8 @@ impl AppState {
             )
             .collect();
 
+        let deferred_actions = vec![AppAction::EvalNote(NoteFile::Settings)];
+
         Self {
             is_pinned: is_window_pinned,
             unsaved_changes: Default::default(),
@@ -622,12 +569,12 @@ impl AppState {
             prev_focused: false,
             last_saved,
             editor_commands,
-            llm_settings,
-            deferred_to_post_render: vec![],
+            llm_settings: None,
+            deferred_actions,
             inline_llm_prompt: None,
             slash_palette: None,
             slash_palette_commands,
-            settings_scripts: Some(scripts),
+            settings_scripts: None,
         }
     }
 
