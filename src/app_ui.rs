@@ -926,16 +926,19 @@ fn render_slash_cmd(
                     frame,
                     |flex| {
                         flex.add_flex(item().grow(1.), Flex::horizontal(), |flex| {
-                            if let Some(icon) = &cmd.phosphor_icon {
-                                flex.add(
-                                    item(),
-                                    Label::new(
-                                        RichText::new(icon)
-                                            .font(phosphor_icon_font.font_id)
-                                            .color(phosphor_icon_font.color),
-                                    ),
-                                );
-                            }
+                            flex.add(
+                                item(),
+                                Label::new(
+                                    RichText::new(if let Some(icon) = &cmd.phosphor_icon {
+                                        icon
+                                    } else {
+                                        egui_phosphor::light::GEAR
+                                    })
+                                        .font(phosphor_icon_font.font_id)
+                                        .color(phosphor_icon_font.color),
+                                ),
+                            );
+                            
                             flex.add_simple(item().basis(8.), |ui| {});
                             flex.add(
                                 item(),
