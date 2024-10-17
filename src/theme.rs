@@ -22,6 +22,7 @@ pub enum AppIcon {
     Pin,
     VerticalSeparator,
     Feedback,
+    NegFeedback,
     One,
     Two,
     Three,
@@ -32,12 +33,13 @@ pub enum AppIcon {
     Play,
     Accept,
     Refresh,
+    Send,
 }
 
 impl AppIcon {
     pub fn render(&self, size: f32, color: Color32) -> RichText {
         RichText::new(self.to_icon_str())
-            .family(eframe::epaint::FontFamily::Proportional)
+            .family(eframe::epaint::FontFamily::Name("phosphor".into()))
             .color(color)
             .size(size)
     }
@@ -54,16 +56,18 @@ impl AppIcon {
             TextFormat {
                 font_id: FontId::new(size, FontFamily::Name("phosphor".into())),
                 color,
+                valign: egui::Align::Center,
                 ..Default::default()
             },
         );
 
         // Add a space between icon and text
         job.append(
-            " ",
+            "  ",
             0.0,
             TextFormat {
                 font_id: FontId::new(size, FontFamily::Name("inter".into())),
+                valign: egui::Align::Center,
                 color,
                 ..Default::default()
             },
@@ -75,6 +79,7 @@ impl AppIcon {
             0.0,
             TextFormat {
                 font_id: FontId::new(size, FontFamily::Name("inter".into())),
+                valign: egui::Align::Center,
                 color,
                 ..Default::default()
             },
@@ -95,6 +100,7 @@ impl AppIcon {
             AppIcon::Pin => P::PUSH_PIN,
             AppIcon::VerticalSeparator => P::LINE_VERTICAL,
             AppIcon::Feedback => P::SMILEY,
+            AppIcon::NegFeedback => P::SMILEY_SAD,
             AppIcon::One => P::NUMBER_ONE,
             AppIcon::Two => P::NUMBER_TWO,
             AppIcon::Three => P::NUMBER_THREE,
@@ -105,6 +111,7 @@ impl AppIcon {
             AppIcon::Play => P::PLAY,
             AppIcon::Accept => P::CHECK,
             AppIcon::Refresh => P::ARROW_CLOCKWISE,
+            AppIcon::Send => P::PAPER_PLANE_TILT,
         }
     }
 }
@@ -151,6 +158,7 @@ pub struct FontSizes {
     pub h3: f32,
     pub h4: f32,
     pub normal: f32,
+    pub normal2: f32,
     pub small: f32,
 }
 
@@ -162,6 +170,7 @@ impl FontSizes {
             h3: 22.,
             h4: 16.,
             normal: 14.,
+            normal2: 12.,
             small: 8.,
         }
     }
@@ -384,6 +393,7 @@ pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
     style.text_styles = text_styles(&theme.fonts);
     style.visuals = visuals(&theme.colors);
     style.spacing.item_spacing = Vec2::splat(theme.sizes.s);
+    // style.spacing.button_padding = Vec2::splat(theme.sizes.s);
     style.interaction.tooltip_delay = 0.05;
     ctx.set_style(style);
     ctx.set_theme(ThemePreference::Dark);
@@ -396,7 +406,6 @@ pub fn get_font_definitions() -> FontDefinitions {
     fonts
         .font_data
         .insert("phosphor".into(), egui_phosphor::Variant::Light.font_data());
-
     fonts
         .families
         .entry(egui::FontFamily::Proportional)

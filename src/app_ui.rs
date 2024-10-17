@@ -5,13 +5,11 @@ use eframe::{
         self,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Context, EventFilter, FontFamily, Id, Key, KeyboardShortcut, LayerId, Layout,
-        ModifierNames, Modifiers, Painter, RichText, Sense, TextEdit, TopBottomPanel, Ui,
-        UiStackInfo, Vec2, WidgetText, Window,
+        Context, FontFamily, Id, Key, KeyboardShortcut, Layout, Modifiers, Painter, RichText,
+        Sense, TextEdit, TopBottomPanel, Ui, UiStackInfo, Vec2, WidgetText,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
-    Frame,
 };
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
@@ -22,7 +20,8 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 use crate::{
     app_actions::AppAction,
     app_state::{
-        ComputedLayout, InlineLLMPropmptState, InlinePromptStatus, LayoutParams, MsgToApp,
+        ComputedLayout, FeedbackState, InlineLLMPropmptState, InlinePromptStatus, LayoutParams,
+        MsgToApp,
     },
     byte_span::UnOrderedByteSpan,
     command::{BuiltInCommand, CommandList, PROMOTED_COMMANDS},
@@ -31,10 +30,11 @@ use crate::{
         run_llm::LLM_LANG,
     },
     effects::text_change_effect::TextChange,
+    feedback::{Feedback, FeedbackResult},
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     text_structure::{InteractiveTextPart, TextStructure},
-    theme::{AppIcon, AppTheme},
+    theme::{AppIcon, AppTheme, ColorManipulation},
 };
 
 pub struct AppRenderData<'a> {
@@ -48,6 +48,7 @@ pub struct AppRenderData<'a> {
     pub computed_layout: Option<ComputedLayout>,
     pub inline_llm_prompt: Option<&'a mut InlineLLMPropmptState>,
     pub is_window_pinned: bool,
+    pub feedback: Option<&'a mut FeedbackState>,
 }
 
 pub struct RenderAppResult {
@@ -76,11 +77,19 @@ pub fn render_app(
         theme_set,
         is_window_pinned,
         inline_llm_prompt,
+        feedback,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
 
-    let footer_actions = render_footer_panel(selected_note, note_count, command_list, ctx, &theme);
+    let footer_actions = render_footer_panel(
+        selected_note,
+        note_count,
+        feedback.as_ref().map(|f| f.is_sent).unwrap_or(false),
+        command_list,
+        ctx,
+        &theme,
+    );
     output_actions.extend(footer_actions);
 
     let header_actions =
@@ -88,6 +97,38 @@ pub fn render_app(
     output_actions.extend(header_actions);
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
+
+    if let Some(feedback) = feedback {
+        let window_bg = theme.colors.main_bg.shade(0.9);
+
+        egui::Window::new(RichText::new("Feedback").text_style(egui::TextStyle::Body))
+            .open(&mut feedback.is_feedback_open)
+            .fade_in(true)
+            .fade_out(true)
+            .title_bar(false)
+            .constrain(false)
+            .collapsible(false)
+            .resizable(false)
+            .movable(false)
+            .anchor(Align2::RIGHT_BOTTOM, [-8.0, -32.0])
+            .max_size([400., 400.])
+            .default_size([400., 400.])
+            .frame(egui::Frame::window(&ctx.style()).fill(window_bg))
+            .show(ctx, |ui| {
+                let feedback_widget = Feedback::new(theme, &mut feedback.feedback_data);
+                let feedback_result = feedback_widget.show(ui).inner;
+
+                match feedback_result {
+                    Some(FeedbackResult::Cancel) => {
+                        output_actions.push(AppAction::CloseFeedbackWindow)
+                    }
+                    Some(FeedbackResult::SubmitFeedback) => {
+                        output_actions.push(AppAction::SubmitFeedback)
+                    }
+                    None => {}
+                }
+            });
+    }
 
     let (text_has_changed, text_structure, computed_layout, updated_cursor, editor_actions) =
         egui::CentralPanel::default()
@@ -706,6 +747,7 @@ fn restore_cursor_from_note_state(
 fn render_footer_panel(
     selected: NoteFile,
     note_count: usize,
+    feedback_sent: bool,
     command_list: &CommandList,
     ctx: &Context,
     theme: &AppTheme,
@@ -849,8 +891,17 @@ fn render_footer_panel(
                         });
 
                     if share_btn.clicked() {
-                        println!("clicked on shared");
-                        actions.push(AppAction::SendFeedback(selected));
+                        actions.push(AppAction::OpenFeedbackWindow);
+                    }
+
+                    let tooltip_animation_id = ui.id().with("feedback_sent_tooltip");
+                    let tooltip_value =
+                        ctx.animate_bool_with_time(tooltip_animation_id, feedback_sent, 2.0);
+
+                    if feedback_sent {
+                        if tooltip_value < 1. {
+                            share_btn.show_tooltip_text(RichText::new("Feedback sent, we appreciate your input!"));
+                        }
                     }
                 });
             });

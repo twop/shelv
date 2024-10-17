@@ -1101,6 +1101,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui_flex"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2493033babe116a1493ddaea0198ef2833cc6f4ad3a53de2a02376e8547b4d01"
+dependencies = [
+ "egui",
+ "log",
+]
+
+[[package]]
 name = "either"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4334,6 +4344,7 @@ dependencies = [
  "eframe",
  "egui-phosphor",
  "egui_extras",
+ "egui_flex",
  "fxhash",
  "genai",
  "global-hotkey",
