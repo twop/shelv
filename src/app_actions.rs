@@ -21,14 +21,8 @@ use crate::{
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
-    settings_eval::{
-        merge_scripts_in_note, parse_and_eval_settings_scripts, SettingsNoteEvalContext,
-        SettingsScript, SETTINGS_SCRIPT_BLOCK_LANG,
-    },
-    text_structure::{
-        create_layout_job_from_text_diff, SpanIndex, SpanKind, SpanMeta, TextDiffPart,
-        TextStructure, TextStructureVersion,
-    },
+    settings_eval::{Scripts, SettingsNoteEvalContext},
+    text_structure::{create_layout_job_from_text_diff, SpanIndex, TextDiffPart, TextStructure},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -502,15 +496,10 @@ pub fn process_app_action(
                 NoteFile::Settings => {
                     println!("####### evasettings");
 
-                    let scripts = merge_scripts_in_note(&text_structure, text);
+                    let mut settings_scripts = Scripts::new();
 
-                    let settings_scripts = match parse_and_eval_settings_scripts(&scripts) {
-                        Ok(parsed) => parsed,
-                        Err(err) => {
-                            print!("parsing err {err}");
-                            return SmallVec::new();
-                        }
-                    };
+                    let script_actions =
+                        execute_code_blocks(&mut settings_scripts, &text_structure, &text);
 
                     let mut cx = SettingsNoteEvalContext {
                         cmd_list: &mut state.editor_commands,
@@ -520,9 +509,17 @@ pub fn process_app_action(
                         llm_settings: &mut state.llm_settings,
                     };
 
-                    let resulting_actions = execute_code_blocks(&mut cx, &text_structure, &text);
+                    let kdl_actions = execute_code_blocks(&mut cx, &text_structure, &text);
+
                     state.settings_scripts = Some(settings_scripts);
-                    resulting_actions
+
+                    match (script_actions, kdl_actions) {
+                        (actions, None) | (None, actions) => actions,
+                        (Some(mut script_actions), Some(kdl_actions)) => {
+                            script_actions.extend(kdl_actions);
+                            Some(script_actions)
+                        }
+                    }
                 }
             };
 
@@ -656,7 +653,7 @@ pub fn process_app_action(
             let mut scripts = state
                 .settings_scripts
                 .take()
-                .unwrap_or_else(|| SettingsScript::empty());
+                .unwrap_or_else(|| Scripts::new());
 
             let result = prepare_to_run_llm_block(
                 CommandContext {
@@ -848,7 +845,7 @@ pub fn process_app_action(
                     let mut scripts = state
                         .settings_scripts
                         .take()
-                        .unwrap_or_else(|| SettingsScript::empty());
+                        .unwrap_or_else(|| Scripts::new());
 
                     let cmd_context = CommandContext {
                         app_state: state,

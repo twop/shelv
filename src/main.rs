@@ -17,7 +17,7 @@ use hotwatch::{
 use image::ImageFormat;
 use itertools::Itertools;
 use persistent_state::{load_and_migrate, try_save, v1, NoteFile};
-use settings_eval::SettingsScript;
+use settings_eval::Scripts;
 use smallvec::SmallVec;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
@@ -234,7 +234,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         let mut scripts = app_state
             .settings_scripts
             .take()
-            .unwrap_or_else(|| SettingsScript::empty());
+            .unwrap_or_else(|| Scripts::new());
 
         // handling commands
         // sych as {tab, enter} inside a list

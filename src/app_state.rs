@@ -46,8 +46,8 @@ use crate::{
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::execute_code_blocks,
     settings_eval::{
-        merge_scripts_in_note, parse_and_eval_settings_scripts, SettingsNoteEvalContext,
-        SettingsScript, SETTINGS_SCRIPT_BLOCK_LANG,
+        parse_and_eval_settings_script_block, Scripts, SettingsNoteEvalContext,
+        SETTINGS_SCRIPT_BLOCK_LANG,
     },
     settings_parsing::LlmSettings,
     text_structure::{
@@ -171,7 +171,7 @@ pub struct AppState {
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
-    pub settings_scripts: Option<SettingsScript>,
+    pub settings_scripts: Option<Scripts>,
     pub deferred_actions: Vec<AppAction>,
 }
 

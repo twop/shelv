@@ -10,7 +10,7 @@ use crate::{
     byte_span::ByteSpan,
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
-    settings_eval::SettingsScript,
+    settings_eval::Scripts,
     text_structure::TextStructure,
 };
 
@@ -37,7 +37,7 @@ pub struct AppFocusState {
 pub struct CommandContext<'a> {
     pub app_state: &'a AppState,
     pub app_focus: AppFocusState,
-    pub scripts: &'a mut SettingsScript,
+    pub scripts: &'a mut Scripts,
 }
 
 impl<'a> TextCommandContext<'a> {

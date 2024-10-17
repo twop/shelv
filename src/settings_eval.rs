@@ -1,4 +1,9 @@
-use std::{error::Error, path::Path, rc::Rc};
+use std::{
+    error::Error,
+    path::{Path, PathBuf},
+    rc::Rc,
+    str::FromStr,
+};
 
 use boa_engine::{
     builtins::promise::PromiseState, js_string, module::SimpleModuleLoader, property::PropertyKey,
@@ -23,7 +28,7 @@ use crate::{
         InsertTextTarget, LlmSettings, LocalBinding, ParsedCmdInsertText, ParsedCommand,
         TextSource,
     },
-    text_structure::TextStructure,
+    text_structure::{SpanDesc, SpanIndex, TextStructure},
 };
 
 pub const SETTINGS_BLOCK_LANG: &str = "settings";
@@ -32,7 +37,7 @@ pub const SETTINGS_BLOCK_LANG_OUTPUT: &str = "settings#";
 pub const SETTINGS_SCRIPT_BLOCK_LANG: &str = "js";
 pub const SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT: &str = "js#";
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum ScriptExportType {
     Str,
     Func,
@@ -40,16 +45,45 @@ pub enum ScriptExportType {
 }
 
 #[derive(Debug)]
-pub struct SettingsScript {
+pub struct Scripts {
     js_cx: Context,
-    module: Module,
-    pub exports: Vec<(String, PropertyKey, ScriptExportType)>,
+    module_loader: Rc<SimpleModuleLoader>,
+    script_blocks: Vec<SriptBlock>,
 }
 
-impl SettingsScript {
-    pub fn empty() -> Self {
-        let scripts = parse_and_eval_settings_scripts("").unwrap();
-        scripts
+#[derive(Debug)]
+struct ModuleExport {
+    name: String,
+    key: PropertyKey,
+    export_type: ScriptExportType,
+}
+
+#[derive(Debug)]
+pub struct SriptBlock {
+    name: Option<String>,
+    // module: Module,
+    source_hash: SourceHash,
+    //span: (SpanIndex, SpanDesc),
+    // imports will come later
+    exports: Vec<ModuleExport>,
+}
+
+impl Scripts {
+    pub fn new() -> Self {
+        // TODO get away from using SimpleModuleLoader
+        let loader = Rc::new(SimpleModuleLoader::new("./").expect("why should it ever fail?"));
+
+        // Just need to cast to a `ModuleLoader` before passing it to the builder.
+        let context = Context::builder()
+            .module_loader(loader.clone())
+            .build()
+            .expect("same here, why should it ever fail?");
+
+        Self {
+            module_loader: loader,
+            js_cx: context,
+            script_blocks: vec![],
+        }
     }
 }
 
@@ -60,60 +94,81 @@ impl SettingsScript {
 //     sources: Vec<(String, SourceHash)>,
 // }
 
-// impl NoteEvalContext for ScriptingEvalContext {
-//     type State = ScriptingState;
+impl NoteEvalContext for Scripts {
+    type State = ();
 
-//     fn begin(&mut self) -> Self::State {
-//         ScriptingState { sources: vec![] }
-//     }
+    fn begin(&mut self) -> Self::State {
+        ()
+    }
 
-//     fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind> {
-//         match lang {
-//             SETTINGS_SCRIPT_BLOCK_LANG => Some(CodeBlockKind::Source),
+    fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind> {
+        match lang {
+            SETTINGS_SCRIPT_BLOCK_LANG => Some(CodeBlockKind::Source),
 
-//             output if output.starts_with(SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT) => {
-//                 let hex_str = &output[SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT.len()..];
-//                 Some(CodeBlockKind::Output(SourceHash::parse(hex_str)))
-//             }
+            output if output.starts_with(SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT) => {
+                let hex_str = &output[SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT.len()..];
+                Some(CodeBlockKind::Output(SourceHash::parse(hex_str)))
+            }
 
-//             _ => None,
-//         }
-//     }
+            _ => None,
+        }
+    }
 
-//     fn eval_block(
-//         &mut self,
-//         body: &str,
-//         hash: SourceHash,
-//         state: &mut Self::State,
-//     ) -> BlockEvalResult {
+    fn eval_block(
+        &mut self,
+        body: &str,
+        hash: SourceHash,
+        state: &mut Self::State,
+    ) -> BlockEvalResult {
+        let (exports, module) = match parse_and_eval_settings_script_block(body, &mut self.js_cx) {
+            Ok((exports, module)) => (exports, module),
+            Err(err) => {
+                return BlockEvalResult {
+                    body: format!("Error during evaluating the module\n{:#}", err),
+                    output_lang: format!(
+                        "{}{}",
+                        SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT,
+                        hash.to_string()
+                    ),
+                };
+            }
+        };
 
-//         let source = Source::from_reader(MODULE_SRC.as_bytes(), Some(Path::new("./settings.js")));
+        self.module_loader
+            .insert(PathBuf::from_str(&hash.to_string()).unwrap(), module);
 
-//         // Can also pass a `Some(realm)` if you need to execute the module in another realm.
-//         let module = Module::parse(source, None, context)?;
+        let body = match exports.as_slice() {
+            [] => "Block was evaluated by no exports were found".to_string(),
+            exports => ["Evaluated, registered exports:"]
+                .into_iter()
+                .chain(exports.iter().map(|export| export.name.as_str()))
+                .join("\n\t"),
+        };
 
-//         let result = self.context.eval(Source::from_bytes(body));
+        self.script_blocks.push(SriptBlock {
+            name: None,
+            // module,
+            source_hash: hash,
+            // span: todo!(),
+            exports,
+        });
 
-//         BlockEvalResult {
-//             body: match result {
-//                 Ok(res) => res.display().to_string(),
-//                 Err(err) => format!("{:#}", err),
-//             },
+        BlockEvalResult {
+            body,
+            output_lang: format!("{}{}", SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT, hash.to_string()),
+        }
+    }
 
-//             output_lang: format!("{}{:x}", OUTPUT_LANG, hash.0),
-//         }
-//     }
-
-//     fn should_force_eval(&self) -> bool {
-//         false
-//     }
-// }
+    fn should_force_eval(&self) -> bool {
+        true
+    }
+}
 
 // ------- KDL settings eval -------
 pub struct SettingsNoteEvalContext<'cx, IO: AppIO> {
     // parsed_bindings: Vec<Result<TopLevelKdlSettings, SettingsParseError>>,
     pub cmd_list: &'cx mut CommandList,
-    pub scripts: &'cx SettingsScript,
+    pub scripts: &'cx Scripts,
     pub should_force_eval: bool,
     pub app_io: &'cx mut IO,
     pub llm_settings: &'cx mut Option<LlmSettings>,
@@ -150,6 +205,8 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
 
         // TODO report if applying bindings failed
 
+        let output_lang = format!("{}{}", SETTINGS_BLOCK_LANG_OUTPUT, hash.to_string());
+
         match result {
             Ok(mut settings) => {
                 let has_any_bindings =
@@ -172,7 +229,7 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
 
                                     return BlockEvalResult {
                                         body: format!("error: {:#?}", err),
-                                        output_lang: format!("settings#{}", hash.to_string()),
+                                        output_lang,
                                     };
                                 }
                             }
@@ -189,6 +246,30 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                         }
 
                         ParsedCommand::InsertText(cmd) => {
+                            match &cmd.text {
+                                TextSource::Script(name) => {
+                                    let matching_exports: SmallVec<
+                                        [(&ModuleExport, &SriptBlock); 1],
+                                    > = self
+                                        .scripts
+                                        .script_blocks
+                                        .iter()
+                                        .flat_map(|block| {
+                                            block.exports.iter().map(move |export| (export, block))
+                                        })
+                                        .filter(|(export, _)| &export.name == name)
+                                        .collect();
+
+                                    if matching_exports.is_empty() {
+                                        // TODO return error if not found   s
+                                    }
+                                }
+                                TextSource::Inline(_) => {
+                                    // No need to search for matching exports for inline text
+                                }
+                            }
+                            // No matching export found, proceed with default behavior
+
                             self.cmd_list.add(EditorCommand::user_defined(
                                 // "replace text", // TODO figure out the name
                                 shortcut,
@@ -240,14 +321,11 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                     false => format!("applied"),
                 };
 
-                BlockEvalResult {
-                    body,
-                    output_lang: format!("settings#{}", hash.to_string()),
-                }
+                BlockEvalResult { body, output_lang }
             }
             Err(err) => BlockEvalResult {
                 body: format!("error: {:#?}", err),
-                output_lang: format!("settings#{}", hash.to_string()),
+                output_lang,
             },
         }
     }
@@ -408,21 +486,17 @@ fn run() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn parse_and_eval_settings_scripts(
-    combined_scripts: &str,
-) -> Result<SettingsScript, Box<dyn Error>> {
-    // This can be overriden with any custom implementation of `ModuleLoader`.
-    let loader = Rc::new(SimpleModuleLoader::new("./")?);
-
-    // Just need to cast to a `ModuleLoader` before passing it to the builder.
-    let mut context = Context::builder().module_loader(loader.clone()).build()?;
-    let source = Source::from_bytes(combined_scripts);
+pub fn parse_and_eval_settings_script_block(
+    block_script: &str,
+    context: &mut Context,
+) -> Result<(Vec<ModuleExport>, Module), Box<dyn Error>> {
+    let source = Source::from_bytes(block_script);
 
     // Can also pass a `Some(realm)` if you need to execute the module in another realm.
-    let module = Module::parse(source, None, &mut context)?;
+    let module = Module::parse(source, None, context)?;
 
     // parse -> load -> link -> evaluate
-    let promise_result = module.load_link_evaluate(&mut context);
+    let promise_result = module.load_link_evaluate(context);
 
     // Very important to push forward the job queue after queueing promises.
     context.run_jobs();
@@ -434,15 +508,15 @@ pub fn parse_and_eval_settings_scripts(
             assert_eq!(v, JsValue::undefined());
         }
         PromiseState::Rejected(err) => {
-            return Err(JsError::from_opaque(err).try_native(&mut context)?.into())
+            return Err(JsError::from_opaque(err).try_native(context)?.into())
         }
     }
 
     // We can access the full namespace of the module with all its exports.
-    let namespace = module.namespace(&mut context);
+    let namespace = module.namespace(context);
 
-    let exports: Vec<(String, PropertyKey, ScriptExportType)> = namespace
-        .own_property_keys(&mut context)?
+    let exports: Vec<ModuleExport> = namespace
+        .own_property_keys(context)?
         .into_iter()
         .filter_map(|key| match key.clone() {
             PropertyKey::String(js_string) => js_string.to_std_string().ok().zip(Some(key)),
@@ -451,7 +525,7 @@ pub fn parse_and_eval_settings_scripts(
         .map(|(prop_name, prop_key)| {
             // println!("Property key: {prop_key:#?}");
 
-            let prop = namespace.get(prop_key.clone(), &mut context).unwrap();
+            let prop = namespace.get(prop_key.clone(), context).unwrap();
             // println!("Property: {prop:#?}");
 
             let export_type = if prop.as_callable().is_some() {
@@ -462,38 +536,46 @@ pub fn parse_and_eval_settings_scripts(
                 ScriptExportType::Unknown
             };
 
-            (prop_name, prop_key, export_type)
+            ModuleExport {
+                name: prop_name,
+                key: prop_key,
+                export_type,
+            }
         })
         .collect();
 
-    let result = SettingsScript {
-        js_cx: context,
-        module,
-        exports,
-    };
-
-    Ok(result)
+    Ok((exports, module))
 }
 
 fn run_insert_text_cmd(
     note_text: &str,
     byte_cursor: ByteSpan,
-    scripts: &mut SettingsScript,
+    scripts: &mut Scripts,
     ParsedCmdInsertText { target, text }: &ParsedCmdInsertText,
 ) -> Option<Vec<TextChange>> {
-    dbg!(&scripts.exports);
+    // dbg!(&scripts.exports);
+
     let text = match text {
         TextSource::Inline(text) => text.clone(),
         TextSource::Script(name) => {
-            let (key, prop_type) =
-                scripts
-                    .exports
-                    .iter()
-                    .find_map(|(prop_name, key, prop_type)| {
-                        (name == prop_name).then(|| (key.clone(), prop_type))
-                    })?;
+            let (block_hash, key, prop_type) = scripts
+                .script_blocks
+                .iter()
+                .flat_map(|block| {
+                    block
+                        .exports
+                        .iter()
+                        .map(|export| (block.source_hash, export))
+                })
+                .find_map(|(block_hash, export)| {
+                    (name == export.name.as_str())
+                        .then(|| (block_hash, export.key.clone(), export.export_type))
+                })?;
 
-            let namespace = scripts.module.namespace(&mut scripts.js_cx);
+            let namespace = scripts
+                .module_loader
+                .get(&PathBuf::from(block_hash.to_string()))?
+                .namespace(&mut scripts.js_cx);
 
             // TODO proper error handling
             // probably with toast like UIs
@@ -533,19 +615,6 @@ fn run_insert_text_cmd(
     }
 }
 
-pub fn merge_scripts_in_note(text_structure: &TextStructure, text: &str) -> String {
-    text_structure
-        .filter_map_codeblocks(|lang| (lang == SETTINGS_SCRIPT_BLOCK_LANG).then(|| true))
-        .filter_map(
-            |(index, desc, _)| match text_structure.get_span_inner_content(index) {
-                inner_content_span if inner_content_span == desc.byte_pos => None,
-                inner_content_span => Some(inner_content_span),
-            },
-        )
-        .filter_map(|span| text.get(span.range()))
-        .join("\n")
-}
-
 #[test]
 fn test_run() {
     let code = r#"
@@ -560,8 +629,10 @@ fn test_run() {
 	return `${year}/${month}/${day}`;
         }
 "#;
-    let result = parse_and_eval_settings_scripts(code);
 
-    println!("result = {:#?}", result.as_ref().map(|r| &r.exports));
+    let mut js_context = Context::builder().build().unwrap();
+    let result = parse_and_eval_settings_script_block(code, &mut js_context);
+
+    println!("result = {:#?}", result.as_ref().map(|r| &r.0));
     assert!(result.is_ok(), "run() should execute successfully");
 }

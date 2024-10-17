@@ -1,14 +1,11 @@
 use boa_engine::{Context, Source};
 use smallvec::SmallVec;
-use std::{
-    fmt::format,
-    hash::{DefaultHasher, Hash, Hasher},
-};
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::{
     byte_span::ByteSpan,
     effects::text_change_effect::TextChange,
-    text_structure::{SpanIndex, SpanKind, TextStructure},
+    text_structure::{SpanKind, TextStructure},
 };
 
 #[derive(PartialEq, Debug, Clone, Copy)]
