@@ -80,16 +80,35 @@ pub struct InlineLLMPromptState {
     pub status: InlinePromptStatus,
     pub fresh_response: bool,
 }
-
 #[derive(Debug)]
 pub struct Note {
     pub text: String,
-    pub cursor: Option<UnOrderedByteSpan>,
+    cursor: Option<UnOrderedByteSpan>,
+    last_cursor: Option<UnOrderedByteSpan>,
+}
+
+impl Note {
+    pub fn reset_cursor(&mut self) {
+        self.cursor = None;
+    }
+
+    pub fn update_cursor(&mut self, updated_cursor: UnOrderedByteSpan) {
+        self.last_cursor = Some(updated_cursor);
+        self.cursor = Some(updated_cursor);
+    }
+
+    pub fn cursor(&self) -> Option<UnOrderedByteSpan> {
+        self.cursor
+    }
+
+    pub fn last_cursor(&self) -> Option<UnOrderedByteSpan> {
+        self.last_cursor
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum UnsavedChange {
-    NoteContentChanged(NoteFile),
+    NoteContentChanged(NoteFile),    
     SelectionChanged,
     LastUpdated,
     PinStateChanged,
@@ -345,12 +364,13 @@ impl AppState {
         let mut notes: BTreeMap<NoteFile, Note> = notes
             .into_iter()
             .enumerate()
-            .map(|(i, text)| (NoteFile::Note(i as u32), Note { text, cursor: None }))
+            .map(|(i, text)| (NoteFile::Note(i as u32), Note { text, cursor: None, last_cursor: None }))
             .chain([(
                 NoteFile::Settings,
                 Note {
                     text: settings,
                     cursor: None,
+                    last_cursor: None,
                 },
             )])
             .collect();

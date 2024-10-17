@@ -39,6 +39,7 @@ pub enum SlashPaletteAction {
     Update,
     NextCommand,
     PrevCommand,
+    SelectCommand(usize),
     ExecuteCommand(usize),
 }
 
@@ -159,26 +160,27 @@ pub fn process_app_action(
         } => {
             if note_file != state.selected_note {
                 state.add_unsaved_change(UnsavedChange::SelectionChanged);
-
                 if via_shortcut {
                     let note = &mut state.notes.get_mut(&note_file).unwrap();
-                    note.cursor = match note.cursor.clone() {
+
+                    match note.cursor() {
                         None => {
                             let len = note.text.len();
-                            Some(UnOrderedByteSpan::new(len, len))
+                            note.update_cursor(UnOrderedByteSpan::new(len, len));
+
                         }
-                        prev => prev,
-                    };
+                        _ => {}
+                    }
                 } else {
                     // means that we reselected via UI
 
                     // if that is the case then reset cursors from both of the notes
                     if let Some(prev_note) = state.notes.get_mut(&state.selected_note) {
-                        prev_note.cursor = None;
+                        prev_note.reset_cursor();
                     }
 
                     if let Some(cur_note) = state.notes.get_mut(&note_file) {
-                        cur_note.cursor = None;
+                        cur_note.reset_cursor();
                     }
                 }
 
@@ -211,15 +213,14 @@ pub fn process_app_action(
             state.add_unsaved_change(UnsavedChange::PinStateChanged);
             SmallVec::new()
         }
-
         AppAction::ApplyTextChanges {
             target: note_file,
             changes,
             should_trigger_eval,
         } => {
             let note = &mut state.notes.get_mut(&note_file).unwrap();
+            let cursor = note.cursor();
             let text = &mut note.text;
-            let cursor = note.cursor;
 
             let next_action = match apply_text_changes(text, cursor, changes) {
                 Ok(updated_cursor) => {
@@ -228,7 +229,10 @@ pub fn process_app_action(
                         state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
                     }
 
-                    note.cursor = updated_cursor;
+                    match updated_cursor {
+                        Some(cursor) => note.update_cursor(cursor),
+                        None => note.reset_cursor(),
+                    }
 
                     state.add_unsaved_change(UnsavedChange::NoteContentChanged(note_file));
                     // reset the inline prompt state if any changes happened
@@ -271,7 +275,7 @@ pub fn process_app_action(
                         Ok(Some(note_content)) => {
                             if let Some(note) = state.notes.get_mut(&note_file) {
                                 // TODO don't reset the cursor
-                                note.cursor = None;
+                                note.reset_cursor();
                                 if note_file == state.selected_note {
                                     state.text_structure = state
                                         .text_structure
@@ -738,13 +742,12 @@ pub fn process_app_action(
                 return resulting_actions;
             };
             let target_note = state.notes.get_mut(&prompt.address.note_file).unwrap();
-
-            let text_lenght = target_note.text.len();
+            let text_length = target_note.text.len();
             let ByteSpan { start, end, .. } = prompt.address.span;
-            target_note.cursor = target_note.cursor.or(Some(UnOrderedByteSpan::new(
-                start.min(text_lenght),
-                end.min(text_lenght),
-            )));
+            target_note.update_cursor(UnOrderedByteSpan::new(
+                start.min(text_length),
+                end.min(text_length),
+            ));
 
             if accept {
                 let changes = vec![TextChange::Insert(
@@ -800,6 +803,13 @@ pub fn process_app_action(
                     if let Some(pallete) = state.slash_palette.as_mut() {
                         pallete.selected =
                             (pallete.selected + pallete.options.len() - 1) % pallete.options.len()
+                    }
+
+                    SmallVec::new()
+                }
+                SP::SelectCommand(i) => {
+                    if let Some(pallete) = state.slash_palette.as_mut() {
+                        pallete.selected = i
                     }
 
                     SmallVec::new()
@@ -884,11 +894,11 @@ fn update_slash_palette(
     // TODO2 update search term + options
     // let focus_state = compute_app_focus(ctx, state);
 
-    let Some(AppFocus::NoteEditor) = focus_state.focus else {
-        // if we lost focus from the editor just hide the palette
-        println!("## hide Slash Palette: Focus is not on NoteEditor");
-        return None;
-    };
+    // let Some(AppFocus::NoteEditor) = focus_state.focus else {
+    //     // if we lost focus from the editor just hide the palette
+    //     println!("## hide Slash Palette: Focus is not on NoteEditor");
+    //     return None;
+    // };
 
     if palette.note_file != state.selected_note {
         println!("## hide Slash Palette: Palette note file doesn't match selected note");
@@ -896,11 +906,18 @@ fn update_slash_palette(
     }
 
     // if some => means that we still have focus cursor
-    let (note_cursor, text_part) = state.notes.get(&state.selected_note).and_then(|note| {
-        note.cursor
-            .map(|c| c.ordered())
-            .map(|cursor| (cursor, &note.text[palette.slash_byte_pos..]))
-    })?;
+    let (note_cursor, text_part) = state
+        .notes
+        .get(&state.selected_note)
+        .and_then(|note| {
+            note.cursor().or(note.last_cursor())
+                .map(|c| c.ordered())
+                .map(|cursor| (cursor, &note.text[palette.slash_byte_pos..]))
+        })
+        .or_else(|| {
+            println!("## hide Slash Palette: Cursor changed position");
+            return None;
+        })?;
 
     if !text_part.starts_with("/") {
         // it means that either text was modified above or user deleted the "/"

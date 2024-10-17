@@ -21,6 +21,7 @@ pub fn toggle_code_block(
 
         None => {
             // TODO(perf) that operation is likely to be inneficient, due to traversing &str by chars
+            println!("[TOGGLECODEBLOCK] C={:#?} T='{}'", byte_cursor, text);
             let (before, selection, after) = (
                 &text[..byte_cursor.start],
                 &text[byte_cursor.range()],
