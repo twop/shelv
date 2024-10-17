@@ -51,6 +51,27 @@ pub struct Scripts {
     script_blocks: Vec<SriptBlock>,
 }
 
+impl Scripts {
+    fn find_exports(
+        &self,
+        name: &str,
+    ) -> SmallVec<[(SourceHash, PropertyKey, ScriptExportType); 1]> {
+        self.script_blocks
+            .iter()
+            .flat_map(|block| {
+                block
+                    .exports
+                    .iter()
+                    .map(|export| (block.source_hash, export))
+            })
+            .filter_map(|(block_hash, export)| {
+                (name == export.name.as_str())
+                    .then(|| (block_hash, export.key.clone(), export.export_type))
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug)]
 struct ModuleExport {
     name: String,
@@ -246,29 +267,19 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                         }
 
                         ParsedCommand::InsertText(cmd) => {
-                            match &cmd.text {
-                                TextSource::Script(name) => {
-                                    let matching_exports: SmallVec<
-                                        [(&ModuleExport, &SriptBlock); 1],
-                                    > = self
-                                        .scripts
-                                        .script_blocks
-                                        .iter()
-                                        .flat_map(|block| {
-                                            block.exports.iter().map(move |export| (export, block))
-                                        })
-                                        .filter(|(export, _)| &export.name == name)
-                                        .collect();
-
-                                    if matching_exports.is_empty() {
-                                        // TODO return error if not found   s
-                                    }
-                                }
-                                TextSource::Inline(_) => {
-                                    // No need to search for matching exports for inline text
+                            if let TextSource::Script(name) = &cmd.text {
+                                match self.scripts.find_exports(name).as_slice() {
+                                    [] => return BlockEvalResult {
+                                        body: format!("No matching exports for '{name}' were found in js blocks"),
+                                        output_lang,
+                                    },
+                                    [_] => (),
+                                    _ => return BlockEvalResult {
+                                        body: format!("Multiple matching exports for '{name}' were found in js blocks"),
+                                        output_lang,
+                                    },
                                 }
                             }
-                            // No matching export found, proceed with default behavior
 
                             self.cmd_list.add(EditorCommand::user_defined(
                                 // "replace text", // TODO figure out the name
@@ -558,19 +569,8 @@ fn run_insert_text_cmd(
     let text = match text {
         TextSource::Inline(text) => text.clone(),
         TextSource::Script(name) => {
-            let (block_hash, key, prop_type) = scripts
-                .script_blocks
-                .iter()
-                .flat_map(|block| {
-                    block
-                        .exports
-                        .iter()
-                        .map(|export| (block.source_hash, export))
-                })
-                .find_map(|(block_hash, export)| {
-                    (name == export.name.as_str())
-                        .then(|| (block_hash, export.key.clone(), export.export_type))
-                })?;
+            // just grab the first one available
+            let (block_hash, key, prop_type) = scripts.find_exports(name).into_iter().nth(0)?;
 
             let namespace = scripts
                 .module_loader
