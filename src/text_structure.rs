@@ -18,7 +18,7 @@ use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter}
 use crate::{
     byte_span::ByteSpan,
     nord::Nord,
-    scripting::OUTPUT_LANG,
+    scripting::JS_OUTPUT_LANG,
     theme::{AppTheme, ColorManipulation, ColorTheme, FontTheme},
 };
 
@@ -661,7 +661,7 @@ impl TextStructure {
                 let lang = match lang.as_str() {
                     // "ts" => "typescript",
                     // "rs" => "rust",
-                    l if l.starts_with(OUTPUT_LANG) => "js",
+                    l if l.starts_with(JS_OUTPUT_LANG) => "js",
                     l => l,
                 };
 

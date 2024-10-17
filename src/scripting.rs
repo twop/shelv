@@ -27,7 +27,8 @@ impl SourceHash {
     }
 }
 
-pub const OUTPUT_LANG: &str = "js#";
+pub const JS_OUTPUT_LANG: &str = "js#";
+pub const JS_SOURCE_LANG: &str = "js";
 
 #[derive(Debug, Clone, Copy)]
 enum CodeBlock {
@@ -70,8 +71,8 @@ impl NoteEvalContext for JsNoteEvalContext {
         match lang {
             "js" => Some(CodeBlockKind::Source),
 
-            output if output.starts_with(OUTPUT_LANG) => {
-                let hex_str = &output[OUTPUT_LANG.len()..];
+            output if output.starts_with(JS_OUTPUT_LANG) => {
+                let hex_str = &output[JS_OUTPUT_LANG.len()..];
                 Some(CodeBlockKind::Output(SourceHash::parse(hex_str)))
             }
 
@@ -88,7 +89,7 @@ impl NoteEvalContext for JsNoteEvalContext {
                 Err(err) => format!("{:#}", err),
             },
 
-            output_lang: format!("{}{:x}", OUTPUT_LANG, hash.0),
+            output_lang: format!("{}{:x}", JS_OUTPUT_LANG, hash.0),
         }
     }
 

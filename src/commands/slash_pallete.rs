@@ -5,15 +5,51 @@ use crate::{
     app_actions::{AppAction, SlashPaletteAction},
     app_state::{AppState, SlashPalette, SlashPaletteCmd, TextSelectionAddress},
     command::{
-        try_extract_text_command_context, CommandContext, EditorCommandOutput, TextCommandContext,
+        try_extract_text_command_context, AppFocus, AppFocusState, CommandContext,
+        EditorCommandOutput, TextCommandContext,
     },
     effects::text_change_effect::TextChange,
+    scripting::JS_SOURCE_LANG,
+    text_structure::{SpanKind, SpanMeta},
 };
 
 pub fn show_slash_pallete(
-    CommandContext { app_state, .. }: CommandContext,
+    CommandContext {
+        app_state,
+        app_focus,
+        ..
+    }: CommandContext,
 ) -> Option<EditorCommandOutput> {
-    let TextCommandContext { byte_cursor, .. } = try_extract_text_command_context(app_state)?;
+    let is_focused_on_editor = matches!(
+        app_focus,
+        AppFocusState {
+            is_menu_opened: false,
+            focus: Some(AppFocus::NoteEditor),
+        }
+    );
+
+    if !is_focused_on_editor {
+        return None;
+    }
+
+    let TextCommandContext {
+        byte_cursor,
+        text_structure,
+        ..
+    } = try_extract_text_command_context(app_state)?;
+
+    if let Some((_, _, meta)) =
+        text_structure.find_surrounding_span_with_meta(SpanKind::CodeBlock, byte_cursor)
+    {
+        if meta
+            == (SpanMeta::CodeBlock {
+                lang: JS_SOURCE_LANG.to_string(),
+            })
+        {
+            // do not allow "/" palette in JS blocks, let's experiment of having it in other blocks for now
+            return None;
+        }
+    }
 
     Some(SmallVec::from_iter(
         [
@@ -43,26 +79,6 @@ pub fn show_slash_pallete(
         ),
     ))
 }
-
-// pub fn generate_test_slash_palette_commands() -> Vec<SlashPaletteCmd> {
-//     Vec::from([
-//         SlashPaletteCmd {
-//             font_awesome_icon: Some("\u{ed0d}".to_string()),
-//             prefix: "js".to_string(),
-//             description: "inserts markdown javascript code block".to_string(),
-//         },
-//         SlashPaletteCmd {
-//             font_awesome_icon: Some("\u{ec10}".to_string()),
-//             prefix: "ai".to_string(),
-//             description: "inserts ai code block".to_string(),
-//         },
-//         SlashPaletteCmd {
-//             font_awesome_icon: Some("\u{f133}".to_string()),
-//             prefix: "date".to_string(),
-//             description: "inserts current date".to_string(),
-//         },
-//     ])
-// }
 
 pub fn next_slash_cmd(
     CommandContext { app_state, .. }: CommandContext,
