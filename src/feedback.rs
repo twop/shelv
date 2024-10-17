@@ -1,6 +1,5 @@
 use eframe::egui::{
-    self, pos2, vec2, Button, Checkbox, Color32, FontId, InnerResponse, Label, Response, RichText,
-    Stroke, TextEdit, Ui, Widget,
+    self, pos2, vec2, Button, Checkbox, Color32, FontId, FontSelection, InnerResponse, Label, Response, RichText, Stroke, TextEdit, Ui, Widget
 };
 use egui_flex::*;
 
@@ -82,7 +81,7 @@ impl<'a> Feedback<'a> {
                         flex.add(
                             item().grow(1.0),
                             Label::new(
-                                RichText::new("Feedback")
+                                RichText::new("Feedback Form")
                                     .font(FontId {
                                         size: self.theme.fonts.size.normal,
                                         family: self.theme.fonts.family.extra_bold.clone(),
@@ -95,7 +94,7 @@ impl<'a> Feedback<'a> {
                             let close_btn = flex
                                 .add(
                                     item(),
-                                    Button::new(AppIcon::Close.render_thin(
+                                    Button::new(AppIcon::Close.render(
                                         self.theme.sizes.toolbar_icon,
                                         self.theme.colors.subtle_text_color,
                                     ))
@@ -120,10 +119,21 @@ impl<'a> Feedback<'a> {
                                     flex.add(
                                         item(),
                                         Label::new(
-                                            RichText::new("Name / Email")
+                                            RichText::new("Contact Info")
                                                 .font(FontId {
                                                     size: self.theme.fonts.size.normal2,
                                                     family: self.theme.fonts.family.bold.clone(),
+                                                })
+                                                .color(self.theme.colors.subtle_text_color),
+                                        ),
+                                    );
+                                    flex.add(
+                                        item(),
+                                        Label::new(
+                                            RichText::new("(optional)")
+                                                .font(FontId {
+                                                    size: self.theme.fonts.size.normal2,
+                                                    family: self.theme.fonts.family.italic.clone(),
                                                 })
                                                 .color(self.theme.colors.subtle_text_color),
                                         ),
@@ -134,7 +144,12 @@ impl<'a> Feedback<'a> {
 
                             flex.add(
                                 item().grow(1.),
-                                TextEdit::singleline(&mut self.data.contact_info),
+                                TextEdit::singleline(&mut self.data.contact_info).hint_text(format!(
+                                    "Name (your@email.com / discord@ / etc)"
+                                )).hint_text_font(FontSelection::FontId(FontId {
+                                    size: self.theme.fonts.size.normal2,
+                                    family: self.theme.fonts.family.italic.clone(),
+                                })),
                             );
                         },
                     );
@@ -178,7 +193,12 @@ impl<'a> Feedback<'a> {
 
                             flex.add(
                                 item().grow(1.),
-                                TextEdit::multiline(&mut self.data.feedback_text),
+                                TextEdit::multiline(&mut self.data.feedback_text).hint_text(format!(
+                                    "Describe any issues you encountered, or any general feedback."
+                                )).hint_text_font(FontSelection::FontId(FontId {
+                                    size: self.theme.fonts.size.normal2,
+                                    family: self.theme.fonts.family.italic.clone(),
+                                })),
                             );
                         },
                     );
@@ -191,7 +211,7 @@ impl<'a> Feedback<'a> {
                                 flex.add(
                                     item(),
                                     Label::new(
-                                        RichText::new("Experience?")
+                                        RichText::new("Experience rating")
                                             .font(FontId {
                                                 size: self.theme.fonts.size.normal2,
                                                 family: self.theme.fonts.family.bold.clone(),

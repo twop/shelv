@@ -44,13 +44,6 @@ impl AppIcon {
             .size(size)
     }
 
-    pub fn render_thin(&self, size: f32, color: Color32) -> RichText {
-        RichText::new(self.to_icon_str())
-            .family(eframe::epaint::FontFamily::Name("phosphor-thin".into()))
-            .color(color)
-            .size(size)
-    }
-
     pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> WidgetText {
         use egui::{text::LayoutJob, FontId, TextFormat};
 
@@ -413,11 +406,6 @@ pub fn get_font_definitions() -> FontDefinitions {
     fonts
         .font_data
         .insert("phosphor".into(), egui_phosphor::Variant::Light.font_data());
-    fonts.font_data.insert(
-        "phosphor-thin".into(),
-        egui_phosphor::Variant::Thin.font_data(),
-    );
-
     fonts
         .families
         .entry(egui::FontFamily::Proportional)
@@ -429,12 +417,6 @@ pub fn get_font_definitions() -> FontDefinitions {
         .entry(FontFamily::Name("phosphor".into()))
         .or_default()
         .insert(0, "phosphor".to_owned());
-
-    fonts
-        .families
-        .entry(FontFamily::Name("phosphor-thin".into()))
-        .or_default()
-        .insert(0, "phosphor-thin".to_owned());
 
     // Install my own font (maybe supporting non-latin characters).
     // .ttf and .otf files supported.

@@ -43,7 +43,7 @@ syntect = { version = "5.0.0", default-features = false, features = [
 ] }
 smallvec = "1.10.0"
 tray-icon = "0.14.0"
-egui-phosphor = { version = "0.7.1", features = ["light", "thin"] }
+egui-phosphor = { version = "0.7.1", features = ["light"] }
 # tray-item = "0.7.1"
 winit = "0.30.5"
 linkify = "0.10.0"

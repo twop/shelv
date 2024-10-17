@@ -900,7 +900,7 @@ fn render_footer_panel(
 
                     if feedback_sent {
                         if tooltip_value < 1. {
-                            share_btn.show_tooltip_text(RichText::new("Feedback sent!"));
+                            share_btn.show_tooltip_text(RichText::new("Feedback sent, we appreciate your input!"));
                         }
                     }
                 });

@@ -1,10 +1,10 @@
-use std::{io, path::PathBuf};
+use std::{collections::BTreeMap, io, path::PathBuf};
 
 use eframe::egui::{
     text::LayoutJob, Context, Id, KeyboardShortcut, Memory, OpenUrl, ViewportCommand,
 };
 
-use serde_json::to_value;
+use serde_json::{to_value, Value};
 use similar::{ChangeTag, TextDiff};
 use smallvec::{smallvec, SmallVec};
 
@@ -133,6 +133,8 @@ pub trait AppIO {
 
     fn execute_llm_block(&self, question: LLMBlockRequest);
     fn execute_llm_prompt(&self, quesion: LLMPromptRequest);
+
+    fn capture_sentry_message<F>(&self, message: &str, level: sentry::Level, scope: F)-> sentry::types::Uuid where F:  FnOnce(&mut sentry::Scope) ;
 }
 
 pub fn process_app_action(
@@ -518,43 +520,46 @@ pub fn process_app_action(
                 return SmallVec::new();
             };
 
-            sentry::configure_scope(|scope| {
-                let mut map = std::collections::BTreeMap::new();
-                if feedback.feedback_data.include_current_note {
-                    map.insert(
-                        String::from("text_structure"),
-                        format!("{:#?}", state.text_structure).into(),
-                    );
-                    map.insert(
-                        String::from("selected_note"),
-                        format!("{:?}", state.selected_note).into(),
-                    );
-                }
-
-                map.insert(
-                    String::from("feedback"),
-                    to_value(feedback.feedback_data.clone()).unwrap_or_default(),
-                );
-
-                scope.set_context("state", sentry::protocol::Context::Other(map));
-
-                let mut map = std::collections::BTreeMap::new();
-                map.insert(
-                    String::from("contact"),
-                    feedback.feedback_data.contact_info.clone().into(),
-                );
-                scope.set_user(Some(sentry::User {
-                    other: map,
-                    ..Default::default()
-                }));
-            });
-
-            let result = sentry::capture_message(
+            let result = app_io.capture_sentry_message(
                 format!("Feedback: {:?}", feedback.feedback_data.feedback_text).as_str(),
                 match feedback.feedback_data.feedback_type {
                     Some(FeedbackType::Negative) => sentry::Level::Warning,
                     _ => sentry::Level::Info,
                 },
+                |scope| {
+                    let mut map: BTreeMap<String, Value> = std::collections::BTreeMap::new();
+                    if feedback.feedback_data.include_current_note {
+                        map.insert(
+                            String::from("text_structure"),
+                            format!("{:#?}", state.text_structure).into(),
+                        );
+                        map.insert(
+                            String::from("selected_note"),
+                            format!("{:?}", state.selected_note).into(),
+                        );
+                        map.insert(
+                            String::from("note"),
+                            format!("{}", state.notes.get(&state.selected_note).map(|n| n.text.clone()).unwrap_or_default()).into(),
+                        );
+                    }
+    
+                    map.insert(
+                        String::from("feedback"),
+                        to_value(feedback.feedback_data.clone()).unwrap_or_default(),
+                    );
+    
+                    scope.set_context("state", sentry::protocol::Context::Other(map));
+    
+                    let mut map = std::collections::BTreeMap::new();
+                    map.insert(
+                        String::from("contact"),
+                        feedback.feedback_data.contact_info.clone().into(),
+                    );
+                    scope.set_user(Some(sentry::User {
+                        other: map,
+                        ..Default::default()
+                    }));
+                }
             );
 
             println!("Feedback sent: {:?}", result);
