@@ -42,6 +42,7 @@ enum Annotation {
     RawLink,
     Heading(HeadingLevel),
     CodeBlock,
+    CodeBlockLang,
     // CodeBlockBody,
     InlineCode,
     ListItemMarker,
@@ -76,10 +77,17 @@ pub enum SpanKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpanMeta {
-    CodeBlock { lang: String },
-    TaskMarker { checked: bool },
+    CodeBlock {
+        lang: String,
+        lang_byte_span: ByteSpan,
+    },
+    TaskMarker {
+        checked: bool,
+    },
     List(ListDesc),
-    Link { url: String },
+    Link {
+        url: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +108,7 @@ struct MarkdownRunningState {
     list_marker: i8,
     code: i8,
     code_block: i8,
+    code_block_lang: i8,
     heading: [i8; 6],
 }
 
@@ -111,6 +120,7 @@ impl MarkdownRunningState {
             strike: 0,
             code: 0,
             code_block: 0,
+            code_block_lang: 0,
             emphasis: 0,
             heading: Default::default(),
             text: 0,
@@ -496,19 +506,33 @@ impl TextStructure {
                         Emphasis => Some(builder.add(SpanKind::Emphasis, range)),
                         Strikethrough => Some(builder.add(SpanKind::Strike, range)),
 
-                        CodeBlock(CodeBlockKind::Fenced(lang)) => Some(builder.add_with_meta(
-                            SpanKind::CodeBlock,
-                            range.clone(),
-                            SpanMeta::CodeBlock {
-                                lang: lang.as_ref().to_string(),
-                            },
-                        )),
+                        CodeBlock(CodeBlockKind::Fenced(lang)) => {
+                            let lang_str = lang.as_ref();
+                            let lang_start = text[range.range()]
+                                .find(lang_str)
+                                .map(|pos| range.start + pos);
+                            let lang_end = lang_start.map(|start| start + lang_str.len());
+                            let lang_byte_span = lang_start
+                                .zip(lang_end)
+                                .map(|(start, end)| ByteSpan::new(start, end));
+
+                            Some(builder.add_with_meta(
+                                SpanKind::CodeBlock,
+                                range.clone(),
+                                SpanMeta::CodeBlock {
+                                    lang: lang_str.to_string(),
+                                    lang_byte_span:
+                                        lang_byte_span.unwrap_or(ByteSpan::point(range.start)),
+                                },
+                            ))
+                        }
 
                         CodeBlock(CodeBlockKind::Indented) => Some(builder.add_with_meta(
                             SpanKind::CodeBlock,
                             range.clone(),
                             SpanMeta::CodeBlock {
                                 lang: "".to_string(),
+                                lang_byte_span: ByteSpan::point(range.start),
                             },
                         )),
 
@@ -654,7 +678,14 @@ impl TextStructure {
                     SpanKind::CodeBlock,
                     ByteSpan::new(pos, point.str_offset),
                 ) {
-                    Some((_, _, SpanMeta::CodeBlock { lang })) => lang.to_string(),
+                    Some((
+                        _,
+                        _,
+                        SpanMeta::CodeBlock {
+                            lang,
+                            lang_byte_span,
+                        },
+                    )) => lang.to_string(),
                     _ => "".to_string(),
                 };
 
@@ -819,6 +850,23 @@ impl TextStructure {
                         TextFormat::simple(code_font_id.clone(), theme.colors.normal_text_color),
                     ),
                 }
+            } else if state.code_block_lang > 0 {
+                // there need to be several improvements:
+                // 1. after '#' it should be probably grey and subtle
+                // 2. take into account case like that '```js date.js', note that 'date.js' is meant to be a file name there
+                //    but the entire 'js date.js' will be parsed as a lang, thus we need to do additional parsing
+                // 3. the color is a bit too bright, possibly switch to something more neutral
+                job.append(
+                    text.get(pos..point.str_offset).unwrap_or(""),
+                    0.0,
+                    TextFormat::simple(
+                        FontId {
+                            size: theme.fonts.size.small,
+                            family: theme.fonts.family.normal.clone(),
+                        },
+                        theme.colors.md_code,
+                    ),
+                )
             } else {
                 job.append(
                     text.get(pos..point.str_offset).unwrap_or(""),
@@ -848,6 +896,7 @@ impl TextStructure {
                 }
                 Annotation::InlineCode => state.code += delta,
                 Annotation::CodeBlock => state.code_block += delta,
+                Annotation::CodeBlockLang => state.code_block_lang += delta,
             }
 
             pos = point.str_offset;
@@ -1075,7 +1124,7 @@ impl TextStructure {
         self.iter()
             .filter_map(move |(index, desc)| match desc.kind {
                 SpanKind::CodeBlock => self.find_meta(index).and_then(|meta| match meta {
-                    SpanMeta::CodeBlock { lang } => f(lang).map(|val| (index, desc, val)),
+                    SpanMeta::CodeBlock { lang, .. } => f(lang).map(|val| (index, desc, val)),
 
                     _ => None,
                 }),
@@ -1192,22 +1241,15 @@ fn fill_annotation_points(
                 (Annotation::InlineCode, pos),
                 (Annotation::Text, ByteSpan::new(pos.start + 1, pos.end - 1))
             ],
-            SpanKind::CodeBlock => smallvec![(Annotation::CodeBlock, pos)],
-            // SpanKind::CodeBlock => match find_metadata(span_index, metadata) {
-            //     Some(SpanMeta::CodeBlock { lang }) => match *checked {
-            //         true => {
-            //             let list_item_content =
-            //                 calc_total_range(iterate_children_of(*parent, spans))
-            //                     .unwrap_or(pos.clone());
-            //             smallvec![
-            //                 (Annotation::TaskMarker, pos),
-            //                 (Annotation::Strike, list_item_content)
-            //             ]
-            //         }
-            //         false => smallvec![(Annotation::TaskMarker, pos)],
-            //     },
-            //     _ => smallvec![(Annotation::CodeBlock, pos)],
-            // },
+            SpanKind::CodeBlock => match find_metadata(span_index, metadata) {
+                Some(SpanMeta::CodeBlock { lang_byte_span, .. }) if !lang_byte_span.is_empty() => {
+                    smallvec![
+                        (Annotation::CodeBlock, pos),
+                        (Annotation::CodeBlockLang, *lang_byte_span)
+                    ]
+                }
+                _ => smallvec![(Annotation::CodeBlock, pos)],
+            },
             SpanKind::MdLink => smallvec![(Annotation::Link, pos)],
             SpanKind::ListItem => smallvec![(
                 Annotation::ListItemMarker,
@@ -1529,7 +1571,27 @@ mod tests {
 
         assert_eq!(
             SpanMeta::CodeBlock {
-                lang: "js".to_string()
+                lang: "js".to_string(),
+                lang_byte_span: ByteSpan::new(3, 5)
+            },
+            meta
+        );
+    }
+
+    #[test]
+    pub fn test_code_block_parsing_with_spaces() {
+        let md = "``` part1 part2  \n1+1```";
+
+        let structure = TextStructure::new(md);
+
+        let (_, _, meta) = structure
+            .find_surrounding_span_with_meta(SpanKind::CodeBlock, ByteSpan::new(0, 0))
+            .unwrap();
+
+        assert_eq!(
+            SpanMeta::CodeBlock {
+                lang: "part1 part2".to_string(),
+                lang_byte_span: ByteSpan::new(3, 5)
             },
             meta
         );

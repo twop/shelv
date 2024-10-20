@@ -108,7 +108,7 @@ impl Note {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum UnsavedChange {
-    NoteContentChanged(NoteFile),    
+    NoteContentChanged(NoteFile),
     SelectionChanged,
     LastUpdated,
     PinStateChanged,
@@ -272,7 +272,7 @@ impl ComputedLayout {
                 SpanKind::CodeBlock => {
                     text_structure.find_meta(index).and_then(|meta| match meta {
                         // TODO use small string instead
-                        SpanMeta::CodeBlock { lang } => {
+                        SpanMeta::CodeBlock { lang, .. } => {
                             Some((desc.byte_pos, lang.to_owned(), index))
                         }
                         _ => None,
@@ -364,7 +364,16 @@ impl AppState {
         let mut notes: BTreeMap<NoteFile, Note> = notes
             .into_iter()
             .enumerate()
-            .map(|(i, text)| (NoteFile::Note(i as u32), Note { text, cursor: None, last_cursor: None }))
+            .map(|(i, text)| {
+                (
+                    NoteFile::Note(i as u32),
+                    Note {
+                        text,
+                        cursor: None,
+                        last_cursor: None,
+                    },
+                )
+            })
             .chain([(
                 NoteFile::Settings,
                 Note {

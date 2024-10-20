@@ -38,17 +38,12 @@ pub fn show_slash_pallete(
         ..
     } = try_extract_text_command_context(app_state)?;
 
-    if let Some((_, _, meta)) =
-        text_structure.find_surrounding_span_with_meta(SpanKind::CodeBlock, byte_cursor)
-    {
-        if meta
-            == (SpanMeta::CodeBlock {
-                lang: JS_SOURCE_LANG.to_string(),
-            })
-        {
+    match text_structure.find_surrounding_span_with_meta(SpanKind::CodeBlock, byte_cursor) {
+        Some((_, _, SpanMeta::CodeBlock { lang, .. })) if lang == JS_SOURCE_LANG => {
             // do not allow "/" palette in JS blocks, let's experiment of having it in other blocks for now
             return None;
         }
+        _ => (),
     }
 
     Some(SmallVec::from_iter(

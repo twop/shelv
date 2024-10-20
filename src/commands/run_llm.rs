@@ -63,7 +63,7 @@ pub fn prepare_to_run_llm_block(
             let text_structure = TextStructure::new(&note.text);
 
             let cursor = match text_structure.get_span_with_meta(span_index) {
-                Some((desc, SpanMeta::CodeBlock { lang })) if lang == LLM_LANG => {
+                Some((desc, SpanMeta::CodeBlock { lang, .. })) if lang == LLM_LANG => {
                     Some(desc.byte_pos)
                 }
                 _ => None,

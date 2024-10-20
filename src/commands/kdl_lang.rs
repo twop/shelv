@@ -31,7 +31,7 @@ pub fn on_enter_inside_kdl_block(
         .find_span_at(SpanKind::CodeBlock, cursor)
         .and_then(|(span_range, item_index)| structure.find_meta(item_index).zip(Some(span_range)))
         .and_then(|(meta, span_range)| match meta {
-            SpanMeta::CodeBlock { lang } if lang == SETTINGS_BLOCK_LANG => Some(span_range),
+            SpanMeta::CodeBlock { lang, .. } if lang == SETTINGS_BLOCK_LANG => Some(span_range),
             _ => None,
         })?;
 
@@ -140,7 +140,7 @@ pub fn autoclose_bracket_inside_kdl_block(
         .find_span_at(SpanKind::CodeBlock, cursor.clone())
         .and_then(|(_, item_index)| structure.find_meta(item_index))
         .and_then(|meta| match meta {
-            SpanMeta::CodeBlock { lang } if lang == SETTINGS_BLOCK_LANG => {
+            SpanMeta::CodeBlock { lang, .. } if lang == SETTINGS_BLOCK_LANG => {
                 if cursor.is_empty() {
                     Some(
                         [TextChange::Insert(
