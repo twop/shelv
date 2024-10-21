@@ -75,6 +75,7 @@ pub struct LocalBinding {
     pub shortcut: KeyboardShortcut,
     pub command: ParsedCommand,
     pub slash_alias: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -330,8 +331,8 @@ fn parse_replace_text_with(node: &KdlNode) -> Result<String, SettingsParseError>
 fn parse_binding<Cmd>(
     node: &KdlNode,
     parse: impl Fn(&KdlNode) -> Result<Cmd, SettingsParseError>,
-) -> Result<(KeyboardShortcut, Option<String>, Cmd), SettingsParseError> {
-    if !(1..3).contains(&node.entries().len()) {
+) -> Result<(KeyboardShortcut, Option<String>, Option<String>, Cmd), SettingsParseError> {
+    if !(1..4).contains(&node.entries().len()) {
         return Err(SettingsParseError::MismatchedArgsCount(
             node.name().span().clone(),
             1,
@@ -350,20 +351,25 @@ fn parse_binding<Cmd>(
         .map_err(|err| SettingsParseError::CouldntParseShortCut(kdl_entry.span().clone(), err))?;
 
     // Try parsing alias
-    let alias = node
-        .entries()
-        .get(1)
-        .and_then(|entry| entry.name())
-        .and_then(|name| {
-            if name.value() == "alias" {
-                Some(name)
-            } else {
-                None
-            }
-        })
-        .and_then(|_| node.entries().get(1))
-        .and_then(|entry| entry.value().as_string())
-        .map(|s| s.to_string());
+    let alias = node.entries().iter().find_map(|entry| {
+        if entry.name().map_or(false, |name| name.value() == "alias") {
+            entry.value().as_string().map(String::from)
+        } else {
+            None
+        }
+    });
+
+    // Try parsing description
+    let description = node.entries().iter().find_map(|entry| {
+        if entry
+            .name()
+            .map_or(false, |name| name.value() == "description")
+        {
+            entry.value().as_string().map(String::from)
+        } else {
+            None
+        }
+    });
 
     let Some(children) = node.children() else {
         return Err(SettingsParseError::MismatchedChildren(
@@ -386,7 +392,7 @@ fn parse_binding<Cmd>(
     //     SettingsParseError::CoulndntParseCommand(command_node.span().clone(), err)
     // })?;
 
-    Ok((shortcut, alias, command))
+    Ok((shortcut, alias, description, command))
 }
 
 pub fn parse_top_level_settings_block(
@@ -399,13 +405,14 @@ pub fn parse_top_level_settings_block(
         .iter()
         .filter(|node| node.name().value() == "bind")
         .map(|node| {
-            parse_binding(node, parse_command).map(|(shortcut, slash_alias, command)| {
-                LocalBinding {
+            parse_binding(node, parse_command).map(
+                |(shortcut, slash_alias, description, command)| LocalBinding {
                     shortcut,
                     slash_alias,
                     command,
-                }
-            })
+                    description,
+                },
+            )
         })
         .collect();
 
@@ -415,7 +422,7 @@ pub fn parse_top_level_settings_block(
         .filter(|node| node.name().value() == "global")
         .map(|node| {
             parse_binding(node, parse_global_command)
-                .map(|(shortcut, _, command)| GlobalBinding { shortcut, command })
+                .map(|(shortcut, _, _, command)| GlobalBinding { shortcut, command })
         })
         .collect();
 
@@ -496,7 +503,8 @@ mod tests {
                 bindings: [LocalBinding {
                     shortcut: KeyboardShortcut::new(Modifiers::MAC_CMD, Key::A),
                     command: ParsedCommand::Predefined(BuiltInCommand::HideApp),
-                    slash_alias: None
+                    slash_alias: None,
+                    description: None
                 }]
                 .into(),
                 global_bindings: vec![],
@@ -508,7 +516,7 @@ mod tests {
     #[test]
     pub fn test_insert_text_cmd_parsing() {
         let doc_str = r#"
-        bind "Cmd J" alias="some_alias" {
+        bind "Cmd J" alias="some_alias" description="some description" {
             InsertText {
                 target "selection"
                 text "something else"
@@ -527,7 +535,8 @@ mod tests {
                         target: InsertTextTarget::Selection,
                         text: TextSource::Inline("something else".to_string())
                     }),
-                    slash_alias: Some("some_alias".to_string())
+                    slash_alias: Some("some_alias".to_string()),
+                    description: Some("some description".to_string())
                 }]
                 .into(),
                 global_bindings: vec![],
@@ -559,7 +568,8 @@ mod tests {
                         target: InsertTextTarget::Selection,
                         text: TextSource::Script(ScriptCall::new("my_script_function".to_string()))
                     }),
-                    slash_alias: None
+                    slash_alias: None,
+                    description: None
                 }]
                 .into(),
                 global_bindings: vec![],

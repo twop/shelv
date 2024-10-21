@@ -263,6 +263,7 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                     shortcut,
                     command,
                     slash_alias,
+                    description,
                 } in settings.bindings
                 {
                     println!("applying {shortcut:?} to {command:?}");
@@ -294,10 +295,13 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                             );
 
                             if let Some(prefix) = slash_alias {
-                                self.cmd_list.add_custom_slash_command(
-                                    SlashPaletteCmd::from_editor_cmd(prefix, &cmd)
-                                        .icon(egui_phosphor::light::USER_CIRCLE_GEAR.to_string()),
-                                );
+                                let cmd = SlashPaletteCmd::from_editor_cmd(prefix, &cmd)
+                                    .icon(egui_phosphor::light::USER_CIRCLE_GEAR.to_string());
+
+                                self.cmd_list.add_custom_slash_command(match description {
+                                    Some(desc) => cmd.description(desc),
+                                    None => cmd,
+                                });
                             }
 
                             self.cmd_list.add_editor_cmd(cmd);
