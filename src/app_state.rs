@@ -1,15 +1,14 @@
 use std::{
     collections::BTreeMap,
-    hash::{DefaultHasher, Hash, Hasher},
+    hash::{Hash, Hasher},
     path::PathBuf,
     sync::{mpsc::Receiver, Arc},
 };
 
 use eframe::{
     egui::{
-        self,
         text::{CCursor, LayoutJob},
-        Id, Key, KeyboardShortcut, Modifiers, Rect, Ui,
+        Id, Key, Rect, Ui,
     },
     epaint::Galley,
 };
@@ -322,7 +321,7 @@ impl AppState {
 
         let shelf_count = notes.len();
 
-        let mut notes: BTreeMap<NoteFile, Note> = notes
+        let notes: BTreeMap<NoteFile, Note> = notes
             .into_iter()
             .enumerate()
             .map(|(i, text)| {

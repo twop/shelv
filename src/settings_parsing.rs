@@ -1,22 +1,10 @@
-use std::{fmt::format, str::FromStr, time::Instant};
+use std::str::FromStr;
 
-use eframe::egui::{util::undoer::Settings, Key, KeyboardShortcut, ModifierNames, Modifiers};
-use itertools::{Either, Itertools};
+use eframe::egui::{Key, KeyboardShortcut, ModifierNames, Modifiers};
 use kdl::{KdlDocument, KdlEntry, KdlError, KdlNode, KdlValue};
 use miette::SourceSpan;
-use smallvec::SmallVec;
 
-use crate::{
-    app_actions::AppIO,
-    app_state::MsgToApp,
-    command::{
-        map_text_command_to_command_handler, BuiltInCommand, CommandList, EditorCommand,
-        TextCommandContext, PROMOTED_COMMANDS,
-    },
-    effects::text_change_effect::TextChange,
-    scripting::{execute_code_blocks, BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
-    text_structure::{SpanKind, TextStructure},
-};
+use crate::command::BuiltInCommand;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct LlmSettings {
@@ -75,6 +63,7 @@ pub struct LocalBinding {
     pub shortcut: KeyboardShortcut,
     pub command: ParsedCommand,
     pub slash_alias: Option<String>,
+    pub phosphor_icon: Option<String>,
     pub description: Option<String>,
 }
 
@@ -328,16 +317,23 @@ fn parse_replace_text_with(node: &KdlNode) -> Result<String, SettingsParseError>
     }
 }
 
+struct ParsedBinding {
+    shortcut: KeyboardShortcut,
+    slash_alias: Option<String>,
+    description: Option<String>,
+    phosphor_icon: Option<String>,
+}
+
 fn parse_binding<Cmd>(
     node: &KdlNode,
     parse: impl Fn(&KdlNode) -> Result<Cmd, SettingsParseError>,
-) -> Result<(KeyboardShortcut, Option<String>, Option<String>, Cmd), SettingsParseError> {
-    if !(1..4).contains(&node.entries().len()) {
-        return Err(SettingsParseError::MismatchedArgsCount(
-            node.name().span().clone(),
-            1,
-        ));
-    }
+) -> Result<(ParsedBinding, Cmd), SettingsParseError> {
+    // if !(1..4).contains(&node.entries().len()) {
+    //     return Err(SettingsParseError::MismatchedArgsCount(
+    //         node.name().span().clone(),
+    //         1,
+    //     ));
+    // }
 
     let kdl_entry = &node.entries()[0];
     let Some(str_attr) = kdl_entry.value().as_string() else {
@@ -352,23 +348,25 @@ fn parse_binding<Cmd>(
 
     // Try parsing alias
     let alias = node.entries().iter().find_map(|entry| {
-        if entry.name().map_or(false, |name| name.value() == "alias") {
-            entry.value().as_string().map(String::from)
-        } else {
-            None
-        }
+        entry
+            .name()
+            .filter(|name| name.value() == "alias")
+            .and_then(|_| entry.value().as_string().map(String::from))
     });
 
     // Try parsing description
     let description = node.entries().iter().find_map(|entry| {
-        if entry
+        entry
             .name()
-            .map_or(false, |name| name.value() == "description")
-        {
-            entry.value().as_string().map(String::from)
-        } else {
-            None
-        }
+            .filter(|name| name.value() == "description")
+            .and_then(|_| entry.value().as_string().map(String::from))
+    });
+
+    let phosphor_icon = node.entries().iter().find_map(|entry| {
+        entry
+            .name()
+            .filter(|name| name.value() == "icon")
+            .and_then(|_| entry.value().as_string().map(String::from))
     });
 
     let Some(children) = node.children() else {
@@ -392,7 +390,15 @@ fn parse_binding<Cmd>(
     //     SettingsParseError::CoulndntParseCommand(command_node.span().clone(), err)
     // })?;
 
-    Ok((shortcut, alias, description, command))
+    Ok((
+        ParsedBinding {
+            shortcut,
+            slash_alias: alias,
+            phosphor_icon,
+            description,
+        },
+        command,
+    ))
 }
 
 pub fn parse_top_level_settings_block(
@@ -406,11 +412,20 @@ pub fn parse_top_level_settings_block(
         .filter(|node| node.name().value() == "bind")
         .map(|node| {
             parse_binding(node, parse_command).map(
-                |(shortcut, slash_alias, description, command)| LocalBinding {
+                |(
+                    ParsedBinding {
+                        shortcut,
+                        slash_alias,
+                        description,
+                        phosphor_icon,
+                    },
+                    command,
+                )| LocalBinding {
                     shortcut,
                     slash_alias,
                     command,
                     description,
+                    phosphor_icon,
                 },
             )
         })
@@ -421,8 +436,10 @@ pub fn parse_top_level_settings_block(
         .iter()
         .filter(|node| node.name().value() == "global")
         .map(|node| {
-            parse_binding(node, parse_global_command)
-                .map(|(shortcut, _, _, command)| GlobalBinding { shortcut, command })
+            parse_binding(node, parse_global_command).map(|(binging, command)| GlobalBinding {
+                shortcut: binging.shortcut,
+                command,
+            })
         })
         .collect();
 
@@ -504,7 +521,8 @@ mod tests {
                     shortcut: KeyboardShortcut::new(Modifiers::MAC_CMD, Key::A),
                     command: ParsedCommand::Predefined(BuiltInCommand::HideApp),
                     slash_alias: None,
-                    description: None
+                    description: None,
+                    phosphor_icon: None
                 }]
                 .into(),
                 global_bindings: vec![],
@@ -516,7 +534,7 @@ mod tests {
     #[test]
     pub fn test_insert_text_cmd_parsing() {
         let doc_str = r#"
-        bind "Cmd J" alias="some_alias" description="some description" {
+        bind "Cmd J" alias="some_alias" icon="some icon" description="some description" {
             InsertText {
                 target "selection"
                 text "something else"
@@ -536,7 +554,8 @@ mod tests {
                         text: TextSource::Inline("something else".to_string())
                     }),
                     slash_alias: Some("some_alias".to_string()),
-                    description: Some("some description".to_string())
+                    description: Some("some description".to_string()),
+                    phosphor_icon: Some("some icon".to_string())
                 }]
                 .into(),
                 global_bindings: vec![],
@@ -569,7 +588,8 @@ mod tests {
                         text: TextSource::Script(ScriptCall::new("my_script_function".to_string()))
                     }),
                     slash_alias: None,
-                    description: None
+                    description: None,
+                    phosphor_icon: None
                 }]
                 .into(),
                 global_bindings: vec![],

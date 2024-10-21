@@ -4,16 +4,14 @@ use eframe::{
     egui::{
         self,
         scroll_area::ScrollBarVisibility,
-        text::{CCursor, CCursorRange, LayoutJob},
+        text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Button, Context, CursorIcon, EventFilter, FontFamily, Id, Key, KeyboardShortcut, Label,
-        LayerId, Layout, Margin, ModifierNames, Modifiers, Painter, Pos2, Response, RichText,
-        Rounding, ScrollArea, Sense, TextEdit, TextFormat, TopBottomPanel, Ui, UiBuilder,
-        UiStackInfo, Vec2, WidgetText, Window,
+        Context, CursorIcon, FontFamily, Id, Key, KeyboardShortcut, Label, Layout, Margin,
+        Modifiers, Painter, Pos2, Response, RichText, ScrollArea, Sense, TextEdit, TextFormat,
+        TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
-    Frame,
 };
 use egui_flex::{item, Flex, FlexItem};
 use itertools::Itertools;

@@ -1,11 +1,9 @@
 use std::{io, path::PathBuf};
 
-use eframe::egui::{
-    text::LayoutJob, Context, Id, KeyboardShortcut, Memory, OpenUrl, ViewportCommand,
-};
+use eframe::egui::{text::LayoutJob, Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
 
 use similar::{ChangeTag, TextDiff};
-use smallvec::{smallvec, SmallVec};
+use smallvec::SmallVec;
 
 use crate::{
     app_state::{

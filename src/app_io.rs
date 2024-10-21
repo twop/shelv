@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     ffi::CString,
-    fs::{self, File},
+    fs::File,
     io::{self, Read},
     path::PathBuf,
     sync::mpsc::SyncSender,
