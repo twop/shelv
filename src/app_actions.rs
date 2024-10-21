@@ -167,7 +167,6 @@ pub fn process_app_action(
                         None => {
                             let len = note.text.len();
                             note.update_cursor(UnOrderedByteSpan::new(len, len));
-
                         }
                         _ => {}
                     }
@@ -506,7 +505,7 @@ pub fn process_app_action(
                         execute_code_blocks(&mut settings_scripts, &text_structure, &text);
 
                     let mut cx = SettingsNoteEvalContext {
-                        cmd_list: &mut state.editor_commands,
+                        cmd_list: &mut state.commands,
                         scripts: &settings_scripts,
                         should_force_eval: true,
                         app_io,
@@ -910,7 +909,8 @@ fn update_slash_palette(
         .notes
         .get(&state.selected_note)
         .and_then(|note| {
-            note.cursor().or(note.last_cursor())
+            note.cursor()
+                .or(note.last_cursor())
                 .map(|c| c.ordered())
                 .map(|cursor| (cursor, &note.text[palette.slash_byte_pos..]))
         })
@@ -951,8 +951,8 @@ fn update_slash_palette(
     // Update options based on search term
     // This is a placeholder - implement actual filtering logic
     palette.options = state
-        .slash_palette_commands
-        .iter()
+        .commands
+        .available_slash_commands()
         .filter(|option| option.prefix.starts_with(search_term))
         .cloned()
         .collect();

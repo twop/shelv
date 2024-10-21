@@ -262,34 +262,95 @@ impl BuiltInCommand {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SlashPaletteCmd {
+    pub phosphor_icon: Option<String>,
+    pub shortcut: Option<KeyboardShortcut>,
+    pub prefix: String,
+    pub description: String,
+    pub editor_cmd: EditorCommand,
+}
+
+impl SlashPaletteCmd {
+    pub fn from_editor_cmd(prefix: impl Into<String>, editor_cmd: &EditorCommand) -> Self {
+        Self {
+            phosphor_icon: None,
+            prefix: prefix.into(),
+            shortcut: editor_cmd.shortcut.clone(),
+            description: editor_cmd
+                .kind
+                .map(|kind| kind.human_description().to_string())
+                .unwrap_or_else(|| "".to_string()),
+            editor_cmd: editor_cmd.clone(),
+        }
+    }
+    pub fn icon(mut self, icon: String) -> Self {
+        self.phosphor_icon = Some(icon);
+        self
+    }
+
+    pub fn shortcut(mut self, shortcut: KeyboardShortcut) -> Self {
+        self.shortcut = Some(shortcut);
+        self
+    }
+
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub enum GlobalCommandKind {
     ShowHideApp,
 }
 
-pub struct CommandList(Vec<EditorCommand>);
+pub struct CommandList {
+    editor_commands: Vec<EditorCommand>,
+    available_slash_palette_commands: Vec<SlashPaletteCmd>,
+    custom_slash_commands: Vec<SlashPaletteCmd>,
+}
 
 impl CommandList {
-    pub fn new(list: Vec<EditorCommand>) -> Self {
+    pub fn new(list: Vec<EditorCommand>, slash_palette_commands: Vec<SlashPaletteCmd>) -> Self {
         // TODO: ensure uniqness of names
         // that is going to be even more critical with settings note
-        Self(list)
+        Self {
+            editor_commands: list,
+            available_slash_palette_commands: slash_palette_commands,
+            custom_slash_commands: vec![],
+        }
     }
 
-    pub fn slice(&self) -> &[EditorCommand] {
-        &self.0
+    pub fn available_editor_commands(&self) -> impl Iterator<Item = &EditorCommand> {
+        self.editor_commands.iter()
+    }
+
+    pub fn available_slash_commands(&self) -> impl Iterator<Item = &SlashPaletteCmd> {
+        self.available_slash_palette_commands
+            .iter()
+            .chain(self.custom_slash_commands.iter())
+    }
+
+    pub fn remove_custom_slash_commands(&mut self) {
+        self.custom_slash_commands.clear();
     }
 
     pub fn find(&self, cmd: BuiltInCommand) -> Option<&EditorCommand> {
-        self.slice().iter().find(|c| c.kind == Some(cmd))
+        self.available_editor_commands()
+            .find(|c| c.kind == Some(cmd))
     }
 
-    pub fn retain_only(&mut self, filter: impl Fn(&EditorCommand) -> bool) {
-        self.0.retain(filter)
+    pub fn editor_retain_only(&mut self, filter: impl Fn(&EditorCommand) -> bool) {
+        self.editor_commands.retain(filter)
     }
 
-    pub fn add(&mut self, cmd: EditorCommand) {
-        self.0.push(cmd)
+    pub fn add_editor_cmd(&mut self, cmd: EditorCommand) {
+        self.editor_commands.push(cmd)
+    }
+
+    pub fn add_custom_slash_command(&mut self, cmd: SlashPaletteCmd) {
+        self.custom_slash_commands.push(cmd);
     }
 
     pub fn set_or_replace_builtin_shortcut(
@@ -297,13 +358,16 @@ impl CommandList {
         shortcut: KeyboardShortcut,
         cmd: BuiltInCommand,
     ) -> Option<()> {
-        let cmd = self.0.iter_mut().find(|c| c.kind == Some(cmd))?;
+        let cmd = self
+            .editor_commands
+            .iter_mut()
+            .find(|c| c.kind == Some(cmd))?;
         cmd.shortcut = Some(shortcut);
         Some(())
     }
 
     pub fn reset_builtins_to_default_keybindings(&mut self) {
-        for command in self.0.iter_mut() {
+        for command in self.editor_commands.iter_mut() {
             if let Some(kind) = command.kind {
                 command.shortcut = Some(kind.default_keybinding());
             }

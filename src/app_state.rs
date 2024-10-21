@@ -25,7 +25,7 @@ use crate::{
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
         map_text_command_to_command_handler, AppFocus, BuiltInCommand, CommandContext, CommandList,
-        EditorCommand, EditorCommandOutput, TextCommandContext,
+        EditorCommand, EditorCommandOutput, SlashPaletteCmd, TextCommandContext,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
@@ -114,44 +114,6 @@ pub enum UnsavedChange {
     PinStateChanged,
 }
 
-#[derive(Debug, Clone)]
-pub struct SlashPaletteCmd {
-    pub phosphor_icon: Option<String>,
-    pub shortcut: Option<KeyboardShortcut>,
-    pub prefix: String,
-    pub description: String,
-    pub editor_cmd: EditorCommand,
-}
-
-impl SlashPaletteCmd {
-    pub fn from_editor_cmd(prefix: impl Into<String>, editor_cmd: &EditorCommand) -> Self {
-        Self {
-            phosphor_icon: None,
-            prefix: prefix.into(),
-            shortcut: editor_cmd.shortcut.clone(),
-            description: editor_cmd
-                .kind
-                .map(|kind| kind.human_description().to_string())
-                .unwrap_or_else(|| "".to_string()),
-            editor_cmd: editor_cmd.clone(),
-        }
-    }
-    pub fn icon(mut self, icon: String) -> Self {
-        self.phosphor_icon = Some(icon);
-        self
-    }
-
-    pub fn shortcut(mut self, shortcut: KeyboardShortcut) -> Self {
-        self.shortcut = Some(shortcut);
-        self
-    }
-
-    pub fn description(mut self, description: impl Into<String>) -> Self {
-        self.description = description.into();
-        self
-    }
-}
-
 #[derive(Debug)]
 pub struct SlashPalette {
     pub note_file: NoteFile,
@@ -181,12 +143,11 @@ pub struct AppState {
     pub msg_queue: Receiver<MsgToApp>,
     pub hidden: bool,
     pub prev_focused: bool,
-    pub editor_commands: CommandList,
+    pub commands: CommandList,
     pub llm_settings: Option<LlmSettings>,
 
     pub inline_llm_prompt: Option<InlineLLMPromptState>,
     pub slash_palette: Option<SlashPalette>,
-    pub slash_palette_commands: Vec<SlashPaletteCmd>,
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
@@ -550,8 +511,6 @@ impl AppState {
         ));
         // ------
 
-        let editor_commands = CommandList::new(editor_commands);
-
         use egui_phosphor::light as P;
         let slash_palette_commands = []
             .into_iter()
@@ -572,13 +531,18 @@ impl AppState {
                 ]
                 .into_iter()
                 .filter_map(|(prefix, builtin, phosphor_icon)| {
-                    editor_commands.find(builtin).map(|cmd| {
-                        SlashPaletteCmd::from_editor_cmd(prefix, cmd)
-                            .icon(phosphor_icon.to_string())
-                    })
+                    editor_commands
+                        .iter()
+                        .find(|c| c.kind == Some(builtin))
+                        .map(|cmd| {
+                            SlashPaletteCmd::from_editor_cmd(prefix, cmd)
+                                .icon(phosphor_icon.to_string())
+                        })
                 }),
             )
             .collect();
+
+        let editor_commands = CommandList::new(editor_commands, slash_palette_commands);
 
         let deferred_actions = vec![AppAction::EvalNote(NoteFile::Settings)];
 
@@ -597,12 +561,11 @@ impl AppState {
             hidden: false,
             prev_focused: false,
             last_saved,
-            editor_commands,
+            commands: editor_commands,
             llm_settings: None,
             deferred_actions,
             inline_llm_prompt: None,
             slash_palette: None,
-            slash_palette_commands,
             settings_scripts: None,
         }
     }

@@ -31,22 +31,29 @@ pub struct TopLevelKdlSettings {
     pub llm_settings: Vec<LlmSettings>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InsertTextTarget {
     Selection,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScriptCall {
-    func_name: String,
+    pub func_name: String,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+impl ScriptCall {
+    pub fn new(func_name: String) -> Self {
+        Self { func_name }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TextSource {
     Inline(String),
-    Script(String),
+    Script(ScriptCall),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedCmdInsertText {
     pub target: InsertTextTarget,
     pub text: TextSource,
@@ -67,6 +74,7 @@ pub enum GlobalCommand {
 pub struct LocalBinding {
     pub shortcut: KeyboardShortcut,
     pub command: ParsedCommand,
+    pub slash_alias: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -246,7 +254,7 @@ fn parse_text_source(source_node: &KdlNode) -> Result<TextSource, SettingsParseE
             match call_node.entries() {
                 [entry] => match &entry.value() {
                     KdlValue::String(s) | KdlValue::RawString(s) => {
-                        Ok(TextSource::Script(s.clone()))
+                        Ok(TextSource::Script(ScriptCall::new(s.clone())))
                     }
 
                     _ => Err(PE::MismatchedType {
@@ -322,8 +330,8 @@ fn parse_replace_text_with(node: &KdlNode) -> Result<String, SettingsParseError>
 fn parse_binding<Cmd>(
     node: &KdlNode,
     parse: impl Fn(&KdlNode) -> Result<Cmd, SettingsParseError>,
-) -> Result<(KeyboardShortcut, Cmd), SettingsParseError> {
-    if node.entries().len() != 1 {
+) -> Result<(KeyboardShortcut, Option<String>, Cmd), SettingsParseError> {
+    if !(1..3).contains(&node.entries().len()) {
         return Err(SettingsParseError::MismatchedArgsCount(
             node.name().span().clone(),
             1,
@@ -340,6 +348,22 @@ fn parse_binding<Cmd>(
 
     let shortcut = parse_keyboard_shortcut(str_attr)
         .map_err(|err| SettingsParseError::CouldntParseShortCut(kdl_entry.span().clone(), err))?;
+
+    // Try parsing alias
+    let alias = node
+        .entries()
+        .get(1)
+        .and_then(|entry| entry.name())
+        .and_then(|name| {
+            if name.value() == "alias" {
+                Some(name)
+            } else {
+                None
+            }
+        })
+        .and_then(|_| node.entries().get(1))
+        .and_then(|entry| entry.value().as_string())
+        .map(|s| s.to_string());
 
     let Some(children) = node.children() else {
         return Err(SettingsParseError::MismatchedChildren(
@@ -362,7 +386,7 @@ fn parse_binding<Cmd>(
     //     SettingsParseError::CoulndntParseCommand(command_node.span().clone(), err)
     // })?;
 
-    Ok((shortcut, command))
+    Ok((shortcut, alias, command))
 }
 
 pub fn parse_top_level_settings_block(
@@ -375,8 +399,13 @@ pub fn parse_top_level_settings_block(
         .iter()
         .filter(|node| node.name().value() == "bind")
         .map(|node| {
-            parse_binding(node, parse_command)
-                .map(|(shortcut, command)| LocalBinding { shortcut, command })
+            parse_binding(node, parse_command).map(|(shortcut, slash_alias, command)| {
+                LocalBinding {
+                    shortcut,
+                    slash_alias,
+                    command,
+                }
+            })
         })
         .collect();
 
@@ -386,7 +415,7 @@ pub fn parse_top_level_settings_block(
         .filter(|node| node.name().value() == "global")
         .map(|node| {
             parse_binding(node, parse_global_command)
-                .map(|(shortcut, command)| GlobalBinding { shortcut, command })
+                .map(|(shortcut, _, command)| GlobalBinding { shortcut, command })
         })
         .collect();
 
@@ -467,6 +496,7 @@ mod tests {
                 bindings: [LocalBinding {
                     shortcut: KeyboardShortcut::new(Modifiers::MAC_CMD, Key::A),
                     command: ParsedCommand::Predefined(BuiltInCommand::HideApp),
+                    slash_alias: None
                 }]
                 .into(),
                 global_bindings: vec![],
@@ -478,7 +508,7 @@ mod tests {
     #[test]
     pub fn test_insert_text_cmd_parsing() {
         let doc_str = r#"
-        bind "Cmd J" {
+        bind "Cmd J" alias="some_alias" {
             InsertText {
                 target "selection"
                 text "something else"
@@ -496,7 +526,8 @@ mod tests {
                     command: ParsedCommand::InsertText(ParsedCmdInsertText {
                         target: InsertTextTarget::Selection,
                         text: TextSource::Inline("something else".to_string())
-                    })
+                    }),
+                    slash_alias: Some("some_alias".to_string())
                 }]
                 .into(),
                 global_bindings: vec![],
@@ -526,8 +557,9 @@ mod tests {
                     shortcut: KeyboardShortcut::new(Modifiers::MAC_CMD, Key::K),
                     command: ParsedCommand::InsertText(ParsedCmdInsertText {
                         target: InsertTextTarget::Selection,
-                        text: TextSource::Script("my_script_function".to_string())
-                    })
+                        text: TextSource::Script(ScriptCall::new("my_script_function".to_string()))
+                    }),
+                    slash_alias: None
                 }]
                 .into(),
                 global_bindings: vec![],

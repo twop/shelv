@@ -248,9 +248,8 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
 
                 app_state
-                    .editor_commands
-                    .slice()
-                    .iter()
+                    .commands
+                    .available_editor_commands()
                     .find_map(|editor_command| {
                         match &editor_command.shortcut {
                             Some(keyboard_shortcut)
@@ -379,7 +378,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             is_window_pinned: app_state.is_pinned,
             note_count,
             text_edit_id,
-            command_list: &app_state.editor_commands,
+            command_list: &app_state.commands,
             byte_cursor: cursor,
             syntax_set: &app_state.syntax_set,
             theme_set: &app_state.theme_set,
@@ -418,7 +417,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                     println!("[MAIN] Restored cursor from rendered data");
                 }
                 note.update_cursor(cursor)
-            },
+            }
             None => {
                 if note.cursor().is_some() {
                     println!("[MAIN] Reseting cursor from rendered data");

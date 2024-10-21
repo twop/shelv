@@ -26,10 +26,10 @@ use crate::{
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
         ComputedLayout, InlineLLMPromptState, InlinePromptStatus, LayoutParams, MsgToApp,
-        SlashPalette, SlashPaletteCmd,
+        SlashPalette,
     },
     byte_span::UnOrderedByteSpan,
-    command::{BuiltInCommand, CommandList, PROMOTED_COMMANDS},
+    command::{BuiltInCommand, CommandList, SlashPaletteCmd, PROMOTED_COMMANDS},
     commands::{
         inline_llm_prompt::{self, compute_inline_prompt_text_input_id},
         run_llm::LLM_LANG,
@@ -829,12 +829,17 @@ fn render_slash_palette(
                                 if resp.clicked() {
                                     println!("clicked on {cmd:#?}");
 
-                                    resulting_actions.push(AppAction::FocusRequest(FocusTarget::CurrentNote));
+                                    resulting_actions
+                                        .push(AppAction::FocusRequest(FocusTarget::CurrentNote));
                                     // TODO fix
                                     // This is quite silly, but it seems to take a few renders before the cursor is properly restored.
-                                    resulting_actions.push(AppAction::DeferToPostRender(Box::new(AppAction::DeferToPostRender(Box::new(AppAction::SlashPalette(
-                                        SlashPaletteAction::ExecuteCommand(i),
-                                    ))))));
+                                    resulting_actions.push(AppAction::DeferToPostRender(Box::new(
+                                        AppAction::DeferToPostRender(Box::new(
+                                            AppAction::SlashPalette(
+                                                SlashPaletteAction::ExecuteCommand(i),
+                                            ),
+                                        )),
+                                    )));
                                 }
 
                                 ui.input(|input| {
@@ -934,11 +939,11 @@ fn render_slash_cmd(
                                     } else {
                                         egui_phosphor::light::GEAR
                                     })
-                                        .font(phosphor_icon_font.font_id)
-                                        .color(phosphor_icon_font.color),
+                                    .font(phosphor_icon_font.font_id)
+                                    .color(phosphor_icon_font.color),
                                 ),
                             );
-                            
+
                             flex.add_simple(item().basis(8.), |ui| {});
                             flex.add(
                                 item(),

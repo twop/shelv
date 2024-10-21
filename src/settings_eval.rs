@@ -19,14 +19,14 @@ use crate::{
     byte_span::ByteSpan,
     command::{
         map_text_command_to_command_handler, try_extract_text_command_context, CommandContext,
-        CommandList, EditorCommand, TextCommandContext, PROMOTED_COMMANDS,
+        CommandList, EditorCommand, SlashPaletteCmd, TextCommandContext, PROMOTED_COMMANDS,
     },
     effects::text_change_effect::TextChange,
     scripting::{BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
     settings_parsing::{
         format_mac_shortcut, parse_top_level_settings_block, GlobalBinding, GlobalCommand,
         InsertTextTarget, LlmSettings, LocalBinding, ParsedCmdInsertText, ParsedCommand,
-        TextSource,
+        ScriptCall, TextSource,
     },
     text_structure::{SpanDesc, SpanIndex, TextStructure},
 };
@@ -201,8 +201,9 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
     fn begin(&mut self) {
         println!("##### STARTING settings eval");
 
-        self.cmd_list.retain_only(|cmd| cmd.kind.is_some());
+        self.cmd_list.editor_retain_only(|cmd| cmd.kind.is_some());
         self.cmd_list.reset_builtins_to_default_keybindings();
+        self.cmd_list.remove_custom_slash_commands();
 
         // TODO handle error case
         self.app_io.cleanup_all_global_hotkeys().unwrap();
@@ -258,7 +259,12 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                     }
                 }
 
-                for LocalBinding { shortcut, command } in settings.bindings {
+                for LocalBinding {
+                    shortcut,
+                    command,
+                    slash_alias,
+                } in settings.bindings
+                {
                     println!("applying {shortcut:?} to {command:?}");
                     match command {
                         ParsedCommand::Predefined(kind) => {
@@ -267,7 +273,7 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                         }
 
                         ParsedCommand::InsertText(cmd) => {
-                            if let TextSource::Script(name) = &cmd.text {
+                            if let TextSource::Script(ScriptCall { func_name: name }) = &cmd.text {
                                 match self.scripts.find_exports(name).as_slice() {
                                     [] => return BlockEvalResult {
                                         body: format!("No matching exports for '{name}' were found in js blocks"),
@@ -281,11 +287,20 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
                                 }
                             }
 
-                            self.cmd_list.add(EditorCommand::user_defined(
+                            let cmd = EditorCommand::user_defined(
                                 // "replace text", // TODO figure out the name
                                 shortcut,
                                 move |cx| call_replace_text(&cmd, cx),
-                            ))
+                            );
+
+                            if let Some(prefix) = slash_alias {
+                                self.cmd_list.add_custom_slash_command(
+                                    SlashPaletteCmd::from_editor_cmd(prefix, &cmd)
+                                        .icon(egui_phosphor::light::USER_CIRCLE_GEAR.to_string()),
+                                );
+                            }
+
+                            self.cmd_list.add_editor_cmd(cmd);
                         }
                     }
                 }
@@ -568,9 +583,12 @@ fn run_insert_text_cmd(
 
     let text = match text {
         TextSource::Inline(text) => text.clone(),
-        TextSource::Script(name) => {
+        TextSource::Script(script_call) => {
             // just grab the first one available
-            let (block_hash, key, prop_type) = scripts.find_exports(name).into_iter().nth(0)?;
+            let (block_hash, key, prop_type) = scripts
+                .find_exports(&script_call.func_name)
+                .into_iter()
+                .nth(0)?;
 
             let namespace = scripts
                 .module_loader

@@ -1,14 +1,12 @@
-use eframe::egui::Id;
 use smallvec::SmallVec;
 
 use crate::{
     app_actions::{AppAction, SlashPaletteAction},
-    app_state::{AppState, SlashPalette, SlashPaletteCmd, TextSelectionAddress},
+    app_state::SlashPalette,
     command::{
         try_extract_text_command_context, AppFocus, AppFocusState, CommandContext,
         EditorCommandOutput, TextCommandContext,
     },
-    effects::text_change_effect::TextChange,
     scripting::JS_SOURCE_LANG,
     text_structure::{SpanKind, SpanMeta},
 };
@@ -60,7 +58,11 @@ pub fn show_slash_pallete(
                 // it relies that this will be done before rendering
                 slash_byte_pos: byte_cursor.start,
                 search_term: "".to_string(),
-                options: app_state.slash_palette_commands.clone(),
+                options: app_state
+                    .commands
+                    .available_slash_commands()
+                    .cloned()
+                    .collect(),
                 selected: 0,
                 update_count: 0,
             })),
