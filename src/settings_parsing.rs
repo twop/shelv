@@ -6,10 +6,11 @@ use miette::SourceSpan;
 
 use crate::command::BuiltInCommand;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LlmSettings {
     pub model: String,
     pub system_prompt: Option<String>,
+    pub use_shelv_system_prompt: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -486,8 +487,15 @@ fn parse_llm_block(node: &KdlNode) -> Result<LlmSettings, SettingsParseError> {
         .and_then(|entry| entry.value().as_string())
         .map(|s| s.to_string());
 
+    let use_shelv_system_prompt = children
+        .get("useShelvSystemPrompt")
+        .and_then(|prompt_node| prompt_node.entries().first())
+        .and_then(|entry| entry.value().as_bool())
+        .unwrap_or(true);
+
     Ok(LlmSettings {
         model,
+        use_shelv_system_prompt,
         system_prompt,
     })
 }

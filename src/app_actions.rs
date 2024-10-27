@@ -14,12 +14,13 @@ use crate::{
     command::{AppFocus, AppFocusState, CommandContext},
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
-        run_llm::{prepare_to_run_llm_block, CodeBlockAddress, DEFAULT_LLM_MODEL},
+        run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
     },
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{execute_code_blocks, execute_live_scripts},
     settings_eval::{Scripts, SettingsNoteEvalContext},
+    settings_parsing::LlmSettings,
     text_structure::{create_layout_job_from_text_diff, SpanIndex, TextDiffPart, TextStructure},
 };
 
@@ -102,8 +103,7 @@ pub struct Conversation {
 
 #[derive(Debug)]
 pub struct LLMBlockRequest {
-    pub system_prompt: Option<String>,
-    pub model: String,
+    pub llm_settings: Option<LlmSettings>,
     pub conversation: Conversation,
     pub output_code_block_address: String,
     pub note_id: NoteFile,
@@ -115,8 +115,7 @@ pub struct LLMPromptRequest {
     pub before_selection: String,
     pub after_selection: String,
     pub selection: String,
-    pub model: String,
-    pub system_prompt: Option<String>,
+    pub llm_settings: Option<LlmSettings>,
     pub selection_location: TextSelectionAddress,
 }
 
@@ -696,11 +695,11 @@ pub fn process_app_action(
                 return SmallVec::default();
             };
 
-            let model = state
-                .llm_settings
-                .as_ref()
-                .map(|s| s.model.clone())
-                .unwrap_or_else(|| DEFAULT_LLM_MODEL.to_string());
+            // let model = state
+            //     .llm_settings
+            //     .as_ref()
+            //     .map(|s| s.model.clone())
+            //     .unwrap_or_else(|| DEFAULT_LLM_MODEL.to_string());
 
             prompt.response_text = "".to_string();
             prompt.layout_job = LayoutJob::default();
@@ -717,11 +716,7 @@ pub fn process_app_action(
             app_io.execute_llm_prompt(LLMPromptRequest {
                 prompt: prompt.prompt.clone(),
                 selection,
-                model,
-                system_prompt: state
-                    .llm_settings
-                    .as_ref()
-                    .and_then(|settings| settings.system_prompt.clone()),
+                llm_settings: state.llm_settings.clone(),
                 selection_location: prompt.address,
                 before_selection,
                 after_selection,

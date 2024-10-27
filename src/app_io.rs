@@ -54,6 +54,8 @@ impl RealAppIO {
     }
 }
 
+pub const DEFAULT_LLM_MODEL: &str = "claude-3-haiku-20240307";
+
 impl AppIO for RealAppIO {
     fn hide_app(&self) {
         hide_app_on_macos();
@@ -116,8 +118,7 @@ impl AppIO for RealAppIO {
             conversation,
             output_code_block_address,
             note_id,
-            system_prompt,
-            model,
+            llm_settings,
         } = question;
 
         let send = move |chunk: String| {
@@ -171,6 +172,17 @@ impl AppIO for RealAppIO {
                 parts
             });
 
+            let (model, system_prompt, use_shelv_propmpt) = llm_settings
+                .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt))
+                .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None, true));
+
+            if use_shelv_propmpt {
+                chat_req.messages.insert(
+                    0,
+                    ChatMessage::system(include_str!("./default-notes/shelv-system-prompt.md")),
+                );
+            }
+
             if let Some(system_prompt) = system_prompt {
                 chat_req
                     .messages
@@ -221,12 +233,12 @@ impl AppIO for RealAppIO {
         let LLMPromptRequest {
             prompt,
             selection,
-            model,
-            system_prompt,
+            llm_settings,
             selection_location,
             before_selection,
             after_selection,
         } = quesion;
+
         // None -> end of the stream
         let send = move |chunk: Option<String>| {
             sender
@@ -242,30 +254,44 @@ impl AppIO for RealAppIO {
             egui_ctx.request_repaint();
         };
 
+        let (model, system_prompt, use_shelv_propmpt) = llm_settings
+            .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt))
+            .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None, true));
+
         tokio::spawn(async move {
-            let chat_req = ChatRequest::new(vec![
-                ChatMessage::system(include_str!("./default-notes/shelv-system-prompt.md")),
-                ChatMessage::system(system_prompt.unwrap_or_default()),
-                ChatMessage::system(
-                    [
-                        "selection is  <selection>{selection_body}</selection>",
-                        "prompt is marked as <prompt>{prompt_body}</prompt>",
-                        "content above selection marked as <before></before>",
-                        "content after selection marked as <after></after>",
-                        "answer the prompt question targeting <selection>, the answer will replace <selection> block",
-                        "using the context provided in <before> and <after>",
-                        "do not include <selection></selection> into response",
-                        "AVOID any extra comments or introductory content, output ONLY the result",
-                    ]
-                    .join("\n"),
+            let chat_req = ChatRequest::new(
+                Vec::from_iter(
+                    use_shelv_propmpt
+                        .then(|| {
+                            ChatMessage::system(include_str!(
+                                "./default-notes/shelv-system-prompt.md"
+                            ))
+                        })
+                        .into_iter()
+                        .chain(system_prompt.map(|sp| ChatMessage::system(sp)))
+                        .chain([
+                            ChatMessage::system(
+                                [
+                                    "selection is  <selection>{selection_body}</selection>",
+                                    "prompt is marked as <prompt>{prompt_body}</prompt>",
+                                    "content above selection marked as <before></before>",
+                                    "content after selection marked as <after></after>",
+                                    "answer the prompt question targeting <selection>, the answer will replace <selection> block",
+                                    "using the context provided in <before> and <after>",
+                                    "do not include <selection></selection> into response",
+                                    "AVOID any extra comments or introductory content, output ONLY the result",
+                                ]
+                                .join("\n"),
+                            ),
+                            ChatMessage::user(format!(
+                                "<before>{before_selection}</before>
+                                <selection>{selection}</selection>
+                                <after>{after_selection}</after>
+                                <prompt>{prompt}</prompt>"
+                            )),
+                        ]),
                 ),
-                ChatMessage::user(format!(
-                    "<before>{before_selection}</before>
-                    <selection>{selection}</selection>
-                    <after>{after_selection}</after>
-                    <prompt>{prompt}</prompt>"
-                )),
-            ]);
+            );
 
             println!("-----llm inline req: {chat_req:#?}");
 

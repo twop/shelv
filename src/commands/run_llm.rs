@@ -20,7 +20,6 @@ pub enum CodeBlockAddress {
     TargetBlock(NoteFile, SpanIndex),
 }
 
-pub(crate) const DEFAULT_LLM_MODEL: &str = "claude-3-haiku-20240307";
 pub(crate) const LLM_LANG: &str = "ai";
 
 pub fn prepare_to_run_llm_block(
@@ -160,15 +159,8 @@ pub fn prepare_to_run_llm_block(
         prev_block_end = desc.byte_pos.end;
     }
 
-    let (model, system_prompt) = app_state
-        .llm_settings
-        .as_ref()
-        .map(|s| (s.model.clone(), s.system_prompt.clone()))
-        .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None));
-
     let llm_request = LLMBlockRequest {
-        model,
-        system_prompt,
+        llm_settings: app_state.llm_settings.clone(),
         conversation,
         output_code_block_address: address,
         note_id: target,
