@@ -267,7 +267,7 @@ pub struct SlashPaletteCmd {
     pub phosphor_icon: Option<String>,
     pub shortcut: Option<KeyboardShortcut>,
     pub prefix: String,
-    pub description: String,
+    pub description: Option<String>,
     pub editor_cmd: EditorCommand,
 }
 
@@ -279,8 +279,7 @@ impl SlashPaletteCmd {
             shortcut: editor_cmd.shortcut.clone(),
             description: editor_cmd
                 .kind
-                .map(|kind| kind.human_description().to_string())
-                .unwrap_or_else(|| "".to_string()),
+                .map(|kind| kind.human_description().to_string()),
             editor_cmd: editor_cmd.clone(),
         }
     }
@@ -295,7 +294,7 @@ impl SlashPaletteCmd {
     }
 
     pub fn description(mut self, description: impl Into<String>) -> Self {
-        self.description = description.into();
+        self.description = Some(description.into());
         self
     }
 }

@@ -974,9 +974,14 @@ fn render_slash_cmd(
                             flex.add(
                                 item(),
                                 Label::new(
-                                    RichText::new(&cmd.description)
-                                        .font(description_font.font_id)
-                                        .color(description_font.color),
+                                    RichText::new(
+                                        cmd.description
+                                            .as_ref()
+                                            .map(|desc| desc.as_str())
+                                            .unwrap_or("Defined in settings"),
+                                    )
+                                    .font(description_font.font_id)
+                                    .color(description_font.color),
                                 ),
                             );
                             flex.grow();
