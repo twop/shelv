@@ -1,5 +1,6 @@
 pub mod enter_in_list;
 pub mod inline_llm_prompt;
+pub mod insert_text;
 pub mod kdl_lang;
 pub mod run_llm;
 pub mod slash_pallete;

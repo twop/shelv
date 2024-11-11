@@ -23,12 +23,14 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        map_text_command_to_command_handler, AppFocus, BuiltInCommand, CommandContext, CommandList,
-        EditorCommand, EditorCommandOutput, SlashPaletteCmd, TextCommandContext,
+        map_text_command_to_command_handler, AppFocus, CommandContext, CommandHandler,
+        CommandInstance, CommandInstruction, CommandList, EditorCommandOutput, SlashPaletteCmd,
+        TextCommandContext,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
         inline_llm_prompt::inline_llm_prompt_command_handler,
+        insert_text::call_replace_text,
         kdl_lang::{autoclose_bracket_inside_kdl_block, on_enter_inside_kdl_block},
         run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
         slash_pallete::{
@@ -349,199 +351,177 @@ impl AppState {
 
         let text_structure = TextStructure::new(&notes.get(&selected_note).unwrap().text);
 
-        let mut editor_commands: Vec<EditorCommand> = [
-            (
-                BuiltInCommand::ExpandTaskMarker,
-                map_text_command_to_command_handler(on_space_after_task_markers),
-            ),
-            (
-                BuiltInCommand::IndentListItem,
-                map_text_command_to_command_handler(on_tab_inside_list),
-            ),
-            (
-                BuiltInCommand::UnindentListItem,
-                map_text_command_to_command_handler(on_shift_tab_inside_list),
-            ),
-            (
-                BuiltInCommand::SplitListItem,
-                map_text_command_to_command_handler(on_enter_inside_list_item),
-            ),
-            (
-                BuiltInCommand::MarkdownCodeBlock,
-                map_text_command_to_command_handler(toggle_code_block),
-            ),
-            (
-                BuiltInCommand::MarkdownBold,
-                map_text_command_to_command_handler(|text_context| {
+        fn execute_instruction(
+            instruction: &CommandInstruction,
+            ctx: CommandContext,
+        ) -> EditorCommandOutput {
+            use CommandInstruction as CI;
+            match instruction {
+                CI::ExpandTaskMarker => {
+                    map_text_command_to_command_handler(on_space_after_task_markers).call(ctx)
+                }
+                CI::IndentListItem => {
+                    map_text_command_to_command_handler(on_tab_inside_list).call(ctx)
+                }
+                CI::UnindentListItem => {
+                    map_text_command_to_command_handler(on_shift_tab_inside_list).call(ctx)
+                }
+                CI::SplitListItem => {
+                    map_text_command_to_command_handler(on_enter_inside_list_item).call(ctx)
+                }
+                CI::MarkdownCodeBlock => {
+                    map_text_command_to_command_handler(toggle_code_block).call(ctx)
+                }
+                CI::MarkdownBold => map_text_command_to_command_handler(|text_context| {
                     toggle_simple_md_annotations(text_context, SpanKind::Bold, "**")
-                }),
-            ),
-            (
-                BuiltInCommand::MarkdownItalic,
-                map_text_command_to_command_handler(|text_context| {
+                })
+                .call(ctx),
+                CI::MarkdownItalic => map_text_command_to_command_handler(|text_context| {
                     toggle_simple_md_annotations(text_context, SpanKind::Emphasis, "*")
-                }),
-            ),
-            (
-                BuiltInCommand::MarkdownStrikethrough,
-                map_text_command_to_command_handler(|text_context| {
+                })
+                .call(ctx),
+
+                CI::MarkdownStrikethrough => map_text_command_to_command_handler(|text_context| {
                     toggle_simple_md_annotations(text_context, SpanKind::Strike, "~~")
-                }),
-            ),
-            (
-                BuiltInCommand::MarkdownH1,
-                map_text_command_to_command_handler(|text_context| {
+                })
+                .call(ctx),
+
+                CI::MarkdownH1 => map_text_command_to_command_handler(|text_context| {
                     toggle_md_heading(text_context, HeadingLevel::H1)
-                }),
-            ),
-            (
-                BuiltInCommand::MarkdownH2,
-                map_text_command_to_command_handler(|text_context| {
+                })
+                .call(ctx),
+
+                CI::MarkdownH2 => map_text_command_to_command_handler(|text_context| {
                     toggle_md_heading(text_context, HeadingLevel::H2)
-                }),
-            ),
-            (
-                BuiltInCommand::MarkdownH3,
-                map_text_command_to_command_handler(|text_context| {
+                })
+                .call(ctx),
+
+                CI::MarkdownH3 => map_text_command_to_command_handler(|text_context| {
                     toggle_md_heading(text_context, HeadingLevel::H3)
-                }),
-            ),
-            (
-                BuiltInCommand::EnterInsideKDL,
-                map_text_command_to_command_handler(on_enter_inside_kdl_block),
-            ),
-            // Disable for now
-            // (
-            //     BuiltInCommand::BracketAutoclosingInsideKDL,
-            //     map_text_command_to_command_handler(autoclose_bracket_inside_kdl_block),
-            // ),
-        ]
-        .into_iter()
-        .map(|(cmd, handler)| EditorCommand::built_in(cmd, handler))
-        .collect();
+                })
+                .call(ctx),
 
-        for note_index in 0..shelf_count {
-            let cmd = BuiltInCommand::SwitchToNote(note_index as u8);
-            editor_commands.push(EditorCommand::built_in(cmd, move |_| {
-                [AppAction::SwitchToNote {
-                    note_file: NoteFile::Note(note_index as u32),
+                CI::EnterInsideKDL => {
+                    map_text_command_to_command_handler(on_enter_inside_kdl_block).call(ctx)
+                }
+
+                CI::SwitchToNote(note_index) => SmallVec::from([AppAction::SwitchToNote {
+                    note_file: NoteFile::Note(*note_index as u32),
                     via_shortcut: true,
-                }]
-                .into()
-            }))
-        }
+                }]),
 
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::SwitchToSettings,
-            |_| {
-                [AppAction::SwitchToNote {
+                CI::SwitchToSettings => [AppAction::SwitchToNote {
                     note_file: NoteFile::Settings,
                     via_shortcut: true,
                 }]
-                .into()
-            },
-        ));
+                .into(),
 
-        editor_commands.push(EditorCommand::built_in(BuiltInCommand::PinWindow, |ctx| {
-            [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into()
-        }));
+                CI::PinWindow => [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
 
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::HideApp,
-            |cx| match (
-                cx.app_focus.is_menu_opened,
-                &cx.app_state.slash_palette,
-                cx.app_focus.focus,
-            ) {
-                (false, None, None | Some(AppFocus::NoteEditor)) => {
-                    [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
-                }
-                _ => SmallVec::new(),
-            },
-        ));
+                CI::HideApp => match (
+                    ctx.app_focus.is_menu_opened,
+                    &ctx.app_state.slash_palette,
+                    ctx.app_focus.focus,
+                ) {
+                    (false, None, None | Some(AppFocus::NoteEditor)) => {
+                        [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
+                    }
+                    _ => SmallVec::new(),
+                },
 
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::HidePrompt,
-            |cx| match cx.app_focus.focus {
-                Some(AppFocus::InlinePropmptEditor) => {
-                    [AppAction::AcceptPromptSuggestion { accept: false }].into()
-                }
-                _ => SmallVec::new(),
-            },
-        ));
+                CI::HidePrompt => match ctx.app_focus.focus {
+                    Some(AppFocus::InlinePropmptEditor) => {
+                        [AppAction::AcceptPromptSuggestion { accept: false }].into()
+                    }
+                    _ => SmallVec::new(),
+                },
 
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::RunLLMBlock,
-            |ctx| {
-                prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default()
-            },
-        ));
-        let show_prompt_cmd = EditorCommand::built_in(BuiltInCommand::ShowPrompt, |ctx| {
-            inline_llm_prompt_command_handler(ctx).unwrap_or_default()
-        });
+                CI::RunLLMBlock => prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection)
+                    .unwrap_or_default(),
 
-        editor_commands.push(show_prompt_cmd.clone());
+                CI::ShowPrompt => inline_llm_prompt_command_handler(ctx).unwrap_or_default(),
 
-        // Slash Pallete
-        // TODO is there a betterway to organize those?
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::ShowSlashPallete,
-            |ctx| show_slash_pallete(ctx).unwrap_or_default(),
-        ));
+                CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),
 
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::HideSlashPallete,
-            |ctx| hide_slash_pallete(ctx).unwrap_or_default(),
-        ));
+                CI::HideSlashPallete => hide_slash_pallete(ctx).unwrap_or_default(),
 
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::NextSlashPalleteCmd,
-            |ctx| next_slash_cmd(ctx).unwrap_or_default(),
-        ));
+                CI::NextSlashPalleteCmd => next_slash_cmd(ctx).unwrap_or_default(),
 
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::PrevSlashPalleteCmd,
-            |ctx| prev_slash_cmd(ctx).unwrap_or_default(),
-        ));
+                CI::PrevSlashPalleteCmd => prev_slash_cmd(ctx).unwrap_or_default(),
 
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::ExecuteSlashPalleteCmd,
-            |ctx| execute_slash_cmd(ctx).unwrap_or_default(),
-        ));
-        // ------
+                CI::ExecuteSlashPalleteCmd => execute_slash_cmd(ctx).unwrap_or_default(),
+
+                CI::BracketAutoclosingInsideKDL => todo!(),
+                CI::InsertText(text_source) => call_replace_text(text_source, ctx),
+                // Disable for now
+                // CI::BracketAutoclosingInsideKDL => map_text_command_to_command_handler(autoclose_bracket_inside_kdl_block).call(ctx),
+            }
+        }
+
+        let keybord_instructions: Vec<CommandInstruction> = Vec::from_iter(
+            [
+                CommandInstruction::ExpandTaskMarker,
+                CommandInstruction::IndentListItem,
+                CommandInstruction::UnindentListItem,
+                CommandInstruction::SplitListItem,
+                CommandInstruction::MarkdownCodeBlock,
+                CommandInstruction::MarkdownBold,
+                CommandInstruction::MarkdownItalic,
+                CommandInstruction::MarkdownStrikethrough,
+                CommandInstruction::MarkdownH1,
+                CommandInstruction::MarkdownH2,
+                CommandInstruction::MarkdownH3,
+                CommandInstruction::EnterInsideKDL,
+                CommandInstruction::SwitchToSettings,
+                CommandInstruction::PinWindow,
+                CommandInstruction::HideApp,
+                CommandInstruction::HidePrompt,
+                CommandInstruction::RunLLMBlock,
+                CommandInstruction::ShowPrompt,
+                CommandInstruction::ShowSlashPallete,
+                CommandInstruction::HideSlashPallete,
+                CommandInstruction::NextSlashPalleteCmd,
+                CommandInstruction::PrevSlashPalleteCmd,
+                CommandInstruction::ExecuteSlashPalleteCmd,
+            ]
+            .into_iter()
+            .chain(
+                (0..shelf_count)
+                    .map(|note_index| CommandInstruction::SwitchToNote(note_index as u8)),
+            ),
+        );
 
         use egui_phosphor::light as P;
         let slash_palette_commands = []
             .into_iter()
             .chain(
                 [
-                    ("ai", BuiltInCommand::ShowPrompt, P::SPARKLE),
-                    ("code", BuiltInCommand::MarkdownCodeBlock, P::CODE_BLOCK),
-                    ("h1", BuiltInCommand::MarkdownH1, P::TEXT_H_ONE),
-                    ("h2", BuiltInCommand::MarkdownH2, P::TEXT_H_TWO),
-                    ("h3", BuiltInCommand::MarkdownH3, P::TEXT_H_THREE),
-                    ("bold", BuiltInCommand::MarkdownBold, P::TEXT_BOLDER),
-                    ("italic", BuiltInCommand::MarkdownItalic, P::TEXT_ITALIC),
+                    ("ai", CommandInstruction::ShowPrompt, P::SPARKLE),
+                    ("code", CommandInstruction::MarkdownCodeBlock, P::CODE_BLOCK),
+                    ("h1", CommandInstruction::MarkdownH1, P::TEXT_H_ONE),
+                    ("h2", CommandInstruction::MarkdownH2, P::TEXT_H_TWO),
+                    ("h3", CommandInstruction::MarkdownH3, P::TEXT_H_THREE),
+                    ("bold", CommandInstruction::MarkdownBold, P::TEXT_BOLDER),
+                    ("italic", CommandInstruction::MarkdownItalic, P::TEXT_ITALIC),
                     (
                         "strike",
-                        BuiltInCommand::MarkdownStrikethrough,
+                        CommandInstruction::MarkdownStrikethrough,
                         P::TEXT_STRIKETHROUGH,
                     ),
                 ]
                 .into_iter()
-                .filter_map(|(prefix, builtin, phosphor_icon)| {
-                    editor_commands
-                        .iter()
-                        .find(|c| c.kind == Some(builtin))
-                        .map(|cmd| {
-                            SlashPaletteCmd::from_editor_cmd(prefix, cmd)
-                                .icon(phosphor_icon.to_string())
-                        })
+                .map(|(prefix, builtin, phosphor_icon)| {
+                    SlashPaletteCmd::from_built_in_instruction(prefix, builtin)
+                        .icon(phosphor_icon.to_string())
                 }),
             )
             .collect();
 
-        let editor_commands = CommandList::new(editor_commands, slash_palette_commands);
+        let editor_commands = CommandList::new(
+            execute_instruction,
+            keybord_instructions,
+            slash_palette_commands,
+        );
 
         let deferred_actions = vec![AppAction::EvalNote(NoteFile::Settings)];
 

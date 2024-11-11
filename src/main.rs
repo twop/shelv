@@ -50,6 +50,7 @@ mod effects;
 mod egui_hotkey;
 mod settings_parsing;
 
+mod knus_test;
 mod nord;
 mod persistent_state;
 mod picker;
@@ -249,19 +250,20 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
                 app_state
                     .commands
-                    .available_editor_commands()
-                    .find_map(|editor_command| {
-                        match &editor_command.shortcut {
-                            Some(keyboard_shortcut)
-                                if is_shortcut_match(input, &keyboard_shortcut) =>
+                    .available_keyboard_commands()
+                    .find_map(|(keyboard_shortcut, editor_command)| {
+
+                            if is_shortcut_match(input, &keyboard_shortcut)
                             {
                                 println!(
                                     "---Found a match for {:?}, focus = {app_focus:#?}, focused_id = {focused_id:?}",
-                                    editor_command.kind.map(|k| k.human_description())
+                                    editor_command.instruction.human_description()
                                 );
 
 
-                                let res = (editor_command.try_handle)(CommandContext {
+                                let res = app_state.commands.run(
+                                    &editor_command.instruction,
+                                    CommandContext {
                                     app_state,
                                     app_focus,
                                     scripts:&mut scripts
@@ -271,7 +273,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                                 if !res.is_empty() {
                                     println!(
                                         "---command {:?} consumed input {:?}\nres_actions={res:#?}",
-                                        editor_command.kind.map(|k| k.human_description()),
+                                        editor_command.instruction.human_description(),
                                         keyboard_shortcut
                                     );
 
@@ -282,9 +284,10 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                                 }
                                 else { None }
 
+                            }else {
+                                None
                             }
-                            _ => None,
-                        }
+
                     })
                 })
                 .unwrap_or_default();

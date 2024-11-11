@@ -27,7 +27,7 @@ use crate::{
         SlashPalette,
     },
     byte_span::UnOrderedByteSpan,
-    command::{BuiltInCommand, CommandList, SlashPaletteCmd, PROMOTED_COMMANDS},
+    command::{CommandInstruction, CommandList, SlashPaletteCmd, PROMOTED_COMMANDS},
     commands::{
         inline_llm_prompt::{self, compute_inline_prompt_text_input_id},
         run_llm::LLM_LANG,
@@ -106,7 +106,7 @@ pub fn render_app(
                                 .into_iter()
                                 .filter_map(|builtin| command_list.find(builtin))
                                 .filter_map(|cmd| {
-                                    cmd.kind.map(|k| k.human_description()).zip(cmd.shortcut)
+                                    Some(cmd.instruction.human_description()).zip(cmd.shortcut)
                                 })
                                 .collect()
                         });
@@ -402,7 +402,7 @@ fn render_editor(
                         .on_hover_ui(|ui| {
                             let tooltip_text = "Execute code block";
                             let tooltip_text = command_list
-                                .find(BuiltInCommand::RunLLMBlock)
+                                .find(CommandInstruction::RunLLMBlock)
                                 .and_then(|cmd| cmd.shortcut)
                                 .map(|shortcut| {
                                     format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
@@ -677,7 +677,7 @@ fn render_inline_prompt(
                                 ui,
                                 "Cancel prompt",
                                 command_list
-                                    .find(BuiltInCommand::HidePrompt)
+                                    .find(CommandInstruction::HidePrompt)
                                     .and_then(|cmd| cmd.shortcut),
                             );
                         })
@@ -723,7 +723,7 @@ fn render_inline_prompt(
                                 ui,
                                 "Reject changes",
                                 command_list
-                                    .find(BuiltInCommand::HidePrompt)
+                                    .find(CommandInstruction::HidePrompt)
                                     .and_then(|cmd| cmd.shortcut),
                             );
                         })
@@ -954,16 +954,13 @@ fn render_slash_cmd(
 
                             flex.grow();
 
-                            if let Some(shortcut) = &cmd.shortcut {
+                            if let Some(shortcut) = cmd.instance.shortcut {
                                 flex.add(
                                     item(),
                                     Label::new(
-                                        RichText::new(format!(
-                                            "{}",
-                                            format_mac_shortcut(*shortcut)
-                                        ))
-                                        .font(shortcut_font.font_id)
-                                        .color(shortcut_font.color),
+                                        RichText::new(format!("{}", format_mac_shortcut(shortcut)))
+                                            .font(shortcut_font.font_id)
+                                            .color(shortcut_font.color),
                                     ),
                                 );
                             }
@@ -974,14 +971,9 @@ fn render_slash_cmd(
                             flex.add(
                                 item(),
                                 Label::new(
-                                    RichText::new(
-                                        cmd.description
-                                            .as_ref()
-                                            .map(|desc| desc.as_str())
-                                            .unwrap_or("Defined in settings"),
-                                    )
-                                    .font(description_font.font_id)
-                                    .color(description_font.color),
+                                    RichText::new(&cmd.description)
+                                        .font(description_font.font_id)
+                                        .color(description_font.color),
                                 ),
                             );
                             flex.grow();
@@ -1024,7 +1016,7 @@ fn render_footer_panel(
     theme: &AppTheme,
 ) -> SmallVec<[AppAction; 1]> {
     let tooltips: SmallVec<[String; 6]> = (0..note_count)
-        .map(|note_index| BuiltInCommand::SwitchToNote(note_index as u8))
+        .map(|note_index| CommandInstruction::SwitchToNote(note_index as u8))
         .map(|cmd| command_list.find(cmd))
         .enumerate()
         .map(|(note_index, cmd)| match cmd.and_then(|cmd| cmd.shortcut) {
@@ -1069,7 +1061,7 @@ fn render_footer_panel(
                             tooltip: {
                                 let tooltip_text = "Settings";
                                 command_list
-                                    .find(BuiltInCommand::SwitchToSettings)
+                                    .find(CommandInstruction::SwitchToSettings)
                                     .and_then(|cmd| cmd.shortcut)
                                     .map(|shortcut| {
                                         format!(
@@ -1340,7 +1332,7 @@ fn render_header_panel(
                             };
 
                             let tooltip_text = command_list
-                                .find(BuiltInCommand::PinWindow)
+                                .find(CommandInstruction::PinWindow)
                                 .and_then(|cmd| cmd.shortcut)
                                 .map(|shortcut| {
                                     format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))

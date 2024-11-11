@@ -1,4 +1,4 @@
-use std::{fmt::Debug, rc::Rc};
+use std::{fmt::Debug, ops::Deref, rc::Rc};
 
 use eframe::egui::KeyboardShortcut;
 use pulldown_cmark::CowStr;
@@ -53,100 +53,230 @@ impl<'a> TextCommandContext<'a> {
 pub type EditorCommandOutput = SmallVec<[AppAction; 1]>;
 
 #[derive(Clone)]
-pub struct EditorCommand {
-    pub kind: Option<BuiltInCommand>,
-    pub shortcut: Option<KeyboardShortcut>,
-    pub try_handle: Rc<dyn Fn(CommandContext) -> EditorCommandOutput>,
+pub struct CommandHandler(Rc<dyn Fn(CommandContext) -> EditorCommandOutput>);
+
+impl CommandHandler {
+    pub fn call(&self, ctx: CommandContext) -> EditorCommandOutput {
+        (self.0)(ctx)
+    }
+
+    pub fn new<Handler: 'static + Fn(CommandContext) -> EditorCommandOutput>(
+        handler: Handler,
+    ) -> Self {
+        CommandHandler(Rc::new(handler))
+    }
 }
 
-impl Debug for EditorCommand {
+#[derive(Clone)]
+pub struct CommandInstance {
+    pub shortcut: Option<KeyboardShortcut>,
+    pub instruction: CommandInstruction,
+    // pub handler: CommandHandler,
+}
+
+impl Debug for CommandInstance {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EditorCommand")
-            .field("kind", &self.kind)
-            .field("shortcut", &self.shortcut)
+            .field("instruction", &self.instruction)
             .finish()
     }
 }
 
-impl EditorCommand {
-    pub fn built_in<Handler: 'static + Fn(CommandContext) -> EditorCommandOutput>(
-        kind: BuiltInCommand,
-        try_handle: Handler,
-    ) -> Self {
+impl CommandInstance {
+    pub fn built_in(instruction: CommandInstruction) -> Self {
         Self {
-            kind: Some(kind),
-            shortcut: Some(kind.default_keybinding()),
-            try_handle: Rc::new(try_handle),
+            shortcut: instruction.default_keybinding(),
+            instruction,
         }
     }
 
-    pub fn user_defined<Handler: 'static + Fn(CommandContext) -> EditorCommandOutput>(
-        shortcut: KeyboardShortcut,
-        try_handle: Handler,
+    pub fn user_defined(
+        instruction: CommandInstruction,
+        shortcut: Option<KeyboardShortcut>,
     ) -> Self {
         Self {
-            kind: None,
-            shortcut: Some(shortcut),
-            try_handle: Rc::new(try_handle),
+            shortcut,
+            instruction,
         }
     }
 }
+#[derive(Debug, Clone, knus::Decode, PartialEq, Eq)]
+pub struct ScriptCall {
+    #[knus(argument)]
+    pub func_name: String,
+}
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum BuiltInCommand {
+impl ScriptCall {
+    pub fn new(func_name: String) -> Self {
+        Self { func_name }
+    }
+}
+
+#[derive(Debug, Clone, knus::Decode, PartialEq, Eq)]
+pub enum TextSource {
+    #[knus(name = "string")]
+    Str(#[knus(argument)] String),
+
+    #[knus(name = "scriptCall")]
+    Script(ScriptCall),
+}
+#[derive(PartialEq, Debug, Clone)]
+pub struct ForwardToChild<T>(pub T);
+
+impl<T> Deref for ForwardToChild<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<S, T> knus::Decode<S> for ForwardToChild<T>
+where
+    S: knus::traits::ErrorSpan,
+    T: knus::Decode<S>,
+{
+    fn decode_node(
+        node: &knus::ast::SpannedNode<S>,
+        ctx: &mut knus::decode::Context<S>,
+    ) -> Result<Self, knus::errors::DecodeError<S>> {
+        let mut iter_args = node.arguments.iter();
+        if let Some(val) = iter_args.next() {
+            return Err(::knus::errors::DecodeError::unexpected(
+                &val.literal,
+                "argument",
+                "unexpected argument",
+            ));
+        }
+        if let Some((name, val)) = node.properties.iter().next() {
+            let name_str = &***name;
+
+            return Err(::knus::errors::DecodeError::unexpected(
+                name,
+                "property",
+                format!("unexpected property `{}`", name_str.escape_default()),
+            ));
+        }
+
+        let children = node.children.as_ref().map(|lst| &lst[..]).unwrap_or(&[]);
+
+        let single = match children {
+            [single] => single,
+            _ => {
+                return Err(::knus::errors::DecodeError::unexpected(
+                    node,
+                    "node",
+                    "has to be exactly one child",
+                ));
+            }
+        };
+        let decoded = T::decode_node(single, ctx)?;
+
+        Ok(ForwardToChild(decoded))
+    }
+}
+
+#[derive(PartialEq, knus::Decode, Debug, Clone)]
+pub enum CommandInstruction {
     // Autocomplete/convenience
+    #[knus(skip)]
     ExpandTaskMarker,
+    #[knus(skip)]
     IndentListItem,
+    #[knus(skip)]
     UnindentListItem,
+    #[knus(skip)]
     SplitListItem,
 
     // Markdown
+    #[knus(name = "MarkdownBold")]
     MarkdownBold,
+
+    #[knus(name = "MarkdownItalic")]
     MarkdownItalic,
+
+    #[knus(name = "MarkdownStrikethrough")]
     MarkdownStrikethrough,
+
+    #[knus(name = "MarkdownCodeBlock")]
     MarkdownCodeBlock,
+
+    #[knus(name = "MarkdownH1")]
     MarkdownH1,
+
+    #[knus(name = "MarkdownH2")]
     MarkdownH2,
+
+    #[knus(name = "MarkdownH3")]
     MarkdownH3,
 
     // Others
-    SwitchToNote(u8),
+    #[knus(name = "SwitchToNote")]
+    SwitchToNote(#[knus(argument)] u8),
+
+    #[knus(name = "SwitchToSettings")]
     SwitchToSettings,
+
+    #[knus(name = "PinWindow")]
     PinWindow,
+
+    #[knus(name = "HideApp")]
     HideApp,
+
+    #[knus(name = "HidePrompt")]
     HidePrompt,
 
     // SlashPallete
+    #[knus(skip)]
     ShowSlashPallete,
+
+    #[knus(skip)]
     NextSlashPalleteCmd,
+
+    #[knus(skip)]
     PrevSlashPalleteCmd,
+
+    #[knus(skip)]
     ExecuteSlashPalleteCmd,
+
+    #[knus(skip)]
     HideSlashPallete,
+
     // Lang specific
+    #[knus(skip)]
     EnterInsideKDL,
+
+    #[knus(skip)]
     BracketAutoclosingInsideKDL,
 
     // Async Code blocks
+    #[knus(name = "ExecutePrompt")]
     RunLLMBlock,
+
+    #[knus(name = "ShowPrompt")]
     ShowPrompt,
+
+    // Script API
+    #[knus(name = "InsertText")]
+    InsertText(ForwardToChild<TextSource>),
 }
 
 /// Commands that we promote in UI
-pub const PROMOTED_COMMANDS: [BuiltInCommand; 9] = const {
+pub const PROMOTED_COMMANDS: [CommandInstruction; 9] = const {
     [
-        BuiltInCommand::PinWindow,
-        BuiltInCommand::MarkdownBold,
-        BuiltInCommand::MarkdownItalic,
-        BuiltInCommand::MarkdownStrikethrough,
-        BuiltInCommand::MarkdownCodeBlock,
-        BuiltInCommand::RunLLMBlock,
-        BuiltInCommand::MarkdownH1,
-        BuiltInCommand::MarkdownH2,
-        BuiltInCommand::MarkdownH3,
+        CommandInstruction::PinWindow,
+        CommandInstruction::MarkdownBold,
+        CommandInstruction::MarkdownItalic,
+        CommandInstruction::MarkdownStrikethrough,
+        CommandInstruction::MarkdownCodeBlock,
+        CommandInstruction::RunLLMBlock,
+        CommandInstruction::MarkdownH1,
+        CommandInstruction::MarkdownH2,
+        CommandInstruction::MarkdownH3,
     ]
 };
 
-impl BuiltInCommand {
+impl CommandInstruction {
     pub fn human_description(&self) -> CowStr<'static> {
         match self {
             Self::ExpandTaskMarker => "Expand Task Marker".into(),
@@ -174,27 +304,38 @@ impl BuiltInCommand {
             Self::PinWindow => "Toggle Always on Top".into(),
             Self::HideApp => "Hide Window".into(),
             Self::RunLLMBlock => "Execute AI Block".into(),
-            BuiltInCommand::ShowPrompt => "Show AI Prompt".into(),
+            CommandInstruction::ShowPrompt => "Show AI Prompt".into(),
             // BuiltInCommand::ClosePopupMenu => "Close currently opened popup".into(),
-            BuiltInCommand::HidePrompt => "Hide Prompt".into(),
-            BuiltInCommand::EnterInsideKDL => "Auto indent KDL".into(),
-            BuiltInCommand::BracketAutoclosingInsideKDL => "Auto closing of '{' inside KDL".into(),
-            BuiltInCommand::ShowSlashPallete => "Show slash command palette".into(),
-            BuiltInCommand::NextSlashPalleteCmd => "Select next command in slash palette".into(),
-            BuiltInCommand::PrevSlashPalleteCmd => {
+            CommandInstruction::HidePrompt => "Hide Prompt".into(),
+            CommandInstruction::EnterInsideKDL => "Auto indent KDL".into(),
+            CommandInstruction::BracketAutoclosingInsideKDL => {
+                "Auto closing of '{' inside KDL".into()
+            }
+            CommandInstruction::ShowSlashPallete => "Show slash command palette".into(),
+            CommandInstruction::NextSlashPalleteCmd => {
+                "Select next command in slash palette".into()
+            }
+            CommandInstruction::PrevSlashPalleteCmd => {
                 "Select previous command in slash palette".into()
             }
-            BuiltInCommand::ExecuteSlashPalleteCmd => {
+            CommandInstruction::ExecuteSlashPalleteCmd => {
                 "Execute selected command in slash palette".into()
             }
-            BuiltInCommand::HideSlashPallete => "Hide slash command palette".into(),
+            CommandInstruction::HideSlashPallete => "Hide slash command palette".into(),
+
+            CommandInstruction::InsertText(ForwardToChild(source)) => match source {
+                TextSource::Str(str) => format!("Insert: {}", str).into(),
+                TextSource::Script(script_call) => {
+                    format!("Insert result from: {}", script_call.func_name).into()
+                }
+            },
         }
     }
 
-    pub fn default_keybinding(self) -> eframe::egui::KeyboardShortcut {
+    pub fn default_keybinding(&self) -> Option<eframe::egui::KeyboardShortcut> {
         use eframe::egui::{Key, Modifiers};
-        use BuiltInCommand as C;
-        let shortcut = KeyboardShortcut::new;
+        use CommandInstruction as C;
+        let shortcut = |mods, key| Some(KeyboardShortcut::new(mods, key));
         match self {
             C::ExpandTaskMarker => shortcut(Modifiers::NONE, Key::Space),
             C::IndentListItem => shortcut(Modifiers::NONE, Key::Tab),
@@ -225,39 +366,7 @@ impl BuiltInCommand {
             C::PrevSlashPalleteCmd => shortcut(Modifiers::NONE, Key::ArrowUp),
             C::ExecuteSlashPalleteCmd => shortcut(Modifiers::NONE, Key::Enter),
             C::HideSlashPallete => shortcut(Modifiers::NONE, Key::Escape),
-        }
-    }
-}
-
-impl BuiltInCommand {
-    pub fn name(&self) -> &'static str {
-        use BuiltInCommand::*;
-        match self {
-            ExpandTaskMarker => "ExpandTaskMarker",
-            IndentListItem => "IndentListItem",
-            UnindentListItem => "UnindentListItem",
-            SplitListItem => "SplitListItem",
-            MarkdownBold => "MarkdownBold",
-            MarkdownItalic => "MarkdownItalic",
-            MarkdownStrikethrough => "MarkdownStrikethrough",
-            MarkdownCodeBlock => "MarkdownCodeBlock",
-            MarkdownH1 => "MarkdownH1",
-            MarkdownH2 => "MarkdownH2",
-            MarkdownH3 => "MarkdownH3",
-            SwitchToNote(_) => "SwitchToNote",
-            SwitchToSettings => "SwitchToSettings",
-            PinWindow => "PinWindow",
-            HideApp => "HideApp",
-            RunLLMBlock => "ExecutePrompt",
-            ShowPrompt => "ShowPrompt",
-            HidePrompt => "HidePrompt",
-            EnterInsideKDL => "EnterInsideKDL",
-            BracketAutoclosingInsideKDL => "BracketAutoclosingInsideKDL",
-            ShowSlashPallete => "ShowSlashPallete",
-            NextSlashPalleteCmd => "NextSlashPalleteCmd",
-            PrevSlashPalleteCmd => "PrevSlashPalleteCmd",
-            ExecuteSlashPalleteCmd => "ExecuteSlashPalleteCmd",
-            HideSlashPallete => "HideSlashPallete",
+            C::InsertText(_) => None,
         }
     }
 }
@@ -265,22 +374,21 @@ impl BuiltInCommand {
 #[derive(Debug, Clone)]
 pub struct SlashPaletteCmd {
     pub phosphor_icon: Option<String>,
-    pub shortcut: Option<KeyboardShortcut>,
     pub prefix: String,
-    pub description: Option<String>,
-    pub editor_cmd: EditorCommand,
+    pub description: String,
+    pub instance: CommandInstance,
 }
 
 impl SlashPaletteCmd {
-    pub fn from_editor_cmd(prefix: impl Into<String>, editor_cmd: &EditorCommand) -> Self {
+    pub fn from_built_in_instruction(
+        prefix: impl Into<String>,
+        instruction: CommandInstruction,
+    ) -> Self {
         Self {
             phosphor_icon: None,
             prefix: prefix.into(),
-            shortcut: editor_cmd.shortcut.clone(),
-            description: editor_cmd
-                .kind
-                .map(|kind| kind.human_description().to_string()),
-            editor_cmd: editor_cmd.clone(),
+            description: instruction.human_description().to_string(),
+            instance: CommandInstance::built_in(instruction),
         }
     }
     pub fn icon(mut self, icon: String) -> Self {
@@ -289,12 +397,12 @@ impl SlashPaletteCmd {
     }
 
     pub fn shortcut(mut self, shortcut: KeyboardShortcut) -> Self {
-        self.shortcut = Some(shortcut);
+        self.instance.shortcut = Some(shortcut);
         self
     }
 
     pub fn description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
+        self.description = description.into();
         self
     }
 }
@@ -305,79 +413,84 @@ pub enum GlobalCommandKind {
 }
 
 pub struct CommandList {
-    editor_commands: Vec<EditorCommand>,
-    available_slash_palette_commands: Vec<SlashPaletteCmd>,
-    custom_slash_commands: Vec<SlashPaletteCmd>,
+    execute_instruction: Box<dyn Fn(&CommandInstruction, CommandContext) -> EditorCommandOutput>,
+
+    defaults: (Vec<CommandInstance>, Vec<SlashPaletteCmd>),
+
+    keyboard_commands: Vec<CommandInstance>,
+    slash_commands: Vec<SlashPaletteCmd>,
 }
 
 impl CommandList {
-    pub fn new(list: Vec<EditorCommand>, slash_palette_commands: Vec<SlashPaletteCmd>) -> Self {
-        // TODO: ensure uniqness of names
-        // that is going to be even more critical with settings note
+    pub fn new<
+        Handler: 'static + Fn(&CommandInstruction, CommandContext) -> EditorCommandOutput,
+    >(
+        execute: Handler,
+        default_keyboard_instructions: Vec<CommandInstruction>,
+        slash_palette_commands: Vec<SlashPaletteCmd>,
+    ) -> Self {
+        let keyboard_commands: Vec<_> = default_keyboard_instructions
+            .into_iter()
+            .map(CommandInstance::built_in)
+            .collect();
+
+        let defaults = (keyboard_commands.clone(), slash_palette_commands.clone());
         Self {
-            editor_commands: list,
-            available_slash_palette_commands: slash_palette_commands,
-            custom_slash_commands: vec![],
+            defaults,
+            execute_instruction: Box::new(execute),
+            keyboard_commands,
+            slash_commands: slash_palette_commands,
         }
     }
 
-    pub fn available_editor_commands(&self) -> impl Iterator<Item = &EditorCommand> {
-        self.editor_commands.iter()
+    pub fn available_keyboard_commands(
+        &self,
+    ) -> impl Iterator<Item = (KeyboardShortcut, &CommandInstance)> {
+        self.keyboard_commands
+            .iter()
+            .flat_map(|cmd| cmd.shortcut.zip(Some(cmd)))
     }
 
     pub fn available_slash_commands(&self) -> impl Iterator<Item = &SlashPaletteCmd> {
-        self.available_slash_palette_commands
+        self.slash_commands.iter().chain(self.slash_commands.iter())
+    }
+
+    pub fn find(&self, cmd: CommandInstruction) -> Option<&CommandInstance> {
+        self.keyboard_commands
             .iter()
-            .chain(self.custom_slash_commands.iter())
+            .rev() // in reverse to surface user defined commands first
+            .find(|c| c.instruction == cmd)
     }
 
-    pub fn remove_custom_slash_commands(&mut self) {
-        self.custom_slash_commands.clear();
+    pub fn add_editor_cmd(&mut self, cmd: CommandInstance) {
+        self.keyboard_commands.push(cmd)
     }
 
-    pub fn find(&self, cmd: BuiltInCommand) -> Option<&EditorCommand> {
-        self.available_editor_commands()
-            .find(|c| c.kind == Some(cmd))
+    pub fn add_slash_command(&mut self, cmd: SlashPaletteCmd) {
+        self.slash_commands.push(cmd);
     }
 
-    pub fn editor_retain_only(&mut self, filter: impl Fn(&EditorCommand) -> bool) {
-        self.editor_commands.retain(filter)
+    pub fn reset_to_defaults(&mut self) {
+        self.keyboard_commands.clear();
+        self.keyboard_commands.extend_from_slice(&self.defaults.0);
+
+        self.slash_commands.clear();
+        self.slash_commands.extend_from_slice(&self.defaults.1);
     }
 
-    pub fn add_editor_cmd(&mut self, cmd: EditorCommand) {
-        self.editor_commands.push(cmd)
-    }
-
-    pub fn add_custom_slash_command(&mut self, cmd: SlashPaletteCmd) {
-        self.custom_slash_commands.push(cmd);
-    }
-
-    pub fn set_or_replace_builtin_shortcut(
-        &mut self,
-        shortcut: KeyboardShortcut,
-        cmd: BuiltInCommand,
-    ) -> Option<()> {
-        let cmd = self
-            .editor_commands
-            .iter_mut()
-            .find(|c| c.kind == Some(cmd))?;
-        cmd.shortcut = Some(shortcut);
-        Some(())
-    }
-
-    pub fn reset_builtins_to_default_keybindings(&mut self) {
-        for command in self.editor_commands.iter_mut() {
-            if let Some(kind) = command.kind {
-                command.shortcut = Some(kind.default_keybinding());
-            }
-        }
+    pub fn run(
+        &self,
+        target_instruction: &CommandInstruction,
+        ctx: CommandContext,
+    ) -> EditorCommandOutput {
+        (self.execute_instruction)(target_instruction, ctx)
     }
 }
 
 pub fn map_text_command_to_command_handler(
     f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
-) -> Box<dyn Fn(CommandContext) -> EditorCommandOutput> {
-    Box::new(move |CommandContext { app_state, .. }| {
+) -> CommandHandler {
+    CommandHandler::new(move |CommandContext { app_state, .. }| {
         let Some(text_command_context) = try_extract_text_command_context(app_state) else {
             return SmallVec::new();
         };

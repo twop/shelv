@@ -855,7 +855,8 @@ pub fn process_app_action(
                         scripts: &mut scripts,
                     };
 
-                    let actions_from_cmd = (cmd.editor_cmd.try_handle)(cmd_context);
+                    let actions_from_cmd =
+                        state.commands.run(&cmd.instance.instruction, cmd_context);
 
                     state.settings_scripts = Some(scripts);
 
