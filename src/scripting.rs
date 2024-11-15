@@ -5,7 +5,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::{
     byte_span::ByteSpan,
     effects::text_change_effect::TextChange,
-    text_structure::{SpanKind, TextStructure},
+    text_structure::{CodeBlockMeta, SpanKind, SpanMeta, TextStructure},
 };
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -109,7 +109,7 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
 ) -> Option<Vec<TextChange>> {
     let script_blocks: SmallVec<[_; 8]> = text_structure
         .filter_map_codeblocks(Ctx::try_parse_block_lang)
-        .filter_map(|(index, desc, block_kind)| {
+        .filter_map(|(index, desc, _, block_kind)| {
             let byte_range = desc.byte_pos.clone();
 
             let (_, code_desc) = text_structure

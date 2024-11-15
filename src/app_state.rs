@@ -52,7 +52,8 @@ use crate::{
     },
     settings_parsing::LlmSettings,
     text_structure::{
-        SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextStructure, TextStructureVersion,
+        CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextStructure,
+        TextStructureVersion,
     },
     theme::AppTheme,
 };
@@ -234,7 +235,7 @@ impl ComputedLayout {
                 SpanKind::CodeBlock => {
                     text_structure.find_meta(index).and_then(|meta| match meta {
                         // TODO use small string instead
-                        SpanMeta::CodeBlock { lang, .. } => {
+                        SpanMeta::CodeBlock(CodeBlockMeta { lang, .. }) => {
                             Some((desc.byte_pos, lang.to_owned(), index))
                         }
                         _ => None,

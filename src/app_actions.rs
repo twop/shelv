@@ -21,7 +21,10 @@ use crate::{
     scripting::{execute_code_blocks, execute_live_scripts},
     settings_eval::{Scripts, SettingsNoteEvalContext},
     settings_parsing::LlmSettings,
-    text_structure::{create_layout_job_from_text_diff, SpanIndex, TextDiffPart, TextStructure},
+    text_structure::{
+        create_layout_job_from_text_diff, CodeBlockMeta, SpanIndex, SpanKind, SpanMeta,
+        TextDiffPart, TextStructure,
+    },
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -333,7 +336,7 @@ pub fn process_app_action(
                     let insertion_pos = text_structure
                         .filter_map_codeblocks(|lang| (lang == &resp.address).then(|| ()))
                         .next()
-                        .map(|(_index, desc, _)| {
+                        .map(|(_index, desc, _, _)| {
                             let entire_block_text = &text[desc.byte_pos.range()];
                             match entire_block_text.lines().count() {
                                 // right before "```"
@@ -490,11 +493,39 @@ pub fn process_app_action(
                 false => TextStructure::new(text),
             };
 
+            let has_unclosed_code_blocks = text_structure
+                .iter()
+                .filter_map(|(i, desc)| {
+                    (desc.kind == SpanKind::CodeBlock)
+                        .then(|| text_structure.find_meta(i))
+                        .flatten()
+                })
+                .filter_map(|meta| match meta {
+                    SpanMeta::CodeBlock(CodeBlockMeta {
+                        closed,
+                        lang,
+                        lang_byte_span,
+                    }) => {
+                        if !closed {
+                            println!("Unclosed block - lang: {lang}, span: {lang_byte_span:?}");
+                        }
+                        Some(closed)
+                    }
+                    _ => None,
+                })
+                .any(|closed| !closed);
+
+            if has_unclosed_code_blocks {
+                // if we have unclosed codeblocks pause eval
+                println!("found unclosed blocks");
+                return SmallVec::new();
+            }
+
             let requested_changes = match note_file {
                 NoteFile::Note(_) => execute_live_scripts(&text_structure, text),
 
                 NoteFile::Settings => {
-                    println!("####### evasettings");
+                    println!("####### eval settings");
 
                     let mut settings_scripts = Scripts::new();
 
