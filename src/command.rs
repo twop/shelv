@@ -199,7 +199,7 @@ pub enum CommandInstruction {
     MarkdownStrikethrough,
 
     #[knus(name = "MarkdownCodeBlock")]
-    MarkdownCodeBlock,
+    MarkdownCodeBlock(#[knus(property(name = "lang"))] Option<String>),
 
     #[knus(name = "MarkdownH1")]
     MarkdownH1,
@@ -268,7 +268,7 @@ pub const PROMOTED_COMMANDS: [CommandInstruction; 9] = const {
         CommandInstruction::MarkdownBold,
         CommandInstruction::MarkdownItalic,
         CommandInstruction::MarkdownStrikethrough,
-        CommandInstruction::MarkdownCodeBlock,
+        CommandInstruction::MarkdownCodeBlock(None),
         CommandInstruction::RunLLMBlock,
         CommandInstruction::MarkdownH1,
         CommandInstruction::MarkdownH2,
@@ -286,7 +286,10 @@ impl CommandInstruction {
             Self::MarkdownBold => "Toggle Bold".into(),
             Self::MarkdownItalic => "Toggle Italic".into(),
             Self::MarkdownStrikethrough => "Toggle Strikethrough".into(),
-            Self::MarkdownCodeBlock => "Toggle Code Block".into(),
+            Self::MarkdownCodeBlock(lang) => match lang {
+                Some(language) => format!("Toggle Code Block ({})", language).into(),
+                None => "Toggle Code Block".into(),
+            },
             Self::MarkdownH1 => "Heading 1".into(),
             Self::MarkdownH2 => "Heading 2".into(),
             Self::MarkdownH3 => "Heading 3".into(),
@@ -341,7 +344,7 @@ impl CommandInstruction {
             C::IndentListItem => shortcut(Modifiers::NONE, Key::Tab),
             C::UnindentListItem => shortcut(Modifiers::SHIFT, Key::Tab),
             C::SplitListItem => shortcut(Modifiers::NONE, Key::Enter),
-            C::MarkdownCodeBlock => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::B),
+            C::MarkdownCodeBlock(None) => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::B),
             C::MarkdownBold => shortcut(Modifiers::COMMAND, Key::B),
             C::MarkdownItalic => shortcut(Modifiers::COMMAND, Key::I),
             C::MarkdownStrikethrough => shortcut(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::E),
@@ -366,7 +369,7 @@ impl CommandInstruction {
             C::PrevSlashPalleteCmd => shortcut(Modifiers::NONE, Key::ArrowUp),
             C::ExecuteSlashPalleteCmd => shortcut(Modifiers::NONE, Key::Enter),
             C::HideSlashPallete => shortcut(Modifiers::NONE, Key::Escape),
-            C::InsertText(_) => None,
+            C::InsertText(_) | C::MarkdownCodeBlock(_) => None,
         }
     }
 }
@@ -487,23 +490,22 @@ impl CommandList {
     }
 }
 
-pub fn map_text_command_to_command_handler(
-    f: impl Fn(TextCommandContext) -> Option<Vec<TextChange>> + 'static,
-) -> CommandHandler {
-    CommandHandler::new(move |CommandContext { app_state, .. }| {
-        let Some(text_command_context) = try_extract_text_command_context(app_state) else {
-            return SmallVec::new();
-        };
+pub fn call_with_text_ctx(
+    CommandContext { app_state, .. }: CommandContext,
+    f: impl FnOnce(TextCommandContext) -> Option<Vec<TextChange>>,
+) -> EditorCommandOutput {
+    let Some(text_command_context) = try_extract_text_command_context(app_state) else {
+        return SmallVec::new();
+    };
 
-        f(text_command_context)
-            .map(|changes| {
-                SmallVec::from([AppAction::apply_text_changes(
-                    app_state.selected_note,
-                    changes,
-                )])
-            })
-            .unwrap_or_default()
-    })
+    f(text_command_context)
+        .map(|changes| {
+            SmallVec::from([AppAction::apply_text_changes(
+                app_state.selected_note,
+                changes,
+            )])
+        })
+        .unwrap_or_default()
 }
 
 pub fn try_extract_text_command_context(app_state: &AppState) -> Option<TextCommandContext<'_>> {

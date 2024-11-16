@@ -533,10 +533,6 @@ impl TextStructure {
                                 .map(|last| last == "```")
                                 .unwrap_or(false);
 
-                            if !closed {
-                                println!("$$$$ code block NOT closed text={:?}", text);
-                            }
-
                             Some(builder.add_with_meta(
                                 SpanKind::CodeBlock,
                                 range.clone(),

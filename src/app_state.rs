@@ -23,9 +23,8 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        map_text_command_to_command_handler, AppFocus, CommandContext, CommandHandler,
-        CommandInstance, CommandInstruction, CommandList, EditorCommandOutput, SlashPaletteCmd,
-        TextCommandContext,
+        call_with_text_ctx, AppFocus, CommandContext, CommandHandler, CommandInstance,
+        CommandInstruction, CommandList, EditorCommandOutput, SlashPaletteCmd, TextCommandContext,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
@@ -352,120 +351,13 @@ impl AppState {
 
         let text_structure = TextStructure::new(&notes.get(&selected_note).unwrap().text);
 
-        fn execute_instruction(
-            instruction: &CommandInstruction,
-            ctx: CommandContext,
-        ) -> EditorCommandOutput {
-            use CommandInstruction as CI;
-            match instruction {
-                CI::ExpandTaskMarker => {
-                    map_text_command_to_command_handler(on_space_after_task_markers).call(ctx)
-                }
-                CI::IndentListItem => {
-                    map_text_command_to_command_handler(on_tab_inside_list).call(ctx)
-                }
-                CI::UnindentListItem => {
-                    map_text_command_to_command_handler(on_shift_tab_inside_list).call(ctx)
-                }
-                CI::SplitListItem => {
-                    map_text_command_to_command_handler(on_enter_inside_list_item).call(ctx)
-                }
-                CI::MarkdownCodeBlock => {
-                    map_text_command_to_command_handler(toggle_code_block).call(ctx)
-                }
-                CI::MarkdownBold => map_text_command_to_command_handler(|text_context| {
-                    toggle_simple_md_annotations(text_context, SpanKind::Bold, "**")
-                })
-                .call(ctx),
-                CI::MarkdownItalic => map_text_command_to_command_handler(|text_context| {
-                    toggle_simple_md_annotations(text_context, SpanKind::Emphasis, "*")
-                })
-                .call(ctx),
-
-                CI::MarkdownStrikethrough => map_text_command_to_command_handler(|text_context| {
-                    toggle_simple_md_annotations(text_context, SpanKind::Strike, "~~")
-                })
-                .call(ctx),
-
-                CI::MarkdownH1 => map_text_command_to_command_handler(|text_context| {
-                    toggle_md_heading(text_context, HeadingLevel::H1)
-                })
-                .call(ctx),
-
-                CI::MarkdownH2 => map_text_command_to_command_handler(|text_context| {
-                    toggle_md_heading(text_context, HeadingLevel::H2)
-                })
-                .call(ctx),
-
-                CI::MarkdownH3 => map_text_command_to_command_handler(|text_context| {
-                    toggle_md_heading(text_context, HeadingLevel::H3)
-                })
-                .call(ctx),
-
-                CI::EnterInsideKDL => {
-                    map_text_command_to_command_handler(on_enter_inside_kdl_block).call(ctx)
-                }
-
-                CI::SwitchToNote(note_index) => SmallVec::from([AppAction::SwitchToNote {
-                    note_file: NoteFile::Note(*note_index as u32),
-                    via_shortcut: true,
-                }]),
-
-                CI::SwitchToSettings => [AppAction::SwitchToNote {
-                    note_file: NoteFile::Settings,
-                    via_shortcut: true,
-                }]
-                .into(),
-
-                CI::PinWindow => [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
-
-                CI::HideApp => match (
-                    ctx.app_focus.is_menu_opened,
-                    &ctx.app_state.slash_palette,
-                    ctx.app_focus.focus,
-                ) {
-                    (false, None, None | Some(AppFocus::NoteEditor)) => {
-                        [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
-                    }
-                    _ => SmallVec::new(),
-                },
-
-                CI::HidePrompt => match ctx.app_focus.focus {
-                    Some(AppFocus::InlinePropmptEditor) => {
-                        [AppAction::AcceptPromptSuggestion { accept: false }].into()
-                    }
-                    _ => SmallVec::new(),
-                },
-
-                CI::RunLLMBlock => prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection)
-                    .unwrap_or_default(),
-
-                CI::ShowPrompt => inline_llm_prompt_command_handler(ctx).unwrap_or_default(),
-
-                CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),
-
-                CI::HideSlashPallete => hide_slash_pallete(ctx).unwrap_or_default(),
-
-                CI::NextSlashPalleteCmd => next_slash_cmd(ctx).unwrap_or_default(),
-
-                CI::PrevSlashPalleteCmd => prev_slash_cmd(ctx).unwrap_or_default(),
-
-                CI::ExecuteSlashPalleteCmd => execute_slash_cmd(ctx).unwrap_or_default(),
-
-                CI::BracketAutoclosingInsideKDL => todo!(),
-                CI::InsertText(text_source) => call_replace_text(text_source, ctx),
-                // Disable for now
-                // CI::BracketAutoclosingInsideKDL => map_text_command_to_command_handler(autoclose_bracket_inside_kdl_block).call(ctx),
-            }
-        }
-
         let keybord_instructions: Vec<CommandInstruction> = Vec::from_iter(
             [
                 CommandInstruction::ExpandTaskMarker,
                 CommandInstruction::IndentListItem,
                 CommandInstruction::UnindentListItem,
                 CommandInstruction::SplitListItem,
-                CommandInstruction::MarkdownCodeBlock,
+                CommandInstruction::MarkdownCodeBlock(None),
                 CommandInstruction::MarkdownBold,
                 CommandInstruction::MarkdownItalic,
                 CommandInstruction::MarkdownStrikethrough,
@@ -498,7 +390,11 @@ impl AppState {
             .chain(
                 [
                     ("ai", CommandInstruction::ShowPrompt, P::SPARKLE),
-                    ("code", CommandInstruction::MarkdownCodeBlock, P::CODE_BLOCK),
+                    (
+                        "code",
+                        CommandInstruction::MarkdownCodeBlock(None),
+                        P::CODE_BLOCK,
+                    ),
                     ("h1", CommandInstruction::MarkdownH1, P::TEXT_H_ONE),
                     ("h2", CommandInstruction::MarkdownH2, P::TEXT_H_TWO),
                     ("h3", CommandInstruction::MarkdownH3, P::TEXT_H_THREE),
@@ -580,19 +476,90 @@ pub struct AppInitData {
     pub last_saved: u128,
 }
 
-fn number_to_key(key: u8) -> Option<Key> {
-    match key {
-        0 => Some(Key::Num0),
-        1 => Some(Key::Num1),
-        2 => Some(Key::Num2),
-        3 => Some(Key::Num3),
-        4 => Some(Key::Num4),
-        5 => Some(Key::Num5),
-        6 => Some(Key::Num6),
-        7 => Some(Key::Num7),
-        8 => Some(Key::Num8),
-        9 => Some(Key::Num9),
-        _ => None,
+fn execute_instruction(
+    instruction: &CommandInstruction,
+    ctx: CommandContext,
+) -> EditorCommandOutput {
+    use CommandInstruction as CI;
+    match instruction {
+        CI::ExpandTaskMarker => call_with_text_ctx(ctx, on_space_after_task_markers),
+        CI::IndentListItem => call_with_text_ctx(ctx, on_tab_inside_list),
+        CI::UnindentListItem => call_with_text_ctx(ctx, on_shift_tab_inside_list),
+        CI::SplitListItem => call_with_text_ctx(ctx, on_enter_inside_list_item),
+        CI::MarkdownCodeBlock(lang) => call_with_text_ctx(ctx, |cx| {
+            toggle_code_block(cx, lang.as_ref().map(|s| s.as_str()))
+        }),
+        CI::MarkdownBold => call_with_text_ctx(ctx, |text_context| {
+            toggle_simple_md_annotations(text_context, SpanKind::Bold, "**")
+        }),
+        CI::MarkdownItalic => call_with_text_ctx(ctx, |text_context| {
+            toggle_simple_md_annotations(text_context, SpanKind::Emphasis, "*")
+        }),
+        CI::MarkdownStrikethrough => call_with_text_ctx(ctx, |text_context| {
+            toggle_simple_md_annotations(text_context, SpanKind::Strike, "~~")
+        }),
+        CI::MarkdownH1 => call_with_text_ctx(ctx, |text_context| {
+            toggle_md_heading(text_context, HeadingLevel::H1)
+        }),
+        CI::MarkdownH2 => call_with_text_ctx(ctx, |text_context| {
+            toggle_md_heading(text_context, HeadingLevel::H2)
+        }),
+        CI::MarkdownH3 => call_with_text_ctx(ctx, |text_context| {
+            toggle_md_heading(text_context, HeadingLevel::H3)
+        }),
+        CI::EnterInsideKDL => call_with_text_ctx(ctx, on_enter_inside_kdl_block),
+
+        CI::SwitchToNote(note_index) => SmallVec::from([AppAction::SwitchToNote {
+            note_file: NoteFile::Note(*note_index as u32),
+            via_shortcut: true,
+        }]),
+
+        CI::SwitchToSettings => [AppAction::SwitchToNote {
+            note_file: NoteFile::Settings,
+            via_shortcut: true,
+        }]
+        .into(),
+
+        CI::PinWindow => [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
+
+        CI::HideApp => match (
+            ctx.app_focus.is_menu_opened,
+            &ctx.app_state.slash_palette,
+            ctx.app_focus.focus,
+        ) {
+            (false, None, None | Some(AppFocus::NoteEditor)) => {
+                [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
+            }
+            _ => SmallVec::new(),
+        },
+
+        CI::HidePrompt => match ctx.app_focus.focus {
+            Some(AppFocus::InlinePropmptEditor) => {
+                [AppAction::AcceptPromptSuggestion { accept: false }].into()
+            }
+            _ => SmallVec::new(),
+        },
+
+        CI::RunLLMBlock => {
+            prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default()
+        }
+
+        CI::ShowPrompt => inline_llm_prompt_command_handler(ctx).unwrap_or_default(),
+
+        CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),
+
+        CI::HideSlashPallete => hide_slash_pallete(ctx).unwrap_or_default(),
+
+        CI::NextSlashPalleteCmd => next_slash_cmd(ctx).unwrap_or_default(),
+
+        CI::PrevSlashPalleteCmd => prev_slash_cmd(ctx).unwrap_or_default(),
+
+        CI::ExecuteSlashPalleteCmd => execute_slash_cmd(ctx).unwrap_or_default(),
+
+        CI::BracketAutoclosingInsideKDL => todo!(),
+        CI::InsertText(text_source) => call_replace_text(text_source, ctx),
+        // Disable for now
+        // CI::BracketAutoclosingInsideKDL => map_text_command_to_command_handler(autoclose_bracket_inside_kdl_block).call(ctx),
     }
 }
 
