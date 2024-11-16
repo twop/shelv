@@ -37,8 +37,9 @@ pub fn show_slash_pallete(
     } = try_extract_text_command_context(app_state)?;
 
     match text_structure.find_surrounding_span_with_meta(SpanKind::CodeBlock, byte_cursor) {
-        Some((_, _, SpanMeta::CodeBlock(CodeBlockMeta { lang, .. }))) if lang == JS_SOURCE_LANG => {
-            // do not allow "/" palette in JS blocks, let's experiment of having it in other blocks for now
+        Some((_, _, SpanMeta::CodeBlock(_))) => {
+            // do not allow "/" palette in any code blocks
+            // not 100% that this is correct but seems to be more intuitive this way
             return None;
         }
         _ => (),
