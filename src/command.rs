@@ -52,22 +52,7 @@ impl<'a> TextCommandContext<'a> {
 
 pub type EditorCommandOutput = SmallVec<[AppAction; 1]>;
 
-#[derive(Clone)]
-pub struct CommandHandler(Rc<dyn Fn(CommandContext) -> EditorCommandOutput>);
-
-impl CommandHandler {
-    pub fn call(&self, ctx: CommandContext) -> EditorCommandOutput {
-        (self.0)(ctx)
-    }
-
-    pub fn new<Handler: 'static + Fn(CommandContext) -> EditorCommandOutput>(
-        handler: Handler,
-    ) -> Self {
-        CommandHandler(Rc::new(handler))
-    }
-}
-
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct CommandInstance {
     pub shortcut: Option<KeyboardShortcut>,
     pub instruction: CommandInstruction,
@@ -117,7 +102,7 @@ pub enum TextSource {
     #[knus(name = "string")]
     Str(#[knus(argument)] String),
 
-    #[knus(name = "scriptCall")]
+    #[knus(name = "call")]
     Script(ScriptCall),
 }
 #[derive(PartialEq, Debug, Clone)]
@@ -424,6 +409,16 @@ pub struct CommandList {
     slash_commands: Vec<SlashPaletteCmd>,
 }
 
+impl Debug for CommandList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CommandList")
+            .field("defaults", &self.defaults)
+            .field("keyboard_commands", &self.keyboard_commands)
+            .field("slash_commands", &self.slash_commands)
+            .finish()
+    }
+}
+
 impl CommandList {
     pub fn new<
         Handler: 'static + Fn(&CommandInstruction, CommandContext) -> EditorCommandOutput,
@@ -455,7 +450,7 @@ impl CommandList {
     }
 
     pub fn available_slash_commands(&self) -> impl Iterator<Item = &SlashPaletteCmd> {
-        self.slash_commands.iter().chain(self.slash_commands.iter())
+        self.slash_commands.iter()
     }
 
     pub fn find(&self, cmd: CommandInstruction) -> Option<&CommandInstance> {
@@ -466,10 +461,32 @@ impl CommandList {
     }
 
     pub fn add_editor_cmd(&mut self, cmd: CommandInstance) {
-        self.keyboard_commands.push(cmd)
+        if let Some(shortcut) = cmd.shortcut {
+            if let Some(existing_pos) = self
+                .keyboard_commands
+                .iter()
+                .position(|x| x.shortcut == Some(shortcut))
+            {
+                self.keyboard_commands.remove(existing_pos);
+            }
+        }
+
+        self.keyboard_commands.push(cmd);
     }
 
     pub fn add_slash_command(&mut self, cmd: SlashPaletteCmd) {
+        // Check for existing command with same prefix
+        if let Some(existing_pos) = self
+            .slash_commands
+            .iter()
+            .position(|x| x.prefix == cmd.prefix)
+        {
+            println!(
+                "===== Overriding existing slash command with prefix '{}'",
+                cmd.prefix
+            );
+            self.slash_commands.remove(existing_pos);
+        }
         self.slash_commands.push(cmd);
     }
 

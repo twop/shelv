@@ -23,8 +23,8 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        call_with_text_ctx, AppFocus, CommandContext, CommandHandler, CommandInstance,
-        CommandInstruction, CommandList, EditorCommandOutput, SlashPaletteCmd, TextCommandContext,
+        call_with_text_ctx, AppFocus, CommandContext, CommandInstance, CommandInstruction,
+        CommandList, EditorCommandOutput, SlashPaletteCmd, TextCommandContext,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
@@ -420,6 +420,7 @@ impl AppState {
             slash_palette_commands,
         );
 
+        // schedule
         let deferred_actions = vec![AppAction::EvalNote(NoteFile::Settings)];
 
         Self {
