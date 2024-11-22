@@ -1,6 +1,6 @@
 use boa_engine::{Context, Source};
+use boa_runtime::Console;
 use smallvec::SmallVec;
-use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::{
     byte_span::ByteSpan,
@@ -8,27 +8,7 @@ use crate::{
     text_structure::{CodeBlockMeta, SpanKind, SpanMeta, TextStructure},
 };
 
-#[derive(PartialEq, Debug, Clone, Copy)]
-pub struct SourceHash(u16);
-
-impl SourceHash {
-    pub fn parse(hex: &str) -> Option<Self> {
-        u16::from_str_radix(hex, 16).ok().map(SourceHash)
-    }
-
-    pub fn from(code: &str) -> Self {
-        let mut s = DefaultHasher::new();
-        code.hash(&mut s);
-        SourceHash(s.finish() as u16)
-    }
-
-    pub fn to_string(&self) -> String {
-        format!("{:x}", self.0)
-    }
-}
-
-pub const JS_OUTPUT_LANG: &str = "js#";
-pub const JS_SOURCE_LANG: &str = "js";
+use super::note_eval_context::{BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash};
 
 #[derive(Debug, Clone, Copy)]
 enum CodeBlock {
@@ -36,29 +16,8 @@ enum CodeBlock {
     Output(ByteSpan, Option<SourceHash>),
 }
 
-#[derive(Debug, Clone, PartialEq, Copy)]
-pub enum CodeBlockKind {
-    Source,
-    Output(Option<SourceHash>),
-}
-
-pub struct BlockEvalResult {
-    pub body: String,
-    pub output_lang: String,
-}
-
-pub trait NoteEvalContext {
-    type State;
-    fn begin(&mut self) -> Self::State;
-    fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind>;
-    fn eval_block(
-        &mut self,
-        body: &str,
-        hash: SourceHash,
-        state: &mut Self::State,
-    ) -> BlockEvalResult;
-    fn should_force_eval(&self) -> bool;
-}
+pub const JS_OUTPUT_LANG: &str = "js#";
+pub const JS_SOURCE_LANG: &str = "js";
 
 struct JsNoteEvalContext {
     context: Context,
@@ -89,7 +48,7 @@ impl NoteEvalContext for JsNoteEvalContext {
                 Err(err) => format!("{:#}", err),
             },
 
-            output_lang: format!("{}{:x}", JS_OUTPUT_LANG, hash.0),
+            output_lang: format!("{}{}", JS_OUTPUT_LANG, hash.to_string()),
         }
     }
 
@@ -212,9 +171,18 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
 }
 
 pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Option<Vec<TextChange>> {
-    let mut cx = JsNoteEvalContext {
-        context: Context::default(),
-    };
+    let mut context = Context::default();
+    // We first add the `console` object, to be able to call `console.log()`.
+    let console = Console::init(&mut context);
+    context
+        .register_global_property(
+            Console::NAME,
+            console,
+            boa_engine::property::Attribute::all(),
+        )
+        .expect("the console builtin shouldn't exist");
+
+    let mut cx = JsNoteEvalContext { context };
     execute_code_blocks(&mut cx, text_structure, text)
 }
 

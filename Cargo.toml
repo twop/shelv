@@ -72,6 +72,7 @@ knus = { default-features = false, git = 'https://github.com/twop/knus.git', fea
 
 miette = { version = "7.2.0", features = ["fancy"] }
 strip-ansi-escapes = "0.2.0"
+boa_runtime = "0.19.1"
 
 [patch.crates-io]
 winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.5" }

@@ -10,8 +10,8 @@ use crate::{
     },
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
-    scripting::{CodeBlockKind, SourceHash},
-    text_structure::{CodeBlockMeta, SpanDesc, SpanIndex, SpanKind, SpanMeta, TextStructure},
+    scripting::note_eval_context::{CodeBlockKind, SourceHash},
+    text_structure::{CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextStructure},
 };
 
 #[derive(Clone, Copy)]

@@ -23,14 +23,14 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        call_with_text_ctx, AppFocus, CommandContext, CommandInstance, CommandInstruction,
-        CommandList, EditorCommandOutput, SlashPaletteCmd, TextCommandContext,
+        call_with_text_ctx, AppFocus, CommandContext, CommandInstruction, CommandList,
+        EditorCommandOutput, SlashPaletteCmd,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
         inline_llm_prompt::inline_llm_prompt_command_handler,
         insert_text::call_replace_text,
-        kdl_lang::{autoclose_bracket_inside_kdl_block, on_enter_inside_kdl_block},
+        kdl_lang::on_enter_inside_kdl_block,
         run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
         slash_pallete::{
             execute_slash_cmd, hide_slash_pallete, next_slash_cmd, prev_slash_cmd,
@@ -42,13 +42,8 @@ use crate::{
         toggle_md_headings::toggle_md_heading,
         toggle_simple_md_annotations::toggle_simple_md_annotations,
     },
-    effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{DataToSave, NoteFile, RestoredData},
-    scripting::execute_code_blocks,
-    settings_eval::{
-        parse_and_eval_settings_script_block, Scripts, SettingsNoteEvalContext,
-        SETTINGS_SCRIPT_BLOCK_LANG,
-    },
+    scripting::settings_eval::Scripts,
     settings_parsing::LlmSettings,
     text_structure::{
         CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextStructure,

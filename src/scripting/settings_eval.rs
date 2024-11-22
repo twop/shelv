@@ -1,33 +1,28 @@
-use std::{
-    error::Error,
-    path::{Path, PathBuf},
-    rc::Rc,
-    str::FromStr,
-};
+use std::{error::Error, path::PathBuf, rc::Rc, str::FromStr};
 
 use boa_engine::{
-    builtins::promise::PromiseState, js_string, module::SimpleModuleLoader, property::PropertyKey,
-    Context, JsError, JsNativeError, JsResult, JsValue, Module, NativeFunction,
+    builtins::promise::PromiseState, module::SimpleModuleLoader, property::PropertyKey, Context,
+    JsError, JsValue, Module,
 };
 use boa_parser::Source;
 use itertools::Itertools;
 use smallvec::SmallVec;
 
 use crate::{
-    app_actions::{AppAction, AppIO},
+    app_actions::AppIO,
     app_state::MsgToApp,
-    byte_span::ByteSpan,
     command::{
-        try_extract_text_command_context, CommandContext, CommandInstance, CommandInstruction,
-        CommandList, ForwardToChild, ScriptCall, SlashPaletteCmd, TextCommandContext, TextSource,
-        PROMOTED_COMMANDS,
+        CommandInstance, CommandInstruction, CommandList, ForwardToChild, ScriptCall,
+        SlashPaletteCmd, TextSource,
     },
-    effects::text_change_effect::TextChange,
-    scripting::{BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
     settings_parsing::{
-        format_mac_shortcut, parse_top_level_settings_block, GlobalBinding, GlobalCommand,
-        LlmSettings, LocalBinding,
+        parse_top_level_settings_block, GlobalBinding, GlobalCommand, LlmSettings, LocalBinding,
     },
+};
+
+use super::{
+    js_module_loader::InMemoryModuleLoader,
+    note_eval_context::{BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
 };
 
 pub const SETTINGS_BLOCK_LANG: &str = "settings";
@@ -46,7 +41,7 @@ pub enum ScriptExportType {
 #[derive(Debug)]
 pub struct Scripts {
     pub js_cx: Context,
-    pub module_loader: Rc<SimpleModuleLoader>,
+    pub module_loader: Rc<InMemoryModuleLoader>,
     pub script_blocks: Vec<SriptBlock>,
 }
 
@@ -72,7 +67,7 @@ impl Scripts {
 }
 
 #[derive(Debug)]
-struct ModuleExport {
+pub struct ModuleExport {
     name: String,
     key: PropertyKey,
     export_type: ScriptExportType,
@@ -91,7 +86,7 @@ pub struct SriptBlock {
 impl Scripts {
     pub fn new() -> Self {
         // TODO get away from using SimpleModuleLoader
-        let loader = Rc::new(SimpleModuleLoader::new("./").expect("why should it ever fail?"));
+        let loader = Rc::new(InMemoryModuleLoader::new());
 
         // Just need to cast to a `ModuleLoader` before passing it to the builder.
         let context = Context::builder()
@@ -140,7 +135,31 @@ impl NoteEvalContext for Scripts {
         hash: SourceHash,
         state: &mut Self::State,
     ) -> BlockEvalResult {
-        let (exports, module) = match parse_and_eval_settings_script_block(body, &mut self.js_cx) {
+        // Update `body` to include all exports from current blocks
+        let existing_exports: String = self
+            .script_blocks
+            .iter()
+            .flat_map(|block| {
+                block.exports.iter().map(|export| {
+                    format!(
+                        "import {{ {} }} from '{}';",
+                        export.name,
+                        block.source_hash.to_string()
+                    )
+                })
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let augmented_body = if !existing_exports.is_empty() {
+            format!("{}\n\n{}", existing_exports, body)
+        } else {
+            body.to_string()
+        };
+
+        let body = augmented_body;
+
+        let (exports, module) = match parse_and_eval_settings_script_block(&body, &mut self.js_cx) {
             Ok((exports, module)) => (exports, module),
             Err(err) => {
                 return BlockEvalResult {
@@ -155,7 +174,7 @@ impl NoteEvalContext for Scripts {
         };
 
         self.module_loader
-            .insert(PathBuf::from_str(&hash.to_string()).unwrap(), module);
+            .insert(format!("{}", hash.to_string()), module);
 
         let body = match exports.as_slice() {
             [] => "Block was evaluated by no exports were found".to_string(),
@@ -219,7 +238,7 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
         }
     }
 
-    fn eval_block(&mut self, body: &str, hash: SourceHash, _: &mut Self::State) -> BlockEvalResult {
+    fn eval_block(&mut self, body: &str, hash: SourceHash, _: &mut ()) -> BlockEvalResult {
         // TODO report if applying bindings failed
 
         let output_lang = format!("{}{}", SETTINGS_BLOCK_LANG_OUTPUT, hash.to_string());
@@ -340,41 +359,6 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
         if let Some(last_llm_settings) = settings.llm_settings {
             *self.llm_settings = Some(last_llm_settings);
         }
-
-        // let body = match has_any_bindings {
-        //     true => {
-        //         let mut body = "applied\n\nEffective bindings after the block:".to_string();
-        //         for (binding_name, shortcut) in
-        //             settings.global_bindings.into_iter().map(|binding| {
-        //                 match binding.command {
-        //                     GlobalCommand::ShowHideApp => ("ShowHideApp", binding.shortcut),
-        //                 }
-        //             })
-        //         {
-        //             body.push_str(&format!(
-        //                 "\n{} -> {}",
-        //                 binding_name,
-        //                 format_mac_shortcut(shortcut)
-        //             ));
-        //         }
-
-        //         for (promoted_cmd, shortcut) in
-        //             PROMOTED_COMMANDS.into_iter().filter_map(|cmd| {
-        //                 self.cmd_list.find(cmd).and_then(|editor_cmd| {
-        //                     Some(editor_cmd.instruction).zip(editor_cmd.shortcut)
-        //                 })
-        //             })
-        //         {
-        //             body.push_str(&format!(
-        //                 "\n{} -> {}",
-        //                 promoted_cmd.name(),
-        //                 format_mac_shortcut(shortcut)
-        //             ));
-        //         }
-        //         body
-        //     }
-        //     false => format!("applied"),
-        // };
 
         let body = "applied".to_string();
         BlockEvalResult { body, output_lang }

@@ -2,15 +2,13 @@ use std::{
     error::Error,
     path::{Path, PathBuf},
     rc::Rc,
-    str::FromStr,
 };
 
 use boa_engine::{
-    builtins::promise::PromiseState, js_string, module::SimpleModuleLoader, property::PropertyKey,
-    Context, JsError, JsNativeError, JsResult, JsValue, Module, NativeFunction,
+    builtins::promise::PromiseState, js_string, module::SimpleModuleLoader, Context, JsError,
+    JsNativeError, JsValue, Module,
 };
 use boa_parser::Source;
-use itertools::Itertools;
 use smallvec::SmallVec;
 
 use crate::{
@@ -18,7 +16,7 @@ use crate::{
     byte_span::ByteSpan,
     command::{try_extract_text_command_context, CommandContext, TextCommandContext, TextSource},
     effects::text_change_effect::TextChange,
-    settings_eval::{ScriptExportType, Scripts},
+    scripting::settings_eval::{ScriptExportType, Scripts},
 };
 
 pub fn call_replace_text(
@@ -191,7 +189,7 @@ fn run_insert_text_cmd(
 
             let namespace = scripts
                 .module_loader
-                .get(&PathBuf::from(block_hash.to_string()))?
+                .get(&block_hash.to_string())?
                 .namespace(&mut scripts.js_cx);
 
             // TODO proper error handling

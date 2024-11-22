@@ -1,14 +1,11 @@
-use std::fmt::format;
-
 use itertools::Itertools;
 use smallvec::SmallVec;
-use tree_sitter::Point;
 
 use crate::{
-    byte_span::{self, ByteSpan},
+    byte_span::ByteSpan,
     command::TextCommandContext,
     effects::text_change_effect::TextChange,
-    settings_eval::SETTINGS_BLOCK_LANG,
+    scripting::settings_eval::SETTINGS_BLOCK_LANG,
     text_structure::{CodeBlockMeta, SpanKind, SpanMeta},
 };
 

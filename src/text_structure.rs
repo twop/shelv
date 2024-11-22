@@ -1,4 +1,4 @@
-use std::ops::{Deref, Range};
+use std::ops::Range;
 
 use eframe::{
     egui::TextFormat,
@@ -12,13 +12,13 @@ use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
 
-use tree_sitter::{Node, Parser, Query, QueryCursor};
+use tree_sitter::Parser;
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 use crate::{
     byte_span::ByteSpan,
     nord::Nord,
-    scripting::JS_OUTPUT_LANG,
+    scripting::note_eval::JS_OUTPUT_LANG,
     theme::{AppTheme, ColorManipulation, ColorTheme, FontTheme},
 };
 

@@ -17,7 +17,7 @@ use hotwatch::{
 use image::ImageFormat;
 use itertools::Itertools;
 use persistent_state::{load_and_migrate, try_save, v1, NoteFile};
-use settings_eval::Scripts;
+use scripting::settings_eval::Scripts;
 use smallvec::SmallVec;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
@@ -55,7 +55,6 @@ mod nord;
 mod persistent_state;
 mod picker;
 mod scripting;
-mod settings_eval;
 mod text_structure;
 mod theme;
 

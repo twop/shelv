@@ -480,6 +480,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00ee0645509b3b91abd724f25072649d9e8e65653a78ff0b6e592788a58dd838"
 
 [[package]]
+name = "boa_runtime"
+version = "0.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "377b8e09fe5fe37b5d5c3944320acaf55299d55106f384097caa160b4ae77553"
+dependencies = [
+ "boa_engine",
+ "boa_gc",
+ "rustc-hash 2.0.0",
+]
+
+[[package]]
 name = "boa_string"
 version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4423,6 +4434,7 @@ version = "1.2.1"
 dependencies = [
  "boa_engine",
  "boa_parser",
+ "boa_runtime",
  "directories-next",
  "eframe",
  "egui-phosphor",

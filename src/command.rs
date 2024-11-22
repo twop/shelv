@@ -10,7 +10,7 @@ use crate::{
     byte_span::ByteSpan,
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
-    settings_eval::Scripts,
+    scripting::settings_eval::Scripts,
     text_structure::TextStructure,
 };
 

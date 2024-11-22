@@ -18,8 +18,8 @@ use crate::{
     },
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{get_tutorial_note_content, NoteFile},
-    scripting::{execute_code_blocks, execute_live_scripts},
-    settings_eval::{Scripts, SettingsNoteEvalContext},
+    scripting::note_eval::{execute_code_blocks, execute_live_scripts},
+    scripting::settings_eval::{Scripts, SettingsNoteEvalContext},
     settings_parsing::LlmSettings,
     text_structure::{
         create_layout_job_from_text_diff, CodeBlockMeta, SpanIndex, SpanKind, SpanMeta,

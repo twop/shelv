@@ -7,8 +7,7 @@ use crate::{
         try_extract_text_command_context, AppFocus, AppFocusState, CommandContext,
         EditorCommandOutput, TextCommandContext,
     },
-    scripting::JS_SOURCE_LANG,
-    text_structure::{CodeBlockMeta, SpanKind, SpanMeta},
+    text_structure::{SpanKind, SpanMeta},
 };
 
 pub fn show_slash_pallete(
