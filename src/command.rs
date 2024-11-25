@@ -368,10 +368,7 @@ pub struct SlashPaletteCmd {
 }
 
 impl SlashPaletteCmd {
-    pub fn from_built_in_instruction(
-        prefix: impl Into<String>,
-        instruction: CommandInstruction,
-    ) -> Self {
+    pub fn from_instruction(prefix: impl Into<String>, instruction: CommandInstruction) -> Self {
         Self {
             phosphor_icon: None,
             prefix: prefix.into(),
@@ -384,8 +381,8 @@ impl SlashPaletteCmd {
         self
     }
 
-    pub fn shortcut(mut self, shortcut: KeyboardShortcut) -> Self {
-        self.instance.shortcut = Some(shortcut);
+    pub fn shortcut(mut self, shortcut: Option<KeyboardShortcut>) -> Self {
+        self.instance.shortcut = shortcut;
         self
     }
 

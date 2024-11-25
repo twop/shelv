@@ -178,9 +178,13 @@ impl NoteEvalContext for Scripts {
 
         let body = match exports.as_slice() {
             [] => "Block was evaluated by no exports were found".to_string(),
-            exports => ["Evaluated, registered exports:"]
+            exports => ["Registered exports:".to_string()]
                 .into_iter()
-                .chain(exports.iter().map(|export| export.name.as_str()))
+                .chain(
+                    exports
+                        .iter()
+                        .map(|export| format!("\"{}\"", export.name.as_str())),
+                )
                 .join("\n\t"),
         };
 
@@ -334,18 +338,17 @@ impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
             };
 
             if let Some(prefix) = slash_alias {
-                let cmd = SlashPaletteCmd::from_built_in_instruction(
-                    prefix,
-                    validated_instruction.clone(),
-                )
-                .icon(
-                    phosphor_icon
-                        .unwrap_or_else(|| egui_phosphor::light::USER_CIRCLE_GEAR.to_string()),
-                )
-                .description(
-                    description
-                        .unwrap_or_else(|| validated_instruction.human_description().to_string()),
-                );
+                let cmd = SlashPaletteCmd::from_instruction(prefix, validated_instruction.clone())
+                    .icon(
+                        phosphor_icon
+                            .unwrap_or_else(|| egui_phosphor::light::USER_CIRCLE_GEAR.to_string()),
+                    )
+                    .description(
+                        description.unwrap_or_else(|| {
+                            validated_instruction.human_description().to_string()
+                        }),
+                    )
+                    .shortcut(shortcut.as_ref().map(|v| v.value()));
 
                 self.cmd_list.add_slash_command(cmd);
             }

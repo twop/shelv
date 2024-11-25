@@ -403,8 +403,10 @@ impl AppState {
                 ]
                 .into_iter()
                 .map(|(prefix, builtin, phosphor_icon)| {
-                    SlashPaletteCmd::from_built_in_instruction(prefix, builtin)
+                    let shortcut = builtin.default_keybinding();
+                    SlashPaletteCmd::from_instruction(prefix, builtin)
                         .icon(phosphor_icon.to_string())
+                        .shortcut(shortcut)
                 }),
             )
             .collect();
