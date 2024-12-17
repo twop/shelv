@@ -11,15 +11,17 @@ use crate::{
         InlinePromptStatus, MsgToApp, SlashPalette, TextSelectionAddress, UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
-    command::{AppFocus, AppFocusState, CommandContext},
+    command::{AppFocus, AppFocusState, CommandContext, CommandList},
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
         run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
     },
     effects::text_change_effect::{apply_text_changes, TextChange},
     persistent_state::{get_tutorial_note_content, NoteFile},
-    scripting::note_eval::{execute_code_blocks, execute_live_scripts},
-    scripting::settings_eval::{Scripts, SettingsNoteEvalContext},
+    scripting::{
+        note_eval::{execute_code_blocks, execute_live_scripts},
+        settings_eval::{Scripts, SettingsNoteEvalContext},
+    },
     settings_parsing::LlmSettings,
     text_structure::{
         create_layout_job_from_text_diff, CodeBlockMeta, SpanIndex, SpanKind, SpanMeta,
@@ -106,7 +108,6 @@ pub struct Conversation {
 
 #[derive(Debug)]
 pub struct LLMBlockRequest {
-    pub llm_settings: Option<LlmSettings>,
     pub conversation: Conversation,
     pub output_code_block_address: String,
     pub note_id: NoteFile,
@@ -118,8 +119,12 @@ pub struct LLMPromptRequest {
     pub before_selection: String,
     pub after_selection: String,
     pub selection: String,
-    pub llm_settings: Option<LlmSettings>,
     pub selection_location: TextSelectionAddress,
+}
+
+pub struct SettingsForAiRequests<'s> {
+    pub commands: &'s CommandList,
+    pub llm_settings: Option<&'s LlmSettings>,
 }
 
 // TODO consider focus, opening links etc as IO operations
@@ -142,8 +147,8 @@ pub trait AppIO {
         to: Box<dyn Fn() -> MsgToApp>,
     ) -> Result<(), String>;
 
-    fn execute_llm_block(&self, question: LLMBlockRequest);
-    fn execute_llm_prompt(&self, quesion: LLMPromptRequest);
+    fn execute_llm_block<'s>(&self, question: LLMBlockRequest, cx: SettingsForAiRequests<'s>);
+    fn execute_llm_prompt<'s>(&self, quesion: LLMPromptRequest, cx: SettingsForAiRequests<'s>);
 }
 
 pub fn process_app_action(
@@ -569,7 +574,13 @@ pub fn process_app_action(
         }
 
         AppAction::AskLLM(question) => {
-            app_io.execute_llm_block(question);
+            app_io.execute_llm_block(
+                question,
+                SettingsForAiRequests {
+                    commands: &state.commands,
+                    llm_settings: state.llm_settings.as_ref(),
+                },
+            );
             SmallVec::new()
         }
         AppAction::SendFeedback(selected) => {
@@ -744,14 +755,19 @@ pub fn process_app_action(
             let before_selection = note_text[..prompt_span.start].to_string();
             let after_selection = note_text[prompt_span.end..].to_string();
 
-            app_io.execute_llm_prompt(LLMPromptRequest {
-                prompt: prompt.prompt.clone(),
-                selection,
-                llm_settings: state.llm_settings.clone(),
-                selection_location: prompt.address,
-                before_selection,
-                after_selection,
-            });
+            app_io.execute_llm_prompt(
+                LLMPromptRequest {
+                    prompt: prompt.prompt.clone(),
+                    selection,
+                    selection_location: prompt.address,
+                    before_selection,
+                    after_selection,
+                },
+                SettingsForAiRequests {
+                    llm_settings: state.llm_settings.as_ref(),
+                    commands: &state.commands,
+                },
+            );
 
             SmallVec::new()
         }

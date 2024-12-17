@@ -35,7 +35,7 @@ use crate::{
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
-    settings_parsing::format_mac_shortcut,
+    settings_parsing::format_mac_shortcut_with_symbols,
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme},
 };
@@ -958,9 +958,12 @@ fn render_slash_cmd(
                                 flex.add(
                                     item(),
                                     Label::new(
-                                        RichText::new(format!("{}", format_mac_shortcut(shortcut)))
-                                            .font(shortcut_font.font_id)
-                                            .color(shortcut_font.color),
+                                        RichText::new(format!(
+                                            "{}",
+                                            format_mac_shortcut_with_symbols(shortcut)
+                                        ))
+                                        .font(shortcut_font.font_id)
+                                        .color(shortcut_font.color),
                                     ),
                                 );
                             }

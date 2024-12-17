@@ -16,8 +16,11 @@ use genai::{
 use global_hotkey::GlobalHotKeyManager;
 
 use crate::{
-    app_actions::{AppIO, ConversationPart, LLMBlockRequest, LLMPromptRequest},
+    app_actions::{
+        AppIO, ConversationPart, LLMBlockRequest, LLMPromptRequest, SettingsForAiRequests,
+    },
     app_state::{InlineLLMResponseChunk, LLMBlockResponseChunk, MsgToApp},
+    command::create_ai_keybindings_documentation,
     persistent_state::get_utc_timestamp,
 };
 
@@ -108,7 +111,7 @@ impl AppIO for RealAppIO {
         Ok(())
     }
 
-    fn execute_llm_block(&self, question: LLMBlockRequest) {
+    fn execute_llm_block(&self, question: LLMBlockRequest, cx: SettingsForAiRequests) {
         let egui_ctx = self.egui_ctx.clone();
         let sender = self.msg_queue.clone();
 
@@ -118,8 +121,19 @@ impl AppIO for RealAppIO {
             conversation,
             output_code_block_address,
             note_id,
-            llm_settings,
         } = question;
+
+        let SettingsForAiRequests {
+            commands,
+            llm_settings,
+        } = cx;
+        let shelv_system_prompt = include_str!("./prompts/shelv-system-prompt.md").replace(
+            "{{current_keybindings}}",
+            &create_ai_keybindings_documentation(commands),
+        );
+
+        // cloned because it is goint to be used inside async block
+        let llm_settings = llm_settings.cloned();
 
         let send = move |chunk: String| {
             sender
@@ -177,10 +191,9 @@ impl AppIO for RealAppIO {
                 .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None, true));
 
             if use_shelv_propmpt {
-                chat_req.messages.insert(
-                    0,
-                    ChatMessage::system(include_str!("./default-notes/shelv-system-prompt.md")),
-                );
+                chat_req
+                    .messages
+                    .insert(0, ChatMessage::system(shelv_system_prompt));
             }
 
             if let Some(system_prompt) = system_prompt {
@@ -226,18 +239,29 @@ impl AppIO for RealAppIO {
         });
     }
 
-    fn execute_llm_prompt(&self, quesion: LLMPromptRequest) {
+    fn execute_llm_prompt(&self, quesion: LLMPromptRequest, cx: SettingsForAiRequests) {
         let egui_ctx = self.egui_ctx.clone();
         let sender = self.msg_queue.clone();
 
         let LLMPromptRequest {
             prompt,
             selection,
-            llm_settings,
             selection_location,
             before_selection,
             after_selection,
         } = quesion;
+
+        let SettingsForAiRequests {
+            commands,
+            llm_settings,
+        } = cx;
+        let shelv_system_prompt = include_str!("./prompts/shelv-system-prompt.md").replace(
+            "{{current_keybindings}}",
+            &create_ai_keybindings_documentation(commands),
+        );
+
+        // cloned because it is goint to be used inside async block
+        let llm_settings = llm_settings.cloned();
 
         // None -> end of the stream
         let send = move |chunk: Option<String>| {
@@ -259,39 +283,34 @@ impl AppIO for RealAppIO {
             .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None, true));
 
         tokio::spawn(async move {
-            let chat_req = ChatRequest::new(
-                Vec::from_iter(
-                    use_shelv_propmpt
-                        .then(|| {
-                            ChatMessage::system(include_str!(
-                                "./default-notes/shelv-system-prompt.md"
-                            ))
-                        })
-                        .into_iter()
-                        .chain(system_prompt.map(|sp| ChatMessage::system(sp)))
-                        .chain([
-                            ChatMessage::system(
-                                [
-                                    "selection is  <selection>{selection_body}</selection>",
-                                    "prompt is marked as <prompt>{prompt_body}</prompt>",
-                                    "content above selection marked as <before></before>",
-                                    "content after selection marked as <after></after>",
-                                    "answer the prompt question targeting <selection>, the answer will replace <selection> block",
-                                    "using the context provided in <before> and <after>",
-                                    "do not include <selection></selection> into response",
-                                    "AVOID any extra comments or introductory content, output ONLY the result",
-                                ]
-                                .join("\n"),
-                            ),
-                            ChatMessage::user(format!(
-                                "<before>{before_selection}</before>
-                                <selection>{selection}</selection>
-                                <after>{after_selection}</after>
-                                <prompt>{prompt}</prompt>"
-                            )),
-                        ]),
-                ),
-            );
+            let chat_req = ChatRequest::new(Vec::from_iter(
+                use_shelv_propmpt
+                    .then(|| ChatMessage::system(shelv_system_prompt))
+                    .into_iter()
+                    .chain(system_prompt.map(|sp| ChatMessage::system(sp)))
+                    .chain([
+                        ChatMessage::system(include_str!(
+                            "./prompts/inline-prompt-system-extra.md"
+                        )),
+                        ChatMessage::user({
+                            let user_template = include_str!("./prompts/inline-prompt-user.md");
+
+                            for pl in ["{{prompt}}", "{{before}}", "{{selection}}", "{{after}}"] {
+                                assert!(
+                                    user_template.contains(pl),
+                                    "Template is missing required placeholder: {}",
+                                    pl
+                                );
+                            }
+
+                            user_template
+                                .replace("{{prompt}}", &prompt)
+                                .replace("{{selection}}", &selection)
+                                .replace("{{before}}", &before_selection)
+                                .replace("{{after}}", &after_selection)
+                        }),
+                    ]),
+            ));
 
             println!("-----llm inline req: {chat_req:#?}");
 

@@ -144,10 +144,19 @@ pub fn parse_top_level_settings_block(block_str: &str) -> Result<TopLevelKdlSett
     knus::parse::<TopLevelKdlSettings>("block", block_str)
 }
 
-pub fn format_mac_shortcut(shortcut: KeyboardShortcut) -> String {
+pub fn format_mac_shortcut_with_symbols(shortcut: KeyboardShortcut) -> String {
     const SPACED_NAMES: ModifierNames = ModifierNames {
         concat: " ",
         ..ModifierNames::SYMBOLS
+    };
+
+    shortcut.format(&SPACED_NAMES, true)
+}
+
+pub fn format_mac_shortcut_with_names(shortcut: KeyboardShortcut) -> String {
+    const SPACED_NAMES: ModifierNames = ModifierNames {
+        concat: " ",
+        ..ModifierNames::NAMES
     };
 
     shortcut.format(&SPACED_NAMES, true)

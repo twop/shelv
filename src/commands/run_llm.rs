@@ -161,7 +161,6 @@ pub fn prepare_to_run_llm_block(
     }
 
     let llm_request = LLMBlockRequest {
-        llm_settings: app_state.llm_settings.clone(),
         conversation,
         output_code_block_address: address,
         note_id: target,

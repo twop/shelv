@@ -1,6 +1,7 @@
 use std::{fmt::Debug, ops::Deref, rc::Rc};
 
 use eframe::egui::KeyboardShortcut;
+use itertools::Itertools;
 use pulldown_cmark::CowStr;
 use smallvec::SmallVec;
 
@@ -11,6 +12,7 @@ use crate::{
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
     scripting::settings_eval::Scripts,
+    settings_parsing::{format_mac_shortcut_with_names, format_mac_shortcut_with_symbols},
     text_structure::TextStructure,
 };
 
@@ -99,10 +101,10 @@ impl ScriptCall {
 
 #[derive(Debug, Clone, knus::Decode, PartialEq, Eq)]
 pub enum TextSource {
-    #[knus(name = "string")]
+    #[knus(name = "as_is")]
     Str(#[knus(argument)] String),
 
-    #[knus(name = "call")]
+    #[knus(name = "callFunc")]
     Script(ScriptCall),
 }
 #[derive(PartialEq, Debug, Clone)]
@@ -208,7 +210,7 @@ pub enum CommandInstruction {
     #[knus(name = "HideApp")]
     HideApp,
 
-    #[knus(name = "HidePrompt")]
+    #[knus(skip)]
     HidePrompt,
 
     // SlashPallete
@@ -355,6 +357,48 @@ impl CommandInstruction {
             C::ExecuteSlashPalleteCmd => shortcut(Modifiers::NONE, Key::Enter),
             C::HideSlashPallete => shortcut(Modifiers::NONE, Key::Escape),
             C::InsertText(_) | C::MarkdownCodeBlock(_) => None,
+        }
+    }
+
+    pub fn serialize_to_kdl(&self) -> Option<CowStr> {
+        match self {
+            Self::ExpandTaskMarker
+            | Self::IndentListItem
+            | Self::UnindentListItem
+            | Self::SplitListItem
+            | Self::ShowSlashPallete
+            | Self::NextSlashPalleteCmd
+            | Self::PrevSlashPalleteCmd
+            | Self::ExecuteSlashPalleteCmd
+            | Self::HideSlashPallete
+            | Self::EnterInsideKDL
+            | Self::BracketAutoclosingInsideKDL
+            | Self::HidePrompt => None,
+
+            Self::MarkdownBold => Some("MarkdownBold;".into()),
+            Self::MarkdownItalic => Some("MarkdownItalic;".into()),
+            Self::MarkdownStrikethrough => Some("MarkdownStrikethrough;".into()),
+            Self::MarkdownCodeBlock(lang) => match lang {
+                Some(lang_str) => Some(format!("MarkdownCodeBlock lang=\"{}\";", lang_str).into()),
+                None => Some("MarkdownCodeBlock;".into()),
+            },
+            Self::MarkdownH1 => Some("MarkdownH1;".into()),
+            Self::MarkdownH2 => Some("MarkdownH2;".into()),
+            Self::MarkdownH3 => Some("MarkdownH3;".into()),
+            Self::SwitchToNote(n) => Some(format!("SwitchToNote {};", n).into()),
+            Self::SwitchToSettings => Some("SwitchToSettings;".into()),
+            Self::PinWindow => Some("PinWindow;".into()),
+            Self::HideApp => Some("HideApp;".into()),
+            Self::RunLLMBlock => Some("ExecutePrompt;".into()),
+            Self::ShowPrompt => Some("ShowPrompt;".into()),
+            Self::InsertText(ForwardToChild(source)) => match source {
+                TextSource::Str(text) => {
+                    Some(format!("InsertText {{\n\tas_is \"{}\"\n}}", text).into())
+                }
+                TextSource::Script(script) => {
+                    Some(format!("InsertText {{\n\t callFunc \"{}\"\n}}", script.func_name).into())
+                }
+            },
         }
     }
 }
@@ -533,4 +577,86 @@ pub fn try_extract_text_command_context(app_state: &AppState) -> Option<TextComm
         TextCommandContext::new(text_structure, &note.text, cursor.ordered());
 
     Some(text_command_context)
+}
+
+pub fn create_ai_keybindings_documentation(cmd_list: &CommandList) -> String {
+    use eframe::egui::{Key, Modifiers};
+
+    let global_shortcut = KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::S);
+
+    let current_commands_help = cmd_list
+        .available_keyboard_commands()
+        .filter_map(|(shortcut, cmd)| {
+            cmd.instruction.serialize_to_kdl().map(|kdl| {
+                (
+                    shortcut,
+                    kdl,
+                    &cmd.instruction,
+                    cmd_list
+                        .available_slash_commands()
+                        .find(|scmd| scmd.instance.instruction == cmd.instruction),
+                )
+            })
+        })
+        .map(|(shortcut, kdl_block, instruction, slash_cmd)| {
+            let text = format!(
+                "// ({symbols_shortcut}): {desc}\nbind \"{key_combo}\" {slash_cmd_attrs}{{ {kdl} }}",
+                symbols_shortcut = format_mac_shortcut_with_symbols(shortcut),
+                desc = instruction.human_description(),
+                key_combo = format_mac_shortcut_with_names(shortcut),
+                kdl = kdl_block,
+                slash_cmd_attrs = match slash_cmd {
+                    Some(cmd) => {
+                        let mut attrs = String::new();
+                        if let Some(icon_char) = cmd.phosphor_icon.as_ref().and_then(|icon|icon.chars().nth(0)) {
+                            attrs.push_str(&format!("icon=\"\\u{{{:X}}}\" ", icon_char as u32));
+                        }
+
+                        attrs.push_str(&format!("alias=\"{}\" description=\"{}\" ",
+                            cmd.prefix, cmd.description));
+                        attrs
+                    },
+                    None => String::new()
+                }
+            );
+            text
+        })
+        .join("\n\n");
+
+    current_commands_help
+}
+#[test]
+fn test_keybindings_documentation_generation() {
+    use eframe::egui::{Key, Modifiers};
+
+    // Create two commands - one with slash command and one without
+    let kbd_shortcut1 = KeyboardShortcut::new(Modifiers::COMMAND, Key::B);
+
+    let cmd_list = CommandList::new(
+        |_, _| SmallVec::new(),
+        vec![
+            CommandInstruction::MarkdownBold,
+            CommandInstruction::MarkdownItalic,
+        ],
+        vec![
+            SlashPaletteCmd::from_instruction("bold", CommandInstruction::MarkdownBold)
+                .icon("\u{E10A}".to_string())
+                .shortcut(Some(kbd_shortcut1))
+                .description("Make text bold"),
+        ],
+    );
+
+    // let t = "\u{E10A}";
+    // let v: Vec<u32> = t.chars().map(|c| c as u32).collect();
+    // assert_eq!(v.as_slice(), &[1]);
+
+    let docs = create_ai_keybindings_documentation(&cmd_list);
+
+    let expected_docs = r#"// (⌘ B): Toggle Bold
+bind "Cmd B" icon="\u{E10A}" alias="bold" description="Make text bold" { MarkdownBold; }
+
+// (⌘ I): Toggle Italic
+bind "Cmd I" { MarkdownItalic; }"#;
+
+    assert_eq!(docs, expected_docs);
 }
