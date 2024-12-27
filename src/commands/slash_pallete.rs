@@ -20,8 +20,9 @@ pub fn show_slash_pallete(
     let is_focused_on_editor = matches!(
         app_focus,
         AppFocusState {
+            viewport_focused: true,
             is_menu_opened: false,
-            focus: Some(AppFocus::NoteEditor),
+            internal_focus: Some(AppFocus::NoteEditor),
         }
     );
 

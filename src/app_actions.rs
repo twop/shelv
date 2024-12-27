@@ -155,6 +155,7 @@ pub fn process_app_action(
     action: AppAction,
     ctx: &Context,
     state: &mut AppState,
+    focus_state: AppFocusState,
     text_edit_id: Id,
     app_io: &mut impl AppIO,
 ) -> SmallVec<[AppAction; 1]> {
@@ -256,14 +257,25 @@ pub fn process_app_action(
         AppAction::HandleMsgToApp(msg) => {
             match msg {
                 MsgToApp::ToggleVisibility => {
-                    state.hidden = !state.hidden;
+                    let was_visible = !state.hidden;
 
-                    if state.hidden {
-                        println!("Toggle visibility: hide");
-                        app_io.hide_app();
-                        SmallVec::new()
+                    if was_visible {
+                        if state.is_pinned && was_visible && !focus_state.viewport_focused {
+                            // if it is pinned just refocus instea of hiding it
+                            println!("Toggle visibility: hide");
+                            ctx.send_viewport_cmd(ViewportCommand::Focus);
+                            SmallVec::from_buf([AppAction::defer(AppAction::FocusRequest(
+                                FocusTarget::CurrentNote,
+                            ))])
+                        } else {
+                            state.hidden = was_visible;
+                            println!("Toggle visibility: hide");
+                            app_io.hide_app();
+                            SmallVec::new()
+                        }
                     } else {
-                        ctx.send_viewport_cmd(ViewportCommand::Visible(!state.hidden));
+                        state.hidden = was_visible;
+                        ctx.send_viewport_cmd(ViewportCommand::Visible(true));
                         ctx.send_viewport_cmd(ViewportCommand::Focus);
                         // ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
                         println!("Toggle visibility: show + focus");
@@ -887,6 +899,7 @@ pub fn process_app_action(
                         },
                         ctx,
                         state,
+                        focus_state,
                         text_edit_id,
                         app_io,
                     );
@@ -1005,9 +1018,11 @@ fn update_slash_palette(
 }
 
 pub fn compute_app_focus(ctx: &Context, app_state: &AppState) -> AppFocusState {
+    let viewport_focused = ctx.input(|input| input.viewport().focused.unwrap_or(false));
     ctx.memory(|m| AppFocusState {
+        viewport_focused,
         is_menu_opened: m.any_popup_open(),
-        focus: match m.focused() {
+        internal_focus: match m.focused() {
             Some(id)
                 if app_state
                     .inline_llm_prompt

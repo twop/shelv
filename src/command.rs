@@ -32,7 +32,8 @@ pub enum AppFocus {
 #[derive(Clone, Copy, Debug)]
 pub struct AppFocusState {
     pub is_menu_opened: bool,
-    pub focus: Option<AppFocus>,
+    pub viewport_focused: bool,
+    pub internal_focus: Option<AppFocus>,
 }
 
 // #[derive(Clone, Copy)]

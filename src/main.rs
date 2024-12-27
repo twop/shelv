@@ -200,7 +200,8 @@ impl MyApp<RealAppIO> {
             tray: tray_icon,
             app_focus_state: AppFocusState {
                 is_menu_opened: false,
-                focus: None,
+                internal_focus: None,
+                viewport_focused: false,
             },
             persistence_folder,
             hotwatch,
@@ -310,8 +311,14 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             let mut action_buffer: SmallVec<[AppAction; 4]> = SmallVec::from_iter([action]);
 
             while let Some(to_process) = action_buffer.pop() {
-                let new_actions =
-                    process_app_action(to_process, ctx, app_state, text_edit_id, &mut self.app_io);
+                let new_actions = process_app_action(
+                    to_process,
+                    ctx,
+                    app_state,
+                    app_focus,
+                    text_edit_id,
+                    &mut self.app_io,
+                );
 
                 if new_actions.len() > 0 {
                     match new_actions.first() {
@@ -433,8 +440,14 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             let mut action_buffer: SmallVec<[AppAction; 4]> = SmallVec::from_iter([action]);
 
             while let Some(to_proccess) = action_buffer.pop() {
-                let new_actions =
-                    process_app_action(to_proccess, ctx, app_state, text_edit_id, &mut self.app_io);
+                let new_actions = process_app_action(
+                    to_proccess,
+                    ctx,
+                    app_state,
+                    app_focus,
+                    text_edit_id,
+                    &mut self.app_io,
+                );
                 action_buffer.extend(new_actions);
             }
         }

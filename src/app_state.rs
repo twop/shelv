@@ -523,7 +523,7 @@ fn execute_instruction(
         CI::HideApp => match (
             ctx.app_focus.is_menu_opened,
             &ctx.app_state.slash_palette,
-            ctx.app_focus.focus,
+            ctx.app_focus.internal_focus,
         ) {
             (false, None, None | Some(AppFocus::NoteEditor)) => {
                 [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
@@ -531,7 +531,7 @@ fn execute_instruction(
             _ => SmallVec::new(),
         },
 
-        CI::HidePrompt => match ctx.app_focus.focus {
+        CI::HidePrompt => match ctx.app_focus.internal_focus {
             Some(AppFocus::InlinePropmptEditor) => {
                 [AppAction::AcceptPromptSuggestion { accept: false }].into()
             }
