@@ -8,7 +8,8 @@ use smallvec::SmallVec;
 use crate::{
     app_state::{
         compute_editor_text_id, AppState, InlineLLMPromptState, InlineLLMResponseChunk,
-        InlinePromptStatus, MsgToApp, SlashPalette, TextSelectionAddress, UnsavedChange,
+        InlinePromptStatus, MsgToApp, RenderAction, SlashPalette, TextSelectionAddress,
+        UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
@@ -684,11 +685,17 @@ pub fn process_app_action(
         AppAction::FocusRequest(target) => {
             // it is possible that text editing was out of focus
             // hence, refocus it again
+            let target_id = match target {
+                FocusTarget::CurrentNote => text_edit_id,
+                FocusTarget::SpecificId(id) => id,
+            };
+            if let FocusTarget::CurrentNote = target {
+                state
+                    .render_actions
+                    .push(RenderAction::ScrollToEditorCursorPos);
+            }
             ctx.memory_mut(|mem| {
-                mem.request_focus(match target {
-                    FocusTarget::CurrentNote => text_edit_id,
-                    FocusTarget::SpecificId(id) => id,
-                });
+                mem.request_focus(target_id);
             });
 
             SmallVec::new()

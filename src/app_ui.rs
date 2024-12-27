@@ -6,9 +6,10 @@ use eframe::{
         scroll_area::ScrollBarVisibility,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Context, CursorIcon, FontFamily, Id, Key, KeyboardShortcut, Label, Layout, Margin,
-        Modifiers, Painter, Pos2, Response, RichText, ScrollArea, Sense, TextEdit, TextFormat,
-        TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
+        text_selection::text_cursor_state::cursor_rect,
+        Context, CursorIcon, FontFamily, FontSelection, Id, Key, KeyboardShortcut, Label, Layout,
+        Margin, Modifiers, Painter, Pos2, Response, RichText, ScrollArea, Sense, TextEdit,
+        TextFormat, TextStyle, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
@@ -24,7 +25,7 @@ use crate::{
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
         ComputedLayout, InlineLLMPromptState, InlinePromptStatus, LayoutParams, MsgToApp,
-        SlashPalette,
+        RenderAction, SlashPalette,
     },
     byte_span::UnOrderedByteSpan,
     command::{CommandInstruction, CommandList, SlashPaletteCmd, PROMOTED_COMMANDS},
@@ -52,6 +53,7 @@ pub struct AppRenderData<'a> {
     pub inline_llm_prompt: Option<&'a mut InlineLLMPromptState>,
     pub slash_palette: Option<&'a SlashPalette>,
     pub is_window_pinned: bool,
+    pub render_actions: SmallVec<[RenderAction; 2]>,
 }
 
 pub struct RenderAppResult {
@@ -81,6 +83,7 @@ pub fn render_app(
         is_window_pinned,
         inline_llm_prompt,
         slash_palette,
+        mut render_actions,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
@@ -141,6 +144,7 @@ pub fn render_app(
                             computed_layout,
                             inline_llm_prompt,
                             slash_palette,
+                            &mut render_actions,
                             theme,
                             syntax_set,
                             theme_set,
@@ -280,6 +284,7 @@ fn render_editor(
     mut computed_layout: Option<ComputedLayout>,
     inline_llm_prompt: Option<&mut InlineLLMPromptState>,
     slash_palette: Option<&SlashPalette>,
+    render_actions: &mut SmallVec<[RenderAction; 2]>,
     theme: &AppTheme,
     syntax_set: &SyntaxSet,
     theme_set: &ThemeSet,
@@ -347,7 +352,6 @@ fn render_editor(
     };
 
     // let mut edited_text = state.markdown.clone();
-
     let TextEditOutput {
         response: text_edit_response,
         galley_pos,
@@ -355,7 +359,7 @@ fn render_editor(
         galley,
         ..
     } = egui::TextEdit::multiline(editor_text)
-        .font(egui::TextStyle::Monospace) // for cursor height
+        .font(TextStyle::Monospace) // for cursor height
         .code_editor()
         .id(text_edit_id)
         .lock_focus(true)
@@ -363,6 +367,19 @@ fn render_editor(
         .frame(false)
         .layouter(&mut layouter)
         .show(ui);
+
+    let prev_actions_count = render_actions.len();
+    render_actions.retain(|action| !matches!(action, RenderAction::ScrollToEditorCursorPos));
+
+    // that verifies that we indeed removed some actions, that is, there was at least one scroll action
+    if let (Some(cursor_range), true) = (cursor_range, prev_actions_count != render_actions.len()) {
+        let font_id = FontSelection::Style(TextStyle::Monospace).resolve(ui.style());
+        let row_height = ui.fonts(|f| f.row_height(&font_id));
+        let primary_cursor_pos =
+            cursor_rect(galley_pos, &galley, &cursor_range.primary, row_height);
+
+        ui.scroll_to_rect(primary_cursor_pos, None);
+    }
 
     // floating buttons over code blocks
     ui.scope(|ui| {

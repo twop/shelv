@@ -110,6 +110,12 @@ pub enum UnsavedChange {
     PinStateChanged,
 }
 
+/// Actions specific to a render update, that is, what needs to happen during this render
+#[derive(Debug)]
+pub enum RenderAction {
+    ScrollToEditorCursorPos,
+}
+
 #[derive(Debug)]
 pub struct SlashPalette {
     pub note_file: NoteFile,
@@ -149,6 +155,7 @@ pub struct AppState {
     pub text_structure: Option<TextStructure>,
     pub settings_scripts: Option<Scripts>,
     pub deferred_actions: Vec<AppAction>,
+    pub render_actions: Vec<RenderAction>,
 }
 
 impl AppState {
@@ -441,6 +448,7 @@ impl AppState {
             inline_llm_prompt: None,
             slash_palette: None,
             settings_scripts: None,
+            render_actions: vec![],
         }
     }
 

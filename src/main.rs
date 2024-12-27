@@ -394,6 +394,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             computed_layout: app_state.computed_layout.take(),
             inline_llm_prompt: (&mut app_state.inline_llm_prompt).as_mut(),
             slash_palette: app_state.slash_palette.as_ref(),
+            render_actions: (app_state.render_actions.drain(..)).collect(),
         };
 
         let RenderAppResult {
