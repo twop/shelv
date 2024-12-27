@@ -249,6 +249,13 @@ pub fn process_app_action(
                 Err(_) => None,
             };
 
+            // if the target for change is indeed the current note then scroll it to the cursor if it is present
+            if state.selected_note == note_file {
+                state
+                    .render_actions
+                    .push(RenderAction::ScrollToEditorCursorPos);
+            }
+
             match next_action {
                 Some(a) => [a].into(),
                 None => SmallVec::new(),
