@@ -79,6 +79,7 @@ pub enum AppAction {
     },
 
     SlashPalette(SlashPaletteAction),
+    HideApp,
 }
 
 impl AppAction {
@@ -265,6 +266,13 @@ pub fn process_app_action(
                 Some(a) => [a].into(),
                 None => SmallVec::new(),
             }
+        }
+
+        AppAction::HideApp => {
+            println!("Hide app via ui");
+            state.hidden = true;
+            app_io.hide_app(HideMode::HideApp);
+            SmallVec::new()
         }
 
         AppAction::HandleMsgToApp(msg) => {

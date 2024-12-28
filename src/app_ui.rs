@@ -1240,8 +1240,7 @@ fn render_header_panel(
                         })
                         .clicked()
                     {
-                        resulting_actions
-                            .push(AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility))
+                        resulting_actions.push(AppAction::HideApp)
                     }
 
                     ui.add_space(theme.sizes.m);
