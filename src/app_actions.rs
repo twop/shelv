@@ -128,9 +128,14 @@ pub struct SettingsForAiRequests<'s> {
     pub llm_settings: Option<&'s LlmSettings>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum HideMode {
+    HideApp,
+    YieldFocus,
+}
 // TODO consider focus, opening links etc as IO operations
 pub trait AppIO {
-    fn hide_app(&self);
+    fn hide_app(&self, mode: HideMode);
     fn open_shelv_folder(&self) -> Result<(), Box<dyn std::error::Error>>;
     fn try_read_note_if_newer(
         &self,
@@ -277,8 +282,12 @@ pub fn process_app_action(
                             ))])
                         } else {
                             state.hidden = was_visible;
-                            println!("Toggle visibility: hide");
-                            app_io.hide_app();
+                            let mode = match state.is_pinned {
+                                true => HideMode::YieldFocus,
+                                false => HideMode::HideApp,
+                            };
+                            println!("Toggle visibility: {mode:?}");
+                            app_io.hide_app(mode);
                             SmallVec::new()
                         }
                     } else {

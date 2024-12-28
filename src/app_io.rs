@@ -17,7 +17,7 @@ use global_hotkey::GlobalHotKeyManager;
 
 use crate::{
     app_actions::{
-        AppIO, ConversationPart, LLMBlockRequest, LLMPromptRequest, SettingsForAiRequests,
+        AppIO, ConversationPart, HideMode, LLMBlockRequest, LLMPromptRequest, SettingsForAiRequests,
     },
     app_state::{InlineLLMResponseChunk, LLMBlockResponseChunk, MsgToApp},
     command::create_ai_keybindings_documentation,
@@ -60,8 +60,8 @@ impl RealAppIO {
 pub const DEFAULT_LLM_MODEL: &str = "claude-3-haiku-20240307";
 
 impl AppIO for RealAppIO {
-    fn hide_app(&self) {
-        hide_app_on_macos();
+    fn hide_app(&self, mode: HideMode) {
+        hide_app_on_macos(mode);
     }
 
     fn try_read_note_if_newer(
@@ -392,7 +392,7 @@ fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<Str
     }
 }
 
-fn hide_app_on_macos() {
+fn hide_app_on_macos(mode: HideMode) {
     // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
     use objc2::rc::Id;
     use objc2::runtime::AnyObject;
@@ -400,7 +400,18 @@ fn hide_app_on_macos() {
     unsafe {
         let app: Id<AnyObject> = msg_send_id![class!(NSApplication), sharedApplication];
         let arg = app.as_ref();
-        let _: () = msg_send![&app, hide:arg];
+
+        match mode {
+            HideMode::HideApp => {
+                let _: () = msg_send![&app, hide:arg];
+            }
+            HideMode::YieldFocus => {
+                // this for whatever reason actually works
+                // I was unable to find a better way to just yield focus instead of doin hide + unhide
+                let _: () = msg_send![&app, hide:arg];
+                let _: () = msg_send![&app, unhideWithoutActivation];
+            }
+        }
     }
 }
 

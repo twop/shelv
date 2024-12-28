@@ -3,7 +3,9 @@
 #![feature(offset_of)]
 #![feature(generic_const_exprs)]
 
-use app_actions::{compute_app_focus, process_app_action, AppAction, AppIO, SlashPaletteAction};
+use app_actions::{
+    compute_app_focus, process_app_action, AppAction, AppIO, HideMode, SlashPaletteAction,
+};
 use app_io::RealAppIO;
 use app_state::{compute_editor_text_id, AppInitData, AppState, MsgToApp};
 use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
@@ -370,7 +372,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             if app_state.prev_focused != is_frame_actually_focused && !is_frame_actually_focused {
                 println!("lost focus");
                 app_state.hidden = true;
-                self.app_io.hide_app();
+                self.app_io.hide_app(HideMode::HideApp);
             }
 
             app_state.prev_focused = is_frame_actually_focused;
