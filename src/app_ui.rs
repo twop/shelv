@@ -1,5 +1,3 @@
-use core::f32;
-
 use eframe::{
     egui::{
         self,
@@ -8,13 +6,13 @@ use eframe::{
         text_edit::TextEditOutput,
         text_selection::text_cursor_state::cursor_rect,
         Context, CursorIcon, FontFamily, FontSelection, Id, Key, KeyboardShortcut, Label, Layout,
-        Margin, Modifiers, Painter, Pos2, Response, RichText, ScrollArea, Sense, TextEdit,
-        TextFormat, TextStyle, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
+        Margin, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit, TextFormat,
+        TextStyle, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
 };
-use egui_flex::{item, Flex, FlexItem};
+use egui_flex::{item, Flex};
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
 // use itertools::Itertools;
@@ -813,68 +811,75 @@ fn render_slash_palette(
                 .id_salt("slash_palette_scroll")
                 .show(ui, |ui| {
                     let mut responses: SmallVec<[Response; 10]> = SmallVec::new();
+                    if slash_palette.options.is_empty() {
+                        ui.label({
+                            RichText::new("No command matches found")
+                                .color(theme.colors.subtle_text_color)
+                        });
+                    } else {
+                        for item in Itertools::intersperse(
+                            slash_palette.options.iter().enumerate().map(Some),
+                            None,
+                        ) {
+                            match item {
+                                Some((i, cmd)) => {
+                                    let selected = i == slash_palette.selected;
+                                    let resp = render_slash_cmd(ui, theme, cmd, selected)
+                                        .interact(Sense {
+                                            click: true,
+                                            drag: false,
+                                            focusable: false,
+                                        })
+                                        .on_hover_cursor(CursorIcon::PointingHand);
 
-                    for item in Itertools::intersperse(
-                        slash_palette.options.iter().enumerate().map(Some),
-                        None,
-                    ) {
-                        match item {
-                            Some((i, cmd)) => {
-                                let selected = i == slash_palette.selected;
-                                let mut resp = render_slash_cmd(ui, theme, cmd, selected)
-                                    .interact(Sense {
-                                        click: true,
-                                        drag: false,
-                                        focusable: false,
-                                    })
-                                    .on_hover_cursor(CursorIcon::PointingHand);
-
-                                if selected {
-                                    let is_visible = ui.is_rect_visible(resp.rect);
-                                    if !is_visible {
-                                        resp.scroll_to_me(Some(Align::Center));
-                                    }
-                                }
-
-                                if resp.gained_focus() {
-                                    // TODO remove, trying to debug what is getting focus
-                                    println!("has focus!!")
-                                }
-
-                                if resp.clicked() {
-                                    println!("clicked on {cmd:#?}");
-
-                                    resulting_actions
-                                        .push(AppAction::FocusRequest(FocusTarget::CurrentNote));
-                                    // TODO fix
-                                    // This is quite silly, but it seems to take a few renders before the cursor is properly restored.
-                                    resulting_actions.push(AppAction::DeferToPostRender(Box::new(
-                                        AppAction::DeferToPostRender(Box::new(
-                                            AppAction::SlashPalette(
-                                                SlashPaletteAction::ExecuteCommand(i),
-                                            ),
-                                        )),
-                                    )));
-                                }
-
-                                ui.input(|input| {
-                                    if input.pointer.is_moving()
-                                        || input.smooth_scroll_delta != Vec2::ZERO
-                                        || input.raw_scroll_delta != Vec2::ZERO
-                                    {
-                                        if resp.contains_pointer() {
-                                            resulting_actions.push(AppAction::SlashPalette(
-                                                SlashPaletteAction::SelectCommand(i),
-                                            ));
+                                    if selected {
+                                        let is_visible = ui.is_rect_visible(resp.rect);
+                                        if !is_visible {
+                                            resp.scroll_to_me(Some(Align::Center));
                                         }
                                     }
-                                });
 
-                                responses.push(resp);
-                            }
+                                    if resp.gained_focus() {
+                                        // TODO remove, trying to debug what is getting focus
+                                        println!("has focus!!")
+                                    }
 
-                            None => {
-                                ui.separator();
+                                    if resp.clicked() {
+                                        println!("clicked on {cmd:#?}");
+
+                                        resulting_actions.push(AppAction::FocusRequest(
+                                            FocusTarget::CurrentNote,
+                                        ));
+                                        // TODO fix
+                                        // This is quite silly, but it seems to take a few renders before the cursor is properly restored.
+                                        resulting_actions.push(AppAction::DeferToPostRender(
+                                            Box::new(AppAction::DeferToPostRender(Box::new(
+                                                AppAction::SlashPalette(
+                                                    SlashPaletteAction::ExecuteCommand(i),
+                                                ),
+                                            ))),
+                                        ));
+                                    }
+
+                                    ui.input(|input| {
+                                        if input.pointer.is_moving()
+                                            || input.smooth_scroll_delta != Vec2::ZERO
+                                            || input.raw_scroll_delta != Vec2::ZERO
+                                        {
+                                            if resp.contains_pointer() {
+                                                resulting_actions.push(AppAction::SlashPalette(
+                                                    SlashPaletteAction::SelectCommand(i),
+                                                ));
+                                            }
+                                        }
+                                    });
+
+                                    responses.push(resp);
+                                }
+
+                                None => {
+                                    ui.separator();
+                                }
                             }
                         }
                     }
