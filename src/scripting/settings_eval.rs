@@ -22,6 +22,7 @@ use crate::{
 
 use super::{
     js_module_loader::InMemoryModuleLoader,
+    note_eval::HostWithLocalTimezone,
     note_eval_context::{BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
 };
 
@@ -91,6 +92,7 @@ impl Scripts {
         // Just need to cast to a `ModuleLoader` before passing it to the builder.
         let context = Context::builder()
             .module_loader(loader.clone())
+            .host_hooks(&HostWithLocalTimezone)
             .build()
             .expect("same here, why should it ever fail?");
 

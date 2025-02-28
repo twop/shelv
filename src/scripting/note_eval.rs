@@ -1,4 +1,6 @@
-use boa_engine::{Context, Source};
+use std::rc::Rc;
+
+use boa_engine::{context::HostHooks, Context, Source};
 use boa_runtime::Console;
 use smallvec::SmallVec;
 
@@ -21,6 +23,16 @@ pub const JS_SOURCE_LANG: &str = "js";
 
 struct JsNoteEvalContext {
     context: Context,
+}
+pub struct HostWithLocalTimezone;
+
+impl HostHooks for HostWithLocalTimezone {
+    fn local_timezone_offset_seconds(&self, _: i64) -> i32 {
+        let local = chrono::Local::now();
+        // let utc = chrono::Utc::now();
+        let offset = local.offset().local_minus_utc();
+        offset
+    }
 }
 
 impl NoteEvalContext for JsNoteEvalContext {
@@ -171,8 +183,10 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
 }
 
 pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Option<Vec<TextChange>> {
-    let mut context = Context::default();
-    // We first add the `console` object, to be able to call `console.log()`.
+    let mut context = Context::builder()
+        .host_hooks(&HostWithLocalTimezone)
+        .build()
+        .unwrap(); // We first add the `console` object, to be able to call `console.log()`.
     let console = Console::init(&mut context);
     context
         .register_global_property(
