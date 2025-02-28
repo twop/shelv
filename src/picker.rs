@@ -1,11 +1,11 @@
 use eframe::{
     egui::{
-        self, Align2, Context, FontFamily, FontId, Id, InnerResponse, Response, RichText, Sense,
-        Ui, Widget, WidgetInfo, WidgetType, WidgetWithState,
+        self, Align2, FontFamily, FontId, InnerResponse, Response, RichText, Sense, Ui, Widget,
+        WidgetInfo, WidgetType,
     },
     epaint::{
         self, pos2, tessellator::path::add_circle_quadrant, vec2, Color32, PathShape, PathStroke,
-        Pos2, Rect, Shape, Stroke, Vec2,
+        Pos2, Rect, Shape, Stroke,
     },
 };
 use itertools::Itertools;
@@ -35,7 +35,7 @@ pub struct Picker<'a, Item: PartialEq> {
     pub tooltip_text_color: Color32,
 
     // drop
-    pub outline: PathStroke,
+    pub outline: Stroke,
 }
 
 impl<'a, Item: PartialEq> Picker<'a, Item> {
@@ -184,7 +184,7 @@ impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
                                 }),
                                 closed: false,
                                 fill: Color32::TRANSPARENT,
-                                stroke: outline.clone(),
+                                stroke: PathStroke::new(outline.width, outline.color),
                             });
 
                             painter.line_segment(
@@ -196,7 +196,7 @@ impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
                                         available_rect.top(),
                                     ),
                                 ],
-                                outline.clone(),
+                                Stroke::new(outline.width, outline.color),
                             );
 
                             painter.line_segment(

@@ -305,7 +305,7 @@ fn render_editor(
     // let available_width = ui.available_width();
 
     let code_bg = ui.visuals().code_bg_color;
-    let code_bg_rounding = ui.visuals().widgets.inactive.rounding;
+    let code_bg_rounding = ui.visuals().widgets.inactive.corner_radius;
     if let Some(computed_layout) = &computed_layout {
         for area in computed_layout.code_areas.iter() {
             let background_rect = area
@@ -373,8 +373,7 @@ fn render_editor(
     if let (Some(cursor_range), true) = (cursor_range, prev_actions_count != render_actions.len()) {
         let font_id = FontSelection::Style(TextStyle::Monospace).resolve(ui.style());
         let row_height = ui.fonts(|f| f.row_height(&font_id));
-        let primary_cursor_pos =
-            cursor_rect(galley_pos, &galley, &cursor_range.primary, row_height);
+        let primary_cursor_pos = cursor_rect(&galley, &cursor_range.primary, row_height);
 
         ui.scroll_to_rect(primary_cursor_pos, None);
     }
@@ -588,12 +587,12 @@ fn render_inline_prompt(
         Stroke::new(1., theme.colors.subtle_text_color),
     );
 
-    let frame_resp = egui::Frame::none()
+    let frame_resp = egui::Frame::new()
         .fill(theme.colors.code_bg_color)
         .inner_margin(theme.sizes.s)
         .stroke(prompt_ui.visuals().window_stroke)
         .shadow(prompt_ui.visuals().window_shadow)
-        .rounding(prompt_ui.visuals().window_rounding)
+        .corner_radius(prompt_ui.visuals().window_corner_radius)
         .show(&mut prompt_ui, |ui| {
             ui.set_min_width(top_of_frame.width());
             let inline_prompt_address = inline_llm_prompt.address;
@@ -817,7 +816,7 @@ fn render_slash_palette(
         .inner_margin(theme.sizes.s)
         .stroke(prompt_ui.visuals().window_stroke)
         .shadow(prompt_ui.visuals().window_shadow)
-        .rounding(prompt_ui.visuals().window_rounding)
+        .corner_radius(prompt_ui.visuals().window_corner_radius)
         // .id_salt("slash_palette_frame")
         .show(&mut prompt_ui, |ui| {
             set_menu_bar_style(ui);
@@ -847,11 +846,7 @@ fn render_slash_palette(
                                 Some((i, cmd)) => {
                                     let selected = i == slash_palette.selected;
                                     let resp = render_slash_cmd(ui, theme, cmd, selected)
-                                        .interact(Sense {
-                                            click: true,
-                                            drag: false,
-                                            focusable: false,
-                                        })
+                                        .interact(Sense::CLICK)
                                         .on_hover_cursor(CursorIcon::PointingHand);
 
                                     if selected {
@@ -957,20 +952,19 @@ fn render_slash_cmd(
             .wrap(false)
             .show(ui, |flex| {
                 let mut frame = egui::Frame::group(flex.ui().style())
-                    .outer_margin(Margin::same(0.))
-                    .inner_margin(Margin::same(4.))
+                    .outer_margin(Margin::same(0))
+                    .inner_margin(Margin::same(4))
                     // .rounding(Rounding::ZERO)
                     .stroke(Stroke::new(0., Color32::TRANSPARENT));
                 if selected {
                     frame = frame.fill(hover_visuals.bg_fill);
                 }
 
-                flex.add_flex_frame(
-                    item(),
+                flex.add_flex(
+                    item().frame(frame),
                     Flex::vertical()
                         .align_content(egui_flex::FlexAlignContent::Stretch)
                         .wrap(false),
-                    frame,
                     |flex| {
                         flex.add_flex(item().grow(1.), Flex::horizontal(), |flex| {
                             flex.add(
@@ -986,7 +980,7 @@ fn render_slash_cmd(
                                 ),
                             );
 
-                            flex.add_simple(item().basis(8.), |ui| {});
+                            flex.add_ui(item().basis(8.), |ui| {});
                             flex.add(
                                 item(),
                                 Label::new(
@@ -1012,7 +1006,7 @@ fn render_slash_cmd(
                                 );
                             }
                         });
-                        flex.add_simple(item().basis(4.), |ui| {});
+                        flex.add_ui(item().basis(4.), |ui| {});
                         // layout_job.append(&cmd.description, 0., description_font);
                         flex.add_flex(item().grow(1.), Flex::horizontal(), |flex| {
                             flex.add(
@@ -1141,7 +1135,7 @@ fn render_footer_panel(
                         pressed_color: theme.colors.button_pressed_fg,
                         selected_stroke_color: theme.colors.button_pressed_fg,
                         selected_fill_color: theme.colors.button_pressed_fg,
-                        outline: PathStroke::new(1.0, theme.colors.outline_fg),
+                        outline: Stroke::new(1.0, theme.colors.outline_fg),
                         tooltip_text_color: theme.colors.subtle_text_color,
                     };
 

@@ -124,7 +124,7 @@ where
         if ui.is_rect_visible(rect) {
             let visuals = ui.style().interact_selectable(&response, expecting);
             ui.painter()
-                .rect_filled(rect, Rounding::same(2.), visuals.bg_fill);
+                .rect_filled(rect, Rounding::same(2), visuals.bg_fill);
 
             let binding = self.binding.get();
 

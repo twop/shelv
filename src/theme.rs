@@ -6,7 +6,7 @@ use eframe::{
         style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets},
         vec2, FontDefinitions, RichText, TextStyle, ThemePreference, Vec2, Visuals, WidgetText,
     },
-    epaint::{Color32, FontFamily, FontId, Rounding, Shadow, Stroke},
+    epaint::{Color32, CornerRadius, FontFamily, FontId, Shadow, Stroke},
 };
 
 use crate::nord::Nord;
@@ -249,8 +249,8 @@ pub struct ColorTheme {
 
     // ---------
     // egui settings and general colors
-    pub rounding_controls: Rounding,
-    pub rounding_window: Rounding,
+    pub rounding_controls: CornerRadius,
+    pub rounding_window: CornerRadius,
 
     pub button_bg: Color32,
     pub button_bg_stroke: Color32,
@@ -306,8 +306,8 @@ impl ColorTheme {
 
         // ---------
         // egui settings and general colors
-        let rounding_controls = Rounding::same(6.0);
-        let rounding_window = Rounding::same(6.0);
+        let rounding_controls = CornerRadius::same(6);
+        let rounding_window = CornerRadius::same(6);
 
         let subtle_text_color = Nord::NORD4.shade(0.6);
         let normal_text_color = Nord::NORD4;
@@ -401,9 +401,10 @@ pub fn get_font_definitions() -> FontDefinitions {
     // Start with the default fonts (we will be adding to them rather than replacing them).
     let mut fonts = FontDefinitions::default();
 
-    fonts
-        .font_data
-        .insert("phosphor".into(), egui_phosphor::Variant::Light.font_data());
+    fonts.font_data.insert(
+        "phosphor".into(),
+        egui_phosphor::Variant::Light.font_data().into(),
+    );
 
     fonts
         .families
@@ -421,37 +422,38 @@ pub fn get_font_definitions() -> FontDefinitions {
     // .ttf and .otf files supported.
     fonts.font_data.insert(
         "inter".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/Inter-Regular.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-Regular.otf")).into(),
     );
 
     fonts.font_data.insert(
         "inter-italic".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/Inter-Italic.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-Italic.otf")).into(),
     );
 
     fonts.font_data.insert(
         "inter-bold".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/Inter-Bold.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-Bold.otf")).into(),
     );
 
     fonts.font_data.insert(
         "inter-extra-bold".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/Inter-ExtraBold.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-ExtraBold.otf")).into(),
     );
     fonts.font_data.insert(
         "inter-extra-bold-italic".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/Inter-ExtraBoldItalic.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-ExtraBoldItalic.otf")).into(),
     );
 
     fonts.font_data.insert(
         "inter-bold-italic".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/Inter-BoldItalic.otf")),
+        egui::FontData::from_static(include_bytes!("../assets/Inter-BoldItalic.otf")).into(),
     );
     fonts.font_data.insert(
         "jetbrains-mono".to_owned(),
         egui::FontData::from_static(include_bytes!(
             "../assets/JetBrainsMonoNerdFontMono-Regular.ttf"
-        )),
+        ))
+        .into(),
     );
 
     // Put my font first (highest priority) for proportional text:
@@ -598,7 +600,7 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
             bg_fill: debug_color,
             bg_stroke: Stroke::new(1.0, Color32::from_gray(60)), // separators, indentation lines
             fg_stroke: Stroke::new(1.0, normal_text_color),      // normal text color
-            rounding: rounding_controls,
+            corner_radius: rounding_controls,
             expansion: 0.0,
         },
         inactive: WidgetVisuals {
@@ -606,7 +608,7 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
             bg_fill: button_bg,      // checkbox background
             bg_stroke: Stroke::new(1., button_bg_stroke),
             fg_stroke: Stroke::new(1.0, button_fg), // button text
-            rounding: rounding_controls,
+            corner_radius: rounding_controls,
             expansion: 0.0,
         },
         hovered: WidgetVisuals {
@@ -614,7 +616,7 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
             bg_fill: button_hover_bg,
             bg_stroke: Stroke::new(1.0, button_hover_bg_stroke), // e.g. hover over window edge or button
             fg_stroke: Stroke::new(1.5, button_hover_fg),
-            rounding: rounding_controls,
+            corner_radius: rounding_controls,
             expansion: 1.0,
         },
         active: WidgetVisuals {
@@ -623,7 +625,7 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
             bg_fill: button_pressed_bg,
             bg_stroke: Stroke::new(1.0, button_pressed_bg_stroke),
             fg_stroke: Stroke::new(2.0, button_pressed_fg),
-            rounding: rounding_controls,
+            corner_radius: rounding_controls,
             expansion: 1.0,
         },
         open: WidgetVisuals {
@@ -631,7 +633,7 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
             bg_fill: Color32::from_gray(27),
             bg_stroke: Stroke::new(2.0, debug_color), //Stroke::new(1.0, Color32::from_gray(60)),
             fg_stroke: Stroke::new(2.0, debug_color), // Stroke::new(1.0, Color32::from_gray(210)),
-            rounding: rounding_controls,
+            corner_radius: rounding_controls,
             expansion: 0.0,
         },
     };
@@ -646,11 +648,11 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         code_bg_color,
         warn_fg_color,
         error_fg_color,
-        window_rounding: rounding_window,
+        window_corner_radius: rounding_window,
         window_shadow: Shadow {
-            offset: vec2(10.0, 20.0),
-            blur: 15.0,
-            spread: 0.0,
+            offset: [10, 20],
+            blur: 15,
+            spread: 0,
             color: Color32::from_black_alpha(96),
         },
         window_fill: main_bg,
@@ -658,12 +660,12 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
             width: 0.5,
             color: outline_fg,
         },
-        menu_rounding: rounding_window,
+        menu_corner_radius: rounding_window,
         panel_fill: main_bg,
         popup_shadow: Shadow {
-            offset: vec2(6.0, 10.0),
-            blur: 8.0,
-            spread: 0.0,
+            offset: [6, 10],
+            blur: 8,
+            spread: 0,
             color: Color32::from_black_alpha(96),
         },
         resize_corner_size: 12.,

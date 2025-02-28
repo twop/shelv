@@ -27,11 +27,11 @@ description = "Note taking app optimized for capturing phase."
 #   "svg",
 # ] }
 
-eframe = { version = "0.29.1", default-features = false, features = [
+eframe = { version = "0.31.0", default-features = false, features = [
     "wgpu",
     "persistence",
 ] }
-egui_extras = { version = "0.29.1", features = ["svg"] }
+egui_extras = { version = "0.31.0", features = ["svg"] }
 serde = { version = "1.0.197", features = ["derive"] }
 ron = "0.8"
 global-hotkey = "0.5.3"
@@ -42,9 +42,9 @@ syntect = { version = "5.0.0", default-features = false, features = [
 ] }
 smallvec = "1.10.0"
 tray-icon = "0.14.0"
-egui-phosphor = { version = "0.7.1", features = ["light"] }
+egui-phosphor = { version = "0.9.0", features = ["light"] }
 # tray-item = "0.7.1"
-winit = "0.30.5"
+winit = "0.30.7"
 linkify = "0.10.0"
 objc2 = "0.5.1"
 boa_engine = "0.19.1"
@@ -63,8 +63,10 @@ similar = "2.6.0"
 tree-sitter-highlight = "0.20.1"
 tree-sitter-kdl = "1.1.0"
 tree-sitter = "0.20.10"
-egui_flex = "0.1.1"
-knus = { default-features = false, git = 'https://github.com/twop/knus.git', features = ["derive"], rev = "0bcbd447866a5be7efc9cc4b597f444b7ae822d2"}
+egui_flex = "0.3.0"
+knus = { default-features = false, git = 'https://github.com/twop/knus.git', features = [
+    "derive",
+], rev = "0bcbd447866a5be7efc9cc4b597f444b7ae822d2" }
 # knus = { default-features = false, version = "3.2.0", features = ["derive"] }
 # knus = { default-features = false, git = 'https://github.com/TheLostLambda/knus.git', features = [
 #     "derive",
@@ -74,9 +76,10 @@ miette = { version = "7.2.0", features = ["fancy"] }
 strip-ansi-escapes = "0.2.0"
 boa_runtime = "0.19.1"
 chrono = "0.4.40"
+egui_taffy = "0.7.0"
 
-[patch.crates-io]
-winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.5" }
+# [patch.crates-io]
+# winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.5" }
 
 [package.metadata.bundle]
 name = "Shelv"
