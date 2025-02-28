@@ -282,36 +282,67 @@ impl AppIO for RealAppIO {
             .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt))
             .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None, true));
 
-        tokio::spawn(async move {
-            let chat_req = ChatRequest::new(Vec::from_iter(
-                use_shelv_propmpt
-                    .then(|| ChatMessage::system(shelv_system_prompt))
-                    .into_iter()
-                    .chain(system_prompt.map(|sp| ChatMessage::system(sp)))
-                    .chain([
-                        ChatMessage::system(include_str!(
-                            "./prompts/inline-prompt-system-extra.md"
-                        )),
-                        ChatMessage::user({
-                            let user_template = include_str!("./prompts/inline-prompt-user.md");
+        let chat_req = ChatRequest::new(Vec::from_iter(
+            use_shelv_propmpt
+                .then(|| ChatMessage::system(shelv_system_prompt))
+                .into_iter()
+                .chain(system_prompt.map(|sp| ChatMessage::system(sp)))
+                .chain([
+                    ChatMessage::system(include_str!("./prompts/inline-prompt-system-extra.md")),
+                    ChatMessage::user({
+                        let user_template = include_str!("./prompts/inline-prompt-user.md");
 
-                            for pl in ["{{prompt}}", "{{before}}", "{{selection}}", "{{after}}"] {
-                                assert!(
-                                    user_template.contains(pl),
-                                    "Template is missing required placeholder: {}",
-                                    pl
-                                );
-                            }
+                        for pl in ["{{prompt}}", "{{before}}", "{{selection}}", "{{after}}"] {
+                            assert!(
+                                user_template.contains(pl),
+                                "Template is missing required placeholder: {}",
+                                pl
+                            );
+                        }
 
-                            user_template
-                                .replace("{{prompt}}", &prompt)
-                                .replace("{{selection}}", &selection)
-                                .replace("{{before}}", &before_selection)
-                                .replace("{{after}}", &after_selection)
-                        }),
-                    ]),
+                        user_template
+                            .replace("{{prompt}}", &prompt)
+                            .replace("{{selection}}", &selection)
+                            .replace("{{before}}", &before_selection)
+                            .replace("{{after}}", &after_selection)
+                    }),
+                ]),
+        ));
+
+        // Dump chat request to file for debugging and history
+        let time = {
+            let now = std::time::SystemTime::now();
+            let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
+            let secs = duration.as_secs();
+            let hours = (secs / 3600) % 24;
+            let minutes = (secs / 60) % 60;
+            let seconds = secs % 60;
+            format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+        };
+        let debug_folder = PathBuf::from("prompts");
+        let debug_file = debug_folder.join(format!("req_{}.md", time));
+
+        if !debug_folder.exists() {
+            std::fs::create_dir(&debug_folder).unwrap();
+        }
+
+        let mut contents = String::new();
+        for msg in &chat_req.messages {
+            contents.push_str(&format!(
+                "---{}---\n{}\n\n",
+                match msg.role {
+                    genai::chat::ChatRole::System => "System",
+                    genai::chat::ChatRole::User => "User",
+                    genai::chat::ChatRole::Assistant => "Assistant",
+                    _ => "Unknown",
+                },
+                msg.content.text_as_str().unwrap()
             ));
+        }
 
+        std::fs::write(debug_file, contents).unwrap();
+
+        tokio::spawn(async move {
             println!("-----llm inline req: {chat_req:#?}");
 
             let auth_resolver = prepare_auth_resolver();

@@ -66,16 +66,25 @@ pub enum InlinePromptStatus {
     Done { prompt: String },
 }
 
+#[derive(Debug, Clone)]
+pub struct ParsedPromptResponse {
+    pub reasoning: Option<String>,
+    pub replacement: Option<String>,
+    pub explanation: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct InlineLLMPromptState {
     pub prompt: String,
     pub address: TextSelectionAddress,
     pub response_text: String,
+    pub parsed_response: ParsedPromptResponse,
     pub diff_parts: Vec<TextDiffPart>,
     pub layout_job: LayoutJob,
     pub status: InlinePromptStatus,
     pub fresh_response: bool,
 }
+
 #[derive(Debug)]
 pub struct Note {
     pub text: String,
@@ -574,4 +583,61 @@ pub fn compute_editor_text_id(selected_note_file: NoteFile) -> Id {
         NoteFile::Note(index) => ("text_edit_id", index),
         NoteFile::Settings => ("text_edit_id_settings", 4568),
     })
+}
+
+impl ParsedPromptResponse {
+    pub fn parse_stream(input: &str) -> Self {
+        // Helper function to extract content between tags
+        fn extract_between_tags(input: &str, start_tag: &str, end_tag: &str) -> Option<String> {
+            if let Some(start) = input.find(start_tag) {
+                let content_start = start + start_tag.len();
+                if let Some(end) = input[content_start..].find(end_tag) {
+                    return Some(input[content_start..content_start + end].trim().to_string());
+                }
+                // Handle unclosed tag in streaming scenario
+                return Some(input[content_start..].trim().to_string());
+            }
+            None
+        }
+
+        // Extract content for each tag
+        let reasoning = extract_between_tags(input, "<reasoning>", "</reasoning>");
+        let replacement =
+            extract_between_tags(input, "<selection_replacement>", "</selection_replacement>");
+        let explanation = extract_between_tags(input, "<explanation>", "</explanation>");
+
+        ParsedPromptResponse {
+            reasoning,
+            replacement,
+            explanation,
+        }
+    }
+}
+
+#[cfg(test)]
+mod prompt_response_tests {
+    use super::*;
+
+    #[test]
+    fn test_complete_response() {
+        let input = r#"<reasoning>This is the reasoning</reasoning>
+        <selection_replacement>This is the replacement</selection_replacement>
+        <explanation>This is the explanation</explanation>"#;
+
+        let response = ParsedPromptResponse::parse_stream(input);
+        assert_eq!(response.reasoning.unwrap(), "This is the reasoning");
+        assert_eq!(response.replacement.unwrap(), "This is the replacement");
+        assert_eq!(response.explanation.unwrap(), "This is the explanation");
+    }
+
+    #[test]
+    fn test_partial_response() {
+        let input = r#"<reasoning>This is the reasoning</reasoning>
+        <selection_replacement>This is the replacement"#;
+
+        let response = ParsedPromptResponse::parse_stream(input);
+        assert_eq!(response.reasoning.unwrap(), "This is the reasoning");
+        assert_eq!(response.replacement.unwrap(), "This is the replacement");
+        assert!(response.explanation.is_none());
+    }
 }

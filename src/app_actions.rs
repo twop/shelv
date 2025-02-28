@@ -1,5 +1,6 @@
 use std::{io, path::PathBuf};
 
+use boa_engine::ast::expression::Parenthesized;
 use eframe::egui::{text::LayoutJob, Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
 
 use similar::{ChangeTag, TextDiff};
@@ -8,8 +9,8 @@ use smallvec::SmallVec;
 use crate::{
     app_state::{
         compute_editor_text_id, AppState, InlineLLMPromptState, InlineLLMResponseChunk,
-        InlinePromptStatus, MsgToApp, RenderAction, SlashPalette, TextSelectionAddress,
-        UnsavedChange,
+        InlinePromptStatus, MsgToApp, ParsedPromptResponse, RenderAction, SlashPalette,
+        TextSelectionAddress, UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
@@ -439,27 +440,39 @@ pub fn process_app_action(
                                     layout_job: _,
                                     status,
                                     fresh_response: _,
+                                    parsed_response: _,
                                 } = prompt_state;
 
                                 response_text.push_str(&chunk);
+
+                                let parsed_response =
+                                    ParsedPromptResponse::parse_stream(&response_text);
 
                                 diff_parts.clear();
 
                                 let selection = &state.notes.get(&address.note_file).unwrap().text
                                     [address.span.range()];
 
-                                diff_parts.extend(
-                                    TextDiff::from_words(selection, &response_text)
-                                        .iter_all_changes()
-                                        .map(|change| {
-                                            let part_str = change.to_string_lossy().to_string();
-                                            match change.tag() {
-                                                ChangeTag::Equal => TextDiffPart::Equal(part_str),
-                                                ChangeTag::Delete => TextDiffPart::Delete(part_str),
-                                                ChangeTag::Insert => TextDiffPart::Insert(part_str),
-                                            }
-                                        }),
-                                );
+                                if let Some(replacement) = &parsed_response.replacement {
+                                    diff_parts.extend(
+                                        TextDiff::from_words(selection, replacement)
+                                            .iter_all_changes()
+                                            .map(|change| {
+                                                let part_str = change.to_string_lossy().to_string();
+                                                match change.tag() {
+                                                    ChangeTag::Equal => {
+                                                        TextDiffPart::Equal(part_str)
+                                                    }
+                                                    ChangeTag::Delete => {
+                                                        TextDiffPart::Delete(part_str)
+                                                    }
+                                                    ChangeTag::Insert => {
+                                                        TextDiffPart::Insert(part_str)
+                                                    }
+                                                }
+                                            }),
+                                    );
+                                }
 
                                 // println!("----diff_parts: {diff_parts:#?}");
 
@@ -474,6 +487,7 @@ pub fn process_app_action(
                                     layout_job,
                                     status,
                                     fresh_response: true,
+                                    parsed_response,
                                 });
                                 SmallVec::new()
                             }
@@ -487,6 +501,7 @@ pub fn process_app_action(
                                     layout_job,
                                     status,
                                     fresh_response,
+                                    parsed_response,
                                 } = prompt_state;
 
                                 let status = match status {
@@ -509,6 +524,7 @@ pub fn process_app_action(
                                     layout_job,
                                     status,
                                     fresh_response,
+                                    parsed_response,
                                 });
                                 SmallVec::new()
                             }
@@ -766,6 +782,7 @@ pub fn process_app_action(
                 prompt: "".to_string(),
                 status: InlinePromptStatus::NotStarted,
                 fresh_response: false,
+                parsed_response: ParsedPromptResponse::parse_stream(""),
             });
 
             SmallVec::from_buf([AppAction::DeferToPostRender(Box::new(
@@ -787,6 +804,7 @@ pub fn process_app_action(
             //     .unwrap_or_else(|| DEFAULT_LLM_MODEL.to_string());
 
             prompt.response_text = "".to_string();
+            prompt.parsed_response = ParsedPromptResponse::parse_stream("");
             prompt.layout_job = LayoutJob::default();
             prompt.status = InlinePromptStatus::Streaming {
                 prompt: prompt.prompt.clone(),
@@ -834,7 +852,7 @@ pub fn process_app_action(
             if accept {
                 let changes = vec![TextChange::Insert(
                     prompt.address.span,
-                    prompt.response_text,
+                    prompt.parsed_response.replacement.unwrap_or_default(),
                 )];
 
                 resulting_actions.push(AppAction::ApplyTextChanges {

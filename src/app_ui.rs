@@ -749,11 +749,33 @@ fn render_inline_prompt(
                 }
             });
 
+            ui.add_space(theme.sizes.s);
+            ui.separator();
+            ui.add_space(theme.sizes.s);
+
+            if let Some(reasoning) = inline_llm_prompt.parsed_response.reasoning.as_ref() {
+                ui.collapsing(
+                    RichText::new("reasoning").color(theme.colors.subtle_text_color),
+                    |ui| {
+                        ui.label(reasoning);
+                    },
+                );
+                ui.add_space(theme.sizes.s);
+            }
+
             if !inline_llm_prompt.response_text.is_empty() {
-                ui.add_space(theme.sizes.s);
-                ui.separator();
-                ui.add_space(theme.sizes.s);
                 ui.label(WidgetText::LayoutJob(inline_llm_prompt.layout_job.clone()));
+            }
+
+            if let Some(explanation) = inline_llm_prompt.parsed_response.explanation.as_ref() {
+                ui.add_space(theme.sizes.s);
+                ui.collapsing(
+                    RichText::new("explanation").color(theme.colors.subtle_text_color),
+                    |ui| {
+                        ui.label(explanation);
+                    },
+                );
+                // ui.separator();
             }
         })
         .response;
