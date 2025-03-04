@@ -55,7 +55,7 @@ impl<'a> TextCommandContext<'a> {
 
 pub type EditorCommandOutput = SmallVec<[AppAction; 1]>;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Hash, PartialEq)]
 pub struct CommandInstance {
     pub shortcut: Option<KeyboardShortcut>,
     pub instruction: CommandInstruction,
@@ -88,7 +88,7 @@ impl CommandInstance {
         }
     }
 }
-#[derive(Debug, Clone, knus::Decode, PartialEq, Eq)]
+#[derive(Debug, Hash, Clone, knus::Decode, PartialEq, Eq)]
 pub struct ScriptCall {
     #[knus(argument)]
     pub func_name: String,
@@ -100,7 +100,7 @@ impl ScriptCall {
     }
 }
 
-#[derive(Debug, Clone, knus::Decode, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, knus::Decode, PartialEq, Eq)]
 pub enum TextSource {
     #[knus(name = "as_is")]
     Str(#[knus(argument)] String),
@@ -108,7 +108,7 @@ pub enum TextSource {
     #[knus(name = "callFunc")]
     Script(ScriptCall),
 }
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Hash, Debug, Clone)]
 pub struct ForwardToChild<T>(pub T);
 
 impl<T> Deref for ForwardToChild<T> {
@@ -164,7 +164,7 @@ where
     }
 }
 
-#[derive(PartialEq, knus::Decode, Debug, Clone)]
+#[derive(PartialEq, Hash, knus::Decode, Debug, Clone)]
 pub enum CommandInstruction {
     // Autocomplete/convenience
     #[knus(skip)]
@@ -404,7 +404,7 @@ impl CommandInstruction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Hash, Clone)]
 pub struct SlashPaletteCmd {
     pub phosphor_icon: Option<String>,
     pub prefix: String,

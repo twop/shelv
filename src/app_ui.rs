@@ -1,3 +1,4 @@
+use boa_engine::ast::expression::TaggedTemplate;
 use eframe::{
     egui::{
         self,
@@ -819,185 +820,109 @@ fn render_slash_palette(
             .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
     );
 
-    let prompt_id = prompt_ui.id().with("demo");
+    let frame_resp = egui::Frame::none()
+        .fill(theme.colors.code_bg_color)
+        .inner_margin(theme.sizes.s)
+        .stroke(prompt_ui.visuals().window_stroke)
+        .shadow(prompt_ui.visuals().window_shadow)
+        .corner_radius(prompt_ui.visuals().window_corner_radius)
+        // .id_salt("slash_palette_frame")
+        .show(&mut prompt_ui, |ui| {
+            set_menu_bar_style(ui);
 
-    // let frame_resp = egui::Frame::new()
-    //     .fill(theme.colors.code_bg_color)
-    //     // .inner_margin(theme.sizes.s)
-    //     .stroke(prompt_ui.visuals().window_stroke)
-    //     .shadow(prompt_ui.visuals().window_shadow)
-    //     .corner_radius(prompt_ui.visuals().window_corner_radius)
-    //     .show(&mut prompt_ui, |ui| {
-    //         tui(ui, prompt_id)
-    //             .reserve_available_width() // Reserve full space of window for this layout
-    //             .style(Style {
-    //                 flex_direction: taffy::FlexDirection::Column,
-    //                 align_items: Some(taffy::AlignItems::Stretch),
-    //                 padding: length(theme.sizes.s),
-    //                 size: taffy::Size {
-    //                     width: length(prompt_ui_rect.width()),
-    //                     height: auto(),
-    //                 },
+            // ui.set_min_width(top_of_frame.width());
 
-    //                 ..Default::default()
-    //             })
-    //             .show(|tui_| {
-    //                 // tui_.style(Style {
-    //                 //     flex_direction: taffy::FlexDirection::Column,
-    //                 //     align_items: Some(taffy::AlignItems::Stretch),
-    //                 //     // size: taffy::Size {
-    //                 //     //     width: length(prompt_ui_rect.width()),
-    //                 //     //     height: auto(),
-    //                 //     // },
-    //                 //     ..Default::default()
-    //                 // })
-    //                 // .add_with_background(|tui| {
-    //                 //     tui.ui(|ui| {
-    //                 //         ui.label("Hello from egui ui!".repeat(5));
-    //                 //         let _ = ui.button("Egui button");
-    //                 //     });
-    //                 // });
-    //                 // // Add egui ui as nodes
-
-    //                 // // Add egui widgets directly to UI that implements [`TuiWidget`] trait
-    //                 // tui_.ui_add(egui::Label::new("label"));
-    //                 // tui_.ui_add(egui::Button::new("button"));
-    //                 // tui_.separator();
-    //                 // tui_.label("Left aligned text")
-    //             })
-    //     });
-
-    let frame_resp = tui(ui, "slash_palette_frame")
-        .reserve_available_space()
-        .style(Style {
-            flex_direction: taffy::FlexDirection::Column,
-            align_items: Some(taffy::AlignItems::Stretch),
-            overflow: taffy::Point {
-                x: taffy::Overflow::Visible,
-                y: taffy::Overflow::Scroll,
-            },
-            padding: length(theme.sizes.s),
-            gap: length(theme.sizes.s),
-            // size: taffy::Size {
-            //     width: length(prompt_ui_rect.width()),
-            //     height: auto(),
-            // },
-            max_size: taffy::Size {
-                width: length(prompt_ui_rect.width()),
-                height: length(prompt_ui_rect.height()),
-            },
-            // min_size: taffy::Size {
-            //     width: auto(),
-            //     height: auto(),
-            //     // height: length(allocated_frame.height()),
-            // },
-            ..Default::default()
-        })
-        .show(|tui| {
-            if slash_palette.options.is_empty() {
-                tui.label(
-                    RichText::new("No command matches found").color(theme.colors.subtle_text_color),
-                );
-            } else {
-                for item in
-                    Itertools::intersperse(slash_palette.options.iter().enumerate().map(Some), None)
-                {
-                    match item {
-                        Some((i, cmd)) => {
-                            let selected = i == slash_palette.selected;
-                            let item_resp = tui
-                                .style(Style {
-                                    // flex_direction: taffy::FlexDirection::Row,
-                                    // justify_items: Some(taffy::JustifyItems::Stretch),
-                                    // size: taffy::Size {
-                                    //     width: length(prompt_ui_rect.width()),
-                                    //     height: auto(),
-                                    // },
-                                    // cursor: Some(CursorIcon::PointingHand),
-                                    ..Default::default()
-                                })
-                                .button(|tui| {
-                                    // let resp = render_slash_cmd(tui, theme, cmd, selected);
-                                    let resp = tui
-                                        // .style(Style {
-                                        //     flex_direction: taffy::FlexDirection::Row,
-                                        //     justify_items: Some(
-                                        //         taffy::JustifyItems::Stretch,
-                                        //     ),
-                                        //     size: taffy::Size {
-                                        //         width: auto(),
-                                        //         // width: length(prompt_ui_rect.width()),
-                                        //         height: auto(),
-                                        //     },
-                                        //     // cursor: Some(CursorIcon::PointingHand),
-                                        //     ..Default::default()
-                                        // })
-                                        .ui_add(egui::Label::new("label that is somewhat long"));
-
-                                    // let resp = tui.ui(|ui| {
-                                    //     render_slash_cmd(ui, theme, cmd, selected)
-                                    // });
+            ScrollArea::vertical()
+                .max_height(allocated_frame.height())
+                .min_scrolled_height(allocated_frame.height())
+                .scroll_bar_visibility(ScrollBarVisibility::AlwaysVisible)
+                .stick_to_bottom(false)
+                .stick_to_right(false)
+                .id_salt("slash_palette_scroll")
+                .show(ui, |ui| {
+                    let mut responses: SmallVec<[Response; 10]> = SmallVec::new();
+                    if slash_palette.options.is_empty() {
+                        ui.label({
+                            RichText::new("No command matches found")
+                                .color(theme.colors.subtle_text_color)
+                        });
+                    } else {
+                        for item in Itertools::intersperse(
+                            slash_palette.options.iter().enumerate().map(Some),
+                            None,
+                        ) {
+                            match item {
+                                Some((i, cmd)) => {
+                                    let selected = i == slash_palette.selected;
+                                    let resp = render_slash_cmd(ui, theme, cmd, selected)
+                                        .interact(Sense::CLICK)
+                                        .on_hover_cursor(CursorIcon::PointingHand);
 
                                     if selected {
-                                        let is_visible = tui.ui(|ui| ui.is_rect_visible(resp.rect));
+                                        let is_visible = ui.is_rect_visible(resp.rect);
                                         if !is_visible {
                                             resp.scroll_to_me(Some(Align::Center));
                                         }
                                     }
-                                });
 
-                            if item_resp.clicked() {
-                                println!("clicked on {cmd:#?}");
+                                    if resp.gained_focus() {
+                                        // TODO remove, trying to debug what is getting focus
+                                        println!("has focus!!")
+                                    }
 
-                                resulting_actions
-                                    .push(AppAction::FocusRequest(FocusTarget::CurrentNote));
-                                resulting_actions.push(AppAction::DeferToPostRender(Box::new(
-                                    AppAction::DeferToPostRender(Box::new(
-                                        AppAction::SlashPalette(
-                                            SlashPaletteAction::ExecuteCommand(i),
-                                        ),
-                                    )),
-                                )));
-                            }
+                                    if resp.clicked() {
+                                        println!("clicked on {cmd:#?}");
 
-                            if item_resp.hovered() {
-                                tui.ui(|ui| {
+                                        resulting_actions.push(AppAction::FocusRequest(
+                                            FocusTarget::CurrentNote,
+                                        ));
+                                        // TODO fix
+                                        // This is quite silly, but it seems to take a few renders before the cursor is properly restored.
+                                        resulting_actions.push(AppAction::DeferToPostRender(
+                                            Box::new(AppAction::DeferToPostRender(Box::new(
+                                                AppAction::SlashPalette(
+                                                    SlashPaletteAction::ExecuteCommand(i),
+                                                ),
+                                            ))),
+                                        ));
+                                    }
+
                                     ui.input(|input| {
                                         if input.pointer.is_moving()
                                             || input.smooth_scroll_delta != Vec2::ZERO
                                             || input.raw_scroll_delta != Vec2::ZERO
                                         {
-                                            resulting_actions.push(AppAction::SlashPalette(
-                                                SlashPaletteAction::SelectCommand(i),
-                                            ));
+                                            if resp.contains_pointer() {
+                                                resulting_actions.push(AppAction::SlashPalette(
+                                                    SlashPaletteAction::SelectCommand(i),
+                                                ));
+                                            }
                                         }
                                     });
-                                });
+
+                                    responses.push(resp);
+                                }
+
+                                None => {
+                                    ui.separator();
+                                }
                             }
                         }
-
-                        None => {
-                            // tui.separator();
-                        }
                     }
-                }
-            }
-        });
+                });
+        })
+        .response;
 
-    //     let frame_resp = egui::Frame::new()
-    // .fill(theme.colors.code_bg_color)
-    // .stroke(prompt_ui.visuals().window_stroke)
-    // .shadow(prompt_ui.visuals().window_shadow)
-    // .corner_radius(prompt_ui.visuals().window_corner_radius)
-    // .show(&mut prompt_ui, |ui| {})
-    // .response;
+    // if inline_llm_prompt.fresh_response {
+    //     inline_llm_prompt.fresh_response = false;
+    //     frame_resp.scroll_to_me(None);
+    // }
 
-    (prompt_ui_rect, resulting_actions)
-    // (frame_resp.rect, resulting_actions)
+    (frame_resp.rect, resulting_actions)
 }
 
 fn render_slash_cmd(
-    tui: &mut Tui,
+    ui: &mut Ui,
     theme: &AppTheme,
 
     cmd: &SlashPaletteCmd,
@@ -1023,78 +948,102 @@ fn render_slash_cmd(
         theme.colors.subtle_text_color,
     );
 
-    tui.add(|tui| {
-        tui.style(Style {
-            flex_direction: taffy::FlexDirection::Column,
-            align_items: Some(taffy::AlignItems::Stretch),
-            gap: length(4.),
+    let available_width = ui.available_width();
+    println!("%% {available_width}");
+    tui(ui, ui.id().with(cmd))
+        .reserve_available_width()
+        .style(Style {
+            // flex_direction: taffy::FlexDirection::Row,
+            // justify_content: Some(taffy::JustifyContent::Stretch),
+            // // align_content: Some(taffy::JustifyItems::Stretch),
+            // flex_grow: 1.0,
+            size: taffy::Size {
+                width: length(available_width),
+                height: auto(),
+            },
             ..Default::default()
         })
-        .add_with_background_color(|tui| {
-            // First row
-            tui.add(|tui| {
-                tui.style(Style {
-                    flex_direction: taffy::FlexDirection::Row,
-                    justify_content: Some(taffy::JustifyContent::SpaceBetween),
-                    align_items: Some(taffy::AlignItems::Center),
-                    ..Default::default()
-                })
-                .add(|tui| {
-                    // Left side with icon and prefix
-                    tui.style(Style {
-                        flex_direction: taffy::FlexDirection::Row,
-                        align_items: Some(taffy::AlignItems::Center),
-                        gap: length(8.),
-                        ..Default::default()
-                    })
-                    .add(|tui| {
-                        tui.label(
-                            RichText::new(if let Some(icon) = &cmd.phosphor_icon {
-                                icon
-                            } else {
-                                egui_phosphor::light::GEAR
-                            })
-                            .font(phosphor_icon_font.font_id)
-                            .color(phosphor_icon_font.color),
-                        );
-
-                        tui.label(
-                            RichText::new(&cmd.prefix)
-                                .font(header_font.font_id)
-                                .color(header_font.color),
-                        );
-                    });
-                    // Right side with shortcut
-                    if let Some(shortcut) = cmd.instance.shortcut {
-                        tui.label(
-                            RichText::new(format!(
-                                "{}",
-                                format_mac_shortcut_with_symbols(shortcut)
-                            ))
-                            .font(shortcut_font.font_id)
-                            .color(shortcut_font.color),
-                        );
-                    }
-                });
-            });
-
-            tui.add(|tui| {
-                // Second row with description
-                tui.style(Style {
-                    flex_direction: taffy::FlexDirection::Row,
-                    align_items: Some(taffy::AlignItems::Center),
-                    ..Default::default()
-                })
-                .add(|tui| {
-                    tui.label(
-                        RichText::new(&cmd.description)
-                            .font(description_font.font_id)
-                            .color(description_font.color),
-                    )
-                })
+        .show(|tui| {
+            let aval_width = tui.egui_ui_mut().available_width();
+            println!("%%-> {aval_width}");
+            tui.style(Style {
+                flex_direction: taffy::FlexDirection::Row,
+                ..Default::default()
             })
+            .label(&cmd.description)
         })
-    })
+    // ui.add(|tui| {
+    //     tui.style(Style {
+    //         flex_direction: taffy::FlexDirection::Column,
+    //         align_items: Some(taffy::AlignItems::Stretch),
+    //         gap: length(4.),
+    //         ..Default::default()
+    //     })
+    //     .add_with_background_color(|tui| {
+    //         // First row
+    //         tui.add(|tui| {
+    //             tui.style(Style {
+    //                 flex_direction: taffy::FlexDirection::Row,
+    //                 justify_content: Some(taffy::JustifyContent::SpaceBetween),
+    //                 align_items: Some(taffy::AlignItems::Center),
+    //                 ..Default::default()
+    //             })
+    //             .add(|tui| {
+    //                 // Left side with icon and prefix
+    //                 tui.style(Style {
+    //                     flex_direction: taffy::FlexDirection::Row,
+    //                     align_items: Some(taffy::AlignItems::Center),
+    //                     gap: length(8.),
+    //                     ..Default::default()
+    //                 })
+    //                 .add(|tui| {
+    //                     tui.label(
+    //                         RichText::new(if let Some(icon) = &cmd.phosphor_icon {
+    //                             icon
+    //                         } else {
+    //                             egui_phosphor::light::GEAR
+    //                         })
+    //                         .font(phosphor_icon_font.font_id)
+    //                         .color(phosphor_icon_font.color),
+    //                     );
+
+    //                     tui.label(
+    //                         RichText::new(&cmd.prefix)
+    //                             .font(header_font.font_id)
+    //                             .color(header_font.color),
+    //                     );
+    //                 });
+    //                 // Right side with shortcut
+    //                 if let Some(shortcut) = cmd.instance.shortcut {
+    //                     tui.label(
+    //                         RichText::new(format!(
+    //                             "{}",
+    //                             format_mac_shortcut_with_symbols(shortcut)
+    //                         ))
+    //                         .font(shortcut_font.font_id)
+    //                         .color(shortcut_font.color),
+    //                     );
+    //                 }
+    //             });
+    //         });
+
+    //         tui.add(|tui| {
+    //             // Second row with description
+    //             tui.style(Style {
+    //                 flex_direction: taffy::FlexDirection::Row,
+    //                 align_items: Some(taffy::AlignItems::Center),
+    //                 ..Default::default()
+    //             })
+    //             .add(|tui| {
+    //                 tui.label(
+    //                     RichText::new(&cmd.description)
+    //                         .font(description_font.font_id)
+    //                         .color(description_font.color),
+    //                 )
+    //             })
+    //         })
+    //     })
+    // })
 
     // tui.add(|tui| {
     // })
