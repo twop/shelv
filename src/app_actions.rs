@@ -92,7 +92,7 @@ impl AppAction {
         }
     }
 
-    fn defer(action: Self) -> Self {
+    pub fn defer(action: Self) -> Self {
         Self::DeferToPostRender(Box::new(action))
     }
 }
@@ -892,21 +892,22 @@ pub fn process_app_action(
                     }
                 }
 
-                SP::NextCommand => {
-                    if let Some(pallete) = state.slash_palette.as_mut() {
-                        pallete.selected = (pallete.selected + 1) % pallete.options.len()
+                SP::NextCommand => match state.slash_palette.as_mut() {
+                    Some(pallete) if !pallete.options.is_empty() => {
+                        pallete.selected = (pallete.selected + 1) % pallete.options.len();
+                        SmallVec::new()
                     }
-
-                    SmallVec::new()
-                }
-                SP::PrevCommand => {
-                    if let Some(pallete) = state.slash_palette.as_mut() {
+                    _ => SmallVec::new(),
+                },
+                SP::PrevCommand => match state.slash_palette.as_mut() {
+                    Some(pallete) if !pallete.options.is_empty() => {
                         pallete.selected =
-                            (pallete.selected + pallete.options.len() - 1) % pallete.options.len()
-                    }
+                            (pallete.selected + pallete.options.len() - 1) % pallete.options.len();
 
-                    SmallVec::new()
-                }
+                        SmallVec::new()
+                    }
+                    _ => SmallVec::new(),
+                },
                 SP::SelectCommand(i) => {
                     if let Some(pallete) = state.slash_palette.as_mut() {
                         pallete.selected = i

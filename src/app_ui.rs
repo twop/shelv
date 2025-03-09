@@ -3,12 +3,13 @@ use eframe::{
     egui::{
         self,
         scroll_area::ScrollBarVisibility,
+        style::default_text_styles,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        text_selection::text_cursor_state::cursor_rect,
+        text_selection::{text_cursor_state::cursor_rect, LabelSelectionState},
         Context, CursorIcon, FontFamily, FontSelection, Id, Key, KeyboardShortcut, Label, Layout,
         Margin, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit, TextFormat,
-        TextStyle, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
+        TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
@@ -847,6 +848,8 @@ fn render_slash_palette(
                                 .color(theme.colors.subtle_text_color)
                         });
                     } else {
+                        // ui.set_min_width(prompt_ui_rect.width());
+                        // ui.label("here is a long long long long label");
                         for item in Itertools::intersperse(
                             slash_palette.options.iter().enumerate().map(Some),
                             None,
@@ -878,13 +881,11 @@ fn render_slash_palette(
                                         ));
                                         // TODO fix
                                         // This is quite silly, but it seems to take a few renders before the cursor is properly restored.
-                                        resulting_actions.push(AppAction::DeferToPostRender(
-                                            Box::new(AppAction::DeferToPostRender(Box::new(
-                                                AppAction::SlashPalette(
-                                                    SlashPaletteAction::ExecuteCommand(i),
-                                                ),
-                                            ))),
-                                        ));
+                                        resulting_actions.push(AppAction::defer(AppAction::defer(
+                                            AppAction::SlashPalette(
+                                                SlashPaletteAction::ExecuteCommand(i),
+                                            ),
+                                        )));
                                     }
 
                                     ui.input(|input| {
@@ -949,104 +950,80 @@ fn render_slash_cmd(
     );
 
     let available_width = ui.available_width();
-    println!("%% {available_width}");
+    // println!("%% {available_width}");
     tui(ui, ui.id().with(cmd))
         .reserve_available_width()
-        .style(Style {
-            // flex_direction: taffy::FlexDirection::Row,
-            // justify_content: Some(taffy::JustifyContent::Stretch),
-            // // align_content: Some(taffy::JustifyItems::Stretch),
-            // flex_grow: 1.0,
-            size: taffy::Size {
-                width: length(available_width),
-                height: auto(),
-            },
-            ..Default::default()
-        })
         .show(|tui| {
-            let aval_width = tui.egui_ui_mut().available_width();
-            println!("%%-> {aval_width}");
             tui.style(Style {
-                flex_direction: taffy::FlexDirection::Row,
+                flex_direction: taffy::FlexDirection::Column,
+                align_content: Some(taffy::AlignContent::Stretch),
+                size: taffy::Size {
+                    width: length(available_width),
+                    height: auto(),
+                },
+                padding: length(theme.sizes.xs),
+                gap: length(theme.sizes.xs),
                 ..Default::default()
             })
-            .label(&cmd.description)
+            .selectable(selected, |tui| {
+                tui.style(Style {
+                    flex_direction: taffy::FlexDirection::Row,
+                    justify_content: Some(taffy::JustifyContent::SpaceBetween),
+                    ..Default::default()
+                })
+                .add(|tui| {
+                    tui.style(Style {
+                        flex_direction: taffy::FlexDirection::Row,
+                        gap: length(theme.sizes.s),
+                        ..Default::default()
+                    })
+                    .add(|tui| {
+                        tui.ui_add(
+                            Label::new(
+                                RichText::new(if let Some(icon) = &cmd.phosphor_icon {
+                                    icon
+                                } else {
+                                    egui_phosphor::light::GEAR
+                                })
+                                .font(phosphor_icon_font.font_id)
+                                .color(phosphor_icon_font.color),
+                            )
+                            .wrap_mode(TextWrapMode::Extend),
+                        );
+                        tui.ui_add(
+                            Label::new(
+                                RichText::new(&cmd.prefix)
+                                    .font(header_font.font_id)
+                                    .color(header_font.color),
+                            )
+                            .wrap_mode(TextWrapMode::Extend),
+                        );
+                    });
+
+                    tui.ui_add(
+                        Label::new(
+                            RichText::new(format!(
+                                "{}",
+                                cmd.instance
+                                    .shortcut
+                                    .map(format_mac_shortcut_with_symbols)
+                                    .unwrap_or_default()
+                            ))
+                            .font(shortcut_font.font_id)
+                            .color(shortcut_font.color),
+                        )
+                        .wrap_mode(egui::TextWrapMode::Extend),
+                    );
+                });
+
+                tui.label(
+                    RichText::new(&cmd.description)
+                        .font(description_font.font_id)
+                        .color(description_font.color),
+                );
+            })
         })
-    // ui.add(|tui| {
-    //     tui.style(Style {
-    //         flex_direction: taffy::FlexDirection::Column,
-    //         align_items: Some(taffy::AlignItems::Stretch),
-    //         gap: length(4.),
-    //         ..Default::default()
-    //     })
-    //     .add_with_background_color(|tui| {
-    //         // First row
-    //         tui.add(|tui| {
-    //             tui.style(Style {
-    //                 flex_direction: taffy::FlexDirection::Row,
-    //                 justify_content: Some(taffy::JustifyContent::SpaceBetween),
-    //                 align_items: Some(taffy::AlignItems::Center),
-    //                 ..Default::default()
-    //             })
-    //             .add(|tui| {
-    //                 // Left side with icon and prefix
-    //                 tui.style(Style {
-    //                     flex_direction: taffy::FlexDirection::Row,
-    //                     align_items: Some(taffy::AlignItems::Center),
-    //                     gap: length(8.),
-    //                     ..Default::default()
-    //                 })
-    //                 .add(|tui| {
-    //                     tui.label(
-    //                         RichText::new(if let Some(icon) = &cmd.phosphor_icon {
-    //                             icon
-    //                         } else {
-    //                             egui_phosphor::light::GEAR
-    //                         })
-    //                         .font(phosphor_icon_font.font_id)
-    //                         .color(phosphor_icon_font.color),
-    //                     );
-
-    //                     tui.label(
-    //                         RichText::new(&cmd.prefix)
-    //                             .font(header_font.font_id)
-    //                             .color(header_font.color),
-    //                     );
-    //                 });
-    //                 // Right side with shortcut
-    //                 if let Some(shortcut) = cmd.instance.shortcut {
-    //                     tui.label(
-    //                         RichText::new(format!(
-    //                             "{}",
-    //                             format_mac_shortcut_with_symbols(shortcut)
-    //                         ))
-    //                         .font(shortcut_font.font_id)
-    //                         .color(shortcut_font.color),
-    //                     );
-    //                 }
-    //             });
-    //         });
-
-    //         tui.add(|tui| {
-    //             // Second row with description
-    //             tui.style(Style {
-    //                 flex_direction: taffy::FlexDirection::Row,
-    //                 align_items: Some(taffy::AlignItems::Center),
-    //                 ..Default::default()
-    //             })
-    //             .add(|tui| {
-    //                 tui.label(
-    //                     RichText::new(&cmd.description)
-    //                         .font(description_font.font_id)
-    //                         .color(description_font.color),
-    //                 )
-    //             })
-    //         })
-    //     })
-    // })
-
-    // tui.add(|tui| {
-    // })
+        .response
 }
 
 fn restore_cursor_from_note_state(
