@@ -21,8 +21,7 @@ use egui_taffy::{
         prelude::{auto, length},
         Style,
     },
-    tid, tui, Context, FontFamily, Id, Key, KeyboardShortcut, Layout, Modifiers, Painter, RichText,
-    Sense, TextEdit, TopBottomPanel, Tui, TuiBuilderLogic, Ui, UiStackInfo, Vec2, WidgetText,
+    tui, TuiBuilderLogic,
 };
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
@@ -33,9 +32,8 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 use crate::{
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
-        ComputedLayout, ComputedLayout, FeedbackState, InlineLLMPromptState, InlineLLMPropmptState,
-        InlinePromptStatus, InlinePromptStatus, LayoutParams, LayoutParams, MsgToApp, MsgToApp,
-        RenderAction, SlashPalette,
+        ComputedLayout, FeedbackState, InlineLLMPromptState, InlinePromptStatus, LayoutParams,
+        MsgToApp, RenderAction, SlashPalette,
     },
     byte_span::UnOrderedByteSpan,
     command::{CommandInstruction, CommandList, SlashPaletteCmd, PROMOTED_COMMANDS},

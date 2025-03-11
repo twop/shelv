@@ -415,9 +415,10 @@ pub fn get_font_definitions() -> FontDefinitions {
         egui_phosphor::Variant::Light.font_data().into(),
     );
 
-    fonts
-        .font_data
-        .insert("phosphor".into(), egui_phosphor::Variant::Light.font_data());
+    fonts.font_data.insert(
+        "phosphor".into(),
+        egui_phosphor::Variant::Light.font_data().into(),
+    );
     fonts
         .families
         .entry(egui::FontFamily::Proportional)

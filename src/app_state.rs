@@ -181,15 +181,10 @@ pub struct AppState {
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
-<<<<<<< HEAD
     pub settings_scripts: Option<Scripts>,
     pub deferred_actions: Vec<AppAction>,
     pub render_actions: Vec<RenderAction>,
-=======
-    pub deferred_to_post_render: Vec<AppAction>,
-
     pub feedback: Option<FeedbackState>,
->>>>>>> main
 }
 
 impl AppState {
@@ -480,13 +475,10 @@ impl AppState {
             llm_settings: None,
             deferred_actions,
             inline_llm_prompt: None,
-<<<<<<< HEAD
             slash_palette: None,
             settings_scripts: None,
             render_actions: vec![],
-=======
             feedback: None,
->>>>>>> main
         }
     }
 

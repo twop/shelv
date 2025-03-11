@@ -9,11 +9,9 @@ use smallvec::SmallVec;
 
 use crate::{
     app_state::{
-        compute_editor_text_id, AppState, InlineLLMPromptState, InlineLLMResponseChunk,
-        InlinePromptStatus, MsgToApp, ParsedPromptResponse, RenderAction, SlashPalette,
-        TextSelectionAddress, UnsavedChange,
-        compute_editor_text_id, AppState, FeedbackState, InlineLLMPropmptState,
-        InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, TextSelectionAddress, UnsavedChange,
+        compute_editor_text_id, AppState, FeedbackState, InlineLLMPromptState,
+        InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, ParsedPromptResponse, RenderAction,
+        SlashPalette, TextSelectionAddress, UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
@@ -164,7 +162,14 @@ pub trait AppIO {
     fn execute_llm_block<'s>(&self, question: LLMBlockRequest, cx: SettingsForAiRequests<'s>);
     fn execute_llm_prompt<'s>(&self, quesion: LLMPromptRequest, cx: SettingsForAiRequests<'s>);
 
-    fn capture_sentry_message<F>(&self, message: &str, level: sentry::Level, scope: F)-> sentry::types::Uuid where F:  FnOnce(&mut sentry::Scope) ;
+    fn capture_sentry_message<F>(
+        &self,
+        message: &str,
+        level: sentry::Level,
+        scope: F,
+    ) -> sentry::types::Uuid
+    where
+        F: FnOnce(&mut sentry::Scope);
 }
 
 pub fn process_app_action(
@@ -668,17 +673,25 @@ pub fn process_app_action(
                         );
                         map.insert(
                             String::from("note"),
-                            format!("{}", state.notes.get(&state.selected_note).map(|n| n.text.clone()).unwrap_or_default()).into(),
+                            format!(
+                                "{}",
+                                state
+                                    .notes
+                                    .get(&state.selected_note)
+                                    .map(|n| n.text.clone())
+                                    .unwrap_or_default()
+                            )
+                            .into(),
                         );
                     }
-    
+
                     map.insert(
                         String::from("feedback"),
                         to_value(feedback.feedback_data.clone()).unwrap_or_default(),
                     );
-    
+
                     scope.set_context("state", sentry::protocol::Context::Other(map));
-    
+
                     let mut map = std::collections::BTreeMap::new();
                     map.insert(
                         String::from("contact"),
@@ -688,7 +701,7 @@ pub fn process_app_action(
                         other: map,
                         ..Default::default()
                     }));
-                }
+                },
             );
 
             println!("Feedback sent: {:?}", result);
@@ -882,7 +895,18 @@ pub fn process_app_action(
                 resulting_actions
             }
         }
-<<<<<<< HEAD
+
+        AppAction::OpenFeedbackWindow => {
+            state.feedback = Some(FeedbackState::default());
+            SmallVec::new()
+        }
+
+        AppAction::CloseFeedbackWindow => {
+            if let Some(feedback) = state.feedback.as_mut() {
+                feedback.is_feedback_open = false;
+            };
+            SmallVec::new()
+        }
 
         AppAction::SlashPalette(slash_pallete_actions) => {
             use SlashPaletteAction as SP;
@@ -1023,18 +1047,6 @@ fn update_slash_palette(
     if palette.note_file != state.selected_note {
         println!("## hide Slash Palette: Palette note file doesn't match selected note");
         return None;
-=======
-        AppAction::OpenFeedbackWindow => {
-            state.feedback = Some(FeedbackState::default());
-            SmallVec::new()
-        }
-        AppAction::CloseFeedbackWindow => {
-            if let Some(feedback) = state.feedback.as_mut() {
-                feedback.is_feedback_open = false;
-            };
-            SmallVec::new()
-        }
->>>>>>> main
     }
 
     // if some => means that we still have focus cursor

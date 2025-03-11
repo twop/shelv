@@ -51,7 +51,6 @@ mod commands;
 mod effects;
 mod egui_hotkey;
 mod feedback;
-mod settings;
 mod settings_parsing;
 
 mod knus_test;

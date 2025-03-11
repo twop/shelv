@@ -364,6 +364,7 @@ impl AppIO for RealAppIO {
                             }
                             Ok(ChatStreamEvent::End(_)) => send(None),
                             Ok(ChatStreamEvent::Start) => (),
+                            Ok(ChatStreamEvent::ReasoningChunk(_)) => (),
                             Err(e) => {
                                 send(Some(format!("Error getting response: {:#?}", e)));
                                 break;

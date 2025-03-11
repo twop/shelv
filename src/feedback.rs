@@ -1,5 +1,6 @@
 use eframe::egui::{
-    self, pos2, vec2, Button, Checkbox, Color32, FontId, FontSelection, InnerResponse, Label, Response, RichText, Stroke, TextEdit, Ui, Widget
+    self, pos2, vec2, Button, Checkbox, Color32, FontId, FontSelection, InnerResponse, Label,
+    Response, RichText, Stroke, TextEdit, Ui, Widget,
 };
 use egui_flex::*;
 
@@ -65,7 +66,7 @@ impl<'a> Feedback<'a> {
         );
 
         fn flex_spacer(flex: &mut FlexInstance) -> InnerResponse<()> {
-            flex.add_simple(item().grow(1.0).basis(0.0), |_| {})
+            flex.add_ui(item().grow(1.0).basis(0.0), |_| {})
         }
 
         let resp = ui.scope(|ui| {
@@ -91,16 +92,14 @@ impl<'a> Feedback<'a> {
                         );
                         flex.add_flex(item().grow(1.0).basis(0.0), Flex::horizontal(), |flex| {
                             flex_spacer(flex);
-                            let close_btn = flex
-                                .add(
-                                    item(),
-                                    Button::new(AppIcon::Close.render(
-                                        self.theme.sizes.toolbar_icon,
-                                        self.theme.colors.subtle_text_color,
-                                    ))
-                                    .fill(window_bg),
-                                )
-                                .inner;
+                            let close_btn = flex.add(
+                                item(),
+                                Button::new(AppIcon::Close.render(
+                                    self.theme.sizes.toolbar_icon,
+                                    self.theme.colors.subtle_text_color,
+                                ))
+                                .fill(window_bg),
+                            );
 
                             if close_btn.clicked() {
                                 self.result = Some(FeedbackResult::Cancel)
@@ -121,7 +120,7 @@ impl<'a> Feedback<'a> {
                                         Label::new(
                                             RichText::new("Contact Info")
                                                 .font(FontId {
-                                                    size: self.theme.fonts.size.normal2,
+                                                    size: self.theme.fonts.size.normal,
                                                     family: self.theme.fonts.family.bold.clone(),
                                                 })
                                                 .color(self.theme.colors.subtle_text_color),
@@ -132,7 +131,7 @@ impl<'a> Feedback<'a> {
                                         Label::new(
                                             RichText::new("(optional)")
                                                 .font(FontId {
-                                                    size: self.theme.fonts.size.normal2,
+                                                    size: self.theme.fonts.size.normal,
                                                     family: self.theme.fonts.family.italic.clone(),
                                                 })
                                                 .color(self.theme.colors.subtle_text_color),
@@ -144,12 +143,12 @@ impl<'a> Feedback<'a> {
 
                             flex.add(
                                 item().grow(1.),
-                                TextEdit::singleline(&mut self.data.contact_info).hint_text(format!(
-                                    "Name (your@email.com / discord@ / etc)"
-                                )).hint_text_font(FontSelection::FontId(FontId {
-                                    size: self.theme.fonts.size.normal2,
-                                    family: self.theme.fonts.family.italic.clone(),
-                                })),
+                                TextEdit::singleline(&mut self.data.contact_info)
+                                    .hint_text(format!("Name (your@email.com / discord@ / etc)"))
+                                    .hint_text_font(FontSelection::FontId(FontId {
+                                        size: self.theme.fonts.size.normal,
+                                        family: self.theme.fonts.family.italic.clone(),
+                                    })),
                             );
                         },
                     );
@@ -167,7 +166,7 @@ impl<'a> Feedback<'a> {
                                         Label::new(
                                             RichText::new("Feedback")
                                                 .font(FontId {
-                                                    size: self.theme.fonts.size.normal2,
+                                                    size: self.theme.fonts.size.normal,
                                                     family: self.theme.fonts.family.bold.clone(),
                                                 })
                                                 .color(self.theme.colors.subtle_text_color),
@@ -182,7 +181,7 @@ impl<'a> Feedback<'a> {
                                             &mut self.data.include_current_note,
                                             RichText::new("Include current note")
                                                 .font(FontId {
-                                                    size: self.theme.fonts.size.normal2,
+                                                    size: self.theme.fonts.size.normal,
                                                     family: self.theme.fonts.family.normal.clone(),
                                                 })
                                                 .color(self.theme.colors.subtle_text_color),
@@ -193,12 +192,14 @@ impl<'a> Feedback<'a> {
 
                             flex.add(
                                 item().grow(1.),
-                                TextEdit::multiline(&mut self.data.feedback_text).hint_text(format!(
+                                TextEdit::multiline(&mut self.data.feedback_text)
+                                    .hint_text(format!(
                                     "Describe any issues you encountered, or any general feedback."
-                                )).hint_text_font(FontSelection::FontId(FontId {
-                                    size: self.theme.fonts.size.normal2,
-                                    family: self.theme.fonts.family.italic.clone(),
-                                })),
+                                ))
+                                    .hint_text_font(FontSelection::FontId(FontId {
+                                        size: self.theme.fonts.size.normal,
+                                        family: self.theme.fonts.family.italic.clone(),
+                                    })),
                             );
                         },
                     );
@@ -213,7 +214,7 @@ impl<'a> Feedback<'a> {
                                     Label::new(
                                         RichText::new("Experience rating")
                                             .font(FontId {
-                                                size: self.theme.fonts.size.normal2,
+                                                size: self.theme.fonts.size.normal,
                                                 family: self.theme.fonts.family.bold.clone(),
                                             })
                                             .color(self.theme.colors.subtle_text_color),
@@ -227,37 +228,33 @@ impl<'a> Feedback<'a> {
                                 |flex| {
                                     flex_spacer(flex);
 
-                                    let happy_btn = flex
-                                        .add(
-                                            item(),
-                                            Button::new(AppIcon::Feedback.render(
-                                                self.theme.sizes.xl,
-                                                match self.data.feedback_type {
-                                                    Some(FeedbackType::Positive) => {
-                                                        self.theme.colors.button_pressed_fg
-                                                    }
-                                                    _ => self.theme.colors.subtle_text_color,
-                                                },
-                                            ))
-                                            .fill(window_bg),
-                                        )
-                                        .inner;
+                                    let happy_btn = flex.add(
+                                        item(),
+                                        Button::new(AppIcon::Feedback.render(
+                                            self.theme.sizes.xl,
+                                            match self.data.feedback_type {
+                                                Some(FeedbackType::Positive) => {
+                                                    self.theme.colors.button_pressed_fg
+                                                }
+                                                _ => self.theme.colors.subtle_text_color,
+                                            },
+                                        ))
+                                        .fill(window_bg),
+                                    );
 
-                                    let sad_btn = flex
-                                        .add(
-                                            item(),
-                                            Button::new(AppIcon::NegFeedback.render(
-                                                self.theme.sizes.xl,
-                                                match self.data.feedback_type {
-                                                    Some(FeedbackType::Negative) => {
-                                                        self.theme.colors.button_pressed_fg
-                                                    }
-                                                    _ => self.theme.colors.subtle_text_color,
-                                                },
-                                            ))
-                                            .fill(window_bg),
-                                        )
-                                        .inner;
+                                    let sad_btn = flex.add(
+                                        item(),
+                                        Button::new(AppIcon::NegFeedback.render(
+                                            self.theme.sizes.xl,
+                                            match self.data.feedback_type {
+                                                Some(FeedbackType::Negative) => {
+                                                    self.theme.colors.button_pressed_fg
+                                                }
+                                                _ => self.theme.colors.subtle_text_color,
+                                            },
+                                        ))
+                                        .fill(window_bg),
+                                    );
 
                                     if happy_btn.clicked() {
                                         self.data.feedback_type = Some(FeedbackType::Positive);
@@ -282,15 +279,14 @@ impl<'a> Feedback<'a> {
                             let send_btn_res = flex.add(
                                 item(),
                                 Button::new(AppIcon::Send.render_with_text(
-                                    self.theme.fonts.size.normal2,
+                                    self.theme.fonts.size.normal,
                                     self.theme.colors.md_body,
                                     "Send Feedback",
                                 ))
                                 .fill(Color32::TRANSPARENT),
                             );
-                            let send_btn = send_btn_res.inner;
 
-                            if send_btn.clicked() {
+                            if send_btn_res.clicked() {
                                 self.result = Some(FeedbackResult::SubmitFeedback);
                             }
                         },
