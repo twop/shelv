@@ -1134,6 +1134,7 @@ dependencies = [
 
 [[package]]
 name = "egui_flex"
+<<<<<<< HEAD
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d2598b8bd01a7bfdaede32b297e5ba671640d4220f6c353025042a82cefee6e"
@@ -1152,6 +1153,14 @@ dependencies = [
  "parking_lot",
  "stackbox",
  "taffy",
+=======
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2493033babe116a1493ddaea0198ef2833cc6f4ad3a53de2a02376e8547b4d01"
+dependencies = [
+ "egui",
+ "log",
+>>>>>>> main
 ]
 
 [[package]]
@@ -4460,7 +4469,10 @@ dependencies = [
  "egui-phosphor",
  "egui_extras",
  "egui_flex",
+<<<<<<< HEAD
  "egui_taffy",
+=======
+>>>>>>> main
  "fxhash",
  "genai",
  "global-hotkey",

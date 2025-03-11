@@ -42,6 +42,8 @@ use crate::{
         toggle_md_headings::toggle_md_heading,
         toggle_simple_md_annotations::toggle_simple_md_annotations,
     },
+    effects::text_change_effect::{apply_text_changes, TextChange},
+    feedback::FeedbackData,
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::settings_eval::Scripts,
     settings_parsing::LlmSettings,
@@ -83,6 +85,23 @@ pub struct InlineLLMPromptState {
     pub layout_job: LayoutJob,
     pub status: InlinePromptStatus,
     pub fresh_response: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct FeedbackState {
+    pub is_feedback_open: bool,
+    pub feedback_data: FeedbackData,
+    pub is_sent: bool,
+}
+
+impl Default for FeedbackState {
+    fn default() -> Self {
+        FeedbackState {
+            is_feedback_open: true,
+            feedback_data: FeedbackData::default(),
+            is_sent: false,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -162,9 +181,15 @@ pub struct AppState {
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
+<<<<<<< HEAD
     pub settings_scripts: Option<Scripts>,
     pub deferred_actions: Vec<AppAction>,
     pub render_actions: Vec<RenderAction>,
+=======
+    pub deferred_to_post_render: Vec<AppAction>,
+
+    pub feedback: Option<FeedbackState>,
+>>>>>>> main
 }
 
 impl AppState {
@@ -455,9 +480,13 @@ impl AppState {
             llm_settings: None,
             deferred_actions,
             inline_llm_prompt: None,
+<<<<<<< HEAD
             slash_palette: None,
             settings_scripts: None,
             render_actions: vec![],
+=======
+            feedback: None,
+>>>>>>> main
         }
     }
 

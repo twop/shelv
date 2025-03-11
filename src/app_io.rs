@@ -379,6 +379,12 @@ impl AppIO for RealAppIO {
     fn open_shelv_folder(&self) -> Result<(), Box<dyn std::error::Error>> {
         open_folder_in_finder(&self.shelv_folder)
     }
+    
+    fn capture_sentry_message<F>(&self, message: &str, level: sentry::Level, scope: F) -> sentry::types::Uuid where F:  FnOnce(&mut sentry::Scope)  {
+        return sentry::with_scope(scope, || {
+            sentry::capture_message(message, level)
+        })
+    }
 }
 
 fn prepare_auth_resolver() -> AuthResolver {

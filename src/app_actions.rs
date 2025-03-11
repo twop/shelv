@@ -1,8 +1,9 @@
-use std::{io, path::PathBuf};
+use std::{collections::BTreeMap, io, path::PathBuf};
 
 use boa_engine::ast::expression::Parenthesized;
 use eframe::egui::{text::LayoutJob, Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
 
+use serde_json::{to_value, Value};
 use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
 
@@ -11,6 +12,8 @@ use crate::{
         compute_editor_text_id, AppState, InlineLLMPromptState, InlineLLMResponseChunk,
         InlinePromptStatus, MsgToApp, ParsedPromptResponse, RenderAction, SlashPalette,
         TextSelectionAddress, UnsavedChange,
+        compute_editor_text_id, AppState, FeedbackState, InlineLLMPropmptState,
+        InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, TextSelectionAddress, UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
@@ -19,6 +22,7 @@ use crate::{
         run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
     },
     effects::text_change_effect::{apply_text_changes, TextChange},
+    feedback::FeedbackType,
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{
         note_eval::{execute_code_blocks, execute_live_scripts},
@@ -68,7 +72,9 @@ pub enum AppAction {
     EvalNote(NoteFile),
     AskLLM(LLMBlockRequest),
     RunLLMBLock(NoteFile, SpanIndex),
-    SendFeedback(NoteFile),
+    SubmitFeedback,
+    OpenFeedbackWindow,
+    CloseFeedbackWindow,
     StartTutorial,
     DeferToPostRender(Box<AppAction>),
     FocusRequest(FocusTarget),
@@ -157,6 +163,8 @@ pub trait AppIO {
 
     fn execute_llm_block<'s>(&self, question: LLMBlockRequest, cx: SettingsForAiRequests<'s>);
     fn execute_llm_prompt<'s>(&self, quesion: LLMPromptRequest, cx: SettingsForAiRequests<'s>);
+
+    fn capture_sentry_message<F>(&self, message: &str, level: sentry::Level, scope: F)-> sentry::types::Uuid where F:  FnOnce(&mut sentry::Scope) ;
 }
 
 pub fn process_app_action(
@@ -636,50 +644,58 @@ pub fn process_app_action(
             );
             SmallVec::new()
         }
-        AppAction::SendFeedback(selected) => {
-            let Some(note) = state.notes.get(&selected) else {
+        AppAction::SubmitFeedback => {
+            let Some(feedback) = state.feedback.as_mut() else {
                 return SmallVec::new();
             };
 
-            if selected == state.selected_note {
-                sentry::configure_scope(|scope| {
+            let result = app_io.capture_sentry_message(
+                format!("Feedback: {:?}", feedback.feedback_data.feedback_text).as_str(),
+                match feedback.feedback_data.feedback_type {
+                    Some(FeedbackType::Negative) => sentry::Level::Warning,
+                    _ => sentry::Level::Info,
+                },
+                |scope| {
+                    let mut map: BTreeMap<String, Value> = std::collections::BTreeMap::new();
+                    if feedback.feedback_data.include_current_note {
+                        map.insert(
+                            String::from("text_structure"),
+                            format!("{:#?}", state.text_structure).into(),
+                        );
+                        map.insert(
+                            String::from("selected_note"),
+                            format!("{:?}", state.selected_note).into(),
+                        );
+                        map.insert(
+                            String::from("note"),
+                            format!("{}", state.notes.get(&state.selected_note).map(|n| n.text.clone()).unwrap_or_default()).into(),
+                        );
+                    }
+    
+                    map.insert(
+                        String::from("feedback"),
+                        to_value(feedback.feedback_data.clone()).unwrap_or_default(),
+                    );
+    
+                    scope.set_context("state", sentry::protocol::Context::Other(map));
+    
                     let mut map = std::collections::BTreeMap::new();
                     map.insert(
-                        String::from("text_structure"),
-                        format!("{:#?}", state.text_structure).into(),
+                        String::from("contact"),
+                        feedback.feedback_data.contact_info.clone().into(),
                     );
-                    map.insert(
-                        String::from("selected_note"),
-                        format!("{:?}", state.selected_note).into(),
-                    );
+                    scope.set_user(Some(sentry::User {
+                        other: map,
+                        ..Default::default()
+                    }));
+                }
+            );
 
-                    scope.set_context("state", sentry::protocol::Context::Other(map));
-                });
+            println!("Feedback sent: {:?}", result);
 
-                let result = sentry::capture_message(
-                    format!("Feedback: {}", note.text).as_str(),
-                    sentry::Level::Info,
-                );
-
-                println!("Feedback sent: {:?}", result);
-
-                [AppAction::ApplyTextChanges {
-                    target: selected,
-                    changes: vec![TextChange::Insert(
-                        ByteSpan::point(note.text.len()),
-                        // TODO Add a link to join the discord server (as a way to encourage feedback discussion)
-                        format!(
-                            "\n---\n\
-                            Thank you for your feedback! (reference: {:?})\n",
-                            result
-                        ),
-                    )],
-                    should_trigger_eval: false,
-                }]
-                .into()
-            } else {
-                SmallVec::new()
-            }
+            feedback.is_sent = true;
+            feedback.is_feedback_open = false;
+            SmallVec::new()
         }
 
         AppAction::StartTutorial => {
@@ -866,6 +882,7 @@ pub fn process_app_action(
                 resulting_actions
             }
         }
+<<<<<<< HEAD
 
         AppAction::SlashPalette(slash_pallete_actions) => {
             use SlashPaletteAction as SP;
@@ -1006,6 +1023,18 @@ fn update_slash_palette(
     if palette.note_file != state.selected_note {
         println!("## hide Slash Palette: Palette note file doesn't match selected note");
         return None;
+=======
+        AppAction::OpenFeedbackWindow => {
+            state.feedback = Some(FeedbackState::default());
+            SmallVec::new()
+        }
+        AppAction::CloseFeedbackWindow => {
+            if let Some(feedback) = state.feedback.as_mut() {
+                feedback.is_feedback_open = false;
+            };
+            SmallVec::new()
+        }
+>>>>>>> main
     }
 
     // if some => means that we still have focus cursor
