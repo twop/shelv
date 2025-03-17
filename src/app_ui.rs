@@ -14,12 +14,11 @@ use eframe::{
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
 };
-use egui_flex::{item, Flex};
 use egui_taffy::{
     taffy::{
         self,
         prelude::{auto, length},
-        Style,
+        AlignContent, JustifyContent, Style,
     },
     tui, TuiBuilderLogic,
 };
@@ -46,6 +45,7 @@ use crate::{
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     settings_parsing::format_mac_shortcut_with_symbols,
+    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme, ColorManipulation},
 };
@@ -133,7 +133,7 @@ pub fn render_app(
             .frame(egui::Frame::window(&ctx.style()).fill(window_bg))
             .show(ctx, |ui| {
                 let feedback_widget = Feedback::new(theme, &mut feedback.feedback_data);
-                let feedback_result = feedback_widget.show(ui).inner;
+                let feedback_result = feedback_widget.show(ui);
 
                 match feedback_result {
                     Some(FeedbackResult::Cancel) => {
@@ -992,71 +992,59 @@ fn render_slash_cmd(
     );
 
     let available_width = ui.available_width();
-    // println!("%% {available_width}");
+
     tui(ui, ui.id().with(cmd))
         .reserve_available_width()
         .show(|tui| {
-            tui.style(Style {
-                flex_direction: taffy::FlexDirection::Column,
-                align_content: Some(taffy::AlignContent::Stretch),
-                size: taffy::Size {
-                    width: length(available_width),
-                    height: auto(),
-                },
-                padding: length(theme.sizes.xs),
-                gap: length(theme.sizes.xs),
-                ..Default::default()
-            })
+            tui.style(
+                flex_column()
+                    .align_content(AlignContent::Stretch)
+                    .width(available_width)
+                    .auto_height()
+                    .padding(theme.sizes.xs)
+                    .gap(theme.sizes.xs),
+            )
             .selectable(selected, |tui| {
-                tui.style(Style {
-                    flex_direction: taffy::FlexDirection::Row,
-                    justify_content: Some(taffy::JustifyContent::SpaceBetween),
-                    ..Default::default()
-                })
-                .add(|tui| {
-                    tui.style(Style {
-                        flex_direction: taffy::FlexDirection::Row,
-                        gap: length(theme.sizes.s),
-                        ..Default::default()
-                    })
+                tui.style(flex_row().justify_content(JustifyContent::SpaceBetween))
                     .add(|tui| {
+                        tui.style(flex_row().gap(theme.sizes.s)).add(|tui| {
+                            tui.ui_add(
+                                Label::new(
+                                    RichText::new(if let Some(icon) = &cmd.phosphor_icon {
+                                        icon
+                                    } else {
+                                        egui_phosphor::light::GEAR
+                                    })
+                                    .font(phosphor_icon_font.font_id)
+                                    .color(phosphor_icon_font.color),
+                                )
+                                .wrap_mode(TextWrapMode::Extend),
+                            );
+                            tui.ui_add(
+                                Label::new(
+                                    RichText::new(&cmd.prefix)
+                                        .font(header_font.font_id)
+                                        .color(header_font.color),
+                                )
+                                .wrap_mode(TextWrapMode::Extend),
+                            );
+                        });
+
                         tui.ui_add(
                             Label::new(
-                                RichText::new(if let Some(icon) = &cmd.phosphor_icon {
-                                    icon
-                                } else {
-                                    egui_phosphor::light::GEAR
-                                })
-                                .font(phosphor_icon_font.font_id)
-                                .color(phosphor_icon_font.color),
+                                RichText::new(format!(
+                                    "{}",
+                                    cmd.instance
+                                        .shortcut
+                                        .map(format_mac_shortcut_with_symbols)
+                                        .unwrap_or_default()
+                                ))
+                                .font(shortcut_font.font_id)
+                                .color(shortcut_font.color),
                             )
-                            .wrap_mode(TextWrapMode::Extend),
-                        );
-                        tui.ui_add(
-                            Label::new(
-                                RichText::new(&cmd.prefix)
-                                    .font(header_font.font_id)
-                                    .color(header_font.color),
-                            )
-                            .wrap_mode(TextWrapMode::Extend),
+                            .wrap_mode(egui::TextWrapMode::Extend),
                         );
                     });
-
-                    tui.ui_add(
-                        Label::new(
-                            RichText::new(format!(
-                                "{}",
-                                cmd.instance
-                                    .shortcut
-                                    .map(format_mac_shortcut_with_symbols)
-                                    .unwrap_or_default()
-                            ))
-                            .font(shortcut_font.font_id)
-                            .color(shortcut_font.color),
-                        )
-                        .wrap_mode(egui::TextWrapMode::Extend),
-                    );
-                });
 
                 tui.label(
                     RichText::new(&cmd.description)

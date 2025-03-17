@@ -51,13 +51,13 @@ mod commands;
 mod effects;
 mod egui_hotkey;
 mod feedback;
-mod settings_parsing;
-
 mod knus_test;
 mod nord;
 mod persistent_state;
 mod picker;
 mod scripting;
+mod settings_parsing;
+mod taffy_styles;
 mod text_structure;
 mod theme;
 
