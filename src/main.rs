@@ -1,8 +1,3 @@
-// #![feature(iter_intersperse)]
-#![feature(let_chains)]
-#![feature(offset_of)]
-#![feature(generic_const_exprs)]
-
 use app_actions::{
     compute_app_focus, process_app_action, AppAction, AppIO, HideMode, SlashPaletteAction,
 };
@@ -268,9 +263,11 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
                                 let res = app_state.commands.run(
                                     &editor_command.instruction,
+                                    editor_command.scope,
                                     CommandContext {
                                     app_state,
                                     app_focus,
+                                    ui_state: app_state.to_ui_state(),
                                     scripts:&mut scripts
                                 });
 
@@ -329,7 +326,9 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                     match new_actions.first() {
                         Some(AppAction::SlashPalette(SlashPaletteAction::Update)) => {
                             // Comment out to stop the spammy logging
-                            println!("---enqueued actions = AppAction::SlashPalette(SlashPaletteAction::Update)");
+                            println!(
+                                "---enqueued actions = AppAction::SlashPalette(SlashPaletteAction::Update)"
+                            );
                         }
                         Some(AppAction::DeferToPostRender(new_actions)) => {
                             match new_actions.as_ref() {
@@ -495,10 +494,13 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 }
 
 fn main() {
-    let _guard = sentry::init(("https://10f977d35f32b70d88180f4875543208@o4507879687454720.ingest.us.sentry.io/4507879689945088", sentry::ClientOptions {
-        release: sentry::release_name!(),
-        ..Default::default()
-      }));
+    let _guard = sentry::init((
+        "https://10f977d35f32b70d88180f4875543208@o4507879687454720.ingest.us.sentry.io/4507879689945088",
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            ..Default::default()
+        },
+    ));
 
     let rt = Runtime::new().expect("Unable to create Runtime");
     // Enter the runtime so that `tokio::spawn` is available immediately.

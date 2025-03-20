@@ -6,7 +6,7 @@ use crate::{
     app_actions::{AppAction, Conversation, ConversationPart, LLMBlockRequest},
     byte_span::ByteSpan,
     command::{
-        try_extract_text_command_context, CommandContext, EditorCommandOutput, TextCommandContext,
+        CommandContext, EditorCommandOutput, TextCommandContext, try_extract_text_command_context,
     },
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,

@@ -788,6 +788,7 @@ pub fn process_app_action(
             let result = prepare_to_run_llm_block(
                 CommandContext {
                     app_state: state,
+                    ui_state: state.to_ui_state(),
                     app_focus: compute_app_focus(ctx, state),
                     scripts: &mut scripts,
                 },
@@ -1002,12 +1003,16 @@ pub fn process_app_action(
 
                     let cmd_context = CommandContext {
                         app_state: state,
+                        ui_state: state.to_ui_state(),
                         app_focus: compute_app_focus(ctx, state),
                         scripts: &mut scripts,
                     };
 
-                    let actions_from_cmd =
-                        state.commands.run(&cmd.instance.instruction, cmd_context);
+                    let actions_from_cmd = state.commands.run(
+                        &cmd.instance.instruction,
+                        cmd.instance.scope,
+                        cmd_context,
+                    );
 
                     state.settings_scripts = Some(scripts);
 

@@ -1,7 +1,7 @@
 use boa_engine::{
+    Context, JsNativeError, JsResult, JsString, Module,
     gc::GcRefCell,
     module::{ModuleLoader, Referrer},
-    Context, JsNativeError, JsResult, JsString, Module,
 };
 use fxhash::FxHashMap;
 
@@ -67,7 +67,7 @@ mod tests {
     use std::rc::Rc;
 
     use super::*;
-    use boa_engine::{js_str, js_string, Context, Source};
+    use boa_engine::{Context, Source, js_str, js_string};
 
     #[test]
     fn test_missing_module() {

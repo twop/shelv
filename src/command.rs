@@ -23,7 +23,7 @@ pub struct TextCommandContext<'a> {
     pub byte_cursor: ByteSpan,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, PartialEq, Hash, Copy, Debug)]
 pub enum AppFocus {
     NoteEditor,
     InlinePropmptEditor,
@@ -40,6 +40,7 @@ pub struct AppFocusState {
 pub struct CommandContext<'a> {
     pub app_state: &'a AppState,
     pub app_focus: AppFocusState,
+    pub ui_state: UiState,
     pub scripts: &'a mut Scripts,
 }
 
@@ -59,6 +60,7 @@ pub type EditorCommandOutput = SmallVec<[AppAction; 1]>;
 pub struct CommandInstance {
     pub shortcut: Option<KeyboardShortcut>,
     pub instruction: CommandInstruction,
+    pub scope: CommandScope,
     // pub handler: CommandHandler,
 }
 
@@ -71,20 +73,23 @@ impl Debug for CommandInstance {
 }
 
 impl CommandInstance {
-    pub fn built_in(instruction: CommandInstruction) -> Self {
+    pub fn built_in(instruction: CommandInstruction, scope: CommandScope) -> Self {
         Self {
             shortcut: instruction.default_keybinding(),
             instruction,
+            scope,
         }
     }
 
     pub fn user_defined(
         instruction: CommandInstruction,
         shortcut: Option<KeyboardShortcut>,
+        scope: CommandScope,
     ) -> Self {
         Self {
             shortcut,
             instruction,
+            scope,
         }
     }
 }
@@ -162,6 +167,19 @@ where
 
         Ok(ForwardToChild(decoded))
     }
+}
+
+#[derive(PartialEq, Hash, knus::Decode, Copy, Debug, Clone)]
+pub enum UiState {
+    Editing,
+    ProvidingFeedback,
+}
+
+#[derive(Debug, PartialEq, Hash, Copy, Clone)]
+pub enum CommandScope {
+    Global,
+    Focus(AppFocus),
+    UiState(UiState),
 }
 
 #[derive(PartialEq, Hash, knus::Decode, Debug, Clone)]
@@ -413,12 +431,16 @@ pub struct SlashPaletteCmd {
 }
 
 impl SlashPaletteCmd {
-    pub fn from_instruction(prefix: impl Into<String>, instruction: CommandInstruction) -> Self {
+    pub fn from_instruction(
+        prefix: impl Into<String>,
+        instruction: CommandInstruction,
+        scope: CommandScope,
+    ) -> Self {
         Self {
             phosphor_icon: None,
             prefix: prefix.into(),
             description: instruction.human_description().to_string(),
-            instance: CommandInstance::built_in(instruction),
+            instance: CommandInstance::built_in(instruction, scope),
         }
     }
     pub fn icon(mut self, icon: String) -> Self {
@@ -466,12 +488,12 @@ impl CommandList {
         Handler: 'static + Fn(&CommandInstruction, CommandContext) -> EditorCommandOutput,
     >(
         execute: Handler,
-        default_keyboard_instructions: Vec<CommandInstruction>,
+        default_keyboard_instructions: Vec<(CommandInstruction, CommandScope)>,
         slash_palette_commands: Vec<SlashPaletteCmd>,
     ) -> Self {
         let keyboard_commands: Vec<_> = default_keyboard_instructions
             .into_iter()
-            .map(CommandInstance::built_in)
+            .map(|(instruction, scope)| CommandInstance::built_in(instruction, scope))
             .collect();
 
         let defaults = (keyboard_commands.clone(), slash_palette_commands.clone());
@@ -543,9 +565,22 @@ impl CommandList {
     pub fn run(
         &self,
         target_instruction: &CommandInstruction,
+        command_scope: CommandScope,
         ctx: CommandContext,
     ) -> EditorCommandOutput {
-        (self.execute_instruction)(target_instruction, ctx)
+        let scope_matches = match command_scope {
+            CommandScope::Global => true,
+            CommandScope::Focus(app_focus) if Some(app_focus) == ctx.app_focus.internal_focus => {
+                true
+            }
+            CommandScope::UiState(ui_state) if ui_state == ctx.ui_state => true,
+            _ => false,
+        };
+        if scope_matches {
+            (self.execute_instruction)(target_instruction, ctx)
+        } else {
+            SmallVec::new()
+        }
     }
 }
 
@@ -636,15 +671,17 @@ fn test_keybindings_documentation_generation() {
     let cmd_list = CommandList::new(
         |_, _| SmallVec::new(),
         vec![
+            (CommandInstruction::MarkdownBold, CommandScope::Global),
+            (CommandInstruction::MarkdownItalic, CommandScope::Global),
+        ],
+        vec![SlashPaletteCmd::from_instruction(
+            "bold",
             CommandInstruction::MarkdownBold,
-            CommandInstruction::MarkdownItalic,
-        ],
-        vec![
-            SlashPaletteCmd::from_instruction("bold", CommandInstruction::MarkdownBold)
-                .icon("\u{E10A}".to_string())
-                .shortcut(Some(kbd_shortcut1))
-                .description("Make text bold"),
-        ],
+            CommandScope::Global,
+        )
+        .icon("\u{E10A}".to_string())
+        .shortcut(Some(kbd_shortcut1))
+        .description("Make text bold")],
     );
 
     // let t = "\u{E10A}";

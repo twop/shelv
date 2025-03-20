@@ -1,6 +1,6 @@
 use egui_taffy::taffy::{
-    prelude::{auto, length},
     AlignContent, AlignItems, FlexDirection, JustifyContent, LengthPercentage, Size, Style,
+    prelude::{auto, length},
 };
 
 pub trait StyleBuilder {

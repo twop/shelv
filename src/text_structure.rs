@@ -2,12 +2,12 @@ use std::ops::Range;
 
 use eframe::{
     egui::TextFormat,
-    epaint::{text::LayoutJob, Color32, FontId, Stroke},
+    epaint::{Color32, FontId, Stroke, text::LayoutJob},
 };
 use itertools::Itertools;
 use linkify::LinkFinder;
 use pulldown_cmark::{CodeBlockKind, HeadingLevel};
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
@@ -352,8 +352,9 @@ impl<'a> TextStructureBuilder<'a> {
                 line_end = line_loc.line_end,
                 text = &self.text[range.start..range.end],
                 meta = match meta {
-                    Some(SpanMeta::CodeBlock(CodeBlockMeta { closed, lang, .. })) => format!(" ({lang}, {})", if *closed { "closed" } else { "open" }),
-                    _ => String::new()
+                    Some(SpanMeta::CodeBlock(CodeBlockMeta { closed, lang, .. })) =>
+                        format!(" ({lang}, {})", if *closed { "closed" } else { "open" }),
+                    _ => String::new(),
                 }
             );
         }
@@ -1201,17 +1202,22 @@ impl TextStructure {
             | SpanKind::Paragraph
             | SpanKind::List =>
             // self
-                // .spans
-                // .iter()
-                // .skip(index + 1)
-                // .take_while(|desc| desc.byte_pos.end <= pos.end)
-                // .fold(None, |area, desc| match area {
-                //     None => Some(desc.byte_pos.clone()),
-                //     Some(area) => {
-                //         Some(area.start.min(desc.byte_pos.start)..area.end.max(desc.byte_pos.end))
-                //     }
-                calc_total_range( iterate_immediate_children_of(idx, &self.spans).map(|(_, desc)| &desc.byte_pos)).map(|byte_span| byte_span.range())
-                .unwrap_or( pos.start..pos.start),
+            // .spans
+            // .iter()
+            // .skip(index + 1)
+            // .take_while(|desc| desc.byte_pos.end <= pos.end)
+            // .fold(None, |area, desc| match area {
+            //     None => Some(desc.byte_pos.clone()),
+            //     Some(area) => {
+            //         Some(area.start.min(desc.byte_pos.start)..area.end.max(desc.byte_pos.end))
+            //     }
+            {
+                calc_total_range(
+                    iterate_immediate_children_of(idx, &self.spans).map(|(_, desc)| &desc.byte_pos),
+                )
+                .map(|byte_span| byte_span.range())
+                .unwrap_or(pos.start..pos.start)
+            }
         };
 
         ByteSpan::from_range(&range)

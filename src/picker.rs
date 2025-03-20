@@ -4,8 +4,8 @@ use eframe::{
         WidgetInfo, WidgetType,
     },
     epaint::{
-        self, pos2, tessellator::path::add_circle_quadrant, vec2, Color32, PathShape, PathStroke,
-        Pos2, Rect, Shape, Stroke,
+        self, Color32, PathShape, PathStroke, Pos2, Rect, Shape, Stroke, pos2,
+        tessellator::path::add_circle_quadrant, vec2,
     },
 };
 use itertools::Itertools;

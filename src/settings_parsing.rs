@@ -1,5 +1,5 @@
 use eframe::egui::{Key, KeyboardShortcut, ModifierNames, Modifiers};
-use knus::{ast::Literal, errors::DecodeError, span::Spanned, traits::ErrorSpan, DecodeScalar};
+use knus::{DecodeScalar, ast::Literal, errors::DecodeError, span::Spanned, traits::ErrorSpan};
 use smallvec::SmallVec;
 
 use crate::command::CommandInstruction;
@@ -18,7 +18,7 @@ impl<S: ErrorSpan> DecodeScalar<S> for ParsedShortcut {
         ctx: &mut knus::decode::Context<S>,
     ) -> Result<ParsedShortcut, DecodeError<S>> {
         match &**val {
-            Literal::String(ref s) => parse_keyboard_shortcut(s)
+            Literal::String(s) => parse_keyboard_shortcut(s)
                 .map_err(|err| DecodeError::conversion(val, err))
                 .map(ParsedShortcut),
             _ => {

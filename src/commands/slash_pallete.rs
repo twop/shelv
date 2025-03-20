@@ -4,8 +4,8 @@ use crate::{
     app_actions::{AppAction, SlashPaletteAction},
     app_state::SlashPalette,
     command::{
-        try_extract_text_command_context, AppFocus, AppFocusState, CommandContext,
-        EditorCommandOutput, TextCommandContext,
+        AppFocus, AppFocusState, CommandContext, EditorCommandOutput, TextCommandContext,
+        try_extract_text_command_context,
     },
     text_structure::{SpanKind, SpanMeta},
 };

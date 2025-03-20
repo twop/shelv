@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use eframe::{
     egui::{
-        self,
+        self, FontDefinitions, RichText, TextStyle, ThemePreference, Vec2, Visuals, WidgetText,
         style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets},
-        vec2, FontDefinitions, RichText, TextStyle, ThemePreference, Vec2, Visuals, WidgetText,
+        vec2,
     },
     epaint::{Color32, CornerRadius, FontFamily, FontId, Shadow, Stroke},
 };
@@ -45,7 +45,7 @@ impl AppIcon {
     }
 
     pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> WidgetText {
-        use egui::{text::LayoutJob, FontId, TextFormat};
+        use egui::{FontId, TextFormat, text::LayoutJob};
 
         let mut job = LayoutJob::default();
 

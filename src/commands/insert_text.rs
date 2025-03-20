@@ -5,8 +5,8 @@ use std::{
 };
 
 use boa_engine::{
-    builtins::promise::PromiseState, js_string, module::SimpleModuleLoader, Context, JsError,
-    JsNativeError, JsValue, Module,
+    Context, JsError, JsNativeError, JsValue, Module, builtins::promise::PromiseState, js_string,
+    module::SimpleModuleLoader,
 };
 use boa_parser::Source;
 use smallvec::SmallVec;
@@ -14,7 +14,7 @@ use smallvec::SmallVec;
 use crate::{
     app_actions::AppAction,
     byte_span::ByteSpan,
-    command::{try_extract_text_command_context, CommandContext, TextCommandContext, TextSource},
+    command::{CommandContext, TextCommandContext, TextSource, try_extract_text_command_context},
     effects::text_change_effect::TextChange,
     scripting::settings_eval::{ScriptExportType, Scripts},
 };
@@ -132,7 +132,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             assert_eq!(v, JsValue::undefined());
         }
         PromiseState::Rejected(err) => {
-            return Err(JsError::from_opaque(err).try_native(context)?.into())
+            return Err(JsError::from_opaque(err).try_native(context)?.into());
         }
     }
 

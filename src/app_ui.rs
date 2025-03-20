@@ -1,26 +1,27 @@
 use boa_engine::ast::expression::TaggedTemplate;
 use eframe::{
+    App,
     egui::{
-        self,
+        self, Context, CursorIcon, FontFamily, FontSelection, Id, Key, KeyboardShortcut, Label,
+        Layout, Margin, Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit,
+        TextFormat, TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2,
+        WidgetText,
         scroll_area::ScrollBarVisibility,
         style::default_text_styles,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        text_selection::{text_cursor_state::cursor_rect, LabelSelectionState},
-        Context, CursorIcon, FontFamily, FontSelection, Id, Key, KeyboardShortcut, Label, Layout,
-        Margin, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit, TextFormat,
-        TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
+        text_selection::{LabelSelectionState, text_cursor_state::cursor_rect},
     },
     emath::{Align, Align2},
-    epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
+    epaint::{Color32, FontId, PathStroke, Rect, Stroke, pos2, vec2},
 };
 use egui_taffy::{
+    TuiBuilderLogic,
     taffy::{
-        self,
+        self, AlignContent, JustifyContent, Style,
         prelude::{auto, length},
-        AlignContent, JustifyContent, Style,
     },
-    tui, TuiBuilderLogic,
+    tui,
 };
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
@@ -35,7 +36,7 @@ use crate::{
         MsgToApp, RenderAction, SlashPalette,
     },
     byte_span::UnOrderedByteSpan,
-    command::{CommandInstruction, CommandList, SlashPaletteCmd, PROMOTED_COMMANDS},
+    command::{CommandInstruction, CommandList, PROMOTED_COMMANDS, SlashPaletteCmd},
     commands::{
         inline_llm_prompt::{self, compute_inline_prompt_text_input_id},
         run_llm::LLM_LANG,
@@ -45,7 +46,7 @@ use crate::{
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
+    taffy_styles::{StyleBuilder, flex_column, flex_row, style},
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme, ColorManipulation},
 };
@@ -116,23 +117,11 @@ pub fn render_app(
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
 
     if let Some(feedback) = feedback {
-        let window_bg = theme.colors.main_bg.shade(0.9);
+        let feedback_widget = Feedback::new(theme, &mut feedback.feedback_data);
 
-        egui::Window::new(RichText::new("Feedback").text_style(egui::TextStyle::Body))
-            .open(&mut feedback.is_feedback_open)
-            .fade_in(true)
-            .fade_out(true)
-            .title_bar(false)
-            .constrain(false)
-            .collapsible(false)
-            .resizable(false)
-            .movable(false)
-            .anchor(Align2::RIGHT_BOTTOM, [-8.0, -32.0])
-            .max_size([400., 400.])
-            .default_size([400., 400.])
-            .frame(egui::Frame::window(&ctx.style()).fill(window_bg))
-            .show(ctx, |ui| {
-                let feedback_widget = Feedback::new(theme, &mut feedback.feedback_data);
+        if feedback.is_feedback_open {
+            let modal = Modal::new(Id::new("Feedback Modal")).show(ctx, |ui| {
+                ui.set_width(300.);
                 let feedback_result = feedback_widget.show(ui);
 
                 match feedback_result {
@@ -145,6 +134,38 @@ pub fn render_app(
                     None => {}
                 }
             });
+
+            if modal.should_close() {
+                output_actions.push(AppAction::CloseFeedbackWindow);
+            }
+        }
+
+        // egui::Window::new(RichText::new("Feedback").text_style(egui::TextStyle::Body))
+        //     .open(&mut feedback.is_feedback_open)
+        //     .fade_in(true)
+        //     .fade_out(true)
+        //     .title_bar(false)
+        //     .constrain(false)
+        //     .collapsible(false)
+        //     .resizable(false)
+        //     .movable(false)
+        //     .anchor(Align2::RIGHT_BOTTOM, [-8.0, -32.0])
+        //     .max_size([400., 400.])
+        //     .default_size([400., 400.])
+        //     .frame(egui::Frame::window(&ctx.style()).fill(window_bg))
+        //     .show(ctx, |ui| {
+        //         let feedback_result = feedback_widget.show(ui);
+
+        //         match feedback_result {
+        //             Some(FeedbackResult::Cancel) => {
+        //                 output_actions.push(AppAction::CloseFeedbackWindow)
+        //             }
+        //             Some(FeedbackResult::SubmitFeedback) => {
+        //                 output_actions.push(AppAction::SubmitFeedback)
+        //             }
+        //             None => {}
+        //         }
+        //     });
     }
 
     let (text_has_changed, text_structure, computed_layout, updated_cursor, editor_actions) =

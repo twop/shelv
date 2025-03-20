@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use boa_engine::{context::HostHooks, Context, Source};
+use boa_engine::{Context, Source, context::HostHooks};
 use boa_runtime::Console;
 use smallvec::SmallVec;
 
@@ -115,15 +115,19 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
 
     let mut last_was_source: Option<(SourceHash, ByteSpan, &str)> = None;
 
-    let needs_re_eval = script_blocks.len() % 2 != 0 ||  script_blocks[..]
-        .chunks_exact(2)
-        .any(|elements| match &elements {
+    let needs_re_eval = script_blocks.len() % 2 != 0
+        || script_blocks[..]
+            .chunks_exact(2)
+            .any(|elements| match &elements {
                 // if hash was parsed check if it matches
-               &[(_,CodeBlock::Source(_, source_hash), _), (_, CodeBlock::Output(_, Some(output_source_hash)), _)] =>  source_hash != output_source_hash,
-               // failed to parse
-               // &[(_,CodeBlock::LiveJS(_, _), _), (_, CodeBlock::Output(_, None), _)] => true ,
-            _ => true,
-        });
+                &[
+                    (_, CodeBlock::Source(_, source_hash), _),
+                    (_, CodeBlock::Output(_, Some(output_source_hash)), _),
+                ] => source_hash != output_source_hash,
+                // failed to parse
+                // &[(_,CodeBlock::LiveJS(_, _), _), (_, CodeBlock::Output(_, None), _)] => true ,
+                _ => true,
+            });
 
     if !needs_re_eval && !cx.should_force_eval() {
         return None;
@@ -335,10 +339,8 @@ Error: yo!
 "#,
                 ),
             ),
-
             // ________________________________________________
             (
-
                 "## if we identified a missing output (for example when you copy paste blocks)
                 then we
                 ##",
@@ -363,7 +365,8 @@ Error: yo!
 2
 ```
 "#,
-                Some(r#"
+                Some(
+                    r#"
 ```js
 1
 ```
@@ -386,7 +389,8 @@ Error: yo!
 ```js#a4a
 45
 ```
-"#),
+"#,
+                ),
             ),
         ];
 

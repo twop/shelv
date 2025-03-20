@@ -1,7 +1,7 @@
 // #![doc = include_str!("../README.md")]
 use crate::egui::{
-    vec2, Align2, Event, FontId, Id, Key, Modifiers, PointerButton, Response, Rounding, Sense, Ui,
-    Widget,
+    Align2, Event, FontId, Id, Key, Modifiers, PointerButton, Response, Rounding, Sense, Ui,
+    Widget, vec2,
 };
 use std::hash::Hash;
 

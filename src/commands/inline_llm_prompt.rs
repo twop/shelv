@@ -3,7 +3,7 @@ use eframe::egui::Id;
 use crate::{
     app_actions::AppAction,
     app_state::TextSelectionAddress,
-    command::{try_extract_text_command_context, CommandContext, EditorCommandOutput},
+    command::{CommandContext, EditorCommandOutput, try_extract_text_command_context},
 };
 
 pub fn inline_llm_prompt_command_handler(

@@ -1,14 +1,15 @@
 use eframe::egui::{
-    self, Checkbox, FontId, FontSelection, Label, Modifiers, RichText, TextEdit, Ui,
+    self, Checkbox, FontId, FontSelection, Id, Label, Modifiers, RichText, TextEdit, Ui,
 };
 use egui_taffy::{
+    TuiBuilderLogic,
     taffy::{AlignContent, AlignItems},
-    tui, TuiBuilderLogic,
+    tui,
 };
 
 use crate::{
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
+    taffy_styles::{StyleBuilder, flex_column, flex_row, style},
     theme::{AppIcon, AppTheme},
 };
 
@@ -76,11 +77,13 @@ impl<'a> Feedback<'a> {
             family: fonts.family.italic.clone(),
         };
 
+        let id = Id::new("feedback form");
+        // let is_focused = ui.memory(|mem| mem.has_focus(id));
         let _resp = ui.scope(|ui| {
             // Required because the flex layout trips out from any wrapping
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
 
-            tui(ui, "feedback form")
+            tui(ui, id)
                 .style(
                     flex_column()
                         .width(avail_rect.width())
@@ -97,6 +100,7 @@ impl<'a> Feedback<'a> {
                             .color(colors.subtle_text_color),
                     ));
 
+                    // t.label(format!("is focused = {is_focused}"));
                     t.add_empty();
                     t.add_empty();
                     // t.separator();

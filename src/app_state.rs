@@ -8,13 +8,12 @@ use std::{
 use eframe::{
     egui::{
         text::{CCursor, LayoutJob},
-        Id, Key, Rect, Ui,
+        Id, Rect, Ui, UiStack,
     },
     epaint::Galley,
 };
 use itertools::Itertools;
 use pulldown_cmark::HeadingLevel;
-use similar::DiffableStr;
 use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
@@ -24,7 +23,7 @@ use crate::{
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
         call_with_text_ctx, AppFocus, CommandContext, CommandInstruction, CommandList,
-        EditorCommandOutput, SlashPaletteCmd,
+        CommandScope, EditorCommandOutput, SlashPaletteCmd, UiState,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
@@ -42,7 +41,6 @@ use crate::{
         toggle_md_headings::toggle_md_heading,
         toggle_simple_md_annotations::toggle_simple_md_annotations,
     },
-    effects::text_change_effect::{apply_text_changes, TextChange},
     feedback::FeedbackData,
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::settings_eval::Scripts,
@@ -382,7 +380,7 @@ impl AppState {
 
         let text_structure = TextStructure::new(&notes.get(&selected_note).unwrap().text);
 
-        let keybord_instructions: Vec<CommandInstruction> = Vec::from_iter(
+        let keybord_instructions: Vec<(CommandInstruction, CommandScope)> = Vec::from_iter(
             [
                 CommandInstruction::ExpandTaskMarker,
                 CommandInstruction::IndentListItem,
@@ -396,9 +394,6 @@ impl AppState {
                 CommandInstruction::MarkdownH2,
                 CommandInstruction::MarkdownH3,
                 CommandInstruction::EnterInsideKDL,
-                CommandInstruction::SwitchToSettings,
-                CommandInstruction::PinWindow,
-                CommandInstruction::HideApp,
                 CommandInstruction::HidePrompt,
                 CommandInstruction::RunLLMBlock,
                 CommandInstruction::ShowPrompt,
@@ -408,11 +403,22 @@ impl AppState {
                 CommandInstruction::PrevSlashPalleteCmd,
                 CommandInstruction::ExecuteSlashPalleteCmd,
             ]
+            .map(|instructuin| (instructuin, CommandScope::Focus(AppFocus::NoteEditor)))
             .into_iter()
-            .chain(
-                (0..shelf_count)
-                    .map(|note_index| CommandInstruction::SwitchToNote(note_index as u8)),
-            ),
+            .chain([
+                (
+                    CommandInstruction::SwitchToSettings,
+                    CommandScope::UiState(UiState::Editing),
+                ),
+                (CommandInstruction::PinWindow, CommandScope::Global),
+                (CommandInstruction::HideApp, CommandScope::Global),
+            ])
+            .chain((0..shelf_count).map(|note_index| {
+                (
+                    CommandInstruction::SwitchToNote(note_index as u8),
+                    CommandScope::UiState(UiState::Editing),
+                )
+            })),
         );
 
         use egui_phosphor::light as P;
@@ -440,9 +446,13 @@ impl AppState {
                 .into_iter()
                 .map(|(prefix, builtin, phosphor_icon)| {
                     let shortcut = builtin.default_keybinding();
-                    SlashPaletteCmd::from_instruction(prefix, builtin)
-                        .icon(phosphor_icon.to_string())
-                        .shortcut(shortcut)
+                    SlashPaletteCmd::from_instruction(
+                        prefix,
+                        builtin,
+                        CommandScope::Focus(AppFocus::NoteEditor),
+                    )
+                    .icon(phosphor_icon.to_string())
+                    .shortcut(shortcut)
                 }),
             )
             .collect();
@@ -501,6 +511,13 @@ impl AppState {
             })
         } else {
             None
+        }
+    }
+
+    pub fn to_ui_state(&self) -> UiState {
+        match &self.feedback {
+            Some(feedback) if feedback.is_feedback_open => UiState::ProvidingFeedback,
+            _ => UiState::Editing,
         }
     }
 }
