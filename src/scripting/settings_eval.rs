@@ -1,8 +1,8 @@
 use std::{error::Error, path::PathBuf, rc::Rc, str::FromStr};
 
 use boa_engine::{
-    builtins::promise::PromiseState, module::SimpleModuleLoader, property::PropertyKey, Context,
-    JsError, JsValue, Module,
+    Context, JsError, JsValue, Module, builtins::promise::PromiseState, module::SimpleModuleLoader,
+    property::PropertyKey,
 };
 use boa_parser::Source;
 use itertools::Itertools;
@@ -16,7 +16,7 @@ use crate::{
         ScriptCall, SlashPaletteCmd, TextSource,
     },
     settings_parsing::{
-        parse_top_level_settings_block, GlobalBinding, GlobalCommand, LlmSettings, LocalBinding,
+        GlobalBinding, GlobalCommand, LlmSettings, LocalBinding, parse_top_level_settings_block,
     },
 };
 

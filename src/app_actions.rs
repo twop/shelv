@@ -1,35 +1,35 @@
 use std::{collections::BTreeMap, io, path::PathBuf};
 
 use boa_engine::ast::expression::Parenthesized;
-use eframe::egui::{text::LayoutJob, Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
+use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
 
-use serde_json::{to_value, Value};
+use serde_json::{Value, to_value};
 use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
 
 use crate::{
     app_state::{
-        compute_editor_text_id, AppState, FeedbackState, InlineLLMPromptState,
-        InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, ParsedPromptResponse, RenderAction,
-        SlashPalette, TextSelectionAddress, UnsavedChange,
+        AppState, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk, InlinePromptStatus,
+        MsgToApp, ParsedPromptResponse, RenderAction, SlashPalette, TextSelectionAddress,
+        UnsavedChange, compute_editor_text_id,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
-        run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
+        run_llm::{CodeBlockAddress, prepare_to_run_llm_block},
     },
-    effects::text_change_effect::{apply_text_changes, TextChange},
+    effects::text_change_effect::{TextChange, apply_text_changes},
     feedback::FeedbackType,
-    persistent_state::{get_tutorial_note_content, NoteFile},
+    persistent_state::{NoteFile, get_tutorial_note_content},
     scripting::{
         note_eval::{execute_code_blocks, execute_live_scripts},
         settings_eval::{Scripts, SettingsNoteEvalContext},
     },
     settings_parsing::LlmSettings,
     text_structure::{
-        create_layout_job_from_text_diff, CodeBlockMeta, SpanIndex, SpanKind, SpanMeta,
-        TextDiffPart, TextStructure,
+        CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextStructure,
+        create_layout_job_from_text_diff,
     },
 };
 

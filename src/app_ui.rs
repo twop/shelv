@@ -1,27 +1,28 @@
 use boa_engine::ast::expression::TaggedTemplate;
 use eframe::{
-    App,
     egui::{
-        self, Context, CursorIcon, FontFamily, FontSelection, Id, Key, KeyboardShortcut, Label,
-        Layout, Margin, Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit,
-        TextFormat, TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2,
-        WidgetText,
+        self,
         scroll_area::ScrollBarVisibility,
         style::default_text_styles,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        text_selection::{LabelSelectionState, text_cursor_state::cursor_rect},
+        text_selection::{text_cursor_state::cursor_rect, LabelSelectionState},
+        Context, CursorIcon, FontFamily, FontSelection, Id, Key, KeyboardShortcut, Label, Layout,
+        Margin, Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit,
+        TextFormat, TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2,
+        WidgetText,
     },
     emath::{Align, Align2},
-    epaint::{Color32, FontId, PathStroke, Rect, Stroke, pos2, vec2},
+    epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
+    App,
 };
 use egui_taffy::{
-    TuiBuilderLogic,
     taffy::{
-        self, AlignContent, JustifyContent, Style,
+        self,
         prelude::{auto, length},
+        AlignContent, JustifyContent, Style,
     },
-    tui,
+    tui, TuiBuilderLogic,
 };
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
@@ -36,7 +37,10 @@ use crate::{
         MsgToApp, RenderAction, SlashPalette,
     },
     byte_span::UnOrderedByteSpan,
-    command::{CommandInstruction, CommandList, PROMOTED_COMMANDS, SlashPaletteCmd},
+    command::{
+        CommandInstruction, CommandList, FrameHotkey, FrameHotkeys, SlashPaletteCmd,
+        PROMOTED_COMMANDS,
+    },
     commands::{
         inline_llm_prompt::{self, compute_inline_prompt_text_input_id},
         run_llm::LLM_LANG,
@@ -46,7 +50,7 @@ use crate::{
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{StyleBuilder, flex_column, flex_row, style},
+    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme, ColorManipulation},
 };
@@ -65,6 +69,7 @@ pub struct AppRenderData<'a> {
     pub is_window_pinned: bool,
     pub render_actions: SmallVec<[RenderAction; 2]>,
     pub feedback: Option<&'a mut FeedbackState>,
+    pub frame_hotkeys: &'a mut FrameHotkeys,
 }
 
 pub struct RenderAppResult {
@@ -96,6 +101,7 @@ pub fn render_app(
         slash_palette,
         mut render_actions,
         feedback,
+        frame_hotkeys,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
@@ -122,7 +128,7 @@ pub fn render_app(
         if feedback.is_feedback_open {
             let modal = Modal::new(Id::new("Feedback Modal")).show(ctx, |ui| {
                 ui.set_width(300.);
-                let feedback_result = feedback_widget.show(ui);
+                let feedback_result = feedback_widget.show(ui, frame_hotkeys);
 
                 match feedback_result {
                     Some(FeedbackResult::Cancel) => {
@@ -222,6 +228,7 @@ pub fn render_app(
                             text_edit_id,
                             selected_note,
                             command_list,
+                            frame_hotkeys,
                             ctx,
                         );
 
@@ -362,6 +369,7 @@ fn render_editor(
     text_edit_id: Id,
     note_file: NoteFile,
     command_list: &CommandList,
+    frame_hotkeys: &mut FrameHotkeys,
     ctx: &egui::Context,
 ) -> (
     bool, // if the text was changed, TODO rework this mess
@@ -534,6 +542,7 @@ fn render_editor(
                 ui,
                 ctx,
                 command_list,
+                frame_hotkeys,
             );
 
             let delta = prompt_rect.bottom() - text_edit_response.rect.bottom();
@@ -574,7 +583,8 @@ fn render_editor(
             vec2(frame_width, frame_height),
         );
 
-        let (palette_rect, palette_actions) = render_slash_palette(palette, frame_rect, theme, ui);
+        let (palette_rect, palette_actions) =
+            render_slash_palette(palette, frame_rect, theme, frame_hotkeys, ui);
 
         // TODO hack, only scroll to it on post render
         // Possibly makt it an app action maybe?
@@ -622,6 +632,7 @@ fn render_inline_prompt(
     ui: &mut Ui,
     ctx: &Context,
     command_list: &CommandList,
+    frame_hotkeys: &mut FrameHotkeys,
 ) -> (Rect, SmallVec<[AppAction; 1]>) {
     let mut resulting_actions = SmallVec::new();
 
@@ -677,31 +688,51 @@ fn render_inline_prompt(
 
             // TODO move that into a command instead
             if is_focused {
-                if ui.input_mut(|input| {
-                    input
-                        .consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, egui::Key::Enter))
-                }) {
-                    resulting_actions.push(match &inline_llm_prompt.status {
-                        InlinePromptStatus::NotStarted => {
-                            if inline_llm_prompt.prompt.is_empty() {
-                                // that will hide the UI
-                                AppAction::AcceptPromptSuggestion { accept: false }
-                            } else {
-                                AppAction::ExecutePrompt
+                frame_hotkeys.add_key(Key::Enter, |ctx| {
+                    let action = ctx
+                        .app_state
+                        .inline_llm_prompt
+                        .as_ref()
+                        .map(|inline_prompt| {
+                            match &inline_prompt.status {
+                                InlinePromptStatus::NotStarted => {
+                                    if inline_prompt.prompt.is_empty() {
+                                        // that will hide the UI
+                                        AppAction::AcceptPromptSuggestion { accept: false }
+                                    } else {
+                                        AppAction::ExecutePrompt
+                                    }
+                                }
+                                InlinePromptStatus::Streaming { .. } => {
+                                    AppAction::AcceptPromptSuggestion { accept: false }
+                                }
+                                InlinePromptStatus::Done { prompt } => {
+                                    if prompt == &inline_prompt.prompt {
+                                        AppAction::AcceptPromptSuggestion { accept: true }
+                                    } else {
+                                        AppAction::ExecutePrompt
+                                    }
+                                }
                             }
-                        }
-                        InlinePromptStatus::Streaming { .. } => {
-                            AppAction::AcceptPromptSuggestion { accept: false }
-                        }
-                        InlinePromptStatus::Done { prompt } => {
-                            if prompt == &inline_llm_prompt.prompt {
-                                AppAction::AcceptPromptSuggestion { accept: true }
-                            } else {
-                                AppAction::ExecutePrompt
-                            }
-                        }
-                    });
-                }
+                        });
+
+                    action
+                        .map(|action| SmallVec::from([action]))
+                        .unwrap_or_default()
+                });
+
+                // Esc otherwise will just close the input prompt
+                frame_hotkeys.add_key(Key::Escape, move |_| {
+                    [AppAction::AcceptPromptSuggestion { accept: false }].into()
+                });
+            } else {
+                // if the inline prompt is open, esc will refocus it back to the input field
+                frame_hotkeys.add_key(Key::Escape, move |_| {
+                    [AppAction::FocusRequest(FocusTarget::SpecificId(
+                        prompt_text_id,
+                    ))]
+                    .into()
+                });
             }
 
             let prompt_input_resp = TextEdit::multiline(&mut inline_llm_prompt.prompt)
@@ -733,25 +764,29 @@ fn render_inline_prompt(
             let render_tooltip =
                 |ui: &mut Ui, tooltip_text: &str, shortcut: Option<KeyboardShortcut>| {
                     ui.label({
-                        RichText::new(tooltip_text)
-                            // RichText::new(match shortcut {
-                            //     Some(shortcut) => format!(
-                            //         "{} {}",
-                            //         tooltip_text,
-                            //         ctx.format_shortcut(&shortcut)
-                            //     ),
-                            //     None => tooltip_text.to_string(),
-                            // })
-                            .color(theme.colors.subtle_text_color)
+                        // RichText::new(tooltip_text)
+                        RichText::new(match shortcut {
+                            Some(shortcut) => {
+                                format!(
+                                    "{} ({})",
+                                    tooltip_text,
+                                    format_mac_shortcut_with_symbols(shortcut)
+                                )
+                            }
+                            None => tooltip_text.to_string(),
+                        })
+                        .color(theme.colors.subtle_text_color)
                     })
                 };
-            let just_enter_shortcut = KeyboardShortcut::new(Modifiers::NONE, Key::Enter);
-
             ui.horizontal(|ui| match &inline_llm_prompt.status {
                 InlinePromptStatus::NotStarted => {
                     if render_btn(ui, AppIcon::Play, "Run")
                         .on_hover_ui(|ui| {
-                            render_tooltip(ui, "Prompt AI", Some(just_enter_shortcut));
+                            render_tooltip(
+                                ui,
+                                "Prompt AI",
+                                Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
+                            );
                         })
                         .clicked()
                     {
@@ -763,9 +798,7 @@ fn render_inline_prompt(
                             render_tooltip(
                                 ui,
                                 "Cancel prompt",
-                                command_list
-                                    .find(CommandInstruction::HidePrompt)
-                                    .and_then(|cmd| cmd.shortcut),
+                                Some(KeyboardShortcut::new(Modifiers::NONE, Key::Escape)),
                             );
                         })
                         .clicked()
@@ -782,7 +815,11 @@ fn render_inline_prompt(
                     if prompt == &inline_llm_prompt.prompt
                         && render_btn(ui, AppIcon::Accept, "Accept")
                             .on_hover_ui(|ui| {
-                                render_tooltip(ui, "Accept suggestions", Some(just_enter_shortcut));
+                                render_tooltip(
+                                    ui,
+                                    "Accept suggestions",
+                                    Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
+                                );
                             })
                             .clicked()
                     {
@@ -795,7 +832,7 @@ fn render_inline_prompt(
                                 render_tooltip(
                                     ui,
                                     "Re-run using the new prompt",
-                                    Some(just_enter_shortcut),
+                                    Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
                                 );
                             })
                             .clicked()
@@ -809,9 +846,7 @@ fn render_inline_prompt(
                             render_tooltip(
                                 ui,
                                 "Reject changes",
-                                command_list
-                                    .find(CommandInstruction::HidePrompt)
-                                    .and_then(|cmd| cmd.shortcut),
+                                Some(KeyboardShortcut::new(Modifiers::NONE, Key::Escape)),
                             );
                         })
                         .clicked()
@@ -864,6 +899,7 @@ fn render_slash_palette(
     slash_palette: &SlashPalette,
     allocated_frame: Rect,
     theme: &AppTheme,
+    frame_hotkeys: &mut FrameHotkeys,
     ui: &mut Ui,
 ) -> (Rect, SmallVec<[AppAction; 1]>) {
     let mut resulting_actions = SmallVec::new();
@@ -911,6 +947,24 @@ fn render_slash_palette(
                                 .color(theme.colors.subtle_text_color)
                         });
                     } else {
+                        frame_hotkeys.add_key(Key::ArrowDown, |_ctx| {
+                            [AppAction::SlashPalette(SlashPaletteAction::NextCommand)].into()
+                        });
+                        frame_hotkeys.add_key(Key::ArrowUp, |_ctx| {
+                            [AppAction::SlashPalette(SlashPaletteAction::PrevCommand)].into()
+                        });
+                        frame_hotkeys.add_key(Key::Escape, |_ctx| {
+                            [AppAction::SlashPalette(SlashPaletteAction::Hide)].into()
+                        });
+
+                        let selected = slash_palette.selected;
+                        frame_hotkeys.add_key(Key::Enter, move |_ctx| {
+                            [AppAction::SlashPalette(SlashPaletteAction::ExecuteCommand(
+                                selected,
+                            ))]
+                            .into()
+                        });
+
                         // ui.set_min_width(prompt_ui_rect.width());
                         // ui.label("here is a long long long long label");
                         for item in Itertools::intersperse(

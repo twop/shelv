@@ -1,19 +1,19 @@
 use app_actions::{
-    compute_app_focus, process_app_action, AppAction, AppIO, HideMode, SlashPaletteAction,
+    AppAction, AppIO, HideMode, SlashPaletteAction, compute_app_focus, process_app_action,
 };
 use app_io::RealAppIO;
-use app_state::{compute_editor_text_id, AppInitData, AppState, MsgToApp};
-use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
+use app_state::{AppInitData, AppState, MsgToApp, compute_editor_text_id};
+use app_ui::{AppRenderData, RenderAppResult, is_shortcut_match, render_app};
 use command::{AppFocusState, CommandContext, EditorCommandOutput};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use hotwatch::{
-    notify::event::{DataChange, ModifyKind},
     Event, EventKind, Hotwatch,
+    notify::event::{DataChange, ModifyKind},
 };
 use image::ImageFormat;
 use itertools::Itertools;
-use persistent_state::{load_and_migrate, try_save, v1, NoteFile};
+use persistent_state::{NoteFile, load_and_migrate, try_save, v1};
 use scripting::settings_eval::Scripts;
 use smallvec::SmallVec;
 use text_structure::TextStructure;
@@ -21,17 +21,18 @@ use theme::{configure_styles, get_font_definitions};
 use tokio::runtime::Runtime;
 
 use tray_icon::{
-    menu::{Menu, MenuEvent, MenuItem},
     Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
+    menu::{Menu, MenuEvent, MenuItem},
 };
 // use tray_item::TrayItem;G1
 
 use std::{path::PathBuf, sync::mpsc::sync_channel};
 
 use eframe::{
+    CreationContext,
     egui::{self},
     epaint::vec2,
-    get_value, CreationContext,
+    get_value,
 };
 
 use crate::{app_state::UnsavedChange, persistent_state::extract_note_file};
@@ -183,15 +184,12 @@ impl MyApp<RealAppIO> {
 
         let last_saved = persistent_state.state.last_saved;
 
-        let state = AppState::new(
-            AppInitData {
-                theme,
-                msg_queue: msg_queue_rx,
-                persistent_state,
-                last_saved,
-            },
-            &mut app_io,
-        );
+        let state = AppState::new(AppInitData {
+            theme,
+            msg_queue: msg_queue_rx,
+            persistent_state,
+            last_saved,
+        });
         Self {
             state,
             app_io,
@@ -247,52 +245,54 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
                 // only one command can be handled at a time
 
+                app_state.commands.available_keyboard_commands().find_map(
+                    |(keyboard_shortcut, keyboard_binding)| {
+                        if is_shortcut_match(input, &keyboard_shortcut) {
 
-                app_state
-                    .commands
-                    .available_keyboard_commands()
-                    .find_map(|(keyboard_shortcut, editor_command)| {
-
-                            if is_shortcut_match(input, &keyboard_shortcut)
-                            {
-                                println!(
-                                    "---Found a match for {:?}, focus = {app_focus:#?}, focused_id = {focused_id:?}",
-                                    editor_command.instruction.human_description()
-                                );
-
-
-                                let res = app_state.commands.run(
-                                    &editor_command.instruction,
-                                    editor_command.scope,
-                                    CommandContext {
-                                    app_state,
-                                    app_focus,
-                                    ui_state: app_state.to_ui_state(),
-                                    scripts:&mut scripts
-                                });
-
-
-                                if !res.is_empty() {
+                            let ctx = CommandContext {
+                                app_state,
+                                app_focus,
+                                ui_state: app_state.to_ui_state(),
+                                scripts: &mut scripts,
+                            };
+                            let res = match keyboard_binding {
+                                command::KeyboardBinding::CommandInstance(editor_command) => {
                                     println!(
-                                        "---command {:?} consumed input {:?}\nres_actions={res:#?}",
-                                        editor_command.instruction.human_description(),
-                                        keyboard_shortcut
+                                        "---Found a match for {:?}, focus = {app_focus:#?}, focused_id = {focused_id:?}",
+                                        editor_command.instruction.human_description()
                                     );
-
-                                    // remove the keys from the input
-
-                                    input.consume_shortcut(&keyboard_shortcut);
-                                    Some(res)
+                                    app_state.commands.run(
+                                        &editor_command.instruction,
+                                        editor_command.scope,
+                                        ctx,
+                                    )
                                 }
-                                else { None }
+                                command::KeyboardBinding::FrameBinding(frame_hotkey) => {
+                                    (frame_hotkey.run)(ctx)
+                                }
+                            };
 
-                            }else {
+                            if !res.is_empty() {
+                                // println!(
+                                //     "---command {:?} consumed input {:?}\nres_actions={res:#?}",
+                                //     editor_command.instruction.human_description(),
+                                //     keyboard_shortcut
+                                // );
+
+                                // remove the keys from the input
+
+                                input.consume_shortcut(&keyboard_shortcut);
+                                Some(res)
+                            } else {
                                 None
                             }
-
-                    })
-                })
-                .unwrap_or_default();
+                        } else {
+                            None
+                        }
+                    },
+                )
+            })
+            .unwrap_or_default();
 
         app_state.settings_scripts = Some(scripts);
 
@@ -385,6 +385,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             .get_mut(&app_state.selected_note)
             .unwrap()
             .text;
+        let mut frame_hotkeys = app_state.commands.prepare_frame_hotkeys();
 
         let vis_state = AppRenderData {
             selected_note: app_state.selected_note,
@@ -399,6 +400,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             inline_llm_prompt: (&mut app_state.inline_llm_prompt).as_mut(),
             slash_palette: app_state.slash_palette.as_ref(),
             render_actions: (app_state.render_actions.drain(..)).collect(),
+            frame_hotkeys: &mut frame_hotkeys,
             feedback: (&mut app_state.feedback).as_mut(),
         };
 
@@ -415,6 +417,8 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             &app_state.theme,
             ctx,
         );
+
+        app_state.commands.add_frame_hotkeys(frame_hotkeys);
 
         if text_changed {
             println!("----note changed during render");

@@ -1,15 +1,18 @@
 use eframe::egui::{
-    self, Checkbox, FontId, FontSelection, Id, Label, Modifiers, RichText, TextEdit, Ui,
+    self, Checkbox, FontId, FontSelection, Id, Key, KeyboardShortcut, Label, Modifiers, RichText,
+    TextEdit, Ui,
 };
 use egui_taffy::{
-    TuiBuilderLogic,
     taffy::{AlignContent, AlignItems},
-    tui,
+    tui, TuiBuilderLogic,
 };
+use smallvec::SmallVec;
 
 use crate::{
+    app_actions::{AppAction, FocusTarget},
+    command::{FrameHotkey, FrameHotkeyLayer, FrameHotkeys},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{StyleBuilder, flex_column, flex_row, style},
+    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
     theme::{AppIcon, AppTheme},
 };
 
@@ -58,7 +61,7 @@ impl<'a> Feedback<'a> {
         }
     }
 
-    pub fn show(mut self, ui: &mut Ui) -> Option<FeedbackResult> {
+    pub fn show(mut self, ui: &mut Ui, frame_hotkeys: &mut FrameHotkeys) -> Option<FeedbackResult> {
         let sizes = &self.theme.sizes;
         let colors = &self.theme.colors;
         let fonts = &self.theme.fonts;
@@ -76,6 +79,43 @@ impl<'a> Feedback<'a> {
             size: fonts.size.normal,
             family: fonts.family.italic.clone(),
         };
+
+        frame_hotkeys.add_with_layer(
+            FrameHotkey::new(
+                KeyboardShortcut::new(Modifiers::COMMAND, Key::Enter),
+                |_ctx| {
+                    SmallVec::from_iter([
+                        AppAction::SubmitFeedback,
+                        AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
+                    ])
+                },
+            ),
+            FrameHotkeyLayer::Modal,
+        );
+
+        frame_hotkeys.add_with_layer(
+            FrameHotkey::new(
+                KeyboardShortcut::new(Modifiers::NONE, Key::Escape),
+                |_ctx| {
+                    SmallVec::from_iter([
+                        AppAction::CloseFeedbackWindow,
+                        AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
+                    ])
+                },
+            ),
+            FrameHotkeyLayer::Modal,
+        );
+
+        let hint_keyboard_text = format!(
+            "Hint: '{}' to send, '{}' to cancel",
+            format_mac_shortcut_with_symbols(
+                KeyboardShortcut::new(Modifiers::COMMAND, Key::Enter,)
+            ),
+            format_mac_shortcut_with_symbols(KeyboardShortcut::new(
+                Modifiers::COMMAND,
+                Key::Escape,
+            ))
+        );
 
         let id = Id::new("feedback form");
         // let is_focused = ui.memory(|mem| mem.has_focus(id));
@@ -202,15 +242,9 @@ impl<'a> Feedback<'a> {
                     // t.separator();
 
                     t.label(
-                        RichText::new(format!(
-                            "Hint: '{}' to send, 'Esc' to cancel",
-                            format_mac_shortcut_with_symbols(egui::KeyboardShortcut::new(
-                                Modifiers::COMMAND,
-                                egui::Key::Enter,
-                            ))
-                        ))
-                        .font(italic.clone())
-                        .color(colors.subtle_text_color),
+                        RichText::new(hint_keyboard_text)
+                            .font(italic.clone())
+                            .color(colors.subtle_text_color),
                     );
                     t.style(flex_row().gap(sizes.s)).add(|t| {
                         let send_btn_res = t.style(style().padding(sizes.xs)).button(|t| {

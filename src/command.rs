@@ -1,6 +1,6 @@
 use std::{fmt::Debug, ops::Deref, rc::Rc};
 
-use eframe::egui::KeyboardShortcut;
+use eframe::egui::{Key, KeyboardShortcut, Modifiers};
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
 use smallvec::SmallVec;
@@ -229,24 +229,9 @@ pub enum CommandInstruction {
     #[knus(name = "HideApp")]
     HideApp,
 
-    #[knus(skip)]
-    HidePrompt,
-
     // SlashPallete
     #[knus(skip)]
     ShowSlashPallete,
-
-    #[knus(skip)]
-    NextSlashPalleteCmd,
-
-    #[knus(skip)]
-    PrevSlashPalleteCmd,
-
-    #[knus(skip)]
-    ExecuteSlashPalleteCmd,
-
-    #[knus(skip)]
-    HideSlashPallete,
 
     // Lang specific
     #[knus(skip)]
@@ -314,24 +299,11 @@ impl CommandInstruction {
             Self::HideApp => "Hide Window".into(),
             Self::RunLLMBlock => "Execute AI Block".into(),
             CommandInstruction::ShowPrompt => "Show AI Prompt".into(),
-            // BuiltInCommand::ClosePopupMenu => "Close currently opened popup".into(),
-            CommandInstruction::HidePrompt => "Hide Prompt".into(),
             CommandInstruction::EnterInsideKDL => "Auto indent KDL".into(),
             CommandInstruction::BracketAutoclosingInsideKDL => {
                 "Auto closing of '{' inside KDL".into()
             }
             CommandInstruction::ShowSlashPallete => "Show slash command palette".into(),
-            CommandInstruction::NextSlashPalleteCmd => {
-                "Select next command in slash palette".into()
-            }
-            CommandInstruction::PrevSlashPalleteCmd => {
-                "Select previous command in slash palette".into()
-            }
-            CommandInstruction::ExecuteSlashPalleteCmd => {
-                "Execute selected command in slash palette".into()
-            }
-            CommandInstruction::HideSlashPallete => "Hide slash command palette".into(),
-
             CommandInstruction::InsertText(ForwardToChild(source)) => match source {
                 TextSource::Str(str) => format!("Insert: {}", str).into(),
                 TextSource::Script(script_call) => {
@@ -342,8 +314,8 @@ impl CommandInstruction {
     }
 
     pub fn default_keybinding(&self) -> Option<eframe::egui::KeyboardShortcut> {
-        use eframe::egui::{Key, Modifiers};
         use CommandInstruction as C;
+        use eframe::egui::{Key, Modifiers};
         let shortcut = |mods, key| Some(KeyboardShortcut::new(mods, key));
         match self {
             C::ExpandTaskMarker => shortcut(Modifiers::NONE, Key::Space),
@@ -369,12 +341,8 @@ impl CommandInstruction {
             C::ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
             C::EnterInsideKDL => shortcut(Modifiers::NONE, Key::Enter),
             C::BracketAutoclosingInsideKDL => shortcut(Modifiers::SHIFT, Key::OpenBracket),
-            C::HideApp | C::HidePrompt => shortcut(Modifiers::NONE, Key::Escape),
+            C::HideApp => shortcut(Modifiers::NONE, Key::Escape),
             C::ShowSlashPallete => shortcut(Modifiers::NONE, Key::Slash),
-            C::NextSlashPalleteCmd => shortcut(Modifiers::NONE, Key::ArrowDown),
-            C::PrevSlashPalleteCmd => shortcut(Modifiers::NONE, Key::ArrowUp),
-            C::ExecuteSlashPalleteCmd => shortcut(Modifiers::NONE, Key::Enter),
-            C::HideSlashPallete => shortcut(Modifiers::NONE, Key::Escape),
             C::InsertText(_) | C::MarkdownCodeBlock(_) => None,
         }
     }
@@ -386,13 +354,8 @@ impl CommandInstruction {
             | Self::UnindentListItem
             | Self::SplitListItem
             | Self::ShowSlashPallete
-            | Self::NextSlashPalleteCmd
-            | Self::PrevSlashPalleteCmd
-            | Self::ExecuteSlashPalleteCmd
-            | Self::HideSlashPallete
             | Self::EnterInsideKDL
-            | Self::BracketAutoclosingInsideKDL
-            | Self::HidePrompt => None,
+            | Self::BracketAutoclosingInsideKDL => None,
 
             Self::MarkdownBold => Some("MarkdownBold;".into()),
             Self::MarkdownItalic => Some("MarkdownItalic;".into()),
@@ -464,6 +427,61 @@ pub enum GlobalCommandKind {
     ShowHideApp,
 }
 
+#[derive(PartialEq, Debug)]
+pub enum FrameHotkeyLayer {
+    Normal,
+    Modal,
+}
+
+pub struct FrameHotkey {
+    layer: FrameHotkeyLayer,
+    shortcut: KeyboardShortcut,
+    pub run: Box<dyn for<'a> Fn(CommandContext<'a>) -> EditorCommandOutput>,
+}
+
+impl FrameHotkey {
+    pub fn new(
+        shortcut: KeyboardShortcut,
+        run: impl Fn(CommandContext) -> EditorCommandOutput + 'static,
+    ) -> Self {
+        Self {
+            layer: FrameHotkeyLayer::Normal,
+            shortcut,
+            run: Box::new(run),
+        }
+    }
+}
+
+pub struct FrameHotkeys(Vec<FrameHotkey>);
+
+impl FrameHotkeys {
+    pub fn add_key(
+        &mut self,
+        key: Key,
+        run: impl for<'a> Fn(CommandContext<'a>) -> EditorCommandOutput + 'static,
+    ) {
+        self.0.push(FrameHotkey::new(
+            KeyboardShortcut::new(Modifiers::NONE, key),
+            run,
+        ));
+    }
+
+    pub fn add_key_with_modifier(
+        &mut self,
+        modifier: Modifiers,
+        key: Key,
+        run: impl for<'a> Fn(CommandContext<'a>) -> EditorCommandOutput + 'static,
+    ) {
+        self.0
+            .push(FrameHotkey::new(KeyboardShortcut::new(modifier, key), run));
+    }
+
+    pub fn add_with_layer(&mut self, mut frame_hotkey: FrameHotkey, layer: FrameHotkeyLayer) {
+        frame_hotkey.layer = layer;
+        self.0.push(frame_hotkey);
+    }
+}
+
 pub struct CommandList {
     execute_instruction: Box<dyn Fn(&CommandInstruction, CommandContext) -> EditorCommandOutput>,
 
@@ -471,6 +489,7 @@ pub struct CommandList {
 
     keyboard_commands: Vec<CommandInstance>,
     slash_commands: Vec<SlashPaletteCmd>,
+    frame_hotkeys: Vec<FrameHotkey>,
 }
 
 impl Debug for CommandList {
@@ -481,6 +500,11 @@ impl Debug for CommandList {
             .field("slash_commands", &self.slash_commands)
             .finish()
     }
+}
+
+pub enum KeyboardBinding<'a> {
+    CommandInstance(&'a CommandInstance),
+    FrameBinding(&'a FrameHotkey),
 }
 
 impl CommandList {
@@ -499,6 +523,7 @@ impl CommandList {
         let defaults = (keyboard_commands.clone(), slash_palette_commands.clone());
         Self {
             defaults,
+            frame_hotkeys: Vec::new(),
             execute_instruction: Box::new(execute),
             keyboard_commands,
             slash_commands: slash_palette_commands,
@@ -507,10 +532,26 @@ impl CommandList {
 
     pub fn available_keyboard_commands(
         &self,
-    ) -> impl Iterator<Item = (KeyboardShortcut, &CommandInstance)> {
-        self.keyboard_commands
+    ) -> impl Iterator<Item = (KeyboardShortcut, KeyboardBinding)> {
+        self.frame_hotkeys
             .iter()
-            .flat_map(|cmd| cmd.shortcut.zip(Some(cmd)))
+            .rev()
+            .filter(|h| h.layer == FrameHotkeyLayer::Modal)
+            .chain(
+                self.frame_hotkeys
+                    .iter()
+                    .rev()
+                    .filter(|h| h.layer != FrameHotkeyLayer::Modal),
+            )
+            .map(|hotkey| (hotkey.shortcut, KeyboardBinding::FrameBinding(hotkey)))
+            .chain(self.keyboard_commands.iter().flat_map(|cmd| {
+                cmd.shortcut
+                    .zip(Some(KeyboardBinding::CommandInstance(cmd)))
+            }))
+    }
+    pub fn prepare_frame_hotkeys(&mut self) -> FrameHotkeys {
+        self.frame_hotkeys.clear();
+        FrameHotkeys(std::mem::take(&mut self.frame_hotkeys))
     }
 
     pub fn available_slash_commands(&self) -> impl Iterator<Item = &SlashPaletteCmd> {
@@ -559,6 +600,7 @@ impl CommandList {
         self.keyboard_commands.extend_from_slice(&self.defaults.0);
 
         self.slash_commands.clear();
+        self.frame_hotkeys.clear();
         self.slash_commands.extend_from_slice(&self.defaults.1);
     }
 
@@ -581,6 +623,10 @@ impl CommandList {
         } else {
             SmallVec::new()
         }
+    }
+
+    pub fn add_frame_hotkeys(&mut self, FrameHotkeys(hotkeys): FrameHotkeys) {
+        self.frame_hotkeys.extend(hotkeys);
     }
 }
 
@@ -623,7 +669,8 @@ pub fn create_ai_keybindings_documentation(cmd_list: &CommandList) -> String {
     let current_commands_help = cmd_list
         .available_keyboard_commands()
         .filter_map(|(shortcut, cmd)| {
-            cmd.instruction.serialize_to_kdl().map(|kdl| {
+            match cmd{
+                KeyboardBinding::CommandInstance(cmd) => cmd.instruction.serialize_to_kdl().map(|kdl| {
                 (
                     shortcut,
                     kdl,
@@ -632,7 +679,10 @@ pub fn create_ai_keybindings_documentation(cmd_list: &CommandList) -> String {
                         .available_slash_commands()
                         .find(|scmd| scmd.instance.instruction == cmd.instruction),
                 )
-            })
+            }),
+                KeyboardBinding::FrameBinding(_frame_hotkey) => None,
+            }
+            
         })
         .map(|(shortcut, kdl_block, instruction, slash_cmd)| {
             let text = format!(
@@ -674,14 +724,16 @@ fn test_keybindings_documentation_generation() {
             (CommandInstruction::MarkdownBold, CommandScope::Global),
             (CommandInstruction::MarkdownItalic, CommandScope::Global),
         ],
-        vec![SlashPaletteCmd::from_instruction(
-            "bold",
-            CommandInstruction::MarkdownBold,
-            CommandScope::Global,
-        )
-        .icon("\u{E10A}".to_string())
-        .shortcut(Some(kbd_shortcut1))
-        .description("Make text bold")],
+        vec![
+            SlashPaletteCmd::from_instruction(
+                "bold",
+                CommandInstruction::MarkdownBold,
+                CommandScope::Global,
+            )
+            .icon("\u{E10A}".to_string())
+            .shortcut(Some(kbd_shortcut1))
+            .description("Make text bold"),
+        ],
     );
 
     // let t = "\u{E10A}";

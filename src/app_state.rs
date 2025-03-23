@@ -2,13 +2,13 @@ use std::{
     collections::BTreeMap,
     hash::{Hash, Hasher},
     path::PathBuf,
-    sync::{mpsc::Receiver, Arc},
+    sync::{Arc, mpsc::Receiver},
 };
 
 use eframe::{
     egui::{
+        Id, Rect, Ui,
         text::{CCursor, LayoutJob},
-        Id, Rect, Ui, UiStack,
     },
     epaint::Galley,
 };
@@ -22,19 +22,16 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        call_with_text_ctx, AppFocus, CommandContext, CommandInstruction, CommandList,
-        CommandScope, EditorCommandOutput, SlashPaletteCmd, UiState,
+        AppFocus, CommandContext, CommandInstruction, CommandList, CommandScope,
+        EditorCommandOutput, SlashPaletteCmd, UiState, call_with_text_ctx,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
         inline_llm_prompt::inline_llm_prompt_command_handler,
         insert_text::call_replace_text,
         kdl_lang::on_enter_inside_kdl_block,
-        run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
-        slash_pallete::{
-            execute_slash_cmd, hide_slash_pallete, next_slash_cmd, prev_slash_cmd,
-            show_slash_pallete,
-        },
+        run_llm::{CodeBlockAddress, prepare_to_run_llm_block},
+        slash_pallete::show_slash_pallete,
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
         toggle_code_block::toggle_code_block,
@@ -336,7 +333,7 @@ pub enum MsgToApp {
 // }
 
 impl AppState {
-    pub fn new(init_data: AppInitData, app_io: &mut impl AppIO) -> Self {
+    pub fn new(init_data: AppInitData) -> Self {
         let AppInitData {
             theme,
             msg_queue,
@@ -394,14 +391,13 @@ impl AppState {
                 CommandInstruction::MarkdownH2,
                 CommandInstruction::MarkdownH3,
                 CommandInstruction::EnterInsideKDL,
-                CommandInstruction::HidePrompt,
                 CommandInstruction::RunLLMBlock,
                 CommandInstruction::ShowPrompt,
                 CommandInstruction::ShowSlashPallete,
-                CommandInstruction::HideSlashPallete,
-                CommandInstruction::NextSlashPalleteCmd,
-                CommandInstruction::PrevSlashPalleteCmd,
-                CommandInstruction::ExecuteSlashPalleteCmd,
+                // CommandInstruction::HideSlashPallete,
+                // CommandInstruction::NextSlashPalleteCmd,
+                // CommandInstruction::PrevSlashPalleteCmd,
+                // CommandInstruction::ExecuteSlashPalleteCmd,
             ]
             .map(|instructuin| (instructuin, CommandScope::Focus(AppFocus::NoteEditor)))
             .into_iter()
@@ -586,13 +582,6 @@ fn execute_instruction(
             _ => SmallVec::new(),
         },
 
-        CI::HidePrompt => match ctx.app_focus.internal_focus {
-            Some(AppFocus::InlinePropmptEditor) => {
-                [AppAction::AcceptPromptSuggestion { accept: false }].into()
-            }
-            _ => SmallVec::new(),
-        },
-
         CI::RunLLMBlock => {
             prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default()
         }
@@ -601,14 +590,13 @@ fn execute_instruction(
 
         CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),
 
-        CI::HideSlashPallete => hide_slash_pallete(ctx).unwrap_or_default(),
+        // CI::HideSlashPallete => hide_slash_pallete(ctx).unwrap_or_default(),
 
-        CI::NextSlashPalleteCmd => next_slash_cmd(ctx).unwrap_or_default(),
+        // CI::NextSlashPalleteCmd => next_slash_cmd(ctx).unwrap_or_default(),
 
-        CI::PrevSlashPalleteCmd => prev_slash_cmd(ctx).unwrap_or_default(),
+        // CI::PrevSlashPalleteCmd => prev_slash_cmd(ctx).unwrap_or_default(),
 
-        CI::ExecuteSlashPalleteCmd => execute_slash_cmd(ctx).unwrap_or_default(),
-
+        // CI::ExecuteSlashPalleteCmd => execute_slash_cmd(ctx).unwrap_or_default(),
         CI::BracketAutoclosingInsideKDL => todo!(),
         CI::InsertText(text_source) => call_replace_text(text_source, ctx),
         // Disable for now
