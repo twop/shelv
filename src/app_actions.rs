@@ -1,32 +1,35 @@
 use std::{collections::BTreeMap, io, path::PathBuf};
 
-use eframe::egui::{
-    text::LayoutJob, Context, Id, KeyboardShortcut, Memory, OpenUrl, ViewportCommand,
-};
+use boa_engine::ast::expression::Parenthesized;
+use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
 
-use serde_json::{to_value, Value};
+use serde_json::{Value, to_value};
 use similar::{ChangeTag, TextDiff};
-use smallvec::{smallvec, SmallVec};
+use smallvec::SmallVec;
 
 use crate::{
     app_state::{
-        compute_editor_text_id, AppState, FeedbackState, InlineLLMPropmptState,
-        InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, TextSelectionAddress, UnsavedChange,
+        AppState, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk, InlinePromptStatus,
+        MsgToApp, ParsedPromptResponse, RenderAction, SlashPalette, TextSelectionAddress,
+        UnsavedChange, compute_editor_text_id,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
-    command::{AppFocus, AppFocusState, CommandContext},
+    command::{AppFocus, AppFocusState, CommandContext, CommandList},
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
-        run_llm::{prepare_to_run_llm_block, CodeBlockAddress, DEFAULT_LLM_MODEL},
+        run_llm::{CodeBlockAddress, prepare_to_run_llm_block},
     },
-    effects::text_change_effect::{apply_text_changes, TextChange},
+    effects::text_change_effect::{TextChange, apply_text_changes},
     feedback::FeedbackType,
-    persistent_state::{get_tutorial_note_content, NoteFile},
-    scripting::{execute_code_blocks, execute_live_scripts},
-    settings::SettingsNoteEvalContext,
+    persistent_state::{NoteFile, get_tutorial_note_content},
+    scripting::{
+        note_eval::{execute_code_blocks, execute_live_scripts},
+        settings_eval::{Scripts, SettingsNoteEvalContext},
+    },
+    settings_parsing::LlmSettings,
     text_structure::{
-        create_layout_job_from_text_diff, SpanIndex, SpanKind, SpanMeta, TextDiffPart,
-        TextStructure, TextStructureVersion,
+        CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextStructure,
+        create_layout_job_from_text_diff,
     },
 };
 
@@ -34,6 +37,18 @@ use crate::{
 pub enum FocusTarget {
     CurrentNote,
     SpecificId(Id),
+}
+
+#[derive(Debug)]
+pub enum SlashPaletteAction {
+    // Slash Palette
+    Show(SlashPalette),
+    Hide,
+    Update,
+    NextCommand,
+    PrevCommand,
+    SelectCommand(usize),
+    ExecuteCommand(usize),
 }
 
 #[derive(Debug)]
@@ -67,6 +82,9 @@ pub enum AppAction {
     AcceptPromptSuggestion {
         accept: bool,
     },
+
+    SlashPalette(SlashPaletteAction),
+    HideApp,
 }
 
 impl AppAction {
@@ -76,6 +94,10 @@ impl AppAction {
             changes,
             should_trigger_eval: true,
         }
+    }
+
+    pub fn defer(action: Self) -> Self {
+        Self::DeferToPostRender(Box::new(action))
     }
 }
 
@@ -93,8 +115,6 @@ pub struct Conversation {
 
 #[derive(Debug)]
 pub struct LLMBlockRequest {
-    pub system_prompt: Option<String>,
-    pub model: String,
     pub conversation: Conversation,
     pub output_code_block_address: String,
     pub note_id: NoteFile,
@@ -106,14 +126,22 @@ pub struct LLMPromptRequest {
     pub before_selection: String,
     pub after_selection: String,
     pub selection: String,
-    pub model: String,
-    pub system_prompt: Option<String>,
     pub selection_location: TextSelectionAddress,
 }
 
+pub struct SettingsForAiRequests<'s> {
+    pub commands: &'s CommandList,
+    pub llm_settings: Option<&'s LlmSettings>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum HideMode {
+    HideApp,
+    YieldFocus,
+}
 // TODO consider focus, opening links etc as IO operations
 pub trait AppIO {
-    fn hide_app(&self);
+    fn hide_app(&self, mode: HideMode);
     fn open_shelv_folder(&self) -> Result<(), Box<dyn std::error::Error>>;
     fn try_read_note_if_newer(
         &self,
@@ -131,16 +159,24 @@ pub trait AppIO {
         to: Box<dyn Fn() -> MsgToApp>,
     ) -> Result<(), String>;
 
-    fn execute_llm_block(&self, question: LLMBlockRequest);
-    fn execute_llm_prompt(&self, quesion: LLMPromptRequest);
+    fn execute_llm_block<'s>(&self, question: LLMBlockRequest, cx: SettingsForAiRequests<'s>);
+    fn execute_llm_prompt<'s>(&self, quesion: LLMPromptRequest, cx: SettingsForAiRequests<'s>);
 
-    fn capture_sentry_message<F>(&self, message: &str, level: sentry::Level, scope: F)-> sentry::types::Uuid where F:  FnOnce(&mut sentry::Scope) ;
+    fn capture_sentry_message<F>(
+        &self,
+        message: &str,
+        level: sentry::Level,
+        scope: F,
+    ) -> sentry::types::Uuid
+    where
+        F: FnOnce(&mut sentry::Scope);
 }
 
 pub fn process_app_action(
     action: AppAction,
     ctx: &Context,
     state: &mut AppState,
+    focus_state: AppFocusState,
     text_edit_id: Id,
     app_io: &mut impl AppIO,
 ) -> SmallVec<[AppAction; 1]> {
@@ -151,26 +187,26 @@ pub fn process_app_action(
         } => {
             if note_file != state.selected_note {
                 state.add_unsaved_change(UnsavedChange::SelectionChanged);
-
                 if via_shortcut {
                     let note = &mut state.notes.get_mut(&note_file).unwrap();
-                    note.cursor = match note.cursor.clone() {
+
+                    match note.cursor() {
                         None => {
                             let len = note.text.len();
-                            Some(UnOrderedByteSpan::new(len, len))
+                            note.update_cursor(UnOrderedByteSpan::new(len, len));
                         }
-                        prev => prev,
-                    };
+                        _ => {}
+                    }
                 } else {
                     // means that we reselected via UI
 
                     // if that is the case then reset cursors from both of the notes
                     if let Some(prev_note) = state.notes.get_mut(&state.selected_note) {
-                        prev_note.cursor = None;
+                        prev_note.reset_cursor();
                     }
 
                     if let Some(cur_note) = state.notes.get_mut(&note_file) {
-                        cur_note.cursor = None;
+                        cur_note.reset_cursor();
                     }
                 }
 
@@ -203,15 +239,14 @@ pub fn process_app_action(
             state.add_unsaved_change(UnsavedChange::PinStateChanged);
             SmallVec::new()
         }
-
         AppAction::ApplyTextChanges {
             target: note_file,
             changes,
             should_trigger_eval,
         } => {
             let note = &mut state.notes.get_mut(&note_file).unwrap();
+            let cursor = note.cursor();
             let text = &mut note.text;
-            let cursor = note.cursor;
 
             let next_action = match apply_text_changes(text, cursor, changes) {
                 Ok(updated_cursor) => {
@@ -220,7 +255,10 @@ pub fn process_app_action(
                         state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
                     }
 
-                    note.cursor = updated_cursor;
+                    match updated_cursor {
+                        Some(cursor) => note.update_cursor(cursor),
+                        None => note.reset_cursor(),
+                    }
 
                     state.add_unsaved_change(UnsavedChange::NoteContentChanged(note_file));
                     // reset the inline prompt state if any changes happened
@@ -231,29 +269,58 @@ pub fn process_app_action(
                 Err(_) => None,
             };
 
+            // if the target for change is indeed the current note then scroll it to the cursor if it is present
+            if state.selected_note == note_file {
+                state
+                    .render_actions
+                    .push(RenderAction::ScrollToEditorCursorPos);
+            }
+
             match next_action {
                 Some(a) => [a].into(),
                 None => SmallVec::new(),
             }
         }
 
+        AppAction::HideApp => {
+            println!("Hide app via ui");
+            state.hidden = true;
+            app_io.hide_app(HideMode::HideApp);
+            SmallVec::new()
+        }
+
         AppAction::HandleMsgToApp(msg) => {
             match msg {
                 MsgToApp::ToggleVisibility => {
-                    state.hidden = !state.hidden;
+                    let was_visible = !state.hidden;
 
-                    if state.hidden {
-                        println!("Toggle visibility: hide");
-                        app_io.hide_app();
-                        SmallVec::new()
+                    if was_visible {
+                        if state.is_pinned && was_visible && !focus_state.viewport_focused {
+                            // if it is pinned just refocus instea of hiding it
+                            println!("Toggle visibility: hide");
+                            ctx.send_viewport_cmd(ViewportCommand::Focus);
+                            SmallVec::from_buf([AppAction::defer(AppAction::FocusRequest(
+                                FocusTarget::CurrentNote,
+                            ))])
+                        } else {
+                            state.hidden = was_visible;
+                            let mode = match state.is_pinned {
+                                true => HideMode::YieldFocus,
+                                false => HideMode::HideApp,
+                            };
+                            println!("Toggle visibility: {mode:?}");
+                            app_io.hide_app(mode);
+                            SmallVec::new()
+                        }
                     } else {
-                        ctx.send_viewport_cmd(ViewportCommand::Visible(!state.hidden));
+                        state.hidden = was_visible;
+                        ctx.send_viewport_cmd(ViewportCommand::Visible(true));
                         ctx.send_viewport_cmd(ViewportCommand::Focus);
                         // ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
                         println!("Toggle visibility: show + focus");
 
-                        SmallVec::from_buf([AppAction::DeferToPostRender(Box::new(
-                            AppAction::FocusRequest(FocusTarget::CurrentNote),
+                        SmallVec::from_buf([AppAction::defer(AppAction::FocusRequest(
+                            FocusTarget::CurrentNote,
                         ))])
                     }
                 }
@@ -263,7 +330,7 @@ pub fn process_app_action(
                         Ok(Some(note_content)) => {
                             if let Some(note) = state.notes.get_mut(&note_file) {
                                 // TODO don't reset the cursor
-                                note.cursor = None;
+                                note.reset_cursor();
                                 if note_file == state.selected_note {
                                     state.text_structure = state
                                         .text_structure
@@ -325,7 +392,7 @@ pub fn process_app_action(
                     let insertion_pos = text_structure
                         .filter_map_codeblocks(|lang| (lang == &resp.address).then(|| ()))
                         .next()
-                        .map(|(_index, desc, _)| {
+                        .map(|(_index, desc, _, _)| {
                             let entire_block_text = &text[desc.byte_pos.range()];
                             match entire_block_text.lines().count() {
                                 // right before "```"
@@ -378,7 +445,7 @@ pub fn process_app_action(
                     Some(prompt_state) if prompt_state.address == target_address => {
                         match response {
                             InlineLLMResponseChunk::Chunk(chunk) => {
-                                let InlineLLMPropmptState {
+                                let InlineLLMPromptState {
                                     mut response_text,
                                     prompt,
                                     address,
@@ -386,34 +453,46 @@ pub fn process_app_action(
                                     layout_job: _,
                                     status,
                                     fresh_response: _,
+                                    parsed_response: _,
                                 } = prompt_state;
 
                                 response_text.push_str(&chunk);
+
+                                let parsed_response =
+                                    ParsedPromptResponse::parse_stream(&response_text);
 
                                 diff_parts.clear();
 
                                 let selection = &state.notes.get(&address.note_file).unwrap().text
                                     [address.span.range()];
 
-                                diff_parts.extend(
-                                    TextDiff::from_words(selection, &response_text)
-                                        .iter_all_changes()
-                                        .map(|change| {
-                                            let part_str = change.to_string_lossy().to_string();
-                                            match change.tag() {
-                                                ChangeTag::Equal => TextDiffPart::Equal(part_str),
-                                                ChangeTag::Delete => TextDiffPart::Delete(part_str),
-                                                ChangeTag::Insert => TextDiffPart::Insert(part_str),
-                                            }
-                                        }),
-                                );
+                                if let Some(replacement) = &parsed_response.replacement {
+                                    diff_parts.extend(
+                                        TextDiff::from_words(selection, replacement)
+                                            .iter_all_changes()
+                                            .map(|change| {
+                                                let part_str = change.to_string_lossy().to_string();
+                                                match change.tag() {
+                                                    ChangeTag::Equal => {
+                                                        TextDiffPart::Equal(part_str)
+                                                    }
+                                                    ChangeTag::Delete => {
+                                                        TextDiffPart::Delete(part_str)
+                                                    }
+                                                    ChangeTag::Insert => {
+                                                        TextDiffPart::Insert(part_str)
+                                                    }
+                                                }
+                                            }),
+                                    );
+                                }
 
                                 // println!("----diff_parts: {diff_parts:#?}");
 
                                 let layout_job =
                                     create_layout_job_from_text_diff(&diff_parts, &state.theme);
 
-                                state.inline_llm_prompt = Some(InlineLLMPropmptState {
+                                state.inline_llm_prompt = Some(InlineLLMPromptState {
                                     address,
                                     response_text,
                                     diff_parts,
@@ -421,12 +500,13 @@ pub fn process_app_action(
                                     layout_job,
                                     status,
                                     fresh_response: true,
+                                    parsed_response,
                                 });
                                 SmallVec::new()
                             }
 
                             InlineLLMResponseChunk::End => {
-                                let InlineLLMPropmptState {
+                                let InlineLLMPromptState {
                                     response_text,
                                     prompt,
                                     address,
@@ -434,6 +514,7 @@ pub fn process_app_action(
                                     layout_job,
                                     status,
                                     fresh_response,
+                                    parsed_response,
                                 } = prompt_state;
 
                                 let status = match status {
@@ -448,7 +529,7 @@ pub fn process_app_action(
                                     }
                                 };
 
-                                state.inline_llm_prompt = Some(InlineLLMPropmptState {
+                                state.inline_llm_prompt = Some(InlineLLMPromptState {
                                     response_text,
                                     prompt,
                                     address,
@@ -456,6 +537,7 @@ pub fn process_app_action(
                                     layout_job,
                                     status,
                                     fresh_response,
+                                    parsed_response,
                                 });
                                 SmallVec::new()
                             }
@@ -482,18 +564,64 @@ pub fn process_app_action(
                 false => TextStructure::new(text),
             };
 
+            let has_unclosed_code_blocks = text_structure
+                .iter()
+                .filter_map(|(i, desc)| {
+                    (desc.kind == SpanKind::CodeBlock)
+                        .then(|| text_structure.find_meta(i))
+                        .flatten()
+                })
+                .filter_map(|meta| match meta {
+                    SpanMeta::CodeBlock(CodeBlockMeta {
+                        closed,
+                        lang,
+                        lang_byte_span,
+                    }) => {
+                        if !closed {
+                            println!("Unclosed block - lang: {lang}, span: {lang_byte_span:?}");
+                        }
+                        Some(closed)
+                    }
+                    _ => None,
+                })
+                .any(|closed| !closed);
+
+            if has_unclosed_code_blocks {
+                // if we have unclosed codeblocks pause eval
+                println!("found unclosed blocks");
+                return SmallVec::new();
+            }
+
             let requested_changes = match note_file {
                 NoteFile::Note(_) => execute_live_scripts(&text_structure, text),
 
                 NoteFile::Settings => {
+                    println!("####### eval settings");
+
+                    let mut settings_scripts = Scripts::new();
+
+                    let script_actions =
+                        execute_code_blocks(&mut settings_scripts, &text_structure, &text);
+
                     let mut cx = SettingsNoteEvalContext {
-                        cmd_list: &mut state.editor_commands,
-                        should_force_eval: false,
+                        cmd_list: &mut state.commands,
+                        scripts: &settings_scripts,
+                        should_force_eval: true,
                         app_io,
                         llm_settings: &mut state.llm_settings,
                     };
 
-                    execute_code_blocks(&mut cx, &text_structure, &text)
+                    let kdl_actions = execute_code_blocks(&mut cx, &text_structure, &text);
+
+                    state.settings_scripts = Some(settings_scripts);
+
+                    match (script_actions, kdl_actions) {
+                        (actions, None) | (None, actions) => actions,
+                        (Some(mut script_actions), Some(kdl_actions)) => {
+                            script_actions.extend(kdl_actions);
+                            Some(script_actions)
+                        }
+                    }
                 }
             };
 
@@ -512,7 +640,13 @@ pub fn process_app_action(
         }
 
         AppAction::AskLLM(question) => {
-            app_io.execute_llm_block(question);
+            app_io.execute_llm_block(
+                question,
+                SettingsForAiRequests {
+                    commands: &state.commands,
+                    llm_settings: state.llm_settings.as_ref(),
+                },
+            );
             SmallVec::new()
         }
         AppAction::SubmitFeedback => {
@@ -539,17 +673,25 @@ pub fn process_app_action(
                         );
                         map.insert(
                             String::from("note"),
-                            format!("{}", state.notes.get(&state.selected_note).map(|n| n.text.clone()).unwrap_or_default()).into(),
+                            format!(
+                                "{}",
+                                state
+                                    .notes
+                                    .get(&state.selected_note)
+                                    .map(|n| n.text.clone())
+                                    .unwrap_or_default()
+                            )
+                            .into(),
                         );
                     }
-    
+
                     map.insert(
                         String::from("feedback"),
                         to_value(feedback.feedback_data.clone()).unwrap_or_default(),
                     );
-    
+
                     scope.set_context("state", sentry::protocol::Context::Other(map));
-    
+
                     let mut map = std::collections::BTreeMap::new();
                     map.insert(
                         String::from("contact"),
@@ -559,7 +701,7 @@ pub fn process_app_action(
                         other: map,
                         ..Default::default()
                     }));
-                }
+                },
             );
 
             println!("Feedback sent: {:?}", result);
@@ -605,18 +747,24 @@ pub fn process_app_action(
         }
 
         AppAction::DeferToPostRender(action) => {
-            state.deferred_to_post_render.push(*action);
+            state.deferred_actions.push(*action);
             SmallVec::new()
         }
 
         AppAction::FocusRequest(target) => {
             // it is possible that text editing was out of focus
             // hence, refocus it again
+            let target_id = match target {
+                FocusTarget::CurrentNote => text_edit_id,
+                FocusTarget::SpecificId(id) => id,
+            };
+            if let FocusTarget::CurrentNote = target {
+                state
+                    .render_actions
+                    .push(RenderAction::ScrollToEditorCursorPos);
+            }
             ctx.memory_mut(|mem| {
-                mem.request_focus(match target {
-                    FocusTarget::CurrentNote => text_edit_id,
-                    FocusTarget::SpecificId(id) => id,
-                });
+                mem.request_focus(target_id);
             });
 
             SmallVec::new()
@@ -629,19 +777,34 @@ pub fn process_app_action(
             SmallVec::new()
         }
 
-        AppAction::RunLLMBLock(note_file, span_index) => prepare_to_run_llm_block(
-            CommandContext {
-                app_state: state,
-                app_focus: compute_app_focus(ctx, state),
-            },
-            CodeBlockAddress::TargetBlock(note_file, span_index),
-        )
-        .unwrap_or_default(),
+        AppAction::RunLLMBLock(note_file, span_index) => {
+            //
+
+            let mut scripts = state
+                .settings_scripts
+                .take()
+                .unwrap_or_else(|| Scripts::new());
+
+            let result = prepare_to_run_llm_block(
+                CommandContext {
+                    app_state: state,
+                    ui_state: state.to_ui_state(),
+                    app_focus: compute_app_focus(ctx, state),
+                    scripts: &mut scripts,
+                },
+                CodeBlockAddress::TargetBlock(note_file, span_index),
+            )
+            .unwrap_or_default();
+
+            state.settings_scripts = Some(scripts);
+
+            result
+        }
 
         AppAction::ShowPrompt(address) => {
             println!("Triggering inline prompt {address:#?}",);
 
-            state.inline_llm_prompt = Some(InlineLLMPropmptState {
+            state.inline_llm_prompt = Some(InlineLLMPromptState {
                 address,
                 response_text: "".to_string(),
                 diff_parts: vec![],
@@ -649,6 +812,7 @@ pub fn process_app_action(
                 prompt: "".to_string(),
                 status: InlinePromptStatus::NotStarted,
                 fresh_response: false,
+                parsed_response: ParsedPromptResponse::parse_stream(""),
             });
 
             SmallVec::from_buf([AppAction::DeferToPostRender(Box::new(
@@ -663,13 +827,14 @@ pub fn process_app_action(
                 return SmallVec::default();
             };
 
-            let model = state
-                .llm_settings
-                .as_ref()
-                .map(|s| s.model.clone())
-                .unwrap_or_else(|| DEFAULT_LLM_MODEL.to_string());
+            // let model = state
+            //     .llm_settings
+            //     .as_ref()
+            //     .map(|s| s.model.clone())
+            //     .unwrap_or_else(|| DEFAULT_LLM_MODEL.to_string());
 
             prompt.response_text = "".to_string();
+            prompt.parsed_response = ParsedPromptResponse::parse_stream("");
             prompt.layout_job = LayoutJob::default();
             prompt.status = InlinePromptStatus::Streaming {
                 prompt: prompt.prompt.clone(),
@@ -681,18 +846,19 @@ pub fn process_app_action(
             let before_selection = note_text[..prompt_span.start].to_string();
             let after_selection = note_text[prompt_span.end..].to_string();
 
-            app_io.execute_llm_prompt(LLMPromptRequest {
-                prompt: prompt.prompt.clone(),
-                selection,
-                model,
-                system_prompt: state
-                    .llm_settings
-                    .as_ref()
-                    .and_then(|settings| settings.system_prompt.clone()),
-                selection_location: prompt.address,
-                before_selection,
-                after_selection,
-            });
+            app_io.execute_llm_prompt(
+                LLMPromptRequest {
+                    prompt: prompt.prompt.clone(),
+                    selection,
+                    selection_location: prompt.address,
+                    before_selection,
+                    after_selection,
+                },
+                SettingsForAiRequests {
+                    llm_settings: state.llm_settings.as_ref(),
+                    commands: &state.commands,
+                },
+            );
 
             SmallVec::new()
         }
@@ -706,18 +872,17 @@ pub fn process_app_action(
                 return resulting_actions;
             };
             let target_note = state.notes.get_mut(&prompt.address.note_file).unwrap();
-
-            let text_lenght = target_note.text.len();
+            let text_length = target_note.text.len();
             let ByteSpan { start, end, .. } = prompt.address.span;
-            target_note.cursor = target_note.cursor.or(Some(UnOrderedByteSpan::new(
-                start.min(text_lenght),
-                end.min(text_lenght),
-            )));
+            target_note.update_cursor(UnOrderedByteSpan::new(
+                start.min(text_length),
+                end.min(text_length),
+            ));
 
             if accept {
                 let changes = vec![TextChange::Insert(
                     prompt.address.span,
-                    prompt.response_text,
+                    prompt.parsed_response.replacement.unwrap_or_default(),
                 )];
 
                 resulting_actions.push(AppAction::ApplyTextChanges {
@@ -731,23 +896,229 @@ pub fn process_app_action(
                 resulting_actions
             }
         }
+
         AppAction::OpenFeedbackWindow => {
             state.feedback = Some(FeedbackState::default());
             SmallVec::new()
         }
+
         AppAction::CloseFeedbackWindow => {
             if let Some(feedback) = state.feedback.as_mut() {
                 feedback.is_feedback_open = false;
             };
             SmallVec::new()
         }
+
+        AppAction::SlashPalette(slash_pallete_actions) => {
+            use SlashPaletteAction as SP;
+            match slash_pallete_actions {
+                SP::Show(slash_palette) => {
+                    state.slash_palette = Some(slash_palette);
+                    SmallVec::from_buf([AppAction::defer(AppAction::SlashPalette(SP::Update))])
+                }
+                SP::Update => {
+                    let focus_state = compute_app_focus(ctx, state);
+                    let palette = state.slash_palette.take();
+
+                    let new_palette = palette
+                        .and_then(|palette| update_slash_palette(focus_state, palette, state));
+
+                    match new_palette {
+                        Some(palette) => {
+                            state.slash_palette = Some(palette);
+                            SmallVec::from_buf([AppAction::defer(AppAction::SlashPalette(
+                                SP::Update,
+                            ))])
+                        }
+                        None => SmallVec::new(),
+                    }
+                }
+
+                SP::NextCommand => match state.slash_palette.as_mut() {
+                    Some(pallete) if !pallete.options.is_empty() => {
+                        pallete.selected = (pallete.selected + 1) % pallete.options.len();
+                        SmallVec::new()
+                    }
+                    _ => SmallVec::new(),
+                },
+                SP::PrevCommand => match state.slash_palette.as_mut() {
+                    Some(pallete) if !pallete.options.is_empty() => {
+                        pallete.selected =
+                            (pallete.selected + pallete.options.len() - 1) % pallete.options.len();
+
+                        SmallVec::new()
+                    }
+                    _ => SmallVec::new(),
+                },
+                SP::SelectCommand(i) => {
+                    if let Some(pallete) = state.slash_palette.as_mut() {
+                        pallete.selected = i
+                    }
+
+                    SmallVec::new()
+                }
+
+                SP::ExecuteCommand(index) => {
+                    println!("Execute slash command: {index}");
+
+                    let Some(SlashPalette {
+                        note_file,
+                        slash_byte_pos,
+                        search_term,
+                        options,
+                        ..
+                    }) = state.slash_palette.take()
+                    else {
+                        return SmallVec::new();
+                    };
+
+                    let Some(cmd) = options.get(index) else {
+                        return SmallVec::new();
+                    };
+
+                    let action_after_text_changes = process_app_action(
+                        AppAction::ApplyTextChanges {
+                            target: note_file,
+                            changes: [TextChange::Insert(
+                                ByteSpan::new(
+                                    slash_byte_pos,
+                                    slash_byte_pos + search_term.len() + 1,
+                                ),
+                                "".to_string(),
+                            )]
+                            .into(),
+                            should_trigger_eval: false,
+                        },
+                        ctx,
+                        state,
+                        focus_state,
+                        text_edit_id,
+                        app_io,
+                    );
+
+                    let mut scripts = state
+                        .settings_scripts
+                        .take()
+                        .unwrap_or_else(|| Scripts::new());
+
+                    let cmd_context = CommandContext {
+                        app_state: state,
+                        ui_state: state.to_ui_state(),
+                        app_focus: compute_app_focus(ctx, state),
+                        scripts: &mut scripts,
+                    };
+
+                    let actions_from_cmd = state.commands.run(
+                        &cmd.instance.instruction,
+                        cmd.instance.scope,
+                        cmd_context,
+                    );
+
+                    state.settings_scripts = Some(scripts);
+
+                    SmallVec::from_iter(
+                        action_after_text_changes
+                            .into_iter()
+                            .chain(actions_from_cmd),
+                    )
+                }
+
+                SP::Hide => {
+                    state.slash_palette = None;
+                    SmallVec::from_iter([AppAction::defer(AppAction::FocusRequest(
+                        FocusTarget::CurrentNote,
+                    ))])
+                }
+            }
+        }
     }
 }
 
+fn update_slash_palette(
+    focus_state: AppFocusState,
+    mut palette: SlashPalette,
+    state: &AppState,
+) -> Option<SlashPalette> {
+    // TODO figure out when to hide the slash pallete
+    // TODO2 update search term + options
+    // let focus_state = compute_app_focus(ctx, state);
+
+    // let Some(AppFocus::NoteEditor) = focus_state.focus else {
+    //     // if we lost focus from the editor just hide the palette
+    //     println!("## hide Slash Palette: Focus is not on NoteEditor");
+    //     return None;
+    // };
+
+    if palette.note_file != state.selected_note {
+        println!("## hide Slash Palette: Palette note file doesn't match selected note");
+        return None;
+    }
+
+    // if some => means that we still have focus cursor
+    let (note_cursor, text_part) = state
+        .notes
+        .get(&state.selected_note)
+        .and_then(|note| {
+            note.cursor()
+                .or(note.last_cursor())
+                .map(|c| c.ordered())
+                .map(|cursor| (cursor, &note.text[palette.slash_byte_pos..]))
+        })
+        .or_else(|| {
+            println!("## hide Slash Palette: Cursor changed position");
+            return None;
+        })?;
+
+    if !text_part.starts_with("/") {
+        // it means that either text was modified above or user deleted the "/"
+        println!("## hide Slash Palette: Text doesn't start with '/'\nterm={text_part}");
+        return None;
+    };
+
+    let word_end = text_part
+        .find(|c: char| c.is_whitespace() || c == '\n')
+        .unwrap_or(text_part.len());
+
+    let term_span = ByteSpan::new(palette.slash_byte_pos, palette.slash_byte_pos + word_end);
+
+    // needs to be either inside the palette term or immidiately touching it
+    if !(term_span.contains(note_cursor)
+        || (note_cursor.is_empty() && term_span.end == note_cursor.start))
+    {
+        println!("## hide Slash Palette: Cursor is not within or touching the palette term");
+        return None;
+    }
+
+    let search_term = &text_part[1..word_end];
+
+    palette.update_count = palette.update_count.wrapping_add(1);
+
+    // if it is exactly the same term just do nothing
+    if search_term == palette.search_term {
+        return Some(palette);
+    }
+
+    // Update options based on search term
+    // This is a placeholder - implement actual filtering logic
+    palette.options = state
+        .commands
+        .available_slash_commands()
+        .filter(|option| option.prefix.starts_with(search_term))
+        .cloned()
+        .collect();
+
+    palette.search_term = search_term.to_string();
+    palette.selected = 0;
+
+    Some(palette)
+}
+
 pub fn compute_app_focus(ctx: &Context, app_state: &AppState) -> AppFocusState {
+    let viewport_focused = ctx.input(|input| input.viewport().focused.unwrap_or(false));
     ctx.memory(|m| AppFocusState {
+        viewport_focused,
         is_menu_opened: m.any_popup_open(),
-        focus: match m.focused() {
+        internal_focus: match m.focused() {
             Some(id)
                 if app_state
                     .inline_llm_prompt

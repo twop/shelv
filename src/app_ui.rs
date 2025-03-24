@@ -1,15 +1,28 @@
-use core::f32;
-
+use boa_engine::ast::expression::TaggedTemplate;
 use eframe::{
     egui::{
         self,
+        scroll_area::ScrollBarVisibility,
+        style::default_text_styles,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        Context, FontFamily, Id, Key, KeyboardShortcut, Layout, Modifiers, Painter, RichText,
-        Sense, TextEdit, TopBottomPanel, Ui, UiStackInfo, Vec2, WidgetText,
+        text_selection::{text_cursor_state::cursor_rect, LabelSelectionState},
+        Context, CursorIcon, FontFamily, FontSelection, Id, Key, KeyboardShortcut, Label, Layout,
+        Margin, Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit,
+        TextFormat, TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2,
+        WidgetText,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
+    App,
+};
+use egui_taffy::{
+    taffy::{
+        self,
+        prelude::{auto, length},
+        AlignContent, JustifyContent, Style,
+    },
+    tui, TuiBuilderLogic,
 };
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
@@ -18,13 +31,16 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    app_actions::AppAction,
+    app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
-        ComputedLayout, FeedbackState, InlineLLMPropmptState, InlinePromptStatus, LayoutParams,
-        MsgToApp,
+        ComputedLayout, FeedbackState, InlineLLMPromptState, InlinePromptStatus, LayoutParams,
+        MsgToApp, RenderAction, SlashPalette,
     },
     byte_span::UnOrderedByteSpan,
-    command::{BuiltInCommand, CommandList, PROMOTED_COMMANDS},
+    command::{
+        CommandInstruction, CommandList, FrameHotkey, FrameHotkeys, SlashPaletteCmd,
+        PROMOTED_COMMANDS,
+    },
     commands::{
         inline_llm_prompt::{self, compute_inline_prompt_text_input_id},
         run_llm::LLM_LANG,
@@ -33,6 +49,8 @@ use crate::{
     feedback::{Feedback, FeedbackResult},
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
+    settings_parsing::format_mac_shortcut_with_symbols,
+    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
     text_structure::{InteractiveTextPart, TextStructure},
     theme::{AppIcon, AppTheme, ColorManipulation},
 };
@@ -46,9 +64,12 @@ pub struct AppRenderData<'a> {
     pub syntax_set: &'a SyntaxSet,
     pub theme_set: &'a ThemeSet,
     pub computed_layout: Option<ComputedLayout>,
-    pub inline_llm_prompt: Option<&'a mut InlineLLMPropmptState>,
+    pub inline_llm_prompt: Option<&'a mut InlineLLMPromptState>,
+    pub slash_palette: Option<&'a SlashPalette>,
     pub is_window_pinned: bool,
+    pub render_actions: SmallVec<[RenderAction; 2]>,
     pub feedback: Option<&'a mut FeedbackState>,
+    pub frame_hotkeys: &'a mut FrameHotkeys,
 }
 
 pub struct RenderAppResult {
@@ -77,7 +98,10 @@ pub fn render_app(
         theme_set,
         is_window_pinned,
         inline_llm_prompt,
+        slash_palette,
+        mut render_actions,
         feedback,
+        frame_hotkeys,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
@@ -99,24 +123,12 @@ pub fn render_app(
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
 
     if let Some(feedback) = feedback {
-        let window_bg = theme.colors.main_bg.shade(0.9);
+        let feedback_widget = Feedback::new(theme, &mut feedback.feedback_data);
 
-        egui::Window::new(RichText::new("Feedback").text_style(egui::TextStyle::Body))
-            .open(&mut feedback.is_feedback_open)
-            .fade_in(true)
-            .fade_out(true)
-            .title_bar(false)
-            .constrain(false)
-            .collapsible(false)
-            .resizable(false)
-            .movable(false)
-            .anchor(Align2::RIGHT_BOTTOM, [-8.0, -32.0])
-            .max_size([400., 400.])
-            .default_size([400., 400.])
-            .frame(egui::Frame::window(&ctx.style()).fill(window_bg))
-            .show(ctx, |ui| {
-                let feedback_widget = Feedback::new(theme, &mut feedback.feedback_data);
-                let feedback_result = feedback_widget.show(ui).inner;
+        if feedback.is_feedback_open {
+            let modal = Modal::new(Id::new("Feedback Modal")).show(ctx, |ui| {
+                ui.set_width(300.);
+                let feedback_result = feedback_widget.show(ui, frame_hotkeys);
 
                 match feedback_result {
                     Some(FeedbackResult::Cancel) => {
@@ -128,6 +140,38 @@ pub fn render_app(
                     None => {}
                 }
             });
+
+            if modal.should_close() {
+                output_actions.push(AppAction::CloseFeedbackWindow);
+            }
+        }
+
+        // egui::Window::new(RichText::new("Feedback").text_style(egui::TextStyle::Body))
+        //     .open(&mut feedback.is_feedback_open)
+        //     .fade_in(true)
+        //     .fade_out(true)
+        //     .title_bar(false)
+        //     .constrain(false)
+        //     .collapsible(false)
+        //     .resizable(false)
+        //     .movable(false)
+        //     .anchor(Align2::RIGHT_BOTTOM, [-8.0, -32.0])
+        //     .max_size([400., 400.])
+        //     .default_size([400., 400.])
+        //     .frame(egui::Frame::window(&ctx.style()).fill(window_bg))
+        //     .show(ctx, |ui| {
+        //         let feedback_result = feedback_widget.show(ui);
+
+        //         match feedback_result {
+        //             Some(FeedbackResult::Cancel) => {
+        //                 output_actions.push(AppAction::CloseFeedbackWindow)
+        //             }
+        //             Some(FeedbackResult::SubmitFeedback) => {
+        //                 output_actions.push(AppAction::SubmitFeedback)
+        //             }
+        //             None => {}
+        //         }
+        //     });
     }
 
     let (text_has_changed, text_structure, computed_layout, updated_cursor, editor_actions) =
@@ -142,7 +186,7 @@ pub fn render_app(
                                 .into_iter()
                                 .filter_map(|builtin| command_list.find(builtin))
                                 .filter_map(|cmd| {
-                                    cmd.kind.map(|k| k.human_description()).zip(cmd.shortcut)
+                                    Some(cmd.instruction.human_description()).zip(cmd.shortcut)
                                 })
                                 .collect()
                         });
@@ -176,12 +220,15 @@ pub fn render_app(
                             text_structure,
                             computed_layout,
                             inline_llm_prompt,
+                            slash_palette,
+                            &mut render_actions,
                             theme,
                             syntax_set,
                             theme_set,
                             text_edit_id,
                             selected_note,
                             command_list,
+                            frame_hotkeys,
                             ctx,
                         );
 
@@ -313,13 +360,16 @@ fn render_editor(
     editor_text: &mut String,
     text_structure: TextStructure,
     mut computed_layout: Option<ComputedLayout>,
-    inline_llm_prompt: Option<&mut InlineLLMPropmptState>,
+    inline_llm_prompt: Option<&mut InlineLLMPromptState>,
+    slash_palette: Option<&SlashPalette>,
+    render_actions: &mut SmallVec<[RenderAction; 2]>,
     theme: &AppTheme,
     syntax_set: &SyntaxSet,
     theme_set: &ThemeSet,
     text_edit_id: Id,
     note_file: NoteFile,
     command_list: &CommandList,
+    frame_hotkeys: &mut FrameHotkeys,
     ctx: &egui::Context,
 ) -> (
     bool, // if the text was changed, TODO rework this mess
@@ -336,7 +386,7 @@ fn render_editor(
     // let available_width = ui.available_width();
 
     let code_bg = ui.visuals().code_bg_color;
-    let code_bg_rounding = ui.visuals().widgets.inactive.rounding;
+    let code_bg_rounding = ui.visuals().widgets.inactive.corner_radius;
     if let Some(computed_layout) = &computed_layout {
         for area in computed_layout.code_areas.iter() {
             let background_rect = area
@@ -381,7 +431,6 @@ fn render_editor(
     };
 
     // let mut edited_text = state.markdown.clone();
-
     let TextEditOutput {
         response: text_edit_response,
         galley_pos,
@@ -389,7 +438,7 @@ fn render_editor(
         galley,
         ..
     } = egui::TextEdit::multiline(editor_text)
-        .font(egui::TextStyle::Monospace) // for cursor height
+        .font(TextStyle::Monospace) // for cursor height
         .code_editor()
         .id(text_edit_id)
         .lock_focus(true)
@@ -397,6 +446,18 @@ fn render_editor(
         .frame(false)
         .layouter(&mut layouter)
         .show(ui);
+
+    let prev_actions_count = render_actions.len();
+    render_actions.retain(|action| !matches!(action, RenderAction::ScrollToEditorCursorPos));
+
+    // that verifies that we indeed removed some actions, that is, there was at least one scroll action
+    if let (Some(cursor_range), true) = (cursor_range, prev_actions_count != render_actions.len()) {
+        let font_id = FontSelection::Style(TextStyle::Monospace).resolve(ui.style());
+        let row_height = ui.fonts(|f| f.row_height(&font_id));
+        let primary_cursor_pos = cursor_rect(&galley, &cursor_range.primary, row_height);
+
+        ui.scroll_to_rect(primary_cursor_pos, None);
+    }
 
     // floating buttons over code blocks
     ui.scope(|ui| {
@@ -414,10 +475,11 @@ fn render_editor(
                 {
                     let is_hovered = ui.rect_contains_pointer(code_area);
 
-                    let mut ui = ui.child_ui(
-                        code_area.translate(Vec2::new(-theme.sizes.xs, 0.0)),
-                        Layout::right_to_left(Align::TOP),
-                        Some(UiStackInfo::new(egui::UiKind::GenericArea)),
+                    let mut ui = ui.new_child(
+                        UiBuilder::new()
+                            .max_rect(code_area.translate(Vec2::new(-theme.sizes.xs, 0.0)))
+                            .layout(Layout::right_to_left(Align::TOP))
+                            .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
                     );
 
                     let alpha = ui
@@ -435,7 +497,7 @@ fn render_editor(
                         .on_hover_ui(|ui| {
                             let tooltip_text = "Execute code block";
                             let tooltip_text = command_list
-                                .find(BuiltInCommand::RunLLMBlock)
+                                .find(CommandInstruction::RunLLMBlock)
                                 .and_then(|cmd| cmd.shortcut)
                                 .map(|shortcut| {
                                     format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
@@ -460,240 +522,37 @@ fn render_editor(
 
     let text_structure = structure_wrapper.unwrap();
 
+    let overlay_layer_width = galley.job.wrap.max_width - 2. * estimated_text_pos.x;
+
     match inline_llm_prompt {
         Some(inline_llm_prompt)
             if inline_llm_prompt.address.note_file == note_file
                 && inline_llm_prompt.address.text_version == text_structure.opaque_version() =>
         {
-            let [selection_rect_start, selection_rect_end] = [
-                inline_llm_prompt.address.span.start,
-                inline_llm_prompt.address.span.end,
-            ]
-            .map(|pos| {
-                let char_pos = char_index_from_byte_index(editor_text, pos);
-                galley.pos_from_ccursor(CCursor::new(char_pos))
-            });
+            // TODO wtf is that?
+            let mut top_of_frame = Rect::from_pos(estimated_text_pos);
+            top_of_frame.set_width(overlay_layer_width);
 
-            // let char_pos = char_index_from_byte_index(editor_text, inline_llm_prompt.address.span.end);
-            // let selection_start = galley.pos_from_ccursor(CCursor::new(char_pos));
-            // TODO fix layout, I suspect that we need to subtract twice because of padding on each side
-            // BUT wtf?! it is not intuitive neither robust
-            let frame_width = galley.job.wrap.max_width - 2. * estimated_text_pos.x;
-            let editor_start_y = estimated_text_pos.y;
-
-            let prompt_ui_rect = Rect::from_pos(pos2(
-                estimated_text_pos.x,
-                selection_rect_end.bottom() + editor_start_y + theme.sizes.xs,
-            ));
-
-            let mut prompt_ui = ui.child_ui(
-                prompt_ui_rect,
-                Layout::top_down(Align::LEFT),
-                Some(UiStackInfo::new(egui::UiKind::GenericArea)),
+            let (prompt_rect, prompt_actions) = render_inline_prompt(
+                inline_llm_prompt,
+                editor_text,
+                &galley,
+                top_of_frame,
+                theme,
+                ui,
+                ctx,
+                command_list,
+                frame_hotkeys,
             );
 
-            let outline_x = estimated_text_pos.x; //- theme.sizes.xs;
-
-            prompt_ui.painter().line_segment(
-                [
-                    pos2(outline_x, selection_rect_start.top() + editor_start_y),
-                    pos2(outline_x, selection_rect_end.bottom() + editor_start_y),
-                ],
-                Stroke::new(1., theme.colors.subtle_text_color),
-            );
-
-            let frame_resp = egui::Frame::none()
-                .fill(code_bg)
-                .inner_margin(theme.sizes.s)
-                .stroke(prompt_ui.visuals().window_stroke)
-                .shadow(prompt_ui.visuals().window_shadow)
-                .rounding(prompt_ui.visuals().window_rounding)
-                .show(&mut prompt_ui, |ui| {
-                    ui.set_min_width(frame_width);
-                    let inline_prompt_address = inline_llm_prompt.address;
-                    // ui.memory(|m| m.set_focus_lock_filter(id, event_filter);)
-
-                    let prompt_text_id = compute_inline_prompt_text_input_id(inline_prompt_address);
-
-                    let is_focused = ctx.memory(|m| m.focused()) == Some(prompt_text_id);
-
-                    // TODO move that into a command instead
-                    if is_focused {
-                        if ui.input_mut(|input| {
-                            input.consume_shortcut(&KeyboardShortcut::new(
-                                Modifiers::NONE,
-                                egui::Key::Enter,
-                            ))
-                        }) {
-                            resulting_actions.push(match &inline_llm_prompt.status {
-                                InlinePromptStatus::NotStarted => {
-                                    if inline_llm_prompt.prompt.is_empty() {
-                                        // that will hide the UI
-                                        AppAction::AcceptPromptSuggestion { accept: false }
-                                    } else {
-                                        AppAction::ExecutePrompt
-                                    }
-                                }
-                                InlinePromptStatus::Streaming { .. } => {
-                                    AppAction::AcceptPromptSuggestion { accept: false }
-                                }
-                                InlinePromptStatus::Done { prompt } => {
-                                    if prompt == &inline_llm_prompt.prompt {
-                                        AppAction::AcceptPromptSuggestion { accept: true }
-                                    } else {
-                                        AppAction::ExecutePrompt
-                                    }
-                                }
-                            });
-                        }
-                    }
-
-                    let prompt_inpit_resp = TextEdit::multiline(&mut inline_llm_prompt.prompt)
-                        .id(prompt_text_id)
-                        .desired_width(f32::INFINITY)
-                        .frame(false)
-                        .desired_rows(1)
-                        .desired_width(f32::INFINITY)
-                        .hint_text("Prompt AI ...")
-                        .show(ui);
-
-                    if prompt_inpit_resp.response.gained_focus() {
-                        // println!("prompt input gained focus");
-                        prompt_inpit_resp.response.scroll_to_me(Some(Align::Center));
-                    }
-
-                    ui.add_space(theme.sizes.s);
-                    ui.separator();
-                    ui.add_space(theme.sizes.s);
-                    let render_btn = |ui: &mut Ui, icon: AppIcon, text| {
-                        ui.button(icon.render_with_text(
-                            theme.fonts.size.normal,
-                            theme.colors.normal_text_color,
-                            text,
-                        ))
-                    };
-
-                    let render_tooltip =
-                        |ui: &mut Ui, tooltip_text: &str, shortcut: Option<KeyboardShortcut>| {
-                            ui.label({
-                                RichText::new(tooltip_text)
-                                    // RichText::new(match shortcut {
-                                    //     Some(shortcut) => format!(
-                                    //         "{} {}",
-                                    //         tooltip_text,
-                                    //         ctx.format_shortcut(&shortcut)
-                                    //     ),
-                                    //     None => tooltip_text.to_string(),
-                                    // })
-                                    .color(theme.colors.subtle_text_color)
-                            })
-                        };
-                    let just_enter_shortcut = KeyboardShortcut::new(Modifiers::NONE, Key::Enter);
-
-                    ui.horizontal(|ui| {
-                        let t = 1;
-                        match &inline_llm_prompt.status {
-                            InlinePromptStatus::NotStarted => {
-                                if render_btn(ui, AppIcon::Play, "Run")
-                                    .on_hover_ui(|ui| {
-                                        render_tooltip(ui, "Prompt AI", Some(just_enter_shortcut));
-                                    })
-                                    .clicked()
-                                {
-                                    resulting_actions.push(AppAction::ExecutePrompt);
-                                }
-                                ui.add_space(theme.sizes.s);
-                                if render_btn(ui, AppIcon::Close, "Cancel")
-                                    .on_hover_ui(|ui| {
-                                        render_tooltip(
-                                            ui,
-                                            "Cancel prompt",
-                                            command_list
-                                                .find(BuiltInCommand::HidePrompt)
-                                                .and_then(|cmd| cmd.shortcut),
-                                        );
-                                    })
-                                    .clicked()
-                                {
-                                    resulting_actions
-                                        .push(AppAction::AcceptPromptSuggestion { accept: false });
-                                }
-                            }
-
-                            InlinePromptStatus::Streaming { .. } => {
-                                ui.spinner();
-                            }
-
-                            InlinePromptStatus::Done { prompt } => {
-                                if prompt == &inline_llm_prompt.prompt
-                                    && render_btn(ui, AppIcon::Accept, "Accept")
-                                        .on_hover_ui(|ui| {
-                                            render_tooltip(
-                                                ui,
-                                                "Accept suggestions",
-                                                Some(just_enter_shortcut),
-                                            );
-                                        })
-                                        .clicked()
-                                {
-                                    resulting_actions
-                                        .push(AppAction::AcceptPromptSuggestion { accept: true });
-                                }
-
-                                if prompt != &inline_llm_prompt.prompt
-                                    && render_btn(ui, AppIcon::Play, "Re-run")
-                                        .on_hover_ui(|ui| {
-                                            render_tooltip(
-                                                ui,
-                                                "Re-run using the new prompt",
-                                                Some(just_enter_shortcut),
-                                            );
-                                        })
-                                        .clicked()
-                                {
-                                    resulting_actions.push(AppAction::ExecutePrompt);
-                                }
-
-                                ui.add_space(theme.sizes.s);
-                                if render_btn(ui, AppIcon::Close, "Cancel")
-                                    .on_hover_ui(|ui| {
-                                        render_tooltip(
-                                            ui,
-                                            "Reject changes",
-                                            command_list
-                                                .find(BuiltInCommand::HidePrompt)
-                                                .and_then(|cmd| cmd.shortcut),
-                                        );
-                                    })
-                                    .clicked()
-                                {
-                                    resulting_actions
-                                        .push(AppAction::AcceptPromptSuggestion { accept: false });
-                                }
-                            }
-                        }
-                    });
-
-                    if !inline_llm_prompt.response_text.is_empty() {
-                        ui.add_space(theme.sizes.s);
-                        ui.separator();
-                        ui.add_space(theme.sizes.s);
-                        ui.label(WidgetText::LayoutJob(inline_llm_prompt.layout_job.clone()));
-                    }
-                })
-                .response;
-
-            if inline_llm_prompt.fresh_response {
-                inline_llm_prompt.fresh_response = false;
-                frame_resp.scroll_to_me(None);
-            }
-
-            let delta = frame_resp.rect.bottom() - text_edit_response.rect.bottom();
+            let delta = prompt_rect.bottom() - text_edit_response.rect.bottom();
             if delta > 0. {
                 // that means that overlay is outside text editor bounds
                 // hence add that delta + some margin to expand scroll view
                 ui.add_space(delta + theme.sizes.s);
             }
+
+            resulting_actions.extend(prompt_actions);
         }
 
         Some(_) => {
@@ -702,6 +561,47 @@ fn render_editor(
         }
 
         None => (),
+    }
+
+    if let Some(palette) = slash_palette {
+        let slash_char_pos = char_index_from_byte_index(editor_text, palette.slash_byte_pos);
+        let relative_slash_pos = galley.pos_from_ccursor(CCursor::new(slash_char_pos));
+
+        let frame_width = theme.sizes.menu_width;
+        let frame_height = theme.sizes.menu_height;
+
+        let frame_right = estimated_text_pos.x
+            + (overlay_layer_width).min(relative_slash_pos.left() + frame_width);
+
+        let frame_left = frame_right - frame_width;
+
+        let frame_rect = Rect::from_min_size(
+            pos2(
+                frame_left,
+                estimated_text_pos.y + relative_slash_pos.bottom(),
+            ),
+            vec2(frame_width, frame_height),
+        );
+
+        let (palette_rect, palette_actions) =
+            render_slash_palette(palette, frame_rect, theme, frame_hotkeys, ui);
+
+        // TODO hack, only scroll to it on post render
+        // Possibly makt it an app action maybe?
+        if palette.update_count == 1 {
+            // frame_resp.scroll_to_me(None);
+            println!("scrolling to palette");
+            ui.scroll_to_rect(palette_rect, None);
+        }
+
+        let delta = palette_rect.bottom() - text_edit_response.rect.bottom();
+        if delta > 0. {
+            // that means that overlay is outside text editor bounds
+            // hence add that delta + some margin to expand scroll view
+            ui.add_space(delta + theme.sizes.s);
+        }
+
+        resulting_actions.extend(palette_actions);
     }
 
     use egui::TextBuffer;
@@ -721,6 +621,514 @@ fn render_editor(
         galley_pos,
         resulting_actions,
     )
+}
+
+fn render_inline_prompt(
+    inline_llm_prompt: &mut InlineLLMPromptState,
+    editor_text: &str,
+    galley: &egui::Galley,
+    top_of_frame: Rect,
+    theme: &AppTheme,
+    ui: &mut Ui,
+    ctx: &Context,
+    command_list: &CommandList,
+    frame_hotkeys: &mut FrameHotkeys,
+) -> (Rect, SmallVec<[AppAction; 1]>) {
+    let mut resulting_actions = SmallVec::new();
+
+    let [relative_selection_start, relative_selection_end] = [
+        inline_llm_prompt.address.span.start,
+        inline_llm_prompt.address.span.end,
+    ]
+    .map(|pos| {
+        let char_pos = char_index_from_byte_index(editor_text, pos);
+        galley.pos_from_ccursor(CCursor::new(char_pos))
+    });
+
+    let prompt_ui_rect = Rect::from_pos(pos2(
+        top_of_frame.left(),
+        relative_selection_end.bottom() + top_of_frame.top() + theme.sizes.xs,
+    ));
+
+    let mut prompt_ui = ui.new_child(
+        UiBuilder::new()
+            .max_rect(prompt_ui_rect)
+            .layout(Layout::top_down(Align::LEFT))
+            .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
+    );
+
+    prompt_ui.painter().line_segment(
+        [
+            pos2(
+                top_of_frame.left(),
+                relative_selection_start.top() + top_of_frame.top(),
+            ),
+            pos2(
+                top_of_frame.left(),
+                relative_selection_end.bottom() + top_of_frame.top(),
+            ),
+        ],
+        Stroke::new(1., theme.colors.subtle_text_color),
+    );
+
+    let frame_resp = egui::Frame::new()
+        .fill(theme.colors.code_bg_color)
+        .inner_margin(theme.sizes.s)
+        .stroke(prompt_ui.visuals().window_stroke)
+        .shadow(prompt_ui.visuals().window_shadow)
+        .corner_radius(prompt_ui.visuals().window_corner_radius)
+        .show(&mut prompt_ui, |ui| {
+            ui.set_min_width(top_of_frame.width());
+            let inline_prompt_address = inline_llm_prompt.address;
+            // ui.memory(|m| m.set_focus_lock_filter(id, event_filter);)
+
+            let prompt_text_id = compute_inline_prompt_text_input_id(inline_prompt_address);
+
+            let is_focused = ctx.memory(|m| m.focused()) == Some(prompt_text_id);
+
+            // TODO move that into a command instead
+            if is_focused {
+                frame_hotkeys.add_key(Key::Enter, |ctx| {
+                    let action = ctx
+                        .app_state
+                        .inline_llm_prompt
+                        .as_ref()
+                        .map(|inline_prompt| {
+                            match &inline_prompt.status {
+                                InlinePromptStatus::NotStarted => {
+                                    if inline_prompt.prompt.is_empty() {
+                                        // that will hide the UI
+                                        AppAction::AcceptPromptSuggestion { accept: false }
+                                    } else {
+                                        AppAction::ExecutePrompt
+                                    }
+                                }
+                                InlinePromptStatus::Streaming { .. } => {
+                                    AppAction::AcceptPromptSuggestion { accept: false }
+                                }
+                                InlinePromptStatus::Done { prompt } => {
+                                    if prompt == &inline_prompt.prompt {
+                                        AppAction::AcceptPromptSuggestion { accept: true }
+                                    } else {
+                                        AppAction::ExecutePrompt
+                                    }
+                                }
+                            }
+                        });
+
+                    action
+                        .map(|action| SmallVec::from([action]))
+                        .unwrap_or_default()
+                });
+
+                // Esc otherwise will just close the input prompt
+                frame_hotkeys.add_key(Key::Escape, move |_| {
+                    [AppAction::AcceptPromptSuggestion { accept: false }].into()
+                });
+            } else {
+                // if the inline prompt is open, esc will refocus it back to the input field
+                frame_hotkeys.add_key(Key::Escape, move |_| {
+                    [AppAction::FocusRequest(FocusTarget::SpecificId(
+                        prompt_text_id,
+                    ))]
+                    .into()
+                });
+            }
+
+            let prompt_input_resp = TextEdit::multiline(&mut inline_llm_prompt.prompt)
+                .id(prompt_text_id)
+                .desired_width(f32::INFINITY)
+                .frame(false)
+                .desired_rows(1)
+                .desired_width(f32::INFINITY)
+                .hint_text("Prompt AI ...")
+                .show(ui);
+
+            if prompt_input_resp.response.gained_focus() {
+                // println!("prompt input gained focus");
+                println!("prompt input gained focus");
+                prompt_input_resp.response.scroll_to_me(Some(Align::Center));
+            }
+
+            ui.add_space(theme.sizes.s);
+            ui.separator();
+            ui.add_space(theme.sizes.s);
+            let render_btn = |ui: &mut Ui, icon: AppIcon, text| {
+                ui.button(icon.render_with_text(
+                    theme.fonts.size.normal,
+                    theme.colors.normal_text_color,
+                    text,
+                ))
+            };
+
+            let render_tooltip =
+                |ui: &mut Ui, tooltip_text: &str, shortcut: Option<KeyboardShortcut>| {
+                    ui.label({
+                        // RichText::new(tooltip_text)
+                        RichText::new(match shortcut {
+                            Some(shortcut) => {
+                                format!(
+                                    "{} ({})",
+                                    tooltip_text,
+                                    format_mac_shortcut_with_symbols(shortcut)
+                                )
+                            }
+                            None => tooltip_text.to_string(),
+                        })
+                        .color(theme.colors.subtle_text_color)
+                    })
+                };
+            ui.horizontal(|ui| match &inline_llm_prompt.status {
+                InlinePromptStatus::NotStarted => {
+                    if render_btn(ui, AppIcon::Play, "Run")
+                        .on_hover_ui(|ui| {
+                            render_tooltip(
+                                ui,
+                                "Prompt AI",
+                                Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
+                            );
+                        })
+                        .clicked()
+                    {
+                        resulting_actions.push(AppAction::ExecutePrompt);
+                    }
+                    ui.add_space(theme.sizes.s);
+                    if render_btn(ui, AppIcon::Close, "Cancel")
+                        .on_hover_ui(|ui| {
+                            render_tooltip(
+                                ui,
+                                "Cancel prompt",
+                                Some(KeyboardShortcut::new(Modifiers::NONE, Key::Escape)),
+                            );
+                        })
+                        .clicked()
+                    {
+                        resulting_actions.push(AppAction::AcceptPromptSuggestion { accept: false });
+                    }
+                }
+
+                InlinePromptStatus::Streaming { .. } => {
+                    ui.spinner();
+                }
+
+                InlinePromptStatus::Done { prompt } => {
+                    if prompt == &inline_llm_prompt.prompt
+                        && render_btn(ui, AppIcon::Accept, "Accept")
+                            .on_hover_ui(|ui| {
+                                render_tooltip(
+                                    ui,
+                                    "Accept suggestions",
+                                    Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
+                                );
+                            })
+                            .clicked()
+                    {
+                        resulting_actions.push(AppAction::AcceptPromptSuggestion { accept: true });
+                    }
+
+                    if prompt != &inline_llm_prompt.prompt
+                        && render_btn(ui, AppIcon::Play, "Re-run")
+                            .on_hover_ui(|ui| {
+                                render_tooltip(
+                                    ui,
+                                    "Re-run using the new prompt",
+                                    Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
+                                );
+                            })
+                            .clicked()
+                    {
+                        resulting_actions.push(AppAction::ExecutePrompt);
+                    }
+
+                    ui.add_space(theme.sizes.s);
+                    if render_btn(ui, AppIcon::Close, "Cancel")
+                        .on_hover_ui(|ui| {
+                            render_tooltip(
+                                ui,
+                                "Reject changes",
+                                Some(KeyboardShortcut::new(Modifiers::NONE, Key::Escape)),
+                            );
+                        })
+                        .clicked()
+                    {
+                        resulting_actions.push(AppAction::AcceptPromptSuggestion { accept: false });
+                    }
+                }
+            });
+
+            ui.add_space(theme.sizes.s);
+            ui.separator();
+            ui.add_space(theme.sizes.s);
+
+            if let Some(reasoning) = inline_llm_prompt.parsed_response.reasoning.as_ref() {
+                ui.collapsing(
+                    RichText::new("reasoning").color(theme.colors.subtle_text_color),
+                    |ui| {
+                        ui.label(reasoning);
+                    },
+                );
+                ui.add_space(theme.sizes.s);
+            }
+
+            if !inline_llm_prompt.response_text.is_empty() {
+                ui.label(WidgetText::LayoutJob(inline_llm_prompt.layout_job.clone()));
+            }
+
+            if let Some(explanation) = inline_llm_prompt.parsed_response.explanation.as_ref() {
+                ui.add_space(theme.sizes.s);
+                ui.collapsing(
+                    RichText::new("explanation").color(theme.colors.subtle_text_color),
+                    |ui| {
+                        ui.label(explanation);
+                    },
+                );
+                // ui.separator();_==_->->=_=_=_=_=_=_
+            }
+        })
+        .response;
+
+    if inline_llm_prompt.fresh_response {
+        inline_llm_prompt.fresh_response = false;
+        frame_resp.scroll_to_me(None);
+    }
+
+    (frame_resp.rect, resulting_actions)
+}
+
+fn render_slash_palette(
+    slash_palette: &SlashPalette,
+    allocated_frame: Rect,
+    theme: &AppTheme,
+    frame_hotkeys: &mut FrameHotkeys,
+    ui: &mut Ui,
+) -> (Rect, SmallVec<[AppAction; 1]>) {
+    let mut resulting_actions = SmallVec::new();
+
+    let starting_point = pos2(
+        allocated_frame.left(),
+        allocated_frame.top() + theme.sizes.xs,
+    );
+
+    let prompt_ui_rect = Rect::from_min_size(starting_point, allocated_frame.size());
+
+    let mut prompt_ui = ui.new_child(
+        UiBuilder::new()
+            // .max_rect(Rect::from_pos(point))
+            .max_rect(prompt_ui_rect)
+            .id_salt("slash_palette_ui")
+            .layout(Layout::top_down(Align::LEFT))
+            .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
+    );
+
+    let frame_resp = egui::Frame::none()
+        .fill(theme.colors.code_bg_color)
+        .inner_margin(theme.sizes.s)
+        .stroke(prompt_ui.visuals().window_stroke)
+        .shadow(prompt_ui.visuals().window_shadow)
+        .corner_radius(prompt_ui.visuals().window_corner_radius)
+        // .id_salt("slash_palette_frame")
+        .show(&mut prompt_ui, |ui| {
+            set_menu_bar_style(ui);
+
+            // ui.set_min_width(top_of_frame.width());
+
+            ScrollArea::vertical()
+                .max_height(allocated_frame.height())
+                .min_scrolled_height(allocated_frame.height())
+                .scroll_bar_visibility(ScrollBarVisibility::AlwaysVisible)
+                .stick_to_bottom(false)
+                .stick_to_right(false)
+                .id_salt("slash_palette_scroll")
+                .show(ui, |ui| {
+                    let mut responses: SmallVec<[Response; 10]> = SmallVec::new();
+                    if slash_palette.options.is_empty() {
+                        ui.label({
+                            RichText::new("No command matches found")
+                                .color(theme.colors.subtle_text_color)
+                        });
+                    } else {
+                        frame_hotkeys.add_key(Key::ArrowDown, |_ctx| {
+                            [AppAction::SlashPalette(SlashPaletteAction::NextCommand)].into()
+                        });
+                        frame_hotkeys.add_key(Key::ArrowUp, |_ctx| {
+                            [AppAction::SlashPalette(SlashPaletteAction::PrevCommand)].into()
+                        });
+                        frame_hotkeys.add_key(Key::Escape, |_ctx| {
+                            [AppAction::SlashPalette(SlashPaletteAction::Hide)].into()
+                        });
+
+                        let selected = slash_palette.selected;
+                        frame_hotkeys.add_key(Key::Enter, move |_ctx| {
+                            [AppAction::SlashPalette(SlashPaletteAction::ExecuteCommand(
+                                selected,
+                            ))]
+                            .into()
+                        });
+
+                        // ui.set_min_width(prompt_ui_rect.width());
+                        // ui.label("here is a long long long long label");
+                        for item in Itertools::intersperse(
+                            slash_palette.options.iter().enumerate().map(Some),
+                            None,
+                        ) {
+                            match item {
+                                Some((i, cmd)) => {
+                                    let selected = i == slash_palette.selected;
+                                    let resp = render_slash_cmd(ui, theme, cmd, selected)
+                                        .interact(Sense::CLICK)
+                                        .on_hover_cursor(CursorIcon::PointingHand);
+
+                                    if selected {
+                                        let is_visible = ui.is_rect_visible(resp.rect);
+                                        if !is_visible {
+                                            resp.scroll_to_me(Some(Align::Center));
+                                        }
+                                    }
+
+                                    if resp.gained_focus() {
+                                        // TODO remove, trying to debug what is getting focus
+                                        println!("has focus!!")
+                                    }
+
+                                    if resp.clicked() {
+                                        println!("clicked on {cmd:#?}");
+
+                                        resulting_actions.push(AppAction::FocusRequest(
+                                            FocusTarget::CurrentNote,
+                                        ));
+                                        // TODO fix
+                                        // This is quite silly, but it seems to take a few renders before the cursor is properly restored.
+                                        resulting_actions.push(AppAction::defer(AppAction::defer(
+                                            AppAction::SlashPalette(
+                                                SlashPaletteAction::ExecuteCommand(i),
+                                            ),
+                                        )));
+                                    }
+
+                                    ui.input(|input| {
+                                        if input.pointer.is_moving()
+                                            || input.smooth_scroll_delta != Vec2::ZERO
+                                            || input.raw_scroll_delta != Vec2::ZERO
+                                        {
+                                            if resp.contains_pointer() {
+                                                resulting_actions.push(AppAction::SlashPalette(
+                                                    SlashPaletteAction::SelectCommand(i),
+                                                ));
+                                            }
+                                        }
+                                    });
+
+                                    responses.push(resp);
+                                }
+
+                                None => {
+                                    ui.separator();
+                                }
+                            }
+                        }
+                    }
+                });
+        })
+        .response;
+
+    // if inline_llm_prompt.fresh_response {
+    //     inline_llm_prompt.fresh_response = false;
+    //     frame_resp.scroll_to_me(None);
+    // }
+
+    (frame_resp.rect, resulting_actions)
+}
+
+fn render_slash_cmd(
+    ui: &mut Ui,
+    theme: &AppTheme,
+
+    cmd: &SlashPaletteCmd,
+    selected: bool,
+) -> egui::Response {
+    let phosphor_icon_font = TextFormat::simple(
+        FontId::new(theme.fonts.size.h4, FontFamily::Name("phosphor".into())),
+        theme.colors.normal_text_color,
+    );
+
+    let header_font = TextFormat::simple(
+        FontId::new(theme.fonts.size.normal, theme.fonts.family.normal.clone()),
+        theme.colors.md_code,
+    );
+
+    let shortcut_font = TextFormat::simple(
+        FontId::new(theme.fonts.size.small, theme.fonts.family.italic.clone()),
+        theme.colors.subtle_text_color,
+    );
+
+    let description_font = TextFormat::simple(
+        FontId::new(theme.fonts.size.small, theme.fonts.family.normal.clone()),
+        theme.colors.subtle_text_color,
+    );
+
+    let available_width = ui.available_width();
+
+    tui(ui, ui.id().with(cmd))
+        .reserve_available_width()
+        .show(|tui| {
+            tui.style(
+                flex_column()
+                    .align_content(AlignContent::Stretch)
+                    .width(available_width)
+                    .auto_height()
+                    .padding(theme.sizes.xs)
+                    .gap(theme.sizes.xs),
+            )
+            .selectable(selected, |tui| {
+                tui.style(flex_row().justify_content(JustifyContent::SpaceBetween))
+                    .add(|tui| {
+                        tui.style(flex_row().gap(theme.sizes.s)).add(|tui| {
+                            tui.ui_add(
+                                Label::new(
+                                    RichText::new(if let Some(icon) = &cmd.phosphor_icon {
+                                        icon
+                                    } else {
+                                        egui_phosphor::light::GEAR
+                                    })
+                                    .font(phosphor_icon_font.font_id)
+                                    .color(phosphor_icon_font.color),
+                                )
+                                .wrap_mode(TextWrapMode::Extend),
+                            );
+                            tui.ui_add(
+                                Label::new(
+                                    RichText::new(&cmd.prefix)
+                                        .font(header_font.font_id)
+                                        .color(header_font.color),
+                                )
+                                .wrap_mode(TextWrapMode::Extend),
+                            );
+                        });
+
+                        tui.ui_add(
+                            Label::new(
+                                RichText::new(format!(
+                                    "{}",
+                                    cmd.instance
+                                        .shortcut
+                                        .map(format_mac_shortcut_with_symbols)
+                                        .unwrap_or_default()
+                                ))
+                                .font(shortcut_font.font_id)
+                                .color(shortcut_font.color),
+                            )
+                            .wrap_mode(egui::TextWrapMode::Extend),
+                        );
+                    });
+
+                tui.label(
+                    RichText::new(&cmd.description)
+                        .font(description_font.font_id)
+                        .color(description_font.color),
+                );
+            })
+        })
+        .response
 }
 
 fn restore_cursor_from_note_state(
@@ -753,7 +1161,7 @@ fn render_footer_panel(
     theme: &AppTheme,
 ) -> SmallVec<[AppAction; 1]> {
     let tooltips: SmallVec<[String; 6]> = (0..note_count)
-        .map(|note_index| BuiltInCommand::SwitchToNote(note_index as u8))
+        .map(|note_index| CommandInstruction::SwitchToNote(note_index as u8))
         .map(|cmd| command_list.find(cmd))
         .enumerate()
         .map(|(note_index, cmd)| match cmd.and_then(|cmd| cmd.shortcut) {
@@ -798,7 +1206,7 @@ fn render_footer_panel(
                             tooltip: {
                                 let tooltip_text = "Settings";
                                 command_list
-                                    .find(BuiltInCommand::SwitchToSettings)
+                                    .find(CommandInstruction::SwitchToSettings)
                                     .and_then(|cmd| cmd.shortcut)
                                     .map(|shortcut| {
                                         format!(
@@ -831,7 +1239,7 @@ fn render_footer_panel(
                         pressed_color: theme.colors.button_pressed_fg,
                         selected_stroke_color: theme.colors.button_pressed_fg,
                         selected_fill_color: theme.colors.button_pressed_fg,
-                        outline: PathStroke::new(1.0, theme.colors.outline_fg),
+                        outline: Stroke::new(1.0, theme.colors.outline_fg),
                         tooltip_text_color: theme.colors.subtle_text_color,
                     };
 
@@ -900,7 +1308,9 @@ fn render_footer_panel(
 
                     if feedback_sent {
                         if tooltip_value < 1. {
-                            share_btn.show_tooltip_text(RichText::new("Feedback sent, we appreciate your input!"));
+                            share_btn.show_tooltip_text(RichText::new(
+                                "Feedback sent, we appreciate your input!",
+                            ));
                         }
                     }
                 });
@@ -966,8 +1376,7 @@ fn render_header_panel(
                         })
                         .clicked()
                     {
-                        resulting_actions
-                            .push(AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility))
+                        resulting_actions.push(AppAction::HideApp)
                     }
 
                     ui.add_space(theme.sizes.m);
@@ -1078,7 +1487,7 @@ fn render_header_panel(
                             };
 
                             let tooltip_text = command_list
-                                .find(BuiltInCommand::PinWindow)
+                                .find(CommandInstruction::PinWindow)
                                 .and_then(|cmd| cmd.shortcut)
                                 .map(|shortcut| {
                                     format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))

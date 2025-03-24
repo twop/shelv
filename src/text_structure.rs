@@ -1,24 +1,24 @@
-use std::ops::{Deref, Range};
+use std::ops::Range;
 
 use eframe::{
     egui::TextFormat,
-    epaint::{text::LayoutJob, Color32, FontId, Stroke},
+    epaint::{Color32, FontId, Stroke, text::LayoutJob},
 };
 use itertools::Itertools;
 use linkify::LinkFinder;
 use pulldown_cmark::{CodeBlockKind, HeadingLevel};
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
 
-use tree_sitter::{Node, Parser, Query, QueryCursor};
+use tree_sitter::Parser;
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 use crate::{
     byte_span::ByteSpan,
     nord::Nord,
-    scripting::OUTPUT_LANG,
+    scripting::note_eval::JS_OUTPUT_LANG,
     theme::{AppTheme, ColorManipulation, ColorTheme, FontTheme},
 };
 
@@ -42,6 +42,7 @@ enum Annotation {
     RawLink,
     Heading(HeadingLevel),
     CodeBlock,
+    CodeBlockLang,
     // CodeBlockBody,
     InlineCode,
     ListItemMarker,
@@ -75,8 +76,15 @@ pub enum SpanKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodeBlockMeta {
+    pub closed: bool,
+    pub lang: String,
+    pub lang_byte_span: ByteSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpanMeta {
-    CodeBlock { lang: String },
+    CodeBlock(CodeBlockMeta),
     TaskMarker { checked: bool },
     List(ListDesc),
     Link { url: String },
@@ -100,6 +108,7 @@ struct MarkdownRunningState {
     list_marker: i8,
     code: i8,
     code_block: i8,
+    code_block_lang: i8,
     heading: [i8; 6],
 }
 
@@ -111,6 +120,7 @@ impl MarkdownRunningState {
             strike: 0,
             code: 0,
             code_block: 0,
+            code_block_lang: 0,
             emphasis: 0,
             heading: Default::default(),
             text: 0,
@@ -299,7 +309,14 @@ impl<'a> TextStructureBuilder<'a> {
 
         let mut container_stack: SmallVec<[SpanIndex; 8]> = Default::default();
 
-        for (index, span) in self.spans.iter().enumerate() {
+        for (span, meta) in self.spans.iter().enumerate().map(|(i, desc)| {
+            (
+                desc,
+                self.metadata
+                    .iter()
+                    .find_map(|(mi, meta)| (*mi == SpanIndex(i)).then(|| meta)),
+            )
+        }) {
             let SpanDesc {
                 kind,
                 byte_pos: range,
@@ -327,13 +344,18 @@ impl<'a> TextStructureBuilder<'a> {
             }
 
             println!(
-                "{offset}{kind:?} (pos:[{start},{end}), lines:[{line_start}, {line_end}])-> {text:?}",
+                "{offset}{kind:?}{meta:?} (pos:[{start},{end}), lines:[{line_start}, {line_end}])-> {text:?}",
                 offset = "  ".repeat(container_stack.len() - 1),
                 start = range.start,
                 end = range.end,
                 line_start = line_loc.line_start,
                 line_end = line_loc.line_end,
-                text = &self.text[range.start..range.end]
+                text = &self.text[range.start..range.end],
+                meta = match meta {
+                    Some(SpanMeta::CodeBlock(CodeBlockMeta { closed, lang, .. })) =>
+                        format!(" ({lang}, {})", if *closed { "closed" } else { "open" }),
+                    _ => String::new(),
+                }
             );
         }
 
@@ -496,22 +518,47 @@ impl TextStructure {
                         Emphasis => Some(builder.add(SpanKind::Emphasis, range)),
                         Strikethrough => Some(builder.add(SpanKind::Strike, range)),
 
-                        CodeBlock(CodeBlockKind::Fenced(lang)) => Some(builder.add_with_meta(
-                            SpanKind::CodeBlock,
-                            range.clone(),
-                            SpanMeta::CodeBlock {
-                                lang: lang.as_ref().to_string(),
-                            },
-                        )),
+                        CodeBlock(CodeBlockKind::Fenced(lang)) => {
+                            let lang_str = lang.as_ref();
+                            let block_text = &text[range.range()];
+                            let lang_start = block_text.find(lang_str).map(|pos| range.start + pos);
+                            let lang_end = lang_start.map(|start| start + lang_str.len());
+                            let lang_byte_span = lang_start
+                                .zip(lang_end)
+                                .map(|(start, end)| ByteSpan::new(start, end));
 
-                        CodeBlock(CodeBlockKind::Indented) => Some(builder.add_with_meta(
-                            SpanKind::CodeBlock,
-                            range.clone(),
-                            SpanMeta::CodeBlock {
-                                lang: "".to_string(),
-                            },
-                        )),
+                            let closed = block_text
+                                .lines()
+                                .skip(1) // skip the starting "```"
+                                .last()
+                                .map(|last| last == "```")
+                                .unwrap_or(false);
 
+                            Some(builder.add_with_meta(
+                                SpanKind::CodeBlock,
+                                range.clone(),
+                                SpanMeta::CodeBlock(CodeBlockMeta {
+                                    lang: lang_str.to_string(),
+                                    lang_byte_span:
+                                        lang_byte_span.unwrap_or(ByteSpan::point(range.start)),
+                                    closed,
+                                }),
+                            ))
+                        }
+
+                        CodeBlock(CodeBlockKind::Indented) => Some(
+                            // treat indented code block as just paragraph
+                            builder.add(SpanKind::Paragraph, trim_trailing_new_lines(&text, range)),
+                        ),
+
+                        // CodeBlock(CodeBlockKind::Indented) => Some(builder.add_with_meta(
+                        //     SpanKind::CodeBlock,
+                        //     range.clone(),
+                        //     SpanMeta::CodeBlock {
+                        //         lang: "".to_string(),
+                        //         lang_byte_span: ByteSpan::point(range.start),
+                        //     },
+                        // )),
                         Item => Some(
                             builder.add(SpanKind::ListItem, trim_trailing_new_lines(&text, range)),
                         ),
@@ -654,14 +701,22 @@ impl TextStructure {
                     SpanKind::CodeBlock,
                     ByteSpan::new(pos, point.str_offset),
                 ) {
-                    Some((_, _, SpanMeta::CodeBlock { lang })) => lang.to_string(),
+                    Some((
+                        _,
+                        _,
+                        SpanMeta::CodeBlock(CodeBlockMeta {
+                            lang,
+                            lang_byte_span: _,
+                            closed: _,
+                        }),
+                    )) => lang.to_string(),
                     _ => "".to_string(),
                 };
 
                 let lang = match lang.as_str() {
                     // "ts" => "typescript",
                     // "rs" => "rust",
-                    l if l.starts_with(OUTPUT_LANG) => "js",
+                    l if l.starts_with(JS_OUTPUT_LANG) => "js",
                     l => l,
                 };
 
@@ -819,6 +874,23 @@ impl TextStructure {
                         TextFormat::simple(code_font_id.clone(), theme.colors.normal_text_color),
                     ),
                 }
+            } else if state.code_block_lang > 0 {
+                // there need to be several improvements:
+                // 1. after '#' it should be probably grey and subtle
+                // 2. take into account case like that '```js date.js', note that 'date.js' is meant to be a file name there
+                //    but the entire 'js date.js' will be parsed as a lang, thus we need to do additional parsing
+                // 3. the color is a bit too bright, possibly switch to something more neutral
+                job.append(
+                    text.get(pos..point.str_offset).unwrap_or(""),
+                    0.0,
+                    TextFormat::simple(
+                        FontId {
+                            size: theme.fonts.size.small,
+                            family: theme.fonts.family.normal.clone(),
+                        },
+                        theme.colors.md_code,
+                    ),
+                )
             } else {
                 job.append(
                     text.get(pos..point.str_offset).unwrap_or(""),
@@ -848,6 +920,7 @@ impl TextStructure {
                 }
                 Annotation::InlineCode => state.code += delta,
                 Annotation::CodeBlock => state.code_block += delta,
+                Annotation::CodeBlockLang => state.code_block_lang += delta,
             }
 
             pos = point.str_offset;
@@ -1071,11 +1144,11 @@ impl TextStructure {
     pub fn filter_map_codeblocks<T>(
         &self,
         f: impl Fn(&str) -> Option<T>,
-    ) -> impl Iterator<Item = (SpanIndex, &SpanDesc, T)> {
+    ) -> impl Iterator<Item = (SpanIndex, &SpanDesc, &CodeBlockMeta, T)> {
         self.iter()
             .filter_map(move |(index, desc)| match desc.kind {
                 SpanKind::CodeBlock => self.find_meta(index).and_then(|meta| match meta {
-                    SpanMeta::CodeBlock { lang } => f(lang).map(|val| (index, desc, val)),
+                    SpanMeta::CodeBlock(meta) => f(&meta.lang).map(|val| (index, desc, meta, val)),
 
                     _ => None,
                 }),
@@ -1083,22 +1156,22 @@ impl TextStructure {
             })
     }
 
-    pub fn find_any_span_at(
-        &self,
-        byte_cursor: ByteSpan,
-    ) -> Option<(ByteSpan, SpanKind, SpanIndex)> {
-        self.spans
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(i, SpanDesc { byte_pos, kind, .. })| {
-                if byte_pos.contains(byte_cursor) && *kind != SpanKind::Root {
-                    Some((*byte_pos, *kind, SpanIndex(i)))
-                } else {
-                    None
-                }
-            })
-    }
+    // pub fn find_any_span_at(
+    //     &self,
+    //     byte_cursor: ByteSpan,
+    // ) -> Option<(ByteSpan, SpanKind, SpanIndex)> {
+    //     self.spans
+    //         .iter()
+    //         .enumerate()
+    //         .rev()
+    //         .find_map(|(i, SpanDesc { byte_pos, kind, .. })| {
+    //             if byte_pos.contains(byte_cursor) && *kind != SpanKind::Root {
+    //                 Some((*byte_pos, *kind, SpanIndex(i)))
+    //             } else {
+    //                 None
+    //             }
+    //         })
+    // }
 
     pub fn get_span_inner_content(&self, idx: SpanIndex) -> ByteSpan {
         let SpanIndex(index) = idx;
@@ -1129,17 +1202,22 @@ impl TextStructure {
             | SpanKind::Paragraph
             | SpanKind::List =>
             // self
-                // .spans
-                // .iter()
-                // .skip(index + 1)
-                // .take_while(|desc| desc.byte_pos.end <= pos.end)
-                // .fold(None, |area, desc| match area {
-                //     None => Some(desc.byte_pos.clone()),
-                //     Some(area) => {
-                //         Some(area.start.min(desc.byte_pos.start)..area.end.max(desc.byte_pos.end))
-                //     }
-                calc_total_range( iterate_immediate_children_of(idx, &self.spans).map(|(_, desc)| &desc.byte_pos)).map(|byte_span| byte_span.range())
-                .unwrap_or( pos.start..pos.start),
+            // .spans
+            // .iter()
+            // .skip(index + 1)
+            // .take_while(|desc| desc.byte_pos.end <= pos.end)
+            // .fold(None, |area, desc| match area {
+            //     None => Some(desc.byte_pos.clone()),
+            //     Some(area) => {
+            //         Some(area.start.min(desc.byte_pos.start)..area.end.max(desc.byte_pos.end))
+            //     }
+            {
+                calc_total_range(
+                    iterate_immediate_children_of(idx, &self.spans).map(|(_, desc)| &desc.byte_pos),
+                )
+                .map(|byte_span| byte_span.range())
+                .unwrap_or(pos.start..pos.start)
+            }
         };
 
         ByteSpan::from_range(&range)
@@ -1192,22 +1270,17 @@ fn fill_annotation_points(
                 (Annotation::InlineCode, pos),
                 (Annotation::Text, ByteSpan::new(pos.start + 1, pos.end - 1))
             ],
-            SpanKind::CodeBlock => smallvec![(Annotation::CodeBlock, pos)],
-            // SpanKind::CodeBlock => match find_metadata(span_index, metadata) {
-            //     Some(SpanMeta::CodeBlock { lang }) => match *checked {
-            //         true => {
-            //             let list_item_content =
-            //                 calc_total_range(iterate_children_of(*parent, spans))
-            //                     .unwrap_or(pos.clone());
-            //             smallvec![
-            //                 (Annotation::TaskMarker, pos),
-            //                 (Annotation::Strike, list_item_content)
-            //             ]
-            //         }
-            //         false => smallvec![(Annotation::TaskMarker, pos)],
-            //     },
-            //     _ => smallvec![(Annotation::CodeBlock, pos)],
-            // },
+            SpanKind::CodeBlock => match find_metadata(span_index, metadata) {
+                Some(SpanMeta::CodeBlock(CodeBlockMeta { lang_byte_span, .. }))
+                    if !lang_byte_span.is_empty() =>
+                {
+                    smallvec![
+                        (Annotation::CodeBlock, pos),
+                        (Annotation::CodeBlockLang, *lang_byte_span)
+                    ]
+                }
+                _ => smallvec![(Annotation::CodeBlock, pos)],
+            },
             SpanKind::MdLink => smallvec![(Annotation::Link, pos)],
             SpanKind::ListItem => smallvec![(
                 Annotation::ListItemMarker,
@@ -1528,9 +1601,31 @@ mod tests {
         assert_eq!(Some("code\n"), md.get(code_body.range()));
 
         assert_eq!(
-            SpanMeta::CodeBlock {
-                lang: "js".to_string()
-            },
+            SpanMeta::CodeBlock(CodeBlockMeta {
+                lang: "js".to_string(),
+                lang_byte_span: ByteSpan::new(3, 5),
+                closed: true
+            }),
+            meta
+        );
+    }
+
+    #[test]
+    pub fn test_code_unclosed_block_parsing_with_spaces() {
+        let md = "``` part1 part2  \n1+1```";
+
+        let structure = TextStructure::new(md);
+
+        let (_, _, meta) = structure
+            .find_surrounding_span_with_meta(SpanKind::CodeBlock, ByteSpan::new(0, 0))
+            .unwrap();
+
+        assert_eq!(
+            SpanMeta::CodeBlock(CodeBlockMeta {
+                lang: "part1 part2".to_string(),
+                lang_byte_span: ByteSpan::new(4, 15),
+                closed: false
+            }),
             meta
         );
     }

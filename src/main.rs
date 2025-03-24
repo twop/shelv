@@ -1,39 +1,38 @@
-#![feature(iter_intersperse)]
-#![feature(let_chains)]
-#![feature(offset_of)]
-#![feature(generic_const_exprs)]
-
-use app_actions::{compute_app_focus, process_app_action, AppAction, AppIO};
+use app_actions::{
+    AppAction, AppIO, HideMode, SlashPaletteAction, compute_app_focus, process_app_action,
+};
 use app_io::RealAppIO;
-use app_state::{compute_editor_text_id, AppInitData, AppState, MsgToApp};
-use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
+use app_state::{AppInitData, AppState, MsgToApp, compute_editor_text_id};
+use app_ui::{AppRenderData, RenderAppResult, is_shortcut_match, render_app};
 use command::{AppFocusState, CommandContext, EditorCommandOutput};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use hotwatch::{
-    notify::event::{DataChange, ModifyKind},
     Event, EventKind, Hotwatch,
+    notify::event::{DataChange, ModifyKind},
 };
 use image::ImageFormat;
 use itertools::Itertools;
-use persistent_state::{load_and_migrate, try_save, v1, NoteFile};
+use persistent_state::{NoteFile, load_and_migrate, try_save, v1};
+use scripting::settings_eval::Scripts;
 use smallvec::SmallVec;
 use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
 use tokio::runtime::Runtime;
 
 use tray_icon::{
-    menu::{Menu, MenuEvent, MenuItem},
     Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
+    menu::{Menu, MenuEvent, MenuItem},
 };
 // use tray_item::TrayItem;G1
 
 use std::{path::PathBuf, sync::mpsc::sync_channel};
 
 use eframe::{
+    CreationContext,
     egui::{self},
     epaint::vec2,
-    get_value, CreationContext,
+    get_value,
 };
 
 use crate::{app_state::UnsavedChange, persistent_state::extract_note_file};
@@ -48,12 +47,13 @@ mod commands;
 mod effects;
 mod egui_hotkey;
 mod feedback;
-mod settings;
-
+mod knus_test;
 mod nord;
 mod persistent_state;
 mod picker;
 mod scripting;
+mod settings_parsing;
+mod taffy_styles;
 mod text_structure;
 mod theme;
 
@@ -184,22 +184,20 @@ impl MyApp<RealAppIO> {
 
         let last_saved = persistent_state.state.last_saved;
 
-        let state = AppState::new(
-            AppInitData {
-                theme,
-                msg_queue: msg_queue_rx,
-                persistent_state,
-                last_saved,
-            },
-            &mut app_io,
-        );
+        let state = AppState::new(AppInitData {
+            theme,
+            msg_queue: msg_queue_rx,
+            persistent_state,
+            last_saved,
+        });
         Self {
             state,
             app_io,
             tray: tray_icon,
             app_focus_state: AppFocusState {
                 is_menu_opened: false,
-                focus: None,
+                internal_focus: None,
+                viewport_focused: false,
             },
             persistence_folder,
             hotwatch,
@@ -232,6 +230,11 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         let app_focus = self.app_focus_state.clone();
         let focused_id = ctx.memory(|m| m.focused());
 
+        let mut scripts = app_state
+            .settings_scripts
+            .take()
+            .unwrap_or_else(|| Scripts::new());
+
         // handling commands
         // sych as {tab, enter} inside a list
         let actions_from_keyboard_commands = ctx
@@ -242,60 +245,107 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
                 // only one command can be handled at a time
 
-                app_state
-                    .editor_commands
-                    .slice()
-                    .iter()
-                    .find_map(|editor_command| {
-                        match &editor_command.shortcut {
-                            Some(keyboard_shortcut)
-                                if is_shortcut_match(input, &keyboard_shortcut) =>
-                            {
-                                println!(
-                                    "---Found a match for {:?}, focus = {app_focus:#?}, focused_id = {focused_id:?}",
-                                    editor_command.kind.map(|k| k.human_description())
-                                );
-                                let res = (editor_command.try_handle)(CommandContext {
-                                    app_state,
-                                    app_focus,
-                                });
+                app_state.commands.available_keyboard_commands().find_map(
+                    |(keyboard_shortcut, keyboard_binding)| {
+                        if is_shortcut_match(input, &keyboard_shortcut) {
 
-                                if !res.is_empty() {
+                            let ctx = CommandContext {
+                                app_state,
+                                app_focus,
+                                ui_state: app_state.to_ui_state(),
+                                scripts: &mut scripts,
+                            };
+                            let res = match keyboard_binding {
+                                command::KeyboardBinding::CommandInstance(editor_command) => {
                                     println!(
-                                        "---command {:?} consumed input {:?}\nres_actions={res:#?}",
-                                        editor_command.kind.map(|k| k.human_description()),
-                                        keyboard_shortcut
+                                        "---Found a match for {:?}, focus = {app_focus:#?}, focused_id = {focused_id:?}",
+                                        editor_command.instruction.human_description()
                                     );
-
-                                    // remove the keys from the input
-
-                                    input.consume_shortcut(&keyboard_shortcut);
-                                    Some(res)
+                                    app_state.commands.run(
+                                        &editor_command.instruction,
+                                        editor_command.scope,
+                                        ctx,
+                                    )
                                 }
-                                else { None }
+                                command::KeyboardBinding::FrameBinding(frame_hotkey) => {
+                                    (frame_hotkey.run)(ctx)
+                                }
+                            };
 
+                            if !res.is_empty() {
+                                // println!(
+                                //     "---command {:?} consumed input {:?}\nres_actions={res:#?}",
+                                //     editor_command.instruction.human_description(),
+                                //     keyboard_shortcut
+                                // );
+
+                                // remove the keys from the input
+
+                                input.consume_shortcut(&keyboard_shortcut);
+                                Some(res)
+                            } else {
+                                None
                             }
-                            _ => None,
+                        } else {
+                            None
                         }
-                    })
+                    },
+                )
             })
             .unwrap_or_default();
 
+        app_state.settings_scripts = Some(scripts);
+
         action_list.extend(actions_from_keyboard_commands.into_iter());
 
-        action_list.insert_many(0, app_state.deferred_to_post_render.drain(0..));
+        action_list.insert_many(0, app_state.deferred_actions.drain(0..));
 
         // now apply prepared changes, and update text structure and cursor appropriately
         for action in action_list {
-            println!("---processing action = {action:#?}");
+            match action {
+                AppAction::SlashPalette(SlashPaletteAction::Update) => {
+                    // Comment out to stop the spammy logging
+                    //  println!("---processing action = {action:#?}")
+                }
+                _ => println!("---processing action = {action:#?}"),
+            }
+
             let mut action_buffer: SmallVec<[AppAction; 4]> = SmallVec::from_iter([action]);
 
             while let Some(to_process) = action_buffer.pop() {
-                let new_actions =
-                    process_app_action(to_process, ctx, app_state, text_edit_id, &mut self.app_io);
+                let new_actions = process_app_action(
+                    to_process,
+                    ctx,
+                    app_state,
+                    app_focus,
+                    text_edit_id,
+                    &mut self.app_io,
+                );
 
                 if new_actions.len() > 0 {
-                    println!("---enqueued actions = {new_actions:#?}");
+                    match new_actions.first() {
+                        Some(AppAction::SlashPalette(SlashPaletteAction::Update)) => {
+                            // Comment out to stop the spammy logging
+                            println!(
+                                "---enqueued actions = AppAction::SlashPalette(SlashPaletteAction::Update)"
+                            );
+                        }
+                        Some(AppAction::DeferToPostRender(new_actions)) => {
+                            match new_actions.as_ref() {
+                                AppAction::SlashPalette(SlashPaletteAction::Update) => {
+                                    // do nothing
+                                }
+                                _ => {
+                                    println!("---enqueued actions = {new_actions:#?}");
+                                }
+                            };
+                            // Comment out to stop the spammy logging
+                            //println!("---enqueued actions = {new_actions:#?}");
+                        }
+                        _ => {
+                            println!("---enqueued actions = {new_actions:#?}");
+                        }
+                    }
                 }
 
                 action_buffer.extend(new_actions);
@@ -306,7 +356,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         let note_count = app_state.notes.len() - 1;
 
         let note = &app_state.notes.get(&app_state.selected_note).unwrap();
-        let cursor = note.cursor;
+        let cursor = note.cursor().or(note.last_cursor());
 
         let editor_text = &note.text;
 
@@ -324,7 +374,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             if app_state.prev_focused != is_frame_actually_focused && !is_frame_actually_focused {
                 println!("lost focus");
                 app_state.hidden = true;
-                self.app_io.hide_app();
+                self.app_io.hide_app(HideMode::HideApp);
             }
 
             app_state.prev_focused = is_frame_actually_focused;
@@ -335,18 +385,22 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             .get_mut(&app_state.selected_note)
             .unwrap()
             .text;
+        let mut frame_hotkeys = app_state.commands.prepare_frame_hotkeys();
 
         let vis_state = AppRenderData {
             selected_note: app_state.selected_note,
             is_window_pinned: app_state.is_pinned,
             note_count,
             text_edit_id,
-            command_list: &app_state.editor_commands,
+            command_list: &app_state.commands,
             byte_cursor: cursor,
             syntax_set: &app_state.syntax_set,
             theme_set: &app_state.theme_set,
             computed_layout: app_state.computed_layout.take(),
             inline_llm_prompt: (&mut app_state.inline_llm_prompt).as_mut(),
+            slash_palette: app_state.slash_palette.as_ref(),
+            render_actions: (app_state.render_actions.drain(..)).collect(),
+            frame_hotkeys: &mut frame_hotkeys,
             feedback: (&mut app_state.feedback).as_mut(),
         };
 
@@ -364,6 +418,8 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             ctx,
         );
 
+        app_state.commands.add_frame_hotkeys(frame_hotkeys);
+
         if text_changed {
             println!("----note changed during render");
             app_state
@@ -373,19 +429,35 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         // TODO it seems that this can be done inside process_app_action
         app_state.text_structure = Some(updated_structure);
         app_state.computed_layout = updated_layout;
-        app_state
-            .notes
-            .get_mut(&app_state.selected_note)
-            .unwrap()
-            .cursor = byte_cursor;
+        let note = app_state.notes.get_mut(&app_state.selected_note).unwrap();
+        match byte_cursor {
+            Some(cursor) => {
+                if note.cursor().is_none() {
+                    println!("[MAIN] Restored cursor from rendered data");
+                }
+                note.update_cursor(cursor)
+            }
+            None => {
+                if note.cursor().is_some() {
+                    println!("[MAIN] Reseting cursor from rendered data");
+                }
+                note.reset_cursor()
+            }
+        }
 
         // post render processing
         for action in actions {
             let mut action_buffer: SmallVec<[AppAction; 4]> = SmallVec::from_iter([action]);
 
             while let Some(to_proccess) = action_buffer.pop() {
-                let new_actions =
-                    process_app_action(to_proccess, ctx, app_state, text_edit_id, &mut self.app_io);
+                let new_actions = process_app_action(
+                    to_proccess,
+                    ctx,
+                    app_state,
+                    app_focus,
+                    text_edit_id,
+                    &mut self.app_io,
+                );
                 action_buffer.extend(new_actions);
             }
         }
@@ -426,10 +498,13 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 }
 
 fn main() {
-    let _guard = sentry::init(("https://10f977d35f32b70d88180f4875543208@o4507879687454720.ingest.us.sentry.io/4507879689945088", sentry::ClientOptions {
-        release: sentry::release_name!(),
-        ..Default::default()
-      }));
+    let _guard = sentry::init((
+        "https://10f977d35f32b70d88180f4875543208@o4507879687454720.ingest.us.sentry.io/4507879689945088",
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            ..Default::default()
+        },
+    ));
 
     let rt = Runtime::new().expect("Unable to create Runtime");
     // Enter the runtime so that `tokio::spawn` is available immediately.

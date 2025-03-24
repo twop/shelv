@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     ffi::CString,
-    fs::{self, File},
+    fs::File,
     io::{self, Read},
     path::PathBuf,
     sync::mpsc::SyncSender,
@@ -16,8 +16,11 @@ use genai::{
 use global_hotkey::GlobalHotKeyManager;
 
 use crate::{
-    app_actions::{AppIO, ConversationPart, LLMBlockRequest, LLMPromptRequest},
+    app_actions::{
+        AppIO, ConversationPart, HideMode, LLMBlockRequest, LLMPromptRequest, SettingsForAiRequests,
+    },
     app_state::{InlineLLMResponseChunk, LLMBlockResponseChunk, MsgToApp},
+    command::create_ai_keybindings_documentation,
     persistent_state::get_utc_timestamp,
 };
 
@@ -54,9 +57,11 @@ impl RealAppIO {
     }
 }
 
+pub const DEFAULT_LLM_MODEL: &str = "claude-3-haiku-20240307";
+
 impl AppIO for RealAppIO {
-    fn hide_app(&self) {
-        hide_app_on_macos();
+    fn hide_app(&self, mode: HideMode) {
+        hide_app_on_macos(mode);
     }
 
     fn try_read_note_if_newer(
@@ -106,7 +111,7 @@ impl AppIO for RealAppIO {
         Ok(())
     }
 
-    fn execute_llm_block(&self, question: LLMBlockRequest) {
+    fn execute_llm_block(&self, question: LLMBlockRequest, cx: SettingsForAiRequests) {
         let egui_ctx = self.egui_ctx.clone();
         let sender = self.msg_queue.clone();
 
@@ -116,9 +121,19 @@ impl AppIO for RealAppIO {
             conversation,
             output_code_block_address,
             note_id,
-            system_prompt,
-            model,
         } = question;
+
+        let SettingsForAiRequests {
+            commands,
+            llm_settings,
+        } = cx;
+        let shelv_system_prompt = include_str!("./prompts/shelv-system-prompt.md").replace(
+            "{{current_keybindings}}",
+            &create_ai_keybindings_documentation(commands),
+        );
+
+        // cloned because it is goint to be used inside async block
+        let llm_settings = llm_settings.cloned();
 
         let send = move |chunk: String| {
             sender
@@ -171,6 +186,16 @@ impl AppIO for RealAppIO {
                 parts
             });
 
+            let (model, system_prompt, use_shelv_propmpt) = llm_settings
+                .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt))
+                .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None, true));
+
+            if use_shelv_propmpt {
+                chat_req
+                    .messages
+                    .insert(0, ChatMessage::system(shelv_system_prompt));
+            }
+
             if let Some(system_prompt) = system_prompt {
                 chat_req
                     .messages
@@ -214,19 +239,30 @@ impl AppIO for RealAppIO {
         });
     }
 
-    fn execute_llm_prompt(&self, quesion: LLMPromptRequest) {
+    fn execute_llm_prompt(&self, quesion: LLMPromptRequest, cx: SettingsForAiRequests) {
         let egui_ctx = self.egui_ctx.clone();
         let sender = self.msg_queue.clone();
 
         let LLMPromptRequest {
             prompt,
             selection,
-            model,
-            system_prompt,
             selection_location,
             before_selection,
             after_selection,
         } = quesion;
+
+        let SettingsForAiRequests {
+            commands,
+            llm_settings,
+        } = cx;
+        let shelv_system_prompt = include_str!("./prompts/shelv-system-prompt.md").replace(
+            "{{current_keybindings}}",
+            &create_ai_keybindings_documentation(commands),
+        );
+
+        // cloned because it is goint to be used inside async block
+        let llm_settings = llm_settings.cloned();
+
         // None -> end of the stream
         let send = move |chunk: Option<String>| {
             sender
@@ -242,30 +278,71 @@ impl AppIO for RealAppIO {
             egui_ctx.request_repaint();
         };
 
-        tokio::spawn(async move {
-            let chat_req = ChatRequest::new(vec![
-                ChatMessage::system(system_prompt.unwrap_or_default()),
-                ChatMessage::system(
-                    [
-                        "selection is  <selection>{selection_body}</selection>",
-                        "prompt is marked as <prompt>{prompt_body}</prompt>",
-                        "content above selection marked as <before></before>",
-                        "content after selection marked as <after></after>",
-                        "answer the prompt quesion targeting <selection>, the asnwer will replace <selection> block",
-                        "using the context provided in <before> and <after>",
-                        "do not include <selection></selection> into response",
-                        "AVOID any extra comments or introductionary content, output ONLY the result",
-                    ]
-                    .join("\n"),
-                ),
-                ChatMessage::user(format!(
-                    "<before>{before_selection}</before>
-                    <selection>{selection}</selection>
-                    <after>{after_selection}</after>
-                    <prompt>{prompt}</prompt>"
-                )),
-            ]);
+        let (model, system_prompt, use_shelv_propmpt) = llm_settings
+            .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt))
+            .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None, true));
 
+        let chat_req = ChatRequest::new(Vec::from_iter(
+            use_shelv_propmpt
+                .then(|| ChatMessage::system(shelv_system_prompt))
+                .into_iter()
+                .chain(system_prompt.map(|sp| ChatMessage::system(sp)))
+                .chain([
+                    ChatMessage::system(include_str!("./prompts/inline-prompt-system-extra.md")),
+                    ChatMessage::user({
+                        let user_template = include_str!("./prompts/inline-prompt-user.md");
+
+                        for pl in ["{{prompt}}", "{{before}}", "{{selection}}", "{{after}}"] {
+                            assert!(
+                                user_template.contains(pl),
+                                "Template is missing required placeholder: {}",
+                                pl
+                            );
+                        }
+
+                        user_template
+                            .replace("{{prompt}}", &prompt)
+                            .replace("{{selection}}", &selection)
+                            .replace("{{before}}", &before_selection)
+                            .replace("{{after}}", &after_selection)
+                    }),
+                ]),
+        ));
+
+        // Dump chat request to file for debugging and history
+        let time = {
+            let now = std::time::SystemTime::now();
+            let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
+            let secs = duration.as_secs();
+            let hours = (secs / 3600) % 24;
+            let minutes = (secs / 60) % 60;
+            let seconds = secs % 60;
+            format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+        };
+        let debug_folder = PathBuf::from("prompts");
+        let debug_file = debug_folder.join(format!("req_{}.md", time));
+
+        if !debug_folder.exists() {
+            std::fs::create_dir(&debug_folder).unwrap();
+        }
+
+        let mut contents = String::new();
+        for msg in &chat_req.messages {
+            contents.push_str(&format!(
+                "---{}---\n{}\n\n",
+                match msg.role {
+                    genai::chat::ChatRole::System => "System",
+                    genai::chat::ChatRole::User => "User",
+                    genai::chat::ChatRole::Assistant => "Assistant",
+                    _ => "Unknown",
+                },
+                msg.content.text_as_str().unwrap()
+            ));
+        }
+
+        std::fs::write(debug_file, contents).unwrap();
+
+        tokio::spawn(async move {
             println!("-----llm inline req: {chat_req:#?}");
 
             let auth_resolver = prepare_auth_resolver();
@@ -287,6 +364,7 @@ impl AppIO for RealAppIO {
                             }
                             Ok(ChatStreamEvent::End(_)) => send(None),
                             Ok(ChatStreamEvent::Start) => (),
+                            Ok(ChatStreamEvent::ReasoningChunk(_)) => (),
                             Err(e) => {
                                 send(Some(format!("Error getting response: {:#?}", e)));
                                 break;
@@ -302,11 +380,17 @@ impl AppIO for RealAppIO {
     fn open_shelv_folder(&self) -> Result<(), Box<dyn std::error::Error>> {
         open_folder_in_finder(&self.shelv_folder)
     }
-    
-    fn capture_sentry_message<F>(&self, message: &str, level: sentry::Level, scope: F) -> sentry::types::Uuid where F:  FnOnce(&mut sentry::Scope)  {
-        return sentry::with_scope(scope, || {
-            sentry::capture_message(message, level)
-        })
+
+    fn capture_sentry_message<F>(
+        &self,
+        message: &str,
+        level: sentry::Level,
+        scope: F,
+    ) -> sentry::types::Uuid
+    where
+        F: FnOnce(&mut sentry::Scope),
+    {
+        return sentry::with_scope(scope, || sentry::capture_message(message, level));
     }
 }
 
@@ -352,7 +436,7 @@ fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<Str
     }
 }
 
-fn hide_app_on_macos() {
+fn hide_app_on_macos(mode: HideMode) {
     // https://developer.apple.com/documentation/appkit/nsapplication/1428733-hide
     use objc2::rc::Id;
     use objc2::runtime::AnyObject;
@@ -360,7 +444,18 @@ fn hide_app_on_macos() {
     unsafe {
         let app: Id<AnyObject> = msg_send_id![class!(NSApplication), sharedApplication];
         let arg = app.as_ref();
-        let _: () = msg_send![&app, hide:arg];
+
+        match mode {
+            HideMode::HideApp => {
+                let _: () = msg_send![&app, hide:arg];
+            }
+            HideMode::YieldFocus => {
+                // this for whatever reason actually works
+                // I was unable to find a better way to just yield focus instead of doin hide + unhide
+                let _: () = msg_send![&app, hide:arg];
+                let _: () = msg_send![&app, unhideWithoutActivation];
+            }
+        }
     }
 }
 

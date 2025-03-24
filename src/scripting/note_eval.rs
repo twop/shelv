@@ -1,36 +1,16 @@
-use boa_engine::{Context, Source};
+use std::rc::Rc;
+
+use boa_engine::{Context, Source, context::HostHooks};
+use boa_runtime::Console;
 use smallvec::SmallVec;
-use std::{
-    fmt::format,
-    hash::{DefaultHasher, Hash, Hasher},
-};
 
 use crate::{
     byte_span::ByteSpan,
     effects::text_change_effect::TextChange,
-    text_structure::{SpanIndex, SpanKind, TextStructure},
+    text_structure::{CodeBlockMeta, SpanKind, SpanMeta, TextStructure},
 };
 
-#[derive(PartialEq, Debug, Clone, Copy)]
-pub struct SourceHash(u16);
-
-impl SourceHash {
-    pub fn parse(hex: &str) -> Option<Self> {
-        u16::from_str_radix(hex, 16).ok().map(SourceHash)
-    }
-
-    pub fn from(code: &str) -> Self {
-        let mut s = DefaultHasher::new();
-        code.hash(&mut s);
-        SourceHash(s.finish() as u16)
-    }
-
-    pub fn to_string(&self) -> String {
-        format!("{:x}", self.0)
-    }
-}
-
-pub const OUTPUT_LANG: &str = "js#";
+use super::note_eval_context::{BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash};
 
 #[derive(Debug, Clone, Copy)]
 enum CodeBlock {
@@ -38,35 +18,32 @@ enum CodeBlock {
     Output(ByteSpan, Option<SourceHash>),
 }
 
-#[derive(Debug, Clone, PartialEq, Copy)]
-pub enum CodeBlockKind {
-    Source,
-    Output(Option<SourceHash>),
-}
-
-pub struct BlockEvalResult {
-    pub body: String,
-    pub output_lang: String,
-}
-
-pub trait NoteEvalContext {
-    fn begin(&mut self) {}
-    fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind>;
-    fn eval_block(&mut self, body: &str, hash: SourceHash) -> BlockEvalResult;
-    fn should_force_eval(&self) -> bool;
-}
+pub const JS_OUTPUT_LANG: &str = "js#";
+pub const JS_SOURCE_LANG: &str = "js";
 
 struct JsNoteEvalContext {
     context: Context,
 }
+pub struct HostWithLocalTimezone;
+
+impl HostHooks for HostWithLocalTimezone {
+    fn local_timezone_offset_seconds(&self, _: i64) -> i32 {
+        let local = chrono::Local::now();
+        // let utc = chrono::Utc::now();
+        let offset = local.offset().local_minus_utc();
+        offset
+    }
+}
 
 impl NoteEvalContext for JsNoteEvalContext {
+    type State = ();
+
     fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind> {
         match lang {
             "js" => Some(CodeBlockKind::Source),
 
-            output if output.starts_with(OUTPUT_LANG) => {
-                let hex_str = &output[OUTPUT_LANG.len()..];
+            output if output.starts_with(JS_OUTPUT_LANG) => {
+                let hex_str = &output[JS_OUTPUT_LANG.len()..];
                 Some(CodeBlockKind::Output(SourceHash::parse(hex_str)))
             }
 
@@ -74,7 +51,7 @@ impl NoteEvalContext for JsNoteEvalContext {
         }
     }
 
-    fn eval_block(&mut self, body: &str, hash: SourceHash) -> BlockEvalResult {
+    fn eval_block(&mut self, body: &str, hash: SourceHash, _: &mut Self::State) -> BlockEvalResult {
         let result = self.context.eval(Source::from_bytes(body));
 
         BlockEvalResult {
@@ -83,12 +60,16 @@ impl NoteEvalContext for JsNoteEvalContext {
                 Err(err) => format!("{:#}", err),
             },
 
-            output_lang: format!("{}{:x}", OUTPUT_LANG, hash.0),
+            output_lang: format!("{}{}", JS_OUTPUT_LANG, hash.to_string()),
         }
     }
 
     fn should_force_eval(&self) -> bool {
         false
+    }
+
+    fn begin(&mut self) -> Self::State {
+        ()
     }
 }
 
@@ -99,7 +80,7 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
 ) -> Option<Vec<TextChange>> {
     let script_blocks: SmallVec<[_; 8]> = text_structure
         .filter_map_codeblocks(Ctx::try_parse_block_lang)
-        .filter_map(|(index, desc, block_kind)| {
+        .filter_map(|(index, desc, _, block_kind)| {
             let byte_range = desc.byte_pos.clone();
 
             let (_, code_desc) = text_structure
@@ -134,21 +115,25 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
 
     let mut last_was_source: Option<(SourceHash, ByteSpan, &str)> = None;
 
-    let needs_re_eval = script_blocks.len() % 2 != 0 ||  script_blocks[..]
-        .chunks_exact(2)
-        .any(|elements| match &elements {
+    let needs_re_eval = script_blocks.len() % 2 != 0
+        || script_blocks[..]
+            .chunks_exact(2)
+            .any(|elements| match &elements {
                 // if hash was parsed check if it matches
-               &[(_,CodeBlock::Source(_, source_hash), _), (_, CodeBlock::Output(_, Some(output_source_hash)), _)] =>  source_hash != output_source_hash,
-               // failed to parse
-               // &[(_,CodeBlock::LiveJS(_, _), _), (_, CodeBlock::Output(_, None), _)] => true ,
-            _ => true,
-        });
+                &[
+                    (_, CodeBlock::Source(_, source_hash), _),
+                    (_, CodeBlock::Output(_, Some(output_source_hash)), _),
+                ] => source_hash != output_source_hash,
+                // failed to parse
+                // &[(_,CodeBlock::LiveJS(_, _), _), (_, CodeBlock::Output(_, None), _)] => true ,
+                _ => true,
+            });
 
     if !needs_re_eval && !cx.should_force_eval() {
         return None;
     }
 
-    cx.begin();
+    let mut state = cx.begin();
 
     for (_, block, inner_body) in script_blocks {
         match block {
@@ -158,7 +143,11 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
                     changes.push(TextChange::Insert(
                         ByteSpan::point(block_range.end),
                         "\n".to_string()
-                            + &print_output_block(cx.eval_block(prev_block_body, source_hash)),
+                            + &print_output_block(cx.eval_block(
+                                prev_block_body,
+                                source_hash,
+                                &mut state,
+                            )),
                     ));
                 };
 
@@ -167,7 +156,8 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
             CodeBlock::Output(output_range, _) => match last_was_source.take() {
                 Some((source_hash, _, source_code)) => {
                     // this branch means that we have a corresponding output block
-                    let eval_res = print_output_block(cx.eval_block(source_code, source_hash));
+                    let eval_res =
+                        print_output_block(cx.eval_block(source_code, source_hash, &mut state));
                     if eval_res.as_str() != inner_body {
                         // don't add a text change if the result is the same
                         // note that we still need to compute JS for JS context to be consistent
@@ -185,7 +175,7 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
     if let Some((source_hash, range, body)) = last_was_source {
         changes.push(TextChange::Insert(
             ByteSpan::new(range.end, range.end),
-            "\n".to_string() + &print_output_block(cx.eval_block(body, source_hash)),
+            "\n".to_string() + &print_output_block(cx.eval_block(body, source_hash, &mut state)),
         ));
     };
 
@@ -197,9 +187,20 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
 }
 
 pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Option<Vec<TextChange>> {
-    let mut cx = JsNoteEvalContext {
-        context: Context::default(),
-    };
+    let mut context = Context::builder()
+        .host_hooks(&HostWithLocalTimezone)
+        .build()
+        .unwrap(); // We first add the `console` object, to be able to call `console.log()`.
+    let console = Console::init(&mut context);
+    context
+        .register_global_property(
+            Console::NAME,
+            console,
+            boa_engine::property::Attribute::all(),
+        )
+        .expect("the console builtin shouldn't exist");
+
+    let mut cx = JsNoteEvalContext { context };
     execute_code_blocks(&mut cx, text_structure, text)
 }
 
@@ -338,10 +339,8 @@ Error: yo!
 "#,
                 ),
             ),
-
             // ________________________________________________
             (
-
                 "## if we identified a missing output (for example when you copy paste blocks)
                 then we
                 ##",
@@ -366,7 +365,8 @@ Error: yo!
 2
 ```
 "#,
-                Some(r#"
+                Some(
+                    r#"
 ```js
 1
 ```
@@ -389,7 +389,8 @@ Error: yo!
 ```js#a4a
 45
 ```
-"#),
+"#,
+                ),
             ),
         ];
 

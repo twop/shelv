@@ -1,7 +1,7 @@
 // #![doc = include_str!("../README.md")]
 use crate::egui::{
-    vec2, Align2, Event, FontId, Id, Key, Modifiers, PointerButton, Response, Rounding, Sense, Ui,
-    Widget,
+    Align2, Event, FontId, Id, Key, Modifiers, PointerButton, Response, Rounding, Sense, Ui,
+    Widget, vec2,
 };
 use std::hash::Hash;
 
@@ -124,7 +124,7 @@ where
         if ui.is_rect_visible(rect) {
             let visuals = ui.style().interact_selectable(&response, expecting);
             ui.painter()
-                .rect_filled(rect, Rounding::same(2.), visuals.bg_fill);
+                .rect_filled(rect, Rounding::same(2), visuals.bg_fill);
 
             let binding = self.binding.get();
 

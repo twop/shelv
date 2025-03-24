@@ -6,12 +6,12 @@ use crate::{
     app_actions::{AppAction, Conversation, ConversationPart, LLMBlockRequest},
     byte_span::ByteSpan,
     command::{
-        try_extract_text_command_context, CommandContext, EditorCommandOutput, TextCommandContext,
+        CommandContext, EditorCommandOutput, TextCommandContext, try_extract_text_command_context,
     },
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
-    scripting::{CodeBlockKind, SourceHash},
-    text_structure::{SpanDesc, SpanIndex, SpanKind, SpanMeta, TextStructure},
+    scripting::note_eval_context::{CodeBlockKind, SourceHash},
+    text_structure::{CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextStructure},
 };
 
 #[derive(Clone, Copy)]
@@ -20,7 +20,6 @@ pub enum CodeBlockAddress {
     TargetBlock(NoteFile, SpanIndex),
 }
 
-pub(crate) const DEFAULT_LLM_MODEL: &str = "claude-3-haiku-20240307";
 pub(crate) const LLM_LANG: &str = "ai";
 
 pub fn prepare_to_run_llm_block(
@@ -63,7 +62,9 @@ pub fn prepare_to_run_llm_block(
             let text_structure = TextStructure::new(&note.text);
 
             let cursor = match text_structure.get_span_with_meta(span_index) {
-                Some((desc, SpanMeta::CodeBlock { lang })) if lang == LLM_LANG => {
+                Some((desc, SpanMeta::CodeBlock(CodeBlockMeta { lang, .. })))
+                    if lang == LLM_LANG =>
+                {
                     Some(desc.byte_pos)
                 }
                 _ => None,
@@ -78,7 +79,7 @@ pub fn prepare_to_run_llm_block(
     };
 
     // Check if we are in an LLM code block
-    let llm_blocks: SmallVec<[(SpanIndex, &SpanDesc, CodeBlockKind); 6]> = text_structure
+    let llm_blocks: SmallVec<[_; 6]> = text_structure
         .filter_map_codeblocks(|lang| match lang {
             LLM_LANG | LLM_LANG_OLD => Some(CodeBlockKind::Source),
 
@@ -92,13 +93,12 @@ pub fn prepare_to_run_llm_block(
         .collect();
 
     // find source llm code block
-    let (index_in_array, (block_span_index, block_desc, _)) =
-        llm_blocks
-            .iter()
-            .enumerate()
-            .find(|(_pos_index, (_, desc, kind))| {
-                desc.byte_pos.contains(cursor) && *kind == CodeBlockKind::Source
-            })?;
+    let (index_in_array, (block_span_index, block_desc, _, _)) = llm_blocks
+        .iter()
+        .enumerate()
+        .find(|(_pos_index, (_, desc, _, kind))| {
+            desc.byte_pos.contains(cursor) && *kind == CodeBlockKind::Source
+        })?;
 
     let (_, question_desc) = text_structure
         .iterate_immediate_children_of(*block_span_index)
@@ -113,7 +113,7 @@ pub fn prepare_to_run_llm_block(
     // check the next block
     let (replacemen_pos, output_block) = match llm_blocks.get(index_in_array + 1) {
         // if it is llm output just reuse that one
-        Some((_index, desc, CodeBlockKind::Output(_))) => {
+        Some((_index, desc, _, CodeBlockKind::Output(_))) => {
             (desc.byte_pos, format!("```{address}\n```"))
         }
 
@@ -131,7 +131,7 @@ pub fn prepare_to_run_llm_block(
     let mut conversation = Conversation { parts: Vec::new() };
 
     let mut prev_block_end = 0;
-    for (block_index, desc, kind) in llm_blocks.iter().take(index_in_array + 1) {
+    for (block_index, desc, _, kind) in llm_blocks.iter().take(index_in_array + 1) {
         if prev_block_end < desc.byte_pos.start {
             let markdown = text[prev_block_end..desc.byte_pos.start].trim();
             if !markdown.is_empty() {
@@ -160,15 +160,7 @@ pub fn prepare_to_run_llm_block(
         prev_block_end = desc.byte_pos.end;
     }
 
-    let (model, system_prompt) = app_state
-        .llm_settings
-        .as_ref()
-        .map(|s| (s.model.clone(), s.system_prompt.clone()))
-        .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None));
-
     let llm_request = LLMBlockRequest {
-        model,
-        system_prompt,
         conversation,
         output_code_block_address: address,
         note_id: target,

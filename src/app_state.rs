@@ -1,15 +1,14 @@
 use std::{
     collections::BTreeMap,
-    hash::{DefaultHasher, Hash, Hasher},
+    hash::{Hash, Hasher},
     path::PathBuf,
-    sync::{mpsc::Receiver, Arc},
+    sync::{Arc, mpsc::Receiver},
 };
 
 use eframe::{
     egui::{
-        self,
+        Id, Rect, Ui,
         text::{CCursor, LayoutJob},
-        Id, Key, KeyboardShortcut, Modifiers, Rect, Ui,
     },
     epaint::Galley,
 };
@@ -23,27 +22,29 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        map_text_command_to_command_handler, AppFocus, BuiltInCommand, CommandContext, CommandList,
-        EditorCommand, EditorCommandOutput, TextCommandContext,
+        AppFocus, CommandContext, CommandInstruction, CommandList, CommandScope,
+        EditorCommandOutput, SlashPaletteCmd, UiState, call_with_text_ctx,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
         inline_llm_prompt::inline_llm_prompt_command_handler,
-        kdl_lang::{autoclose_bracket_inside_kdl_block, on_enter_inside_kdl_block},
-        run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
+        insert_text::call_replace_text,
+        kdl_lang::on_enter_inside_kdl_block,
+        run_llm::{CodeBlockAddress, prepare_to_run_llm_block},
+        slash_pallete::show_slash_pallete,
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
         toggle_code_block::toggle_code_block,
         toggle_md_headings::toggle_md_heading,
         toggle_simple_md_annotations::toggle_simple_md_annotations,
     },
-    effects::text_change_effect::{apply_text_changes, TextChange},
     feedback::FeedbackData,
     persistent_state::{DataToSave, NoteFile, RestoredData},
-    scripting::execute_code_blocks,
-    settings::{LlmSettings, SettingsNoteEvalContext},
+    scripting::settings_eval::Scripts,
+    settings_parsing::LlmSettings,
     text_structure::{
-        SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextStructure, TextStructureVersion,
+        CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextStructure,
+        TextStructureVersion,
     },
     theme::AppTheme,
 };
@@ -62,11 +63,19 @@ pub enum InlinePromptStatus {
     Done { prompt: String },
 }
 
+#[derive(Debug, Clone)]
+pub struct ParsedPromptResponse {
+    pub reasoning: Option<String>,
+    pub replacement: Option<String>,
+    pub explanation: Option<String>,
+}
+
 #[derive(Debug)]
-pub struct InlineLLMPropmptState {
+pub struct InlineLLMPromptState {
     pub prompt: String,
     pub address: TextSelectionAddress,
     pub response_text: String,
+    pub parsed_response: ParsedPromptResponse,
     pub diff_parts: Vec<TextDiffPart>,
     pub layout_job: LayoutJob,
     pub status: InlinePromptStatus,
@@ -93,7 +102,27 @@ impl Default for FeedbackState {
 #[derive(Debug)]
 pub struct Note {
     pub text: String,
-    pub cursor: Option<UnOrderedByteSpan>,
+    cursor: Option<UnOrderedByteSpan>,
+    last_cursor: Option<UnOrderedByteSpan>,
+}
+
+impl Note {
+    pub fn reset_cursor(&mut self) {
+        self.cursor = None;
+    }
+
+    pub fn update_cursor(&mut self, updated_cursor: UnOrderedByteSpan) {
+        self.last_cursor = Some(updated_cursor);
+        self.cursor = Some(updated_cursor);
+    }
+
+    pub fn cursor(&self) -> Option<UnOrderedByteSpan> {
+        self.cursor
+    }
+
+    pub fn last_cursor(&self) -> Option<UnOrderedByteSpan> {
+        self.last_cursor
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -102,6 +131,22 @@ pub enum UnsavedChange {
     SelectionChanged,
     LastUpdated,
     PinStateChanged,
+}
+
+/// Actions specific to a render update, that is, what needs to happen during this render
+#[derive(Debug)]
+pub enum RenderAction {
+    ScrollToEditorCursorPos,
+}
+
+#[derive(Debug)]
+pub struct SlashPalette {
+    pub note_file: NoteFile,
+    pub slash_byte_pos: usize,
+    pub search_term: String,
+    pub options: Vec<SlashPaletteCmd>,
+    pub selected: usize,
+    pub update_count: u32,
 }
 
 pub struct AppState {
@@ -123,15 +168,17 @@ pub struct AppState {
     pub msg_queue: Receiver<MsgToApp>,
     pub hidden: bool,
     pub prev_focused: bool,
-    pub editor_commands: CommandList,
+    pub commands: CommandList,
     pub llm_settings: Option<LlmSettings>,
 
-    pub inline_llm_prompt: Option<InlineLLMPropmptState>,
+    pub inline_llm_prompt: Option<InlineLLMPromptState>,
+    pub slash_palette: Option<SlashPalette>,
 
     pub computed_layout: Option<ComputedLayout>,
     pub text_structure: Option<TextStructure>,
-    pub deferred_to_post_render: Vec<AppAction>,
-
+    pub settings_scripts: Option<Scripts>,
+    pub deferred_actions: Vec<AppAction>,
+    pub render_actions: Vec<RenderAction>,
     pub feedback: Option<FeedbackState>,
 }
 
@@ -213,7 +260,7 @@ impl ComputedLayout {
                 SpanKind::CodeBlock => {
                     text_structure.find_meta(index).and_then(|meta| match meta {
                         // TODO use small string instead
-                        SpanMeta::CodeBlock { lang } => {
+                        SpanMeta::CodeBlock(CodeBlockMeta { lang, .. }) => {
                             Some((desc.byte_pos, lang.to_owned(), index))
                         }
                         _ => None,
@@ -286,7 +333,7 @@ pub enum MsgToApp {
 // }
 
 impl AppState {
-    pub fn new(init_data: AppInitData, app_io: &mut impl AppIO) -> Self {
+    pub fn new(init_data: AppInitData) -> Self {
         let AppInitData {
             theme,
             msg_queue,
@@ -302,15 +349,25 @@ impl AppState {
 
         let shelf_count = notes.len();
 
-        let mut notes: BTreeMap<NoteFile, Note> = notes
+        let notes: BTreeMap<NoteFile, Note> = notes
             .into_iter()
             .enumerate()
-            .map(|(i, text)| (NoteFile::Note(i as u32), Note { text, cursor: None }))
+            .map(|(i, text)| {
+                (
+                    NoteFile::Note(i as u32),
+                    Note {
+                        text,
+                        cursor: None,
+                        last_cursor: None,
+                    },
+                )
+            })
             .chain([(
                 NoteFile::Settings,
                 Note {
                     text: settings,
                     cursor: None,
+                    last_cursor: None,
                 },
             )])
             .collect();
@@ -320,159 +377,90 @@ impl AppState {
 
         let text_structure = TextStructure::new(&notes.get(&selected_note).unwrap().text);
 
-        let mut editor_commands: Vec<EditorCommand> = [
-            (
-                BuiltInCommand::ExpandTaskMarker,
-                map_text_command_to_command_handler(on_space_after_task_markers),
-            ),
-            (
-                BuiltInCommand::IndentListItem,
-                map_text_command_to_command_handler(on_tab_inside_list),
-            ),
-            (
-                BuiltInCommand::UnindentListItem,
-                map_text_command_to_command_handler(on_shift_tab_inside_list),
-            ),
-            (
-                BuiltInCommand::SplitListItem,
-                map_text_command_to_command_handler(on_enter_inside_list_item),
-            ),
-            (
-                BuiltInCommand::MarkdownCodeBlock,
-                map_text_command_to_command_handler(toggle_code_block),
-            ),
-            (
-                BuiltInCommand::MarkdownBold,
-                map_text_command_to_command_handler(|text_context| {
-                    toggle_simple_md_annotations(text_context, SpanKind::Bold, "**")
+        let keybord_instructions: Vec<(CommandInstruction, CommandScope)> = Vec::from_iter(
+            [
+                CommandInstruction::ExpandTaskMarker,
+                CommandInstruction::IndentListItem,
+                CommandInstruction::UnindentListItem,
+                CommandInstruction::SplitListItem,
+                CommandInstruction::MarkdownCodeBlock(None),
+                CommandInstruction::MarkdownBold,
+                CommandInstruction::MarkdownItalic,
+                CommandInstruction::MarkdownStrikethrough,
+                CommandInstruction::MarkdownH1,
+                CommandInstruction::MarkdownH2,
+                CommandInstruction::MarkdownH3,
+                CommandInstruction::EnterInsideKDL,
+                CommandInstruction::RunLLMBlock,
+                CommandInstruction::ShowPrompt,
+                CommandInstruction::ShowSlashPallete,
+                // CommandInstruction::HideSlashPallete,
+                // CommandInstruction::NextSlashPalleteCmd,
+                // CommandInstruction::PrevSlashPalleteCmd,
+                // CommandInstruction::ExecuteSlashPalleteCmd,
+            ]
+            .map(|instructuin| (instructuin, CommandScope::Focus(AppFocus::NoteEditor)))
+            .into_iter()
+            .chain([
+                (
+                    CommandInstruction::SwitchToSettings,
+                    CommandScope::UiState(UiState::Editing),
+                ),
+                (CommandInstruction::PinWindow, CommandScope::Global),
+                (CommandInstruction::HideApp, CommandScope::Global),
+            ])
+            .chain((0..shelf_count).map(|note_index| {
+                (
+                    CommandInstruction::SwitchToNote(note_index as u8),
+                    CommandScope::UiState(UiState::Editing),
+                )
+            })),
+        );
+
+        use egui_phosphor::light as P;
+        let slash_palette_commands = []
+            .into_iter()
+            .chain(
+                [
+                    ("ai", CommandInstruction::ShowPrompt, P::SPARKLE),
+                    (
+                        "code",
+                        CommandInstruction::MarkdownCodeBlock(None),
+                        P::CODE_BLOCK,
+                    ),
+                    ("h1", CommandInstruction::MarkdownH1, P::TEXT_H_ONE),
+                    ("h2", CommandInstruction::MarkdownH2, P::TEXT_H_TWO),
+                    ("h3", CommandInstruction::MarkdownH3, P::TEXT_H_THREE),
+                    ("bold", CommandInstruction::MarkdownBold, P::TEXT_BOLDER),
+                    ("italic", CommandInstruction::MarkdownItalic, P::TEXT_ITALIC),
+                    (
+                        "strike",
+                        CommandInstruction::MarkdownStrikethrough,
+                        P::TEXT_STRIKETHROUGH,
+                    ),
+                ]
+                .into_iter()
+                .map(|(prefix, builtin, phosphor_icon)| {
+                    let shortcut = builtin.default_keybinding();
+                    SlashPaletteCmd::from_instruction(
+                        prefix,
+                        builtin,
+                        CommandScope::Focus(AppFocus::NoteEditor),
+                    )
+                    .icon(phosphor_icon.to_string())
+                    .shortcut(shortcut)
                 }),
-            ),
-            (
-                BuiltInCommand::MarkdownItalic,
-                map_text_command_to_command_handler(|text_context| {
-                    toggle_simple_md_annotations(text_context, SpanKind::Emphasis, "*")
-                }),
-            ),
-            (
-                BuiltInCommand::MarkdownStrikethrough,
-                map_text_command_to_command_handler(|text_context| {
-                    toggle_simple_md_annotations(text_context, SpanKind::Strike, "~~")
-                }),
-            ),
-            (
-                BuiltInCommand::MarkdownH1,
-                map_text_command_to_command_handler(|text_context| {
-                    toggle_md_heading(text_context, HeadingLevel::H1)
-                }),
-            ),
-            (
-                BuiltInCommand::MarkdownH2,
-                map_text_command_to_command_handler(|text_context| {
-                    toggle_md_heading(text_context, HeadingLevel::H2)
-                }),
-            ),
-            (
-                BuiltInCommand::MarkdownH3,
-                map_text_command_to_command_handler(|text_context| {
-                    toggle_md_heading(text_context, HeadingLevel::H3)
-                }),
-            ),
-            (
-                BuiltInCommand::EnterInsideKDL,
-                map_text_command_to_command_handler(on_enter_inside_kdl_block),
-            ),
-            // Disable for now
-            // (
-            //     BuiltInCommand::BracketAutoclosingInsideKDL,
-            //     map_text_command_to_command_handler(autoclose_bracket_inside_kdl_block),
-            // ),
-        ]
-        .into_iter()
-        .map(|(cmd, handler)| EditorCommand::built_in(cmd, handler))
-        .collect();
+            )
+            .collect();
 
-        for note_index in 0..shelf_count {
-            let cmd = BuiltInCommand::SwitchToNote(note_index as u8);
-            editor_commands.push(EditorCommand::built_in(cmd, move |_| {
-                [AppAction::SwitchToNote {
-                    note_file: NoteFile::Note(note_index as u32),
-                    via_shortcut: true,
-                }]
-                .into()
-            }))
-        }
+        let editor_commands = CommandList::new(
+            execute_instruction,
+            keybord_instructions,
+            slash_palette_commands,
+        );
 
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::SwitchToSettings,
-            |_| {
-                [AppAction::SwitchToNote {
-                    note_file: NoteFile::Settings,
-                    via_shortcut: true,
-                }]
-                .into()
-            },
-        ));
-
-        editor_commands.push(EditorCommand::built_in(BuiltInCommand::PinWindow, |ctx| {
-            [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into()
-        }));
-
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::HideApp,
-            |cx| match (cx.app_focus.is_menu_opened, cx.app_focus.focus) {
-                (false, None | Some(AppFocus::NoteEditor)) => {
-                    [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
-                }
-                _ => SmallVec::new(),
-            },
-        ));
-
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::HidePrompt,
-            |cx| match cx.app_focus.focus {
-                Some(AppFocus::InlinePropmptEditor) => {
-                    [AppAction::AcceptPromptSuggestion { accept: false }].into()
-                }
-                _ => SmallVec::new(),
-            },
-        ));
-
-        editor_commands.push(EditorCommand::built_in(
-            BuiltInCommand::RunLLMBlock,
-            |ctx| {
-                prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default()
-            },
-        ));
-        editor_commands.push(EditorCommand::built_in(BuiltInCommand::ShowPrompt, |ctx| {
-            inline_llm_prompt_command_handler(ctx).unwrap_or_default()
-        }));
-
-        let mut editor_commands = CommandList::new(editor_commands);
-        let mut llm_settings: Option<LlmSettings> = None;
-
-        // TODO this is ugly, refactor this to be a bit nicer
-        // at least from the error reporting point of view
-        if let Some(settings) = notes.get_mut(&NoteFile::Settings) {
-            match {
-                let mut cx = SettingsNoteEvalContext {
-                    cmd_list: &mut editor_commands,
-                    should_force_eval: true,
-                    app_io,
-                    llm_settings: &mut llm_settings,
-                };
-
-                execute_code_blocks(&mut cx, &TextStructure::new(&settings.text), &settings.text)
-            } {
-                Some(requested_changes) => {
-                    match apply_text_changes(&mut settings.text, settings.cursor, requested_changes)
-                    {
-                        Ok(_) => println!("applied settings note successfully"),
-                        Err(err) => println!("failed to write back settings results {:#?}", err),
-                    }
-                }
-                None => (),
-            }
-        }
+        // schedule
+        let deferred_actions = vec![AppAction::EvalNote(NoteFile::Settings)];
 
         Self {
             is_pinned: is_window_pinned,
@@ -489,15 +477,18 @@ impl AppState {
             hidden: false,
             prev_focused: false,
             last_saved,
-            editor_commands,
-            llm_settings,
-            deferred_to_post_render: vec![],
+            commands: editor_commands,
+            llm_settings: None,
+            deferred_actions,
             inline_llm_prompt: None,
+            slash_palette: None,
+            settings_scripts: None,
+            render_actions: vec![],
             feedback: None,
         }
     }
 
-    pub fn should_persist<'s>(&'s mut self) -> Option<DataToSave> {
+    pub fn should_persist(&mut self) -> Option<DataToSave> {
         if !self.unsaved_changes.is_empty() {
             let changes: SmallVec<[_; 4]> = self.unsaved_changes.drain(..).unique().collect();
             Some(DataToSave {
@@ -518,6 +509,13 @@ impl AppState {
             None
         }
     }
+
+    pub fn to_ui_state(&self) -> UiState {
+        match &self.feedback {
+            Some(feedback) if feedback.is_feedback_open => UiState::ProvidingFeedback,
+            _ => UiState::Editing,
+        }
+    }
 }
 
 pub struct AppInitData {
@@ -527,19 +525,82 @@ pub struct AppInitData {
     pub last_saved: u128,
 }
 
-fn number_to_key(key: u8) -> Option<Key> {
-    match key {
-        0 => Some(Key::Num0),
-        1 => Some(Key::Num1),
-        2 => Some(Key::Num2),
-        3 => Some(Key::Num3),
-        4 => Some(Key::Num4),
-        5 => Some(Key::Num5),
-        6 => Some(Key::Num6),
-        7 => Some(Key::Num7),
-        8 => Some(Key::Num8),
-        9 => Some(Key::Num9),
-        _ => None,
+fn execute_instruction(
+    instruction: &CommandInstruction,
+    ctx: CommandContext,
+) -> EditorCommandOutput {
+    use CommandInstruction as CI;
+    match instruction {
+        CI::ExpandTaskMarker => call_with_text_ctx(ctx, on_space_after_task_markers),
+        CI::IndentListItem => call_with_text_ctx(ctx, on_tab_inside_list),
+        CI::UnindentListItem => call_with_text_ctx(ctx, on_shift_tab_inside_list),
+        CI::SplitListItem => call_with_text_ctx(ctx, on_enter_inside_list_item),
+        CI::MarkdownCodeBlock(lang) => call_with_text_ctx(ctx, |cx| {
+            toggle_code_block(cx, lang.as_ref().map(|s| s.as_str()))
+        }),
+        CI::MarkdownBold => call_with_text_ctx(ctx, |text_context| {
+            toggle_simple_md_annotations(text_context, SpanKind::Bold, "**")
+        }),
+        CI::MarkdownItalic => call_with_text_ctx(ctx, |text_context| {
+            toggle_simple_md_annotations(text_context, SpanKind::Emphasis, "*")
+        }),
+        CI::MarkdownStrikethrough => call_with_text_ctx(ctx, |text_context| {
+            toggle_simple_md_annotations(text_context, SpanKind::Strike, "~~")
+        }),
+        CI::MarkdownH1 => call_with_text_ctx(ctx, |text_context| {
+            toggle_md_heading(text_context, HeadingLevel::H1)
+        }),
+        CI::MarkdownH2 => call_with_text_ctx(ctx, |text_context| {
+            toggle_md_heading(text_context, HeadingLevel::H2)
+        }),
+        CI::MarkdownH3 => call_with_text_ctx(ctx, |text_context| {
+            toggle_md_heading(text_context, HeadingLevel::H3)
+        }),
+        CI::EnterInsideKDL => call_with_text_ctx(ctx, on_enter_inside_kdl_block),
+
+        CI::SwitchToNote(note_index) => SmallVec::from([AppAction::SwitchToNote {
+            note_file: NoteFile::Note(*note_index as u32),
+            via_shortcut: true,
+        }]),
+
+        CI::SwitchToSettings => [AppAction::SwitchToNote {
+            note_file: NoteFile::Settings,
+            via_shortcut: true,
+        }]
+        .into(),
+
+        CI::PinWindow => [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
+
+        CI::HideApp => match (
+            ctx.app_focus.is_menu_opened,
+            &ctx.app_state.slash_palette,
+            ctx.app_focus.internal_focus,
+        ) {
+            (false, None, None | Some(AppFocus::NoteEditor)) => {
+                [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
+            }
+            _ => SmallVec::new(),
+        },
+
+        CI::RunLLMBlock => {
+            prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default()
+        }
+
+        CI::ShowPrompt => inline_llm_prompt_command_handler(ctx).unwrap_or_default(),
+
+        CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),
+
+        // CI::HideSlashPallete => hide_slash_pallete(ctx).unwrap_or_default(),
+
+        // CI::NextSlashPalleteCmd => next_slash_cmd(ctx).unwrap_or_default(),
+
+        // CI::PrevSlashPalleteCmd => prev_slash_cmd(ctx).unwrap_or_default(),
+
+        // CI::ExecuteSlashPalleteCmd => execute_slash_cmd(ctx).unwrap_or_default(),
+        CI::BracketAutoclosingInsideKDL => todo!(),
+        CI::InsertText(text_source) => call_replace_text(text_source, ctx),
+        // Disable for now
+        // CI::BracketAutoclosingInsideKDL => map_text_command_to_command_handler(autoclose_bracket_inside_kdl_block).call(ctx),
     }
 }
 
@@ -548,4 +609,61 @@ pub fn compute_editor_text_id(selected_note_file: NoteFile) -> Id {
         NoteFile::Note(index) => ("text_edit_id", index),
         NoteFile::Settings => ("text_edit_id_settings", 4568),
     })
+}
+
+impl ParsedPromptResponse {
+    pub fn parse_stream(input: &str) -> Self {
+        // Helper function to extract content between tags
+        fn extract_between_tags(input: &str, start_tag: &str, end_tag: &str) -> Option<String> {
+            if let Some(start) = input.find(start_tag) {
+                let content_start = start + start_tag.len();
+                if let Some(end) = input[content_start..].find(end_tag) {
+                    return Some(input[content_start..content_start + end].trim().to_string());
+                }
+                // Handle unclosed tag in streaming scenario
+                return Some(input[content_start..].trim().to_string());
+            }
+            None
+        }
+
+        // Extract content for each tag
+        let reasoning = extract_between_tags(input, "<reasoning>", "</reasoning>");
+        let replacement =
+            extract_between_tags(input, "<selection_replacement>", "</selection_replacement>");
+        let explanation = extract_between_tags(input, "<explanation>", "</explanation>");
+
+        ParsedPromptResponse {
+            reasoning,
+            replacement,
+            explanation,
+        }
+    }
+}
+
+#[cfg(test)]
+mod prompt_response_tests {
+    use super::*;
+
+    #[test]
+    fn test_complete_response() {
+        let input = r#"<reasoning>This is the reasoning</reasoning>
+        <selection_replacement>This is the replacement</selection_replacement>
+        <explanation>This is the explanation</explanation>"#;
+
+        let response = ParsedPromptResponse::parse_stream(input);
+        assert_eq!(response.reasoning.unwrap(), "This is the reasoning");
+        assert_eq!(response.replacement.unwrap(), "This is the replacement");
+        assert_eq!(response.explanation.unwrap(), "This is the explanation");
+    }
+
+    #[test]
+    fn test_partial_response() {
+        let input = r#"<reasoning>This is the reasoning</reasoning>
+        <selection_replacement>This is the replacement"#;
+
+        let response = ParsedPromptResponse::parse_stream(input);
+        assert_eq!(response.reasoning.unwrap(), "This is the reasoning");
+        assert_eq!(response.replacement.unwrap(), "This is the replacement");
+        assert!(response.explanation.is_none());
+    }
 }
