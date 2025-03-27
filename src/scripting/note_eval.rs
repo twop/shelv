@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
-use boa_engine::{Context, Source, context::HostHooks};
+use boa_engine::{context::HostHooks, Context, Source};
 use boa_runtime::Console;
+use similar::DiffableStr;
 use smallvec::SmallVec;
 
 use crate::{
@@ -10,7 +11,10 @@ use crate::{
     text_structure::{CodeBlockMeta, SpanKind, SpanMeta, TextStructure},
 };
 
-use super::note_eval_context::{BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash};
+use super::{
+    js_console_logger::JsLogCollector,
+    note_eval_context::{BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
+};
 
 #[derive(Debug, Clone, Copy)]
 enum CodeBlock {
@@ -23,7 +27,9 @@ pub const JS_SOURCE_LANG: &str = "js";
 
 struct JsNoteEvalContext {
     context: Context,
+    console_logger: JsLogCollector,
 }
+
 pub struct HostWithLocalTimezone;
 
 impl HostHooks for HostWithLocalTimezone {
@@ -54,10 +60,21 @@ impl NoteEvalContext for JsNoteEvalContext {
     fn eval_block(&mut self, body: &str, hash: SourceHash, _: &mut Self::State) -> BlockEvalResult {
         let result = self.context.eval(Source::from_bytes(body));
 
+        let logged = self.console_logger.flush().ok();
+
         BlockEvalResult {
             body: match result {
-                Ok(res) => res.display().to_string(),
-                Err(err) => format!("{:#}", err),
+                Ok(boa_engine::JsValue::Undefined) if logged.is_some() => {
+                    logged.unwrap_or_default()
+                }
+
+                Ok(res) => format!(
+                    "{}{}",
+                    logged.unwrap_or_default(),
+                    res.display().to_string()
+                ),
+
+                Err(err) => format!("{}{:#}", logged.unwrap_or_default(), err),
             },
 
             output_lang: format!("{}{}", JS_OUTPUT_LANG, hash.to_string()),
@@ -187,11 +204,12 @@ pub fn execute_code_blocks<Ctx: NoteEvalContext>(
 }
 
 pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Option<Vec<TextChange>> {
+    let console_logger = JsLogCollector::new();
     let mut context = Context::builder()
         .host_hooks(&HostWithLocalTimezone)
         .build()
         .unwrap(); // We first add the `console` object, to be able to call `console.log()`.
-    let console = Console::init(&mut context);
+    let console = Console::init_with_logger(&mut context, console_logger.clone());
     context
         .register_global_property(
             Console::NAME,
@@ -200,7 +218,11 @@ pub fn execute_live_scripts(text_structure: &TextStructure, text: &str) -> Optio
         )
         .expect("the console builtin shouldn't exist");
 
-    let mut cx = JsNoteEvalContext { context };
+    let mut cx = JsNoteEvalContext {
+        context,
+        console_logger,
+    };
+
     execute_code_blocks(&mut cx, text_structure, text)
 }
 
