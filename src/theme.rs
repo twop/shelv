@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use eframe::{
     egui::{
-        self, FontDefinitions, RichText, TextStyle, ThemePreference, Vec2, Visuals, WidgetText,
+        self,
         style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets},
-        vec2,
+        vec2, FontDefinitions, RichText, TextStyle, ThemePreference, Vec2, Visuals, WidgetText,
     },
     epaint::{Color32, CornerRadius, FontFamily, FontId, Shadow, Stroke},
 };
@@ -45,7 +45,7 @@ impl AppIcon {
     }
 
     pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> WidgetText {
-        use egui::{FontId, TextFormat, text::LayoutJob};
+        use egui::{text::LayoutJob, FontId, TextFormat};
 
         let mut job = LayoutJob::default();
 
@@ -163,6 +163,7 @@ pub struct FontSizes {
     pub normal: f32,
     // pub normal2: f32,
     pub small: f32,
+    pub tiny: f32,
 }
 
 impl FontSizes {
@@ -173,7 +174,8 @@ impl FontSizes {
             h3: 22.,
             h4: 16.,
             normal: 12.,
-            small: 8.,
+            small: 10.,
+            tiny: 8.,
         }
     }
 }

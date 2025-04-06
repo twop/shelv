@@ -1,8 +1,8 @@
 use std::{error::Error, path::PathBuf, rc::Rc, str::FromStr};
 
 use boa_engine::{
-    Context, JsError, JsValue, Module, builtins::promise::PromiseState, module::SimpleModuleLoader,
-    property::PropertyKey,
+    builtins::promise::PromiseState, module::SimpleModuleLoader, property::PropertyKey, Context,
+    JsError, JsValue, Module,
 };
 use boa_parser::Source;
 use itertools::Itertools;
@@ -16,7 +16,7 @@ use crate::{
         ScriptCall, SlashPaletteCmd, TextSource,
     },
     settings_parsing::{
-        GlobalBinding, GlobalCommand, LlmSettings, LocalBinding, parse_top_level_settings_block,
+        parse_top_level_settings_block, GlobalBinding, GlobalCommand, LlmSettings, LocalBinding,
     },
 };
 
@@ -26,8 +26,8 @@ use super::{
     note_eval_context::{BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
 };
 
-pub const SETTINGS_BLOCK_LANG: &str = "settings";
-pub const SETTINGS_BLOCK_LANG_OUTPUT: &str = "settings#";
+pub const SETTINGS_BLOCK_LANG: &str = "kdl";
+pub const SETTINGS_BLOCK_LANG_OUTPUT: &str = "kdl#";
 
 pub const SETTINGS_SCRIPT_BLOCK_LANG: &str = "js";
 pub const SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT: &str = "js#";

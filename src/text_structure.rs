@@ -2,12 +2,12 @@ use std::ops::Range;
 
 use eframe::{
     egui::TextFormat,
-    epaint::{Color32, FontId, Stroke, text::LayoutJob},
+    epaint::{text::LayoutJob, Color32, FontId, Stroke},
 };
 use itertools::Itertools;
 use linkify::LinkFinder;
 use pulldown_cmark::{CodeBlockKind, HeadingLevel};
-use smallvec::{SmallVec, smallvec};
+use smallvec::{smallvec, SmallVec};
 use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
@@ -43,7 +43,6 @@ enum Annotation {
     Heading(HeadingLevel),
     CodeBlock,
     CodeBlockLang,
-    // CodeBlockBody,
     InlineCode,
     ListItemMarker,
 }
@@ -674,7 +673,7 @@ impl TextStructure {
         let mut state = MarkdownRunningState::new();
 
         let code_font_id = FontId {
-            size: 12.,
+            size: theme.fonts.size.normal,
             family: theme.fonts.family.code.clone(),
         };
 
@@ -749,7 +748,7 @@ impl TextStructure {
                         }
                     }
 
-                    None if lang == "settings" => {
+                    None if lang == "kdl" => {
                         let mut highlighter = Highlighter::new();
 
                         let kdl_lang = tree_sitter_kdl::language();
@@ -885,10 +884,22 @@ impl TextStructure {
                     0.0,
                     TextFormat::simple(
                         FontId {
-                            size: theme.fonts.size.small,
-                            family: theme.fonts.family.normal.clone(),
+                            size: theme.fonts.size.tiny,
+                            family: theme.fonts.family.code.clone(),
                         },
                         theme.colors.md_code,
+                    ),
+                )
+            } else if state.code_block > 0 {
+                job.append(
+                    text.get(pos..point.str_offset).unwrap_or(""),
+                    0.0,
+                    TextFormat::simple(
+                        FontId {
+                            size: theme.fonts.size.tiny,
+                            family: theme.fonts.family.code.clone(),
+                        },
+                        theme.colors.subtle_text_color,
                     ),
                 )
             } else {
