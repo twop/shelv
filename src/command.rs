@@ -452,6 +452,9 @@ impl FrameHotkey {
     }
 }
 
+/// Hotkeys that are only valid until the next render, that is, after the frame fills them in
+/// they can be triggered at the begining of the next one, and then cleared
+/// useful for stuff like modal dialog shortcuts and such
 pub struct FrameHotkeys(Vec<FrameHotkey>);
 
 impl FrameHotkeys {
@@ -653,7 +656,7 @@ pub fn try_extract_text_command_context(app_state: &AppState) -> Option<TextComm
 
     let cursor = note.cursor().or(note.last_cursor())?;
 
-    let text_structure = app_state.text_structure.as_ref()?;
+    let text_structure = &note.derived_state.structure;
 
     let text_command_context =
         TextCommandContext::new(text_structure, &note.text, cursor.ordered());

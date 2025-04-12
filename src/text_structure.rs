@@ -4,6 +4,7 @@ use eframe::{
     egui::TextFormat,
     epaint::{text::LayoutJob, Color32, FontId, Stroke},
 };
+use fxhash::hash64;
 use itertools::Itertools;
 use linkify::LinkFinder;
 use pulldown_cmark::{CodeBlockKind, HeadingLevel};
@@ -159,8 +160,22 @@ pub struct TextStructure {
     raw_links: Vec<RawLink>,
     spans: Vec<SpanDesc>,
     metadata: Vec<(SpanIndex, SpanMeta)>,
-    text_hash: u64,
+    text_hash: TextHash,
     lines: Vec<ByteSpan>,
+}
+
+/// this will not allocate anything on the heap, useful for std::mem::take
+impl Default for TextStructure {
+    fn default() -> Self {
+        Self {
+            points: Vec::with_capacity(0),
+            raw_links: Vec::with_capacity(0),
+            spans: Vec::with_capacity(0),
+            metadata: Vec::with_capacity(0),
+            text_hash: TextHash::new(""),
+            lines: Vec::with_capacity(0),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -287,7 +302,7 @@ impl<'a> TextStructureBuilder<'a> {
             metadata,
             raw_links,
             lines,
-            text_hash: fxhash::hash64(text),
+            text_hash: TextHash::new(text),
         }
     }
 
@@ -459,7 +474,13 @@ fn find_span_line_location(
 }
 
 #[derive(Clone, Debug, Copy, Hash, PartialEq, Eq)]
-pub struct TextStructureVersion(u64);
+pub struct TextHash(u64);
+
+impl TextHash {
+    fn new(text: &str) -> Self {
+        Self(hash64(text))
+    }
+}
 
 impl TextStructure {
     pub fn new(text: &str) -> Self {
@@ -469,13 +490,13 @@ impl TextStructure {
             spans: vec![],
             metadata: vec![],
             lines: vec![],
-            text_hash: 0,
+            text_hash: TextHash::new(""),
         };
         struture.recycle(text)
     }
 
-    pub fn opaque_version(&self) -> TextStructureVersion {
-        TextStructureVersion(self.text_hash)
+    pub fn opaque_version(&self) -> TextHash {
+        self.text_hash
     }
 
     pub fn recycle(self, text: &str) -> Self {

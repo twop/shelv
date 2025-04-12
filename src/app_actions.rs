@@ -1,35 +1,35 @@
 use std::{collections::BTreeMap, io, path::PathBuf};
 
 use boa_engine::ast::expression::Parenthesized;
-use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
+use eframe::egui::{text::LayoutJob, Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
 
-use serde_json::{Value, to_value};
+use serde_json::{to_value, Value};
 use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
 
 use crate::{
     app_state::{
-        AppState, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk, InlinePromptStatus,
-        MsgToApp, ParsedPromptResponse, RenderAction, SlashPalette, TextSelectionAddress,
-        UnsavedChange, compute_editor_text_id,
+        compute_editor_text_id, AppState, FeedbackState, InlineLLMPromptState,
+        InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, NoteDerivedState,
+        ParsedPromptResponse, RenderAction, SlashPalette, TextSelectionAddress, UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
-        run_llm::{CodeBlockAddress, prepare_to_run_llm_block},
+        run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
     },
-    effects::text_change_effect::{TextChange, apply_text_changes},
+    effects::text_change_effect::{apply_text_changes, TextChange},
     feedback::FeedbackType,
-    persistent_state::{NoteFile, get_tutorial_note_content},
+    persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{
         note_eval::{execute_code_blocks, execute_live_scripts},
         settings_eval::{Scripts, SettingsNoteEvalContext},
     },
     settings_parsing::LlmSettings,
     text_structure::{
-        CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextStructure,
-        create_layout_job_from_text_diff,
+        create_layout_job_from_text_diff, CodeBlockMeta, SpanIndex, SpanKind, SpanMeta,
+        TextDiffPart, TextStructure,
     },
 };
 
@@ -212,12 +212,6 @@ pub fn process_app_action(
 
                 // reset inline prompt state if we switched to a different note
                 state.inline_llm_prompt = None;
-
-                if let Some(cur_note) = state.notes.get(&note_file) {
-                    let text = &cur_note.text;
-                    state.selected_note = note_file;
-                    state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
-                };
             }
 
             match via_shortcut {
@@ -250,10 +244,8 @@ pub fn process_app_action(
 
             let next_action = match apply_text_changes(text, cursor, changes) {
                 Ok(updated_cursor) => {
-                    if note_file == state.selected_note {
-                        // if the changes are for the selected note we need to recompute TextStructure
-                        state.text_structure = state.text_structure.take().map(|s| s.recycle(text));
-                    }
+                    note.derived_state.structure =
+                        std::mem::take(&mut note.derived_state.structure).recycle(text);
 
                     match updated_cursor {
                         Some(cursor) => note.update_cursor(cursor),
@@ -331,12 +323,10 @@ pub fn process_app_action(
                             if let Some(note) = state.notes.get_mut(&note_file) {
                                 // TODO don't reset the cursor
                                 note.reset_cursor();
-                                if note_file == state.selected_note {
-                                    state.text_structure = state
-                                        .text_structure
-                                        .take()
-                                        .map(|s| s.recycle(&note_content));
-                                }
+
+                                note.derived_state.structure =
+                                    std::mem::take(&mut note.derived_state.structure)
+                                        .recycle(&note.text);
 
                                 if Some(note_file)
                                     == state
@@ -376,20 +366,14 @@ pub fn process_app_action(
                     let note = &mut state.notes.get_mut(&resp.note_id).unwrap();
                     let text = &mut note.text;
 
-                    let text_structure = match resp.note_id == state.selected_note {
-                        true => state
-                            .text_structure
-                            .take()
-                            .unwrap_or_else(|| TextStructure::new(text)),
-                        false => TextStructure::new(text),
-                    };
-
                     enum InsertMode {
                         Initial { pos: usize },
                         Subsequent { pos: usize },
                     }
 
-                    let insertion_pos = text_structure
+                    let insertion_pos = note
+                        .derived_state
+                        .structure
                         .filter_map_codeblocks(|lang| (lang == &resp.address).then(|| ()))
                         .next()
                         .map(|(_index, desc, _, _)| {
@@ -406,10 +390,6 @@ pub fn process_app_action(
                                 },
                             }
                         });
-
-                    if resp.note_id == state.selected_note {
-                        state.text_structure = Some(text_structure);
-                    }
 
                     let mut chunk = resp.chunk;
 
@@ -554,15 +534,8 @@ pub fn process_app_action(
 
         AppAction::EvalNote(note_file) => {
             let note = &mut state.notes.get_mut(&note_file).unwrap();
+            let text_structure = &note.derived_state.structure;
             let text = &mut note.text;
-
-            let text_structure = match note_file == state.selected_note {
-                true => state
-                    .text_structure
-                    .take()
-                    .unwrap_or_else(|| TextStructure::new(text)),
-                false => TextStructure::new(text),
-            };
 
             let has_unclosed_code_blocks = text_structure
                 .iter()
@@ -625,10 +598,6 @@ pub fn process_app_action(
                 }
             };
 
-            if note_file == state.selected_note {
-                state.text_structure = Some(text_structure);
-            }
-
             requested_changes
                 .map(|changes| AppAction::ApplyTextChanges {
                     target: note_file,
@@ -665,7 +634,14 @@ pub fn process_app_action(
                     if feedback.feedback_data.include_current_note {
                         map.insert(
                             String::from("text_structure"),
-                            format!("{:#?}", state.text_structure).into(),
+                            format!(
+                                "{:#?}",
+                                state
+                                    .notes
+                                    .get(&state.selected_note)
+                                    .map(|n| &n.derived_state.structure)
+                            )
+                            .into(),
                         );
                         map.insert(
                             String::from("selected_note"),

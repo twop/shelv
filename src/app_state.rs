@@ -2,13 +2,13 @@ use std::{
     collections::BTreeMap,
     hash::{Hash, Hasher},
     path::PathBuf,
-    sync::{Arc, mpsc::Receiver},
+    sync::{mpsc::Receiver, Arc},
 };
 
 use eframe::{
     egui::{
-        Id, Rect, Ui,
         text::{CCursor, LayoutJob},
+        Id, Rect, Ui,
     },
     epaint::Galley,
 };
@@ -18,19 +18,19 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    app_actions::{AppAction, AppIO},
+    app_actions::{AppAction, FocusTarget},
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        AppFocus, CommandContext, CommandInstruction, CommandList, CommandScope,
-        EditorCommandOutput, SlashPaletteCmd, UiState, call_with_text_ctx,
+        call_with_text_ctx, AppFocus, CommandContext, CommandInstruction, CommandList,
+        CommandScope, EditorCommandOutput, SlashPaletteCmd, UiState,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
         inline_llm_prompt::inline_llm_prompt_command_handler,
         insert_text::call_replace_text,
         kdl_lang::on_enter_inside_kdl_block,
-        run_llm::{CodeBlockAddress, prepare_to_run_llm_block},
+        run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
         slash_pallete::show_slash_pallete,
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
@@ -43,8 +43,7 @@ use crate::{
     scripting::settings_eval::Scripts,
     settings_parsing::LlmSettings,
     text_structure::{
-        CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextStructure,
-        TextStructureVersion,
+        CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextHash, TextStructure,
     },
     theme::AppTheme,
 };
@@ -53,7 +52,7 @@ use crate::{
 pub struct TextSelectionAddress {
     pub span: ByteSpan,
     pub note_file: NoteFile,
-    pub text_version: TextStructureVersion,
+    pub text_version: TextHash,
 }
 
 #[derive(Debug)]
@@ -100,10 +99,35 @@ impl Default for FeedbackState {
 }
 
 #[derive(Debug)]
+enum CodeBlockAnnotation {
+    RunButton,
+    Applied { title: String, message: LayoutJob },
+    Error { title: String, message: LayoutJob },
+}
+
+// TODO make the fields non public to ensure access pattern to the note updates
+// possibly add these methods to the note impl
+#[derive(Debug)]
+pub struct NoteDerivedState {
+    pub code_block_annotations: Vec<(SpanIndex, CodeBlockAnnotation)>,
+    pub structure: TextStructure,
+}
+
+impl NoteDerivedState {
+    pub fn new_from(text: &str) -> Self {
+        Self {
+            code_block_annotations: Vec::new(),
+            structure: TextStructure::new(text),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Note {
     pub text: String,
     cursor: Option<UnOrderedByteSpan>,
     last_cursor: Option<UnOrderedByteSpan>,
+    pub derived_state: NoteDerivedState,
 }
 
 impl Note {
@@ -175,7 +199,6 @@ pub struct AppState {
     pub slash_palette: Option<SlashPalette>,
 
     pub computed_layout: Option<ComputedLayout>,
-    pub text_structure: Option<TextStructure>,
     pub settings_scripts: Option<Scripts>,
     pub deferred_actions: Vec<AppAction>,
     pub render_actions: Vec<RenderAction>,
@@ -353,29 +376,33 @@ impl AppState {
             .into_iter()
             .enumerate()
             .map(|(i, text)| {
+                let derived_state = NoteDerivedState::new_from(&text);
                 (
                     NoteFile::Note(i as u32),
                     Note {
                         text,
                         cursor: None,
                         last_cursor: None,
+                        derived_state,
                     },
                 )
             })
-            .chain([(
-                NoteFile::Settings,
-                Note {
-                    text: settings,
-                    cursor: None,
-                    last_cursor: None,
-                },
-            )])
+            .chain([{
+                let derived_state = NoteDerivedState::new_from(&settings);
+                (
+                    NoteFile::Settings,
+                    Note {
+                        text: settings,
+                        cursor: None,
+                        last_cursor: None,
+                        derived_state,
+                    },
+                )
+            }])
             .collect();
 
         let selected_note = saved_state.selected;
         let is_window_pinned = saved_state.is_pinned;
-
-        let text_structure = TextStructure::new(&notes.get(&selected_note).unwrap().text);
 
         let keybord_instructions: Vec<(CommandInstruction, CommandScope)> = Vec::from_iter(
             [
@@ -460,7 +487,10 @@ impl AppState {
         );
 
         // schedule
-        let deferred_actions = vec![AppAction::EvalNote(NoteFile::Settings)];
+        let deferred_actions = vec![
+            AppAction::EvalNote(NoteFile::Settings),
+            AppAction::FocusRequest(FocusTarget::CurrentNote),
+        ];
 
         Self {
             is_pinned: is_window_pinned,
@@ -469,7 +499,6 @@ impl AppState {
             theme,
             notes,
             computed_layout: None,
-            text_structure: Some(text_structure),
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
             msg_queue,

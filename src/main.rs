@@ -1,38 +1,35 @@
 use app_actions::{
-    AppAction, AppIO, HideMode, SlashPaletteAction, compute_app_focus, process_app_action,
+    compute_app_focus, process_app_action, AppAction, AppIO, HideMode, SlashPaletteAction,
 };
 use app_io::RealAppIO;
-use app_state::{AppInitData, AppState, MsgToApp, compute_editor_text_id};
-use app_ui::{AppRenderData, RenderAppResult, is_shortcut_match, render_app};
+use app_state::{compute_editor_text_id, AppInitData, AppState, MsgToApp};
+use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
 use command::{AppFocusState, CommandContext, EditorCommandOutput};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use hotwatch::{
-    Event, EventKind, Hotwatch,
     notify::event::{DataChange, ModifyKind},
+    Event, EventKind, Hotwatch,
 };
 use image::ImageFormat;
-use itertools::Itertools;
-use persistent_state::{NoteFile, load_and_migrate, try_save, v1};
+use persistent_state::{load_and_migrate, try_save, v1};
 use scripting::settings_eval::Scripts;
 use smallvec::SmallVec;
-use text_structure::TextStructure;
 use theme::{configure_styles, get_font_definitions};
 use tokio::runtime::Runtime;
 
 use tray_icon::{
-    Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
     menu::{Menu, MenuEvent, MenuItem},
+    Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
 };
 // use tray_item::TrayItem;G1
 
 use std::{path::PathBuf, sync::mpsc::sync_channel};
 
 use eframe::{
-    CreationContext,
     egui::{self},
     epaint::vec2,
-    get_value,
+    get_value, CreationContext,
 };
 
 use crate::{app_state::UnsavedChange, persistent_state::extract_note_file};
@@ -83,7 +80,7 @@ impl MyApp<RealAppIO> {
 
         let (msg_queue_tx, msg_queue_rx) = sync_channel::<MsgToApp>(10);
 
-        let mut app_io = RealAppIO::new(
+        let app_io = RealAppIO::new(
             GlobalHotKeyManager::new().unwrap(),
             cc.egui_ctx.clone(),
             msg_queue_tx.clone(),
@@ -355,15 +352,9 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         // note that we have a settings note amoung them
         let note_count = app_state.notes.len() - 1;
 
-        let note = &app_state.notes.get(&app_state.selected_note).unwrap();
+        let note = app_state.notes.get_mut(&app_state.selected_note).unwrap();
+        let text_structure = std::mem::take(&mut note.derived_state.structure);
         let cursor = note.cursor().or(note.last_cursor());
-
-        let editor_text = &note.text;
-
-        let text_structure = app_state
-            .text_structure
-            .take()
-            .unwrap_or_else(|| TextStructure::new(editor_text));
 
         // if the app is pinned it is OK not re-requesting focus
         // neither hiding if focus lost
@@ -427,9 +418,9 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         }
 
         // TODO it seems that this can be done inside process_app_action
-        app_state.text_structure = Some(updated_structure);
         app_state.computed_layout = updated_layout;
         let note = app_state.notes.get_mut(&app_state.selected_note).unwrap();
+        note.derived_state.structure = updated_structure;
         match byte_cursor {
             Some(cursor) => {
                 if note.cursor().is_none() {
