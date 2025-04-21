@@ -209,6 +209,7 @@ pub fn process_app_action(
                         cur_note.reset_cursor();
                     }
                 }
+                state.selected_note = note_file;
 
                 // reset inline prompt state if we switched to a different note
                 state.inline_llm_prompt = None;
