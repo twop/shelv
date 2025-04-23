@@ -2,15 +2,17 @@ use std::{error::Error, path::PathBuf, rc::Rc, str::FromStr};
 
 use boa_engine::{
     builtins::promise::PromiseState, module::SimpleModuleLoader, property::PropertyKey, Context,
-    JsError, JsValue, Module,
+    JsError, JsValue, Module, Script,
 };
 use boa_parser::Source;
+use eframe::egui::{text::LayoutJob, FontId, TextFormat};
 use itertools::Itertools;
+use similar::DiffableStr;
 use smallvec::SmallVec;
 
 use crate::{
     app_actions::AppIO,
-    app_state::MsgToApp,
+    app_state::{CodeBlockAnnotation, MsgToApp},
     command::{
         AppFocus, CommandInstance, CommandInstruction, CommandList, CommandScope, ForwardToChild,
         ScriptCall, SlashPaletteCmd, TextSource,
@@ -18,6 +20,8 @@ use crate::{
     settings_parsing::{
         parse_top_level_settings_block, GlobalBinding, GlobalCommand, LlmSettings, LocalBinding,
     },
+    text_structure::{SpanIndex, SpanKind, TextStructure},
+    theme::{AppTheme, FontTheme},
 };
 
 use super::{
@@ -110,6 +114,107 @@ impl Scripts {
 // pub struct ScriptingState {
 //     sources: Vec<(String, SourceHash)>,
 // }
+pub fn eval_js_scripts_in_settings_note(
+    text: &str,
+    text_structure: &TextStructure,
+) -> (Scripts, Vec<(SpanIndex, CodeBlockAnnotation)>) {
+    let mut scripts = Scripts::new();
+    let mut annotations: Vec<(SpanIndex, CodeBlockAnnotation)> = Vec::new();
+
+    let code_blocks: SmallVec<[_; 8]> = text_structure
+        .filter_map_codeblocks(|lang| (lang == SETTINGS_SCRIPT_BLOCK_LANG).then_some(0))
+        .filter_map(|(index, _, _, _)| {
+            let (_, code_desc) = text_structure
+                .iterate_immediate_children_of(index)
+                .find(|(_, desc)| desc.kind == SpanKind::Text)?;
+
+            let code = &text[code_desc.byte_pos.range()];
+
+            Some((index, code))
+        })
+        .collect();
+
+    for (index, code) in code_blocks {
+        annotations.push((index, eval_script_block(code, &mut scripts)));
+    }
+
+    (scripts, annotations)
+}
+
+fn eval_script_block(
+    block_body: &str,
+    scripts: &mut Scripts,
+    // theme: &AppTheme,
+) -> CodeBlockAnnotation {
+    // Update `body` to include all exports from current blocks
+    let existing_exports: String = scripts
+        .script_blocks
+        .iter()
+        .flat_map(|block| {
+            block.exports.iter().map(|export| {
+                format!(
+                    "import {{ {} }} from '{}';",
+                    export.name,
+                    block.source_hash.to_string()
+                )
+            })
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let body = if !existing_exports.is_empty() {
+        format!("{}\n\n{}", existing_exports, block_body)
+    } else {
+        block_body.to_string()
+    };
+
+    let (exports, module) = match parse_and_eval_settings_script_block(&body, &mut scripts.js_cx) {
+        Ok((exports, module)) => (exports, module),
+        Err(err) => {
+            // let mut job = LayoutJob::default();
+            // let code_font_id = FontId {
+            //     size: theme.fonts.size.normal,
+            //     family: theme.fonts.family.code.clone(),
+            // };
+            // job.append(
+            //     &err.to_string(),
+            //     0.,
+            //     TextFormat::simple(code_font_id, theme.colors.normal_text_color),
+            // );
+            return CodeBlockAnnotation::Error {
+                title: "Error during evaluating the module".to_string(),
+                message: err.to_string(),
+            };
+        }
+    };
+
+    let hash = SourceHash::from(block_body);
+    scripts
+        .module_loader
+        .insert(format!("{}", hash.to_string()), module);
+
+    let body = match exports.as_slice() {
+        [] => "Block was evaluated by no exports were found".to_string(),
+        exports => ["Registered exports:".to_string()]
+            .into_iter()
+            .chain(
+                exports
+                    .iter()
+                    .map(|export| format!("\"{}\"", export.name.as_str())),
+            )
+            .join("\n\t"),
+    };
+
+    scripts.script_blocks.push(SriptBlock {
+        name: None,
+        // module,
+        source_hash: hash,
+        // span: todo!(),
+        exports,
+    });
+
+    CodeBlockAnnotation::Applied { message: body }
+}
 
 impl NoteEvalContext for Scripts {
     type State = ();

@@ -99,10 +99,10 @@ impl Default for FeedbackState {
 }
 
 #[derive(Debug)]
-enum CodeBlockAnnotation {
+pub enum CodeBlockAnnotation {
     RunButton,
-    Applied { title: String, message: LayoutJob },
-    Error { title: String, message: LayoutJob },
+    Applied { message: String },
+    Error { title: String, message: String },
 }
 
 // TODO make the fields non public to ensure access pattern to the note updates
