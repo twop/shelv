@@ -1,27 +1,19 @@
-use boa_engine::ast::expression::TaggedTemplate;
 use eframe::{
     egui::{
         self,
         scroll_area::ScrollBarVisibility,
-        style::default_text_styles,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
-        text_selection::{text_cursor_state::cursor_rect, LabelSelectionState},
+        text_selection::text_cursor_state::cursor_rect,
         Context, CursorIcon, FontFamily, FontSelection, Id, Key, KeyboardShortcut, Label, Layout,
-        Margin, Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit,
-        TextFormat, TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2,
-        WidgetText,
+        Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit, TextFormat,
+        TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
     },
     emath::{Align, Align2},
-    epaint::{pos2, vec2, Color32, FontId, PathStroke, Rect, Stroke},
-    App,
+    epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
 };
 use egui_taffy::{
-    taffy::{
-        self,
-        prelude::{auto, length},
-        AlignContent, JustifyContent, Style,
-    },
+    taffy::{AlignContent, JustifyContent},
     tui, TuiBuilderLogic,
 };
 use itertools::Itertools;
@@ -34,25 +26,19 @@ use crate::{
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
         ComputedLayout, FeedbackState, InlineLLMPromptState, InlinePromptStatus, LayoutParams,
-        MsgToApp, RenderAction, SlashPalette,
+        RenderAction, SlashPalette,
     },
     byte_span::UnOrderedByteSpan,
-    command::{
-        CommandInstruction, CommandList, FrameHotkey, FrameHotkeys, SlashPaletteCmd,
-        PROMOTED_COMMANDS,
-    },
-    commands::{
-        inline_llm_prompt::{self, compute_inline_prompt_text_input_id},
-        run_llm::LLM_LANG,
-    },
+    command::{CommandInstruction, CommandList, FrameHotkeys, SlashPaletteCmd, PROMOTED_COMMANDS},
+    commands::{inline_llm_prompt::compute_inline_prompt_text_input_id, run_llm::LLM_LANG},
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
+    taffy_styles::{flex_column, flex_row, StyleBuilder},
     text_structure::{InteractiveTextPart, TextStructure},
-    theme::{AppIcon, AppTheme, ColorManipulation},
+    theme::{AppIcon, AppTheme},
 };
 
 pub struct AppRenderData<'a> {
@@ -920,7 +906,7 @@ fn render_slash_palette(
             .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
     );
 
-    let frame_resp = egui::Frame::none()
+    let frame_resp = egui::Frame::new()
         .fill(theme.colors.code_bg_color)
         .inner_margin(theme.sizes.s)
         .stroke(prompt_ui.visuals().window_stroke)
@@ -1145,8 +1131,8 @@ fn restore_cursor_from_note_state(
             )
         });
 
-        if ccursor_range != text_edit_state.ccursor_range() {
-            text_edit_state.set_ccursor_range(ccursor_range);
+        if ccursor_range != text_edit_state.cursor.char_range() {
+            text_edit_state.cursor.set_char_range(ccursor_range);
             text_edit_state.store(ctx, text_state_id);
         }
     }

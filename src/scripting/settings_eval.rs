@@ -1,13 +1,10 @@
-use std::{error::Error, path::PathBuf, rc::Rc, str::FromStr};
+use std::{error::Error, rc::Rc};
 
 use boa_engine::{
-    builtins::promise::PromiseState, module::SimpleModuleLoader, property::PropertyKey, Context,
-    JsError, JsValue, Module, Script,
+    builtins::promise::PromiseState, property::PropertyKey, Context, JsError, JsValue, Module,
 };
 use boa_parser::Source;
-use eframe::egui::{text::LayoutJob, FontId, TextFormat};
 use itertools::Itertools;
-use similar::DiffableStr;
 use smallvec::SmallVec;
 
 use crate::{
@@ -34,7 +31,6 @@ pub const SETTINGS_BLOCK_LANG: &str = "kdl";
 pub const SETTINGS_BLOCK_LANG_OUTPUT: &str = "kdl#";
 
 pub const SETTINGS_SCRIPT_BLOCK_LANG: &str = "js";
-pub const SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT: &str = "js#";
 
 #[derive(Debug, Clone, Copy)]
 pub enum ScriptExportType {
@@ -214,104 +210,6 @@ fn eval_script_block(
     });
 
     CodeBlockAnnotation::Applied { message: body }
-}
-
-impl NoteEvalContext for Scripts {
-    type State = ();
-
-    fn begin(&mut self) -> Self::State {
-        ()
-    }
-
-    fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind> {
-        match lang {
-            SETTINGS_SCRIPT_BLOCK_LANG => Some(CodeBlockKind::Source),
-
-            output if output.starts_with(SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT) => {
-                let hex_str = &output[SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT.len()..];
-                Some(CodeBlockKind::Output(SourceHash::parse(hex_str)))
-            }
-
-            _ => None,
-        }
-    }
-
-    fn eval_block(
-        &mut self,
-        body: &str,
-        hash: SourceHash,
-        state: &mut Self::State,
-    ) -> BlockEvalResult {
-        // Update `body` to include all exports from current blocks
-        let existing_exports: String = self
-            .script_blocks
-            .iter()
-            .flat_map(|block| {
-                block.exports.iter().map(|export| {
-                    format!(
-                        "import {{ {} }} from '{}';",
-                        export.name,
-                        block.source_hash.to_string()
-                    )
-                })
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let augmented_body = if !existing_exports.is_empty() {
-            format!("{}\n\n{}", existing_exports, body)
-        } else {
-            body.to_string()
-        };
-
-        let body = augmented_body;
-
-        let (exports, module) = match parse_and_eval_settings_script_block(&body, &mut self.js_cx) {
-            Ok((exports, module)) => (exports, module),
-            Err(err) => {
-                return BlockEvalResult {
-                    body: format!("Error during evaluating the module\n{:#}", err),
-                    output_lang: format!(
-                        "{}{}",
-                        SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT,
-                        hash.to_string()
-                    ),
-                };
-            }
-        };
-
-        self.module_loader
-            .insert(format!("{}", hash.to_string()), module);
-
-        let body = match exports.as_slice() {
-            [] => "Block was evaluated by no exports were found".to_string(),
-            exports => ["Registered exports:".to_string()]
-                .into_iter()
-                .chain(
-                    exports
-                        .iter()
-                        .map(|export| format!("\"{}\"", export.name.as_str())),
-                )
-                .join("\n\t"),
-        };
-
-        self.script_blocks.push(SriptBlock {
-            name: None,
-            // module,
-            source_hash: hash,
-            // span: todo!(),
-            exports,
-        });
-
-        BlockEvalResult {
-            body,
-            output_lang: format!("{}{}", SETTINGS_SCRIPT_BLOCK_LANG_OUTPUT, hash.to_string()),
-        }
-    }
-
-    fn should_force_eval(&self) -> bool {
-        true
-    }
 }
 
 // ------- KDL settings eval -------
