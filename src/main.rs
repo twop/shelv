@@ -371,11 +371,11 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             app_state.prev_focused = is_frame_actually_focused;
         }
 
-        let editor_text = &mut app_state
-            .notes
-            .get_mut(&app_state.selected_note)
-            .unwrap()
-            .text;
+        let edited_note = app_state.notes.get_mut(&app_state.selected_note).unwrap();
+
+        let editor_text = &mut edited_note.text;
+        let code_block_annotations = &mut edited_note.derived_state.code_block_annotations;
+
         let mut frame_hotkeys = app_state.commands.prepare_frame_hotkeys();
 
         let vis_state = AppRenderData {
@@ -393,6 +393,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             render_actions: (app_state.render_actions.drain(..)).collect(),
             frame_hotkeys: &mut frame_hotkeys,
             feedback: (&mut app_state.feedback).as_mut(),
+            code_block_annotations,
         };
 
         let RenderAppResult {

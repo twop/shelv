@@ -24,7 +24,10 @@ use crate::{
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{
         note_eval::{execute_code_blocks, execute_live_scripts},
-        settings_eval::{eval_js_scripts_in_settings_note, Scripts, SettingsNoteEvalContext},
+        settings_eval::{
+            eval_js_scripts_in_settings_note, eval_kdl_in_settings_note, Scripts,
+            SettingsNoteEvalContext,
+        },
     },
     settings_parsing::LlmSettings,
     text_structure::{
@@ -575,9 +578,7 @@ pub fn process_app_action(
                     let (settings_scripts, block_annotations) =
                         eval_js_scripts_in_settings_note(text, text_structure);
 
-                    note.derived_state.code_block_annotations = block_annotations;
-
-                    let mut cx = SettingsNoteEvalContext {
+                    let cx = SettingsNoteEvalContext {
                         cmd_list: &mut state.commands,
                         scripts: &settings_scripts,
                         should_force_eval: true,
@@ -585,11 +586,14 @@ pub fn process_app_action(
                         llm_settings: &mut state.llm_settings,
                     };
 
-                    let kdl_actions = execute_code_blocks(&mut cx, &text_structure, &text);
+                    let mut kdl_annotations = eval_kdl_in_settings_note(&text, &text_structure, cx);
+
+                    kdl_annotations.extend(block_annotations);
+                    note.derived_state.code_block_annotations = kdl_annotations;
 
                     state.settings_scripts = Some(settings_scripts);
 
-                    kdl_actions
+                    None
                 }
             };
 

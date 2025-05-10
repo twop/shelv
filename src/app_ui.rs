@@ -1,6 +1,7 @@
 use eframe::{
     egui::{
         self,
+        debug_text::print,
         scroll_area::ScrollBarVisibility,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
@@ -13,7 +14,7 @@ use eframe::{
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
 };
 use egui_taffy::{
-    taffy::{AlignContent, JustifyContent},
+    taffy::{AlignContent, AlignItems, FlexDirection, JustifyContent},
     tui, TuiBuilderLogic,
 };
 use itertools::Itertools;
@@ -25,24 +26,28 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 use crate::{
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
-        ComputedLayout, FeedbackState, InlineLLMPromptState, InlinePromptStatus, LayoutParams,
-        RenderAction, SlashPalette,
+        CodeBlockAnnotation, ComputedLayout, FeedbackState, InlineLLMPromptState,
+        InlinePromptStatus, LayoutParams, RenderAction, SlashPalette,
     },
     byte_span::UnOrderedByteSpan,
-    command::{CommandInstruction, CommandList, FrameHotkeys, SlashPaletteCmd, PROMOTED_COMMANDS},
+    command::{
+        CommandInstruction, CommandList, EditorCommandOutput, FrameHotkeys, SlashPaletteCmd,
+        PROMOTED_COMMANDS,
+    },
     commands::{inline_llm_prompt::compute_inline_prompt_text_input_id, run_llm::LLM_LANG},
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{flex_column, flex_row, StyleBuilder},
-    text_structure::{InteractiveTextPart, TextStructure},
+    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
+    text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
 };
 
 pub struct AppRenderData<'a> {
     pub selected_note: NoteFile,
+    pub code_block_annotations: &'a [(SpanIndex, CodeBlockAnnotation)],
     pub note_count: usize,
     pub text_edit_id: Id,
     pub byte_cursor: Option<UnOrderedByteSpan>,
@@ -88,6 +93,7 @@ pub fn render_app(
         mut render_actions,
         feedback,
         frame_hotkeys,
+        code_block_annotations,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
@@ -187,12 +193,9 @@ pub fn render_app(
                 }
 
                 egui::ScrollArea::vertical()
-                    .id_source(text_edit_id)
+                    .id_salt(text_edit_id)
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-
-                        //                        ctx.memory_ui(ui);
-
                         let (
                             changed,
                             layout,
@@ -215,6 +218,7 @@ pub fn render_app(
                             selected_note,
                             command_list,
                             frame_hotkeys,
+                            code_block_annotations,
                             ctx,
                         );
 
@@ -356,6 +360,7 @@ fn render_editor(
     note_file: NoteFile,
     command_list: &CommandList,
     frame_hotkeys: &mut FrameHotkeys,
+    code_block_annotations: &[(SpanIndex, CodeBlockAnnotation)],
     ctx: &egui::Context,
 ) -> (
     bool, // if the text was changed, TODO rework this mess
@@ -445,62 +450,31 @@ fn render_editor(
         ui.scroll_to_rect(primary_cursor_pos, None);
     }
 
-    // floating buttons over code blocks
+    // ------- FLOATING BUTTONS -------
     ui.scope(|ui| {
-        set_menu_bar_style(ui);
+        // set_menu_bar_style(ui);
 
         if let Some(computed_layout) = &computed_layout {
-            for (i, area) in computed_layout
-                .code_areas
-                .iter()
-                .filter(|area| &area.lang == LLM_LANG)
-                .enumerate()
-            {
+            for area in computed_layout.code_areas.iter() {
                 let code_area = area.rect.translate(estimated_text_pos.to_vec2());
 
                 {
-                    let is_hovered = ui.rect_contains_pointer(code_area);
-
                     let mut ui = ui.new_child(
                         UiBuilder::new()
-                            .max_rect(code_area.translate(Vec2::new(-theme.sizes.xs, 0.0)))
+                            .max_rect(code_area)
                             .layout(Layout::right_to_left(Align::TOP))
                             .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
                     );
-
-                    let alpha = ui
-                        .ctx()
-                        .animate_bool(ui.id().with("hover").with(i), is_hovered);
-
-                    let button_color = theme
-                        .colors
-                        .subtle_text_color
-                        .gamma_multiply(0.2)
-                        .lerp_to_gamma(theme.colors.button_fg, alpha);
-
-                    let run_btn = ui
-                        .button(AppIcon::Play.render(theme.sizes.toolbar_icon, button_color))
-                        .on_hover_ui(|ui| {
-                            let tooltip_text = "Execute code block";
-                            let tooltip_text = command_list
-                                .find(CommandInstruction::RunLLMBlock)
-                                .and_then(|cmd| cmd.shortcut)
-                                .map(|shortcut| {
-                                    format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
-                                })
-                                .unwrap_or_else(|| tooltip_text.to_string());
-
-                            ui.label(
-                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
-                            );
-                        });
-
-                    if run_btn.clicked() {
-                        resulting_actions.push(AppAction::RunLLMBLock(
-                            note_file,
-                            area.code_block_span_index,
-                        ));
-                    }
+                    render_code_actions(
+                        &mut ui,
+                        theme,
+                        code_area,
+                        code_block_annotations
+                            .iter()
+                            .find(|(idx, _)| *idx == area.code_block_span_index)
+                            .map(|(_, a)| a),
+                        area.code_block_span_index,
+                    );
                 }
             }
         }
@@ -510,6 +484,7 @@ fn render_editor(
 
     let overlay_layer_width = galley.job.wrap.max_width - 2. * estimated_text_pos.x;
 
+    // ------- LLM PROMPT -------
     match inline_llm_prompt {
         Some(inline_llm_prompt)
             if inline_llm_prompt.address.note_file == note_file
@@ -549,6 +524,7 @@ fn render_editor(
         None => (),
     }
 
+    // ------- SLASH PALETTE -------
     if let Some(palette) = slash_palette {
         let slash_char_pos = char_index_from_byte_index(editor_text, palette.slash_byte_pos);
         let relative_slash_pos = galley.pos_from_ccursor(CCursor::new(slash_char_pos));
@@ -799,7 +775,7 @@ fn render_inline_prompt(
 
                 InlinePromptStatus::Done { prompt } => {
                     if prompt == &inline_llm_prompt.prompt
-                        && render_btn(ui, AppIcon::Accept, "Accept")
+                        && render_btn(ui, AppIcon::Check, "Accept")
                             .on_hover_ui(|ui| {
                                 render_tooltip(
                                     ui,
@@ -906,7 +882,7 @@ fn render_slash_palette(
             .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
     );
 
-    let frame_resp = egui::Frame::new()
+    let frame_resp = egui::Frame::none()
         .fill(theme.colors.code_bg_color)
         .inner_margin(theme.sizes.s)
         .stroke(prompt_ui.visuals().window_stroke)
@@ -1023,6 +999,100 @@ fn render_slash_palette(
     // }
 
     (frame_resp.rect, resulting_actions)
+}
+
+fn render_code_actions(
+    ui: &mut Ui,
+    theme: &AppTheme,
+    code_area: Rect,
+    annotation: Option<&CodeBlockAnnotation>,
+    span_index: SpanIndex,
+) -> EditorCommandOutput {
+    let id = ui.id().with("code_annotations").with(span_index);
+    let is_hovered = ui.rect_contains_pointer(code_area);
+    let alpha = ui.ctx().animate_bool(id, is_hovered);
+
+    let monospace = &theme.fonts.family.code;
+    let mut resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
+    tui(ui, id)
+        .reserve_available_width()
+        .style(
+            flex_row()
+                .flex_direction(FlexDirection::RowReverse)
+                .align_items(AlignItems::Start)
+                .align_content(AlignContent::Stretch)
+                .width(code_area.width())
+                .auto_height()
+                .padding(theme.sizes.xs)
+                .gap(theme.sizes.xs),
+        )
+        .show(|tui| {
+            let button_color = theme
+                .colors
+                .subtle_text_color
+                .gamma_multiply(0.2)
+                .lerp_to_gamma(theme.colors.button_fg, alpha);
+
+            if let Some(annotation) = annotation {
+                match annotation {
+                    CodeBlockAnnotation::RunButton => {
+                        let run_btn = tui.button(|tui| {
+                            tui.label(AppIcon::Play.render(theme.fonts.size.normal, button_color))
+                                .on_hover_ui(|ui| {
+                                    let tooltip_text = "Execute code block";
+
+                                    ui.label(
+                                        RichText::new(tooltip_text)
+                                            .color(theme.colors.subtle_text_color),
+                                    );
+                                })
+                        });
+
+                        if run_btn.clicked() {
+                            println!("run clicked");
+                        }
+                    }
+
+                    CodeBlockAnnotation::Applied { message } => {
+                        tui.label(
+                            AppIcon::Check
+                                .render(theme.fonts.size.normal, theme.colors.success_fg_color),
+                        )
+                        .on_hover_text(
+                            RichText::new(message)
+                                .color(theme.colors.subtle_text_color)
+                                .family(monospace.clone()),
+                        );
+                    }
+                    CodeBlockAnnotation::Error { title, message } => {
+                        tui.label(
+                            AppIcon::Error
+                                .render(theme.fonts.size.normal, theme.colors.error_fg_color),
+                        )
+                        .on_hover_text(
+                            RichText::new(format!("{title}\n\n{message}"))
+                                .color(theme.colors.subtle_text_color)
+                                .family(monospace.clone()),
+                        );
+                    }
+                }
+            }
+
+            let copy_btn = tui.button(|tui| {
+                tui.label(AppIcon::Copy.render(theme.fonts.size.normal, button_color))
+                    .on_hover_ui(|ui| {
+                        let tooltip_text = "Copy code";
+
+                        ui.label(RichText::new(tooltip_text).color(theme.colors.subtle_text_color));
+                    })
+            });
+
+            if copy_btn.clicked() {
+                println!("copy clicked");
+            }
+        });
+
+    resulting_actions
 }
 
 fn render_slash_cmd(

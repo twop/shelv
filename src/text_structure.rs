@@ -23,7 +23,7 @@ use crate::{
     theme::{AppTheme, ColorManipulation, ColorTheme, FontTheme},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct SpanIndex(usize);
 
 #[derive(Debug)]
