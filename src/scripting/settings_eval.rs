@@ -194,7 +194,7 @@ fn eval_script_block(
             .chain(
                 exports
                     .iter()
-                    .map(|export| format!("\"{}\"", export.name.as_str())),
+                    .map(|export| format!("{}", export.name.as_str())),
             )
             .join("\n\t"),
     };
@@ -376,7 +376,7 @@ fn eval_settings_block<IO: AppIO>(
     }
 
     CodeBlockAnnotation::Applied {
-        message: "Applied, all good".to_string(),
+        message: "Applied".to_string(),
     }
 }
 
@@ -385,7 +385,6 @@ pub struct SettingsNoteEvalContext<'cx, IO: AppIO> {
     // parsed_bindings: Vec<Result<TopLevelKdlSettings, SettingsParseError>>,
     pub cmd_list: &'cx mut CommandList,
     pub scripts: &'cx Scripts,
-    pub should_force_eval: bool,
     pub app_io: &'cx mut IO,
     pub llm_settings: &'cx mut Option<LlmSettings>,
 }

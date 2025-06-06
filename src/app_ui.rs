@@ -6,9 +6,10 @@ use eframe::{
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
         text_selection::text_cursor_state::cursor_rect,
-        Context, CursorIcon, FontFamily, FontSelection, Id, Key, KeyboardShortcut, Label, Layout,
-        Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit, TextFormat,
-        TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
+        Context, CursorIcon, FontFamily, FontSelection, Frame, Id, Key, KeyboardShortcut, Label,
+        LayerId, Layout, Margin, Modal, Modifiers, Order, Painter, Response, RichText, ScrollArea,
+        Sense, Shadow, StrokeKind, TextEdit, TextFormat, TextStyle, TextWrapMode, TopBottomPanel,
+        Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
     },
     emath::{Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
@@ -168,6 +169,7 @@ pub fn render_app(
 
     let (text_has_changed, text_structure, computed_layout, updated_cursor, editor_actions) =
         egui::CentralPanel::default()
+            .frame(Frame::central_panel(&ctx.style()).inner_margin(Margin::ZERO))
             .show(ctx, |ui| {
                 {
                     let avail_space = ui.available_rect_before_wrap();
@@ -373,8 +375,14 @@ fn render_editor(
     let mut resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
     let mut structure_wrapper = Some(text_structure);
 
-    let estimated_text_pos = ui.next_widget_position();
-    // let available_width = ui.available_width();
+    let text_edit_margin = Margin {
+        left: (theme.sizes.l) as i8,
+        right: (theme.sizes.l) as i8,
+        top: (theme.sizes.l) as i8,
+        bottom: (theme.sizes.l) as i8,
+    };
+
+    let estimated_text_pos = ui.next_widget_position() + text_edit_margin.left_top();
 
     let code_bg = ui.visuals().code_bg_color;
     let code_bg_rounding = ui.visuals().widgets.inactive.corner_radius;
@@ -382,7 +390,8 @@ fn render_editor(
         for area in computed_layout.code_areas.iter() {
             let background_rect = area
                 .rect
-                .shrink(0.5)
+                // .shrink(0.5)
+                .expand(1.)
                 .translate(estimated_text_pos.to_vec2());
 
             ui.painter()
@@ -421,7 +430,6 @@ fn render_editor(
         res
     };
 
-    // let mut edited_text = state.markdown.clone();
     let TextEditOutput {
         response: text_edit_response,
         galley_pos,
@@ -435,6 +443,7 @@ fn render_editor(
         .lock_focus(true)
         .desired_width(f32::INFINITY)
         .frame(false)
+        .margin(text_edit_margin)
         .layouter(&mut layouter)
         .show(ui);
 
@@ -450,37 +459,38 @@ fn render_editor(
         ui.scroll_to_rect(primary_cursor_pos, None);
     }
 
-    // ------- FLOATING BUTTONS -------
-    ui.scope(|ui| {
-        // set_menu_bar_style(ui);
-
-        if let Some(computed_layout) = &computed_layout {
-            for area in computed_layout.code_areas.iter() {
-                let code_area = area.rect.translate(estimated_text_pos.to_vec2());
-
-                {
-                    let mut ui = ui.new_child(
-                        UiBuilder::new()
-                            .max_rect(code_area)
-                            .layout(Layout::right_to_left(Align::TOP))
-                            .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
-                    );
-                    render_code_actions(
-                        &mut ui,
-                        theme,
-                        code_area,
-                        code_block_annotations
-                            .iter()
-                            .find(|(idx, _)| *idx == area.code_block_span_index)
-                            .map(|(_, a)| a),
-                        area.code_block_span_index,
-                    );
-                }
-            }
-        }
-    });
-
     let text_structure = structure_wrapper.unwrap();
+
+    // ------- FLOATING BUTTONS -------
+    if let Some(computed_layout) = &computed_layout {
+        for area in computed_layout.code_areas.iter() {
+            let code_area = area.rect.translate(estimated_text_pos.to_vec2());
+
+            render_code_actions(
+                ui,
+                theme,
+                code_area,
+                code_block_annotations
+                    .iter()
+                    .find(|(idx, _)| *idx == area.code_block_span_index)
+                    .map(|(_, a)| a),
+                area.code_block_span_index,
+                //     cursor_range.map_or(false, |range| {
+                //         use egui::TextBuffer;
+                //         let cursor_byte_pos =
+                //             editor_text.byte_index_from_char_index(range.primary.ccursor.index);
+                //         // Get the byte span of the code block
+                //         if let Some((code_span, _)) =
+                //             text_structure.get_span_with_meta(area.code_block_span_index)
+                //         {
+                //             code_span.byte_pos.contains_pos(cursor_byte_pos)
+                //         } else {
+                //             false
+                //         }
+                //     }),
+            );
+        }
+    }
 
     let overlay_layer_width = galley.job.wrap.max_width - 2. * estimated_text_pos.x;
 
@@ -1007,14 +1017,38 @@ fn render_code_actions(
     code_area: Rect,
     annotation: Option<&CodeBlockAnnotation>,
     span_index: SpanIndex,
+    // is_cusor_inside: bool,
 ) -> EditorCommandOutput {
     let id = ui.id().with("code_annotations").with(span_index);
     let is_hovered = ui.rect_contains_pointer(code_area);
     let alpha = ui.ctx().animate_bool(id, is_hovered);
 
     let monospace = &theme.fonts.family.code;
-    let mut resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
-    tui(ui, id)
+    let resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
+
+    let buttons_anim_id = ui.id().with("buttons_overlay_anim").with(span_index);
+    let buttons_visible = ui
+        .ctx()
+        .animate_bool_with_time(buttons_anim_id, is_hovered, 0.20);
+
+    // Collect dimensions for logging
+    let mut dimensions = Vec::new();
+    dimensions.push(format!("Code area: {:?}", code_area));
+    dimensions.push(format!(
+        "Initial available space: {:?}",
+        ui.available_rect_before_wrap()
+    ));
+
+    // Create a child UI for buttons on the right side
+    let mut buttons_ui = ui.new_child(
+        UiBuilder::new()
+            .max_rect(code_area)
+            .layout(Layout::top_down(Align::TOP))
+            .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
+    );
+
+    // Render buttons on the right side (copy button)
+    tui(&mut buttons_ui, id.with("right_buttons"))
         .reserve_available_width()
         .style(
             flex_row()
@@ -1033,64 +1067,134 @@ fn render_code_actions(
                 .gamma_multiply(0.2)
                 .lerp_to_gamma(theme.colors.button_fg, alpha);
 
-            if let Some(annotation) = annotation {
-                match annotation {
-                    CodeBlockAnnotation::RunButton => {
-                        let run_btn = tui.button(|tui| {
-                            tui.label(AppIcon::Play.render(theme.fonts.size.normal, button_color))
-                                .on_hover_ui(|ui| {
-                                    let tooltip_text = "Execute code block";
+            // Only show the copy button if the mouse is over the code area
+            if buttons_visible > 0.0 {
+                let copy_btn = tui.button(|tui| {
+                    tui.label(AppIcon::Copy.render(theme.fonts.size.normal, button_color))
+                        .on_hover_ui(|ui| {
+                            let tooltip_text = "Copy code";
 
-                                    ui.label(
-                                        RichText::new(tooltip_text)
-                                            .color(theme.colors.subtle_text_color),
-                                    );
-                                })
-                        });
+                            ui.label(
+                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
+                            );
+                        })
+                });
 
-                        if run_btn.clicked() {
-                            println!("run clicked");
-                        }
-                    }
-
-                    CodeBlockAnnotation::Applied { message } => {
-                        tui.label(
-                            AppIcon::Check
-                                .render(theme.fonts.size.normal, theme.colors.success_fg_color),
-                        )
-                        .on_hover_text(
-                            RichText::new(message)
-                                .color(theme.colors.subtle_text_color)
-                                .family(monospace.clone()),
-                        );
-                    }
-                    CodeBlockAnnotation::Error { title, message } => {
-                        tui.label(
-                            AppIcon::Error
-                                .render(theme.fonts.size.normal, theme.colors.error_fg_color),
-                        )
-                        .on_hover_text(
-                            RichText::new(format!("{title}\n\n{message}"))
-                                .color(theme.colors.subtle_text_color)
-                                .family(monospace.clone()),
-                        );
-                    }
+                if copy_btn.clicked() {
+                    println!("copy clicked");
                 }
             }
-
-            let copy_btn = tui.button(|tui| {
-                tui.label(AppIcon::Copy.render(theme.fonts.size.normal, button_color))
-                    .on_hover_ui(|ui| {
-                        let tooltip_text = "Copy code";
-
-                        ui.label(RichText::new(tooltip_text).color(theme.colors.subtle_text_color));
-                    })
-            });
-
-            if copy_btn.clicked() {
-                println!("copy clicked");
-            }
         });
+
+    if let Some(annotation) = annotation {
+        let left_annotation_position = pos2(code_area.left(), code_area.bottom());
+
+        let left_annotation_rect = Rect::from_min_max(
+            pos2(ui.max_rect().left(), code_area.top()),
+            left_annotation_position,
+        );
+
+        let mut left_ui = ui.new_child(
+            UiBuilder::new()
+                .max_rect(left_annotation_rect)
+                .layout(Layout::top_down(Align::RIGHT))
+                .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
+        );
+
+        // DBG: visualize the area allocated for extra stuff
+        // left_ui.painter().rect_stroke(
+        //     left_ui.available_rect_before_wrap(),
+        //     0.,
+        //     Stroke::new(1., Color32::LIGHT_YELLOW),
+        //     StrokeKind::Inside,
+        // );
+        dimensions.push(format!(
+            "Left area rect: {:?}, avail space {:?}",
+            left_annotation_rect,
+            left_ui.available_rect_before_wrap()
+        ));
+
+        // Render annotations on the left side (applied/error icons)
+        tui(&mut left_ui, id.with("left_annotations"))
+            .reserve_available_width()
+            .style(
+                flex_column()
+                    .flex_direction(FlexDirection::Column)
+                    .align_items(AlignItems::Center)
+                    .align_content(AlignContent::Center)
+                    .width(left_annotation_rect.width())
+                    .auto_height()
+                    // .padding(theme.sizes.xs)
+                    .gap(theme.sizes.xs),
+            )
+            .show(|tui| match annotation {
+                CodeBlockAnnotation::RunButton => {
+                    let run_btn = tui.button(|tui| {
+                        tui.label(
+                            AppIcon::Play.render(theme.fonts.size.normal, theme.colors.button_fg),
+                        )
+                        .on_hover_ui(|ui| {
+                            let tooltip_text = "Execute code block";
+
+                            ui.label(
+                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
+                            );
+                        })
+                    });
+
+                    if run_btn.clicked() {
+                        println!("run clicked");
+                    }
+                }
+
+                CodeBlockAnnotation::Applied { message } => {
+                    tui.label(
+                        AppIcon::Check
+                            .render(theme.fonts.size.normal, theme.colors.success_fg_color),
+                    )
+                    .on_hover_ui(|ui| {
+                        ui.style_mut().interaction.selectable_labels = true;
+                        ScrollArea::both().show(ui, |ui| {
+                            ui.add(
+                                Label::new(
+                                    RichText::new(message)
+                                        .color(theme.colors.subtle_text_color)
+                                        .family(monospace.clone()),
+                                )
+                                .wrap_mode(TextWrapMode::Extend),
+                            )
+                        });
+                    });
+                }
+
+                CodeBlockAnnotation::Error { title, message } => {
+                    tui.label(
+                        AppIcon::Error.render(theme.fonts.size.normal, theme.colors.error_fg_color),
+                    )
+                    .on_hover_ui(|ui| {
+                        ui.style_mut().interaction.selectable_labels = true;
+                        ScrollArea::both().show(ui, |ui| {
+                            ui.label(
+                                RichText::new(title)
+                                    .strong()
+                                    .color(theme.colors.error_fg_color),
+                            );
+                            ui.add(
+                                Label::new(
+                                    RichText::new(message)
+                                        .color(theme.colors.subtle_text_color)
+                                        .family(monospace.clone()),
+                                )
+                                .wrap_mode(TextWrapMode::Extend),
+                            )
+                        });
+                    });
+                }
+            });
+    }
+
+    // Print all dimensions at once
+    println!("UI DIMENSIONS:\n{}", dimensions.join("\n"));
 
     resulting_actions
 }

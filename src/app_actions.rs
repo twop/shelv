@@ -581,7 +581,6 @@ pub fn process_app_action(
                     let cx = SettingsNoteEvalContext {
                         cmd_list: &mut state.commands,
                         scripts: &settings_scripts,
-                        should_force_eval: true,
                         app_io,
                         llm_settings: &mut state.llm_settings,
                     };
