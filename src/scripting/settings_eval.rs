@@ -1,7 +1,7 @@
 use std::{error::Error, rc::Rc};
 
 use boa_engine::{
-    builtins::promise::PromiseState, property::PropertyKey, Context, JsError, JsValue, Module,
+    Context, JsError, JsValue, Module, builtins::promise::PromiseState, property::PropertyKey,
 };
 use boa_parser::Source;
 use itertools::Itertools;
@@ -15,7 +15,7 @@ use crate::{
         ScriptCall, SlashPaletteCmd, TextSource,
     },
     settings_parsing::{
-        parse_top_level_settings_block, GlobalBinding, GlobalCommand, LlmSettings, LocalBinding,
+        GlobalBinding, GlobalCommand, LlmSettings, LocalBinding, parse_top_level_settings_block,
     },
     text_structure::{SpanIndex, SpanKind, TextStructure},
     theme::{AppTheme, FontTheme},
@@ -24,7 +24,7 @@ use crate::{
 use super::{
     js_module_loader::InMemoryModuleLoader,
     note_eval::HostWithLocalTimezone,
-    note_eval_context::{BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
+    note_eval_context::{BlockEvalResult, SourceHash},
 };
 
 pub const SETTINGS_BLOCK_LANG: &str = "kdl";
@@ -286,8 +286,8 @@ fn eval_settings_block<IO: AppIO>(
 
                     Err(err) => {
                         println!(
-                                "error registering global {shortcut:?} to show/hide Shelv, err = {err:?}"
-                            );
+                            "error registering global {shortcut:?} to show/hide Shelv, err = {err:?}"
+                        );
 
                         return CodeBlockAnnotation::Error {
                             title: "OS refused to register shortcut".to_string(),

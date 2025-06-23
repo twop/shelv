@@ -466,7 +466,7 @@ fn render_editor(
         for area in computed_layout.code_areas.iter() {
             let code_area = area.rect.translate(estimated_text_pos.to_vec2());
 
-            render_code_actions(
+            let code_block_actions = render_code_actions(
                 ui,
                 theme,
                 code_area,
@@ -475,20 +475,23 @@ fn render_editor(
                     .find(|(idx, _)| *idx == area.code_block_span_index)
                     .map(|(_, a)| a),
                 area.code_block_span_index,
-                //     cursor_range.map_or(false, |range| {
-                //         use egui::TextBuffer;
-                //         let cursor_byte_pos =
-                //             editor_text.byte_index_from_char_index(range.primary.ccursor.index);
-                //         // Get the byte span of the code block
-                //         if let Some((code_span, _)) =
-                //             text_structure.get_span_with_meta(area.code_block_span_index)
-                //         {
-                //             code_span.byte_pos.contains_pos(cursor_byte_pos)
-                //         } else {
-                //             false
-                //         }
-                //     }),
+                note_file,
+                cursor_range.map_or(false, |range| {
+                    use egui::TextBuffer;
+                    let cursor_byte_pos =
+                        editor_text.byte_index_from_char_index(range.primary.ccursor.index);
+                    // Get the byte span of the code block
+                    if let Some((code_span, _)) =
+                        text_structure.get_span_with_meta(area.code_block_span_index)
+                    {
+                        code_span.byte_pos.contains_pos(cursor_byte_pos)
+                    } else {
+                        false
+                    }
+                }),
+                frame_hotkeys,
             );
+            resulting_actions.extend(code_block_actions);
         }
     }
 
@@ -733,32 +736,15 @@ fn render_inline_prompt(
                 ))
             };
 
-            let render_tooltip =
-                |ui: &mut Ui, tooltip_text: &str, shortcut: Option<KeyboardShortcut>| {
-                    ui.label({
-                        // RichText::new(tooltip_text)
-                        RichText::new(match shortcut {
-                            Some(shortcut) => {
-                                format!(
-                                    "{} ({})",
-                                    tooltip_text,
-                                    format_mac_shortcut_with_symbols(shortcut)
-                                )
-                            }
-                            None => tooltip_text.to_string(),
-                        })
-                        .color(theme.colors.subtle_text_color)
-                    })
-                };
             ui.horizontal(|ui| match &inline_llm_prompt.status {
                 InlinePromptStatus::NotStarted => {
                     if render_btn(ui, AppIcon::Play, "Run")
                         .on_hover_ui(|ui| {
-                            render_tooltip(
-                                ui,
+                            ui.label(rich_text_tooltip(
                                 "Prompt AI",
                                 Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
-                            );
+                                theme,
+                            ));
                         })
                         .clicked()
                     {
@@ -767,11 +753,11 @@ fn render_inline_prompt(
                     ui.add_space(theme.sizes.s);
                     if render_btn(ui, AppIcon::Close, "Cancel")
                         .on_hover_ui(|ui| {
-                            render_tooltip(
-                                ui,
+                            ui.label(rich_text_tooltip(
                                 "Cancel prompt",
                                 Some(KeyboardShortcut::new(Modifiers::NONE, Key::Escape)),
-                            );
+                                theme,
+                            ));
                         })
                         .clicked()
                     {
@@ -787,11 +773,11 @@ fn render_inline_prompt(
                     if prompt == &inline_llm_prompt.prompt
                         && render_btn(ui, AppIcon::Check, "Accept")
                             .on_hover_ui(|ui| {
-                                render_tooltip(
-                                    ui,
+                                ui.label(rich_text_tooltip(
                                     "Accept suggestions",
                                     Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
-                                );
+                                    theme,
+                                ));
                             })
                             .clicked()
                     {
@@ -801,11 +787,11 @@ fn render_inline_prompt(
                     if prompt != &inline_llm_prompt.prompt
                         && render_btn(ui, AppIcon::Play, "Re-run")
                             .on_hover_ui(|ui| {
-                                render_tooltip(
-                                    ui,
+                                ui.label(rich_text_tooltip(
                                     "Re-run using the new prompt",
                                     Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
-                                );
+                                    theme,
+                                ));
                             })
                             .clicked()
                     {
@@ -815,11 +801,11 @@ fn render_inline_prompt(
                     ui.add_space(theme.sizes.s);
                     if render_btn(ui, AppIcon::Close, "Cancel")
                         .on_hover_ui(|ui| {
-                            render_tooltip(
-                                ui,
+                            ui.label(rich_text_tooltip(
                                 "Reject changes",
                                 Some(KeyboardShortcut::new(Modifiers::NONE, Key::Escape)),
-                            );
+                                theme,
+                            ));
                         })
                         .clicked()
                     {
@@ -865,6 +851,24 @@ fn render_inline_prompt(
     }
 
     (frame_resp.rect, resulting_actions)
+}
+
+fn rich_text_tooltip(
+    tooltip_text: &str,
+    shortcut: Option<KeyboardShortcut>,
+    theme: &AppTheme,
+) -> RichText {
+    RichText::new(match shortcut {
+        Some(shortcut) => {
+            format!(
+                "{} ({})",
+                tooltip_text,
+                format_mac_shortcut_with_symbols(shortcut)
+            )
+        }
+        None => tooltip_text.to_string(),
+    })
+    .color(theme.colors.subtle_text_color)
 }
 
 fn render_slash_palette(
@@ -1017,14 +1021,16 @@ fn render_code_actions(
     code_area: Rect,
     annotation: Option<&CodeBlockAnnotation>,
     span_index: SpanIndex,
-    // is_cusor_inside: bool,
+    note_file: NoteFile,
+    is_cusor_inside: bool,
+    frame_hotkeys: &mut FrameHotkeys,
 ) -> EditorCommandOutput {
     let id = ui.id().with("code_annotations").with(span_index);
     let is_hovered = ui.rect_contains_pointer(code_area);
     let alpha = ui.ctx().animate_bool(id, is_hovered);
 
     let monospace = &theme.fonts.family.code;
-    let resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
+    let mut resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
 
     let buttons_anim_id = ui.id().with("buttons_overlay_anim").with(span_index);
     let buttons_visible = ui
@@ -1129,21 +1135,31 @@ fn render_code_actions(
             )
             .show(|tui| match annotation {
                 CodeBlockAnnotation::RunButton => {
+                    let hotkey = KeyboardShortcut::new(Modifiers::MAC_CMD, Key::Enter);
+
                     let run_btn = tui.button(|tui| {
                         tui.label(
                             AppIcon::Play.render(theme.fonts.size.normal, theme.colors.button_fg),
                         )
                         .on_hover_ui(|ui| {
-                            let tooltip_text = "Execute code block";
-
-                            ui.label(
-                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
-                            );
+                            ui.label(rich_text_tooltip("Execute", Some(hotkey), theme));
                         })
                     });
 
+                    if is_cusor_inside {
+                        frame_hotkeys.add_key_with_modifier(
+                            hotkey.modifiers,
+                            hotkey.logical_key,
+                            move |_| {
+                                SmallVec::from_buf([AppAction::RunCodeBlock(note_file, span_index)])
+                            },
+                        );
+                    }
+
                     if run_btn.clicked() {
-                        println!("run clicked");
+                        // println!("run clicked");
+                        // Check if it's a JavaScript code block
+                        resulting_actions.push(AppAction::RunCodeBlock(note_file, span_index));
                     }
                 }
 
@@ -1194,7 +1210,7 @@ fn render_code_actions(
     }
 
     // Print all dimensions at once
-    println!("UI DIMENSIONS:\n{}", dimensions.join("\n"));
+    // println!("UI DIMENSIONS:\n{}", dimensions.join("\n"));
 
     resulting_actions
 }

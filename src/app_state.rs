@@ -40,7 +40,7 @@ use crate::{
     },
     feedback::FeedbackData,
     persistent_state::{DataToSave, NoteFile, RestoredData},
-    scripting::settings_eval::Scripts,
+    scripting::{note_eval::JS_SOURCE_LANG, settings_eval::Scripts},
     settings_parsing::LlmSettings,
     text_structure::{
         CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextHash, TextStructure,
@@ -115,9 +115,17 @@ pub struct NoteDerivedState {
 
 impl NoteDerivedState {
     pub fn new_from(text: &str) -> Self {
+        let structure = TextStructure::new(text);
+
+        // Add Run buttons for JavaScript code blocks
+        let js_annotations = structure
+            .filter_map_codeblocks(|lang| (lang == JS_SOURCE_LANG).then_some(()))
+            .map(|(span_index, _, _, _)| (span_index, CodeBlockAnnotation::RunButton))
+            .collect();
+
         Self {
-            code_block_annotations: Vec::new(),
-            structure: TextStructure::new(text),
+            code_block_annotations: js_annotations,
+            structure,
         }
     }
 }
@@ -611,9 +619,8 @@ fn execute_instruction(
             _ => SmallVec::new(),
         },
 
-        CI::RunLLMBlock => {
-            prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default()
-        }
+        CI::RunLLMBlock => prepare_to_run_llm_block(ctx.app_state, CodeBlockAddress::NoteSelection)
+            .unwrap_or_default(),
 
         CI::ShowPrompt => inline_llm_prompt_command_handler(ctx).unwrap_or_default(),
 

@@ -2,13 +2,13 @@ use std::ops::Range;
 
 use eframe::{
     egui::TextFormat,
-    epaint::{text::LayoutJob, Color32, FontId, Stroke},
+    epaint::{Color32, FontId, Stroke, text::LayoutJob},
 };
 use fxhash::hash64;
 use itertools::Itertools;
 use linkify::LinkFinder;
 use pulldown_cmark::{CodeBlockKind, HeadingLevel};
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };

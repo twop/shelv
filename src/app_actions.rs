@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::{
     app_state::{
-        compute_editor_text_id, AppState, FeedbackState, InlineLLMPromptState,
+        compute_editor_text_id, AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState,
         InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, NoteDerivedState,
         ParsedPromptResponse, RenderAction, SlashPalette, TextSelectionAddress, UnsavedChange,
     },
@@ -17,13 +17,13 @@ use crate::{
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
-        run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
+        run_llm::{prepare_to_run_llm_block, CodeBlockAddress, LLM_LANG},
     },
     effects::text_change_effect::{apply_text_changes, TextChange},
     feedback::FeedbackType,
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{
-        note_eval::{execute_code_blocks, execute_live_scripts},
+        note_eval::{evaluate_js_block, JS_SOURCE_LANG},
         settings_eval::{
             eval_js_scripts_in_settings_note, eval_kdl_in_settings_note, Scripts,
             SettingsNoteEvalContext,
@@ -72,7 +72,7 @@ pub enum AppAction {
     HandleMsgToApp(MsgToApp),
     EvalNote(NoteFile),
     AskLLM(LLMBlockRequest),
-    RunLLMBLock(NoteFile, SpanIndex),
+    RunCodeBlock(NoteFile, SpanIndex),
     SubmitFeedback,
     OpenFeedbackWindow,
     CloseFeedbackWindow,
@@ -570,7 +570,22 @@ pub fn process_app_action(
             }
 
             let requested_changes = match note_file {
-                NoteFile::Note(_) => execute_live_scripts(&text_structure, text),
+                NoteFile::Note(_) => {
+                    let run_button_annotations = text_structure
+                        .filter_map_codeblocks(|lang| match lang {
+                            JS_SOURCE_LANG => Some(true),
+                            LLM_LANG => Some(true),
+                            _ => None,
+                        })
+                        .map(|(index, _, _, _)| (index, CodeBlockAnnotation::RunButton));
+
+                    note.derived_state.code_block_annotations.clear();
+                    note.derived_state
+                        .code_block_annotations
+                        .extend(run_button_annotations);
+
+                    None
+                }
 
                 NoteFile::Settings => {
                     println!("####### eval settings");
@@ -751,28 +766,38 @@ pub fn process_app_action(
             SmallVec::new()
         }
 
-        AppAction::RunLLMBLock(note_file, span_index) => {
-            //
+        AppAction::RunCodeBlock(note_file, span_index) => {
+            let note = state.notes.get(&note_file).unwrap();
+            let text_structure = &note.derived_state.structure;
 
-            let mut scripts = state
-                .settings_scripts
-                .take()
-                .unwrap_or_else(|| Scripts::new());
+            match text_structure.find_meta(span_index) {
+                Some(SpanMeta::CodeBlock(CodeBlockMeta {
+                    closed: true,
+                    lang,
+                    lang_byte_span: _,
+                })) if lang == JS_SOURCE_LANG => {
+                    evaluate_js_block(span_index, text_structure, &note.text)
+                        .map(|changes| {
+                            SmallVec::from_buf([AppAction::ApplyTextChanges {
+                                target: note_file,
+                                changes,
+                                should_trigger_eval: false,
+                            }])
+                        })
+                        .unwrap_or_default()
+                }
 
-            let result = prepare_to_run_llm_block(
-                CommandContext {
-                    app_state: state,
-                    ui_state: state.to_ui_state(),
-                    app_focus: compute_app_focus(ctx, state),
-                    scripts: &mut scripts,
-                },
-                CodeBlockAddress::TargetBlock(note_file, span_index),
-            )
-            .unwrap_or_default();
-
-            state.settings_scripts = Some(scripts);
-
-            result
+                Some(SpanMeta::CodeBlock(CodeBlockMeta {
+                    closed: true,
+                    lang,
+                    lang_byte_span: _,
+                })) if lang == LLM_LANG => prepare_to_run_llm_block(
+                    state,
+                    CodeBlockAddress::TargetBlock(note_file, span_index),
+                )
+                .unwrap_or_default(),
+                _ => SmallVec::default(),
+            }
         }
 
         AppAction::ShowPrompt(address) => {
