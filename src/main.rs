@@ -53,6 +53,7 @@ mod settings_parsing;
 mod taffy_styles;
 mod text_structure;
 mod theme;
+mod ui_components;
 
 pub struct MyApp<IO: AppIO> {
     state: AppState,

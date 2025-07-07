@@ -44,6 +44,7 @@ use crate::{
     taffy_styles::{flex_column, flex_row, style, StyleBuilder},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
+    ui_components::rich_text_tooltip,
 };
 
 pub struct AppRenderData<'a> {
@@ -851,24 +852,6 @@ fn render_inline_prompt(
     }
 
     (frame_resp.rect, resulting_actions)
-}
-
-fn rich_text_tooltip(
-    tooltip_text: &str,
-    shortcut: Option<KeyboardShortcut>,
-    theme: &AppTheme,
-) -> RichText {
-    RichText::new(match shortcut {
-        Some(shortcut) => {
-            format!(
-                "{} ({})",
-                tooltip_text,
-                format_mac_shortcut_with_symbols(shortcut)
-            )
-        }
-        None => tooltip_text.to_string(),
-    })
-    .color(theme.colors.subtle_text_color)
 }
 
 fn render_slash_palette(
