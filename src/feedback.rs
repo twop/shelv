@@ -14,6 +14,7 @@ use crate::{
     settings_parsing::format_mac_shortcut_with_symbols,
     taffy_styles::{flex_column, flex_row, style, StyleBuilder},
     theme::{AppIcon, AppTheme},
+    ui_components::{render_icon_toggle_button, IconButtonSize},
 };
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, serde::Serialize)]
@@ -181,15 +182,14 @@ impl<'a> Feedback<'a> {
                         ]
                         .map(|(feedback_type, icon)| {
                             let selected = self.data.feedback_type == Some(feedback_type);
-                            t.selectable(selected, |t| {
-                                t.label(icon.render(
-                                    sizes.xl,
-                                    match selected {
-                                        true => colors.button_pressed_fg,
-                                        false => colors.subtle_text_color,
-                                    },
-                                ));
-                            })
+                            render_icon_toggle_button(
+                                t,
+                                icon,
+                                IconButtonSize::ExtraLarge,
+                                selected,
+                                self.theme,
+                                None,
+                            )
                             .clicked()
                         });
 

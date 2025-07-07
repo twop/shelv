@@ -11,6 +11,7 @@ pub enum IconButtonSize {
     Small,
     Medium,
     Large,
+    ExtraLarge,
 }
 
 impl IconButtonSize {
@@ -19,6 +20,7 @@ impl IconButtonSize {
             IconButtonSize::Small => theme.fonts.size.small,
             IconButtonSize::Medium => theme.fonts.size.normal,
             IconButtonSize::Large => theme.sizes.toolbar_icon,
+            IconButtonSize::ExtraLarge => theme.fonts.size.h3,
         }
     }
 }
@@ -41,13 +43,11 @@ pub fn rich_text_tooltip(
     .color(theme.colors.subtle_text_color)
 }
 
-pub fn apply_icon_button_styling(tui: &mut Tui) -> TuiBuilder {
-    tui.mut_egui_style(|style| {
-        style.visuals.widgets.active.bg_stroke = Stroke::NONE;
-        style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
-        style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
-        style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
-    })
+pub fn apply_icon_btn_styling(style: &mut eframe::egui::Style) {
+    style.visuals.widgets.active.bg_stroke = Stroke::NONE;
+    style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
+    style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+    style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
 pub fn render_icon_button(
@@ -59,7 +59,7 @@ pub fn render_icon_button(
 ) -> TuiInnerResponse<eframe::egui::Response> {
     let icon_size = size.get_icon_font_size(theme);
 
-    apply_icon_button_styling(tui).button(|tui| {
+    tui.mut_egui_style(apply_icon_btn_styling).button(|tui| {
         let label = tui.label(icon.render(icon_size, theme.colors.subtle_text_color));
 
         if let Some((tooltip_text, shortcut)) = tooltip {
@@ -88,7 +88,7 @@ pub fn render_icon_toggle_button(
         theme.colors.subtle_text_color
     };
 
-    apply_icon_button_styling(tui).button(|tui| {
+    tui.mut_egui_style(apply_icon_btn_styling).button(|tui| {
         let label = tui.label(icon.render(icon_size, icon_color));
 
         if let Some((tooltip_text, shortcut)) = tooltip {

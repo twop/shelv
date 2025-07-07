@@ -44,7 +44,10 @@ use crate::{
     taffy_styles::{flex_column, flex_row, style, StyleBuilder},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
-    ui_components::rich_text_tooltip,
+    ui_components::{
+        apply_icon_btn_styling, render_icon_button, render_icon_toggle_button, rich_text_tooltip,
+        IconButtonSize,
+    },
 };
 
 pub struct AppRenderData<'a> {
@@ -1058,18 +1061,15 @@ fn render_code_actions(
 
             // Only show the copy button if the mouse is over the code area
             if buttons_visible > 0.0 {
-                let copy_btn = tui.button(|tui| {
-                    tui.label(AppIcon::Copy.render(theme.fonts.size.normal, button_color))
-                        .on_hover_ui(|ui| {
-                            let tooltip_text = "Copy code";
-
-                            ui.label(
-                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
-                            );
-                        })
-                });
-
-                if copy_btn.clicked() {
+                if render_icon_button(
+                    tui,
+                    AppIcon::Copy,
+                    IconButtonSize::Medium,
+                    theme,
+                    Some(("Copy code", None)),
+                )
+                .clicked()
+                {
                     println!("copy clicked");
                 }
             }
@@ -1120,15 +1120,6 @@ fn render_code_actions(
                 CodeBlockAnnotation::RunButton => {
                     let hotkey = KeyboardShortcut::new(Modifiers::MAC_CMD, Key::Enter);
 
-                    let run_btn = tui.button(|tui| {
-                        tui.label(
-                            AppIcon::Play.render(theme.fonts.size.normal, theme.colors.button_fg),
-                        )
-                        .on_hover_ui(|ui| {
-                            ui.label(rich_text_tooltip("Execute", Some(hotkey), theme));
-                        })
-                    });
-
                     if is_cusor_inside {
                         frame_hotkeys.add_key_with_modifier(
                             hotkey.modifiers,
@@ -1139,9 +1130,15 @@ fn render_code_actions(
                         );
                     }
 
-                    if run_btn.clicked() {
-                        // println!("run clicked");
-                        // Check if it's a JavaScript code block
+                    if render_icon_button(
+                        tui,
+                        AppIcon::Play,
+                        IconButtonSize::Medium,
+                        theme,
+                        Some(("Execute", Some(hotkey))),
+                    )
+                    .clicked()
+                    {
                         resulting_actions.push(AppAction::RunCodeBlock(note_file, span_index));
                     }
                 }
@@ -1339,8 +1336,6 @@ fn render_footer_panel(
                 let avail_width = ui.available_width();
                 ui.set_min_size(vec2(avail_width, sizes.header_footer));
 
-                set_menu_bar_style(ui);
-
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     let items = tooltips
                         .into_iter()
@@ -1444,33 +1439,38 @@ fn render_footer_panel(
                 let icon_block_width = sizes.xl * 2.;
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.set_width(icon_block_width);
-
-                    let share_btn = ui
-                        .button(
-                            AppIcon::Feedback.render(sizes.toolbar_icon, theme.colors.button_fg),
+                    // Convert to taffy layout for the feedback button
+                    let feedback_btn_response = tui(ui, ui.id().with("footer_feedback"))
+                        .style(
+                            flex_row()
+                                .width(icon_block_width)
+                                .height(sizes.header_footer)
+                                .align_items(AlignItems::Center)
+                                .justify_content(JustifyContent::End),
                         )
-                        .on_hover_ui(|ui| {
-                            ui.label(
-                                RichText::new("Send this note to report a bug or share feedback.")
-                                    .color(theme.colors.subtle_text_color),
-                            );
+                        .show(|t| {
+                            render_icon_button(
+                                t,
+                                AppIcon::Feedback,
+                                IconButtonSize::Large,
+                                theme,
+                                Some(("Send this note to report a bug or share feedback.", None)),
+                            )
                         });
 
-                    if share_btn.clicked() {
+                    if feedback_btn_response.clicked() {
                         actions.push(AppAction::OpenFeedbackWindow);
                     }
 
+                    // Handle feedback sent animation
                     let tooltip_animation_id = ui.id().with("feedback_sent_tooltip");
                     let tooltip_value =
                         ctx.animate_bool_with_time(tooltip_animation_id, feedback_sent, 2.0);
 
-                    if feedback_sent {
-                        if tooltip_value < 1. {
-                            share_btn.show_tooltip_text(RichText::new(
-                                "Feedback sent, we appreciate your input!",
-                            ));
-                        }
+                    if feedback_sent && tooltip_value < 1. {
+                        feedback_btn_response.inner.show_tooltip_text(RichText::new(
+                            "Feedback sent, we appreciate your input!",
+                        ));
                     }
                 });
             });
@@ -1501,171 +1501,181 @@ fn render_header_panel(
         .show_separator_line(false)
         .show(ctx, |ui| {
             let mut resulting_actions: SmallVec<[AppAction; 1]> = Default::default();
-            // println!("-----");
-            // println!("before menu {:?}", ui.available_size());
-            ui.horizontal(|ui| {
-                let sizes = &theme.sizes;
+            let sizes = &theme.sizes;
 
-                let avail_width = ui.available_width();
-                let avail_rect = ui.available_rect_before_wrap();
-                ui.painter().line_segment(
-                    [avail_rect.left(), avail_rect.right()]
-                        .map(|x| pos2(x, avail_rect.top() + sizes.header_footer)),
-                    Stroke::new(1.0, theme.colors.outline_fg),
-                );
-                ui.set_min_size(vec2(avail_width, sizes.header_footer));
-                let icon_block_width = sizes.xl * 2.;
+            let avail_width = ui.available_width();
+            let avail_rect = ui.available_rect_before_wrap();
+            ui.painter().line_segment(
+                [avail_rect.left(), avail_rect.right()]
+                    .map(|x| pos2(x, avail_rect.top() + sizes.header_footer)),
+                Stroke::new(1.0, theme.colors.outline_fg),
+            );
+            ui.set_min_size(vec2(avail_width, sizes.header_footer));
 
-                set_menu_bar_style(ui);
-
-                // println!("before x {:?}", ui.available_size());
-
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.set_width(icon_block_width);
-
-                    if ui
-                        .button(
-                            AppIcon::Close
-                                .render(sizes.toolbar_icon, theme.colors.subtle_text_color),
-                        )
-                        .on_hover_ui(|ui| {
-                            ui.label({
-                                RichText::new("Hide Shelv").color(theme.colors.subtle_text_color)
-                            });
-                        })
-                        .clicked()
-                    {
-                        resulting_actions.push(AppAction::HideApp)
-                    }
-
-                    ui.add_space(theme.sizes.m);
-
-                    ui.label(
-                        RichText::new(format!(
-                            "Shelv - {}",
-                            match selected_note {
-                                NoteFile::Note(index) => format!("note {}", index + 1),
-                                NoteFile::Settings => "settings".to_string(),
-                            }
-                        ))
-                        .color(theme.colors.subtle_text_color)
-                        .font(FontId {
-                            size: theme.fonts.size.normal,
-                            family: theme.fonts.family.bold.clone(),
-                        }),
-                    );
-                });
-
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.menu_button(
-                        AppIcon::Menu.render(sizes.toolbar_icon, theme.colors.subtle_text_color),
-                        |ui| {
-                            ui.set_max_width(200.0);
-
-                            if ui
-                                .button(AppIcon::Tutorial.render_with_text(
-                                    theme.fonts.size.normal,
-                                    theme.colors.normal_text_color,
-                                    "Start tutorial",
-                                ))
-                                .clicked()
+            tui(ui, ui.id().with("header"))
+                .style(
+                    flex_row()
+                        .width(avail_width)
+                        .height(sizes.header_footer)
+                        .align_items(AlignItems::Center)
+                        .justify_content(JustifyContent::SpaceBetween)
+                        .padding(sizes.xs),
+                )
+                .show(|t| {
+                    // Left section: Close button and title
+                    t.style(flex_row().align_items(AlignItems::Center).gap(sizes.m))
+                        .add(|t| {
+                            // Close button
+                            if render_icon_button(
+                                t,
+                                AppIcon::Close,
+                                IconButtonSize::Large,
+                                theme,
+                                Some(("Hide Shelv", None)),
+                            )
+                            .clicked()
                             {
-                                ui.close_menu();
-                                resulting_actions.push(AppAction::StartTutorial);
+                                resulting_actions.push(AppAction::HideApp);
                             }
 
-                            ui.separator();
-
-                            for (icon, text, link) in [
-                                (
-                                    &AppIcon::Discord,
-                                    "Join our Discord",
-                                    "https://discord.gg/sSGHwNKy",
-                                ),
-                                (
-                                    &AppIcon::Twitter,
-                                    "Tweet us @shelvdotapp",
-                                    "https://twitter.com/shelvdotapp",
-                                ),
-                                (
-                                    &AppIcon::HomeSite,
-                                    "Visit https://shelv.app",
-                                    "https://shelv.app",
-                                ),
-                            ] {
-                                if ui
-                                    .button(icon.render_with_text(
-                                        theme.fonts.size.normal,
-                                        theme.colors.normal_text_color,
-                                        text,
+                            // Title
+                            t.ui_add(
+                                Label::new(
+                                    RichText::new(format!(
+                                        "Shelv - {}",
+                                        match selected_note {
+                                            NoteFile::Note(index) => format!("note {}", index + 1),
+                                            NoteFile::Settings => "settings".to_string(),
+                                        }
                                     ))
-                                    .clicked()
-                                {
-                                    ui.close_menu();
-                                    resulting_actions.push(AppAction::OpenLink(link.to_string()));
-                                }
-                            }
-
-                            ui.separator();
-
-                            if ui
-                                .button(AppIcon::Folder.render_with_text(
-                                    theme.fonts.size.normal,
-                                    theme.colors.normal_text_color,
-                                    "Open notes folder",
-                                ))
-                                .clicked()
-                            {
-                                ui.close_menu();
-                                resulting_actions.push(AppAction::OpenNotesInFinder);
-                            }
-                        },
-                    );
-
-                    // ui.add_space(theme.sizes.s);
-                    ui.label(
-                        AppIcon::VerticalSeparator
-                            .render(sizes.toolbar_icon, theme.colors.outline_fg),
-                    );
-                    // ui.add_space(theme.sizes.s);
-
-                    let resp = ui
-                        .button(AppIcon::Pin.render(
-                            sizes.toolbar_icon,
-                            if is_window_pinned {
-                                theme.colors.button_pressed_fg
-                            } else {
-                                theme.colors.subtle_text_color
-                            },
-                        ))
-                        .on_hover_ui(|ui| {
-                            let tooltip_text = if is_window_pinned {
-                                "Unpin window"
-                            } else {
-                                "Pin window"
-                            };
-
-                            let tooltip_text = command_list
-                                .find(CommandInstruction::PinWindow)
-                                .and_then(|cmd| cmd.shortcut)
-                                .map(|shortcut| {
-                                    format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
-                                })
-                                .unwrap_or_else(|| tooltip_text.to_string());
-
-                            ui.label(
-                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
+                                    .color(theme.colors.subtle_text_color)
+                                    .font(FontId {
+                                        size: theme.fonts.size.normal,
+                                        family: theme.fonts.family.bold.clone(),
+                                    }),
+                                )
+                                .extend(),
                             );
                         });
 
-                    // TODO handle that with shortcuts
-                    if resp.clicked() {
-                        resulting_actions.push(AppAction::SetWindowPinned(!is_window_pinned));
-                    }
-                });
+                    // Right section: Pin button, separator, and menu
+                    t.style(flex_row().align_items(AlignItems::Center).gap(sizes.s))
+                        .add(|t| {
+                            // Pin button with tooltip and keyboard shortcut
+                            if render_icon_toggle_button(
+                                t,
+                                AppIcon::Pin,
+                                IconButtonSize::Large,
+                                is_window_pinned,
+                                theme,
+                                Some((
+                                    if is_window_pinned {
+                                        "Unpin window"
+                                    } else {
+                                        "Pin window"
+                                    },
+                                    command_list
+                                        .find(CommandInstruction::PinWindow)
+                                        .and_then(|cmd| cmd.shortcut),
+                                )),
+                            )
+                            .clicked()
+                            {
+                                resulting_actions
+                                    .push(AppAction::SetWindowPinned(!is_window_pinned));
+                            }
 
-                // println!("before help {:?}", ui.available_size());
-            });
+                            // Separator
+                            t.label(
+                                AppIcon::VerticalSeparator
+                                    .render(sizes.toolbar_icon, theme.colors.outline_fg),
+                            );
+
+                            // Menu button - use ui_add_manual to embed the original menu_button
+                            t.ui_add_manual(
+                                |ui| {
+                                    apply_icon_btn_styling(ui.style_mut());
+                                    ui.menu_button(
+                                        AppIcon::Menu.render(
+                                            sizes.toolbar_icon,
+                                            theme.colors.subtle_text_color,
+                                        ),
+                                        |ui| {
+                                            ui.set_max_width(200.0);
+
+                                            if ui
+                                                .button(AppIcon::Tutorial.render_with_text(
+                                                    theme.fonts.size.normal,
+                                                    theme.colors.normal_text_color,
+                                                    "Start tutorial",
+                                                ))
+                                                .clicked()
+                                            {
+                                                ui.close_menu();
+                                                resulting_actions.push(AppAction::StartTutorial);
+                                            }
+
+                                            ui.separator();
+
+                                            for (icon, text, link) in [
+                                                (
+                                                    &AppIcon::Discord,
+                                                    "Join our Discord",
+                                                    "https://discord.gg/sSGHwNKy",
+                                                ),
+                                                (
+                                                    &AppIcon::Twitter,
+                                                    "Tweet us @shelvdotapp",
+                                                    "https://twitter.com/shelvdotapp",
+                                                ),
+                                                (
+                                                    &AppIcon::HomeSite,
+                                                    "Visit https://shelv.app",
+                                                    "https://shelv.app",
+                                                ),
+                                            ] {
+                                                if ui
+                                                    .button(icon.render_with_text(
+                                                        theme.fonts.size.normal,
+                                                        theme.colors.normal_text_color,
+                                                        text,
+                                                    ))
+                                                    .clicked()
+                                                {
+                                                    ui.close_menu();
+                                                    resulting_actions.push(AppAction::OpenLink(
+                                                        link.to_string(),
+                                                    ));
+                                                }
+                                            }
+
+                                            ui.separator();
+
+                                            if ui
+                                                .button(AppIcon::Folder.render_with_text(
+                                                    theme.fonts.size.normal,
+                                                    theme.colors.normal_text_color,
+                                                    "Open notes folder",
+                                                ))
+                                                .clicked()
+                                            {
+                                                ui.close_menu();
+                                                resulting_actions
+                                                    .push(AppAction::OpenNotesInFinder);
+                                            }
+                                        },
+                                    )
+                                    .response
+                                },
+                                |mut val, _ui| {
+                                    // Menu button can grow minimally
+                                    val.max_size = val.min_size;
+                                    val.infinite = egui::Vec2b::FALSE;
+                                    val
+                                },
+                            );
+                        });
+                });
 
             resulting_actions
         })
