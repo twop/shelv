@@ -40,7 +40,7 @@ use crate::{
     },
     feedback::FeedbackData,
     persistent_state::{DataToSave, NoteFile, RestoredData},
-    scripting::{note_eval::JS_SOURCE_LANG, settings_eval::Scripts},
+    scripting::settings_eval::Scripts,
     settings_parsing::LlmSettings,
     text_structure::{
         CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextHash, TextStructure,
@@ -116,15 +116,9 @@ pub struct NoteDerivedState {
 impl NoteDerivedState {
     pub fn new_from(text: &str) -> Self {
         let structure = TextStructure::new(text);
-
-        // Add Run buttons for JavaScript code blocks
-        let js_annotations = structure
-            .filter_map_codeblocks(|lang| (lang == JS_SOURCE_LANG).then_some(()))
-            .map(|(span_index, _, _, _)| (span_index, CodeBlockAnnotation::RunButton))
-            .collect();
-
+        // TODO: add code block annotations at the start somehow
         Self {
-            code_block_annotations: js_annotations,
+            code_block_annotations: Vec::new(),
             structure,
         }
     }
@@ -494,11 +488,12 @@ impl AppState {
             slash_palette_commands,
         );
 
-        // schedule
-        let deferred_actions = vec![
-            AppAction::EvalNote(NoteFile::Settings),
-            AppAction::FocusRequest(FocusTarget::CurrentNote),
-        ];
+        // schedule notes eval, most importantly settings, but that will also make code annotations appear
+        let deferred_actions: Vec<_> = notes
+            .keys()
+            .map(|key| AppAction::EvalNote(*key))
+            .chain([AppAction::FocusRequest(FocusTarget::CurrentNote)])
+            .collect();
 
         Self {
             is_pinned: is_window_pinned,

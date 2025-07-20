@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, io, path::PathBuf};
 
-use boa_engine::ast::expression::Parenthesized;
 use eframe::egui::{text::LayoutJob, Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
 
 use serde_json::{to_value, Value};
@@ -10,8 +9,8 @@ use smallvec::SmallVec;
 use crate::{
     app_state::{
         compute_editor_text_id, AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState,
-        InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, NoteDerivedState,
-        ParsedPromptResponse, RenderAction, SlashPalette, TextSelectionAddress, UnsavedChange,
+        InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, ParsedPromptResponse, RenderAction,
+        SlashPalette, TextSelectionAddress, UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
@@ -23,7 +22,7 @@ use crate::{
     feedback::FeedbackType,
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{
-        note_eval::{evaluate_js_block, JS_SOURCE_LANG},
+        note_eval::{evaluate_all_live_js_blocks, evaluate_js_block, JSBlockLang},
         settings_eval::{
             eval_js_scripts_in_settings_note, eval_kdl_in_settings_note, Scripts,
             SettingsNoteEvalContext,
@@ -32,7 +31,7 @@ use crate::{
     settings_parsing::LlmSettings,
     text_structure::{
         create_layout_job_from_text_diff, CodeBlockMeta, SpanIndex, SpanKind, SpanMeta,
-        TextDiffPart, TextStructure,
+        TextDiffPart,
     },
 };
 
@@ -572,10 +571,24 @@ pub fn process_app_action(
             let requested_changes = match note_file {
                 NoteFile::Note(_) => {
                     let run_button_annotations = text_structure
-                        .filter_map_codeblocks(|lang| match lang {
-                            JS_SOURCE_LANG => Some(true),
-                            LLM_LANG => Some(true),
-                            _ => None,
+                        .filter_map_codeblocks(|lang| {
+                            if let Some(JSBlockLang::Source(link_id)) = JSBlockLang::parse(lang) {
+                                let found_matching_output = match link_id {
+                                    None => false,
+                                    Some(link_id) => text_structure
+                                        .filter_map_codeblocks(JSBlockLang::parse)
+                                        .any(|(_, _, _, js_lang)| match js_lang {
+                                            JSBlockLang::Output(out_link_id, _) => {
+                                                out_link_id == link_id
+                                            }
+                                            _ => false,
+                                        }),
+                                };
+
+                                (!found_matching_output).then_some(())
+                            } else {
+                                (lang == LLM_LANG).then_some(())
+                            }
                         })
                         .map(|(index, _, _, _)| (index, CodeBlockAnnotation::RunButton));
 
@@ -584,7 +597,8 @@ pub fn process_app_action(
                         .code_block_annotations
                         .extend(run_button_annotations);
 
-                    None
+                    // Evaluate all live JavaScript blocks
+                    evaluate_all_live_js_blocks(text_structure, text)
                 }
 
                 NoteFile::Settings => {
@@ -775,13 +789,16 @@ pub fn process_app_action(
                     closed: true,
                     lang,
                     lang_byte_span: _,
-                })) if lang == JS_SOURCE_LANG => {
+                })) if matches!(JSBlockLang::parse(lang), Some(JSBlockLang::Source(_))) => {
                     evaluate_js_block(span_index, text_structure, &note.text)
                         .map(|changes| {
                             SmallVec::from_buf([AppAction::ApplyTextChanges {
                                 target: note_file,
                                 changes,
-                                should_trigger_eval: false,
+                                // NOTE that this will refresh the state of run button annotations
+                                // NOTE #2 that it will not rerun js twice due to hashing
+                                // maybe not the most elegant, but whatever
+                                should_trigger_eval: true,
                             }])
                         })
                         .unwrap_or_default()

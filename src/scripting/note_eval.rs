@@ -1,30 +1,67 @@
-use std::rc::Rc;
-
 use boa_engine::{context::HostHooks, Context, Source};
 use boa_runtime::Console;
-use itertools::Itertools;
-use similar::DiffableStr;
 use smallvec::SmallVec;
 
 use crate::{
     byte_span::ByteSpan,
     effects::text_change_effect::TextChange,
-    text_structure::{CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextStructure},
+    text_structure::{SpanIndex, SpanKind, SpanMeta, TextStructure},
 };
 
 use super::{
     js_console_logger::JsLogCollector,
-    note_eval_context::{BlockEvalResult, SourceHash},
+    note_eval_context::{BlockEvalResult, BlockId, SourceHash},
 };
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-enum CodeBlock {
-    Source,
-    Output,
+#[derive(Debug, PartialEq)]
+pub enum JSBlockLang {
+    Source(Option<BlockId>),
+    Output(BlockId, SourceHash),
 }
 
-pub const JS_OUTPUT_LANG: &str = "js#";
-pub const JS_SOURCE_LANG: &str = "js";
+impl JSBlockLang {
+    /// Parses JavaScript block language parameters
+    ///
+    /// # Requirements
+    /// - source can be either just "js" or "js <n>" where n is a BlockId
+    /// - output has to be in the form of "js <n> > #<source_hash>"
+    /// - None in all other cases
+    ///
+    /// # Examples
+    /// - "js" -> Some(Source(None))
+    /// - "js 5" -> Some(Source(Some(BlockId(5))))
+    /// - "js 5 > #bc" -> Some(Output(BlockId(5), SourceHash))
+    pub fn parse(lang: &str) -> Option<JSBlockLang> {
+        if lang == "js" {
+            return Some(JSBlockLang::Source(None));
+        }
+
+        if let Some(rest) = lang.strip_prefix("js ") {
+            if let Some((id_part, hash_part)) = rest.split_once(" > #") {
+                // Output format: "js <n> > #<hash>"
+                if let Ok(id) = id_part.parse::<u32>() {
+                    let hash = SourceHash::parse(hash_part)?;
+                    return Some(JSBlockLang::Output(BlockId(id), hash));
+                }
+            } else {
+                // Source format: "js <n>"
+                if let Ok(id) = rest.parse::<u32>() {
+                    return Some(JSBlockLang::Source(Some(BlockId(id))));
+                }
+            }
+        }
+
+        None
+    }
+
+    fn source_lang_with_id(id: BlockId) -> String {
+        format!("js {}", id.to_string())
+    }
+
+    fn output_lang(id: BlockId, hash: SourceHash) -> String {
+        format!("js {} > #{}", id.to_string(), hash.to_string())
+    }
+}
 
 pub struct JsEvaluator {
     context: Context,
@@ -65,20 +102,7 @@ impl JsEvaluator {
         }
     }
 
-    pub fn try_parse_block_lang(lang: &str) -> Option<(bool, Option<SourceHash>)> {
-        match lang {
-            "js" => Some((true, None)), // Source block
-
-            output if output.starts_with(JS_OUTPUT_LANG) => {
-                let hex_str = &output[JS_OUTPUT_LANG.len()..];
-                Some((false, SourceHash::parse(hex_str))) // Output block with hash
-            }
-
-            _ => None,
-        }
-    }
-
-    pub fn eval_block(&mut self, body: &str, hash: SourceHash) -> BlockEvalResult {
+    pub fn eval_block(&mut self, body: &str, id: BlockId, hash: SourceHash) -> BlockEvalResult {
         let result = self.context.eval(Source::from_bytes(body));
         let logged = self.console_logger.flush().ok();
 
@@ -97,7 +121,7 @@ impl JsEvaluator {
                 Err(err) => format!("{}{:#}", logged.unwrap_or_default(), err),
             },
 
-            output_lang: format!("{}{}", JS_OUTPUT_LANG, hash.to_string()),
+            output_lang: JSBlockLang::output_lang(id, hash),
         }
     }
 }
@@ -116,10 +140,6 @@ pub fn evaluate_js_block(
         return None;
     };
 
-    if code_meta.lang != JS_SOURCE_LANG {
-        return None;
-    }
-
     let (_, code_text_desc) = text_structure
         .iterate_immediate_children_of(span_index)
         .find(|(_, desc)| desc.kind == SpanKind::Text)?;
@@ -129,14 +149,36 @@ pub fn evaluate_js_block(
         return None;
     }
 
-    let eval_result = evaluator.eval_block(code, SourceHash::from(code));
-    let output_block = print_output_block(eval_result);
-
-    let output_block_range = find_js_output_block_right_after(text_structure, span_index);
-
     let mut changes = SmallVec::<[TextChange; 1]>::new();
 
-    if let Some(range) = output_block_range {
+    // Check if this is a source block that needs ID assignment
+    let (block_id, source_change) = match JSBlockLang::parse(&code_meta.lang) {
+        Some(JSBlockLang::Source(Some(existing_id))) => (existing_id, None),
+        Some(JSBlockLang::Source(None)) => {
+            let next_id = find_next_available_block_id(text_structure);
+
+            (
+                next_id,
+                Some(TextChange::Insert(
+                    code_meta.lang_byte_span,
+                    JSBlockLang::source_lang_with_id(next_id),
+                )),
+            )
+        }
+        _ => return None,
+    };
+
+    if let Some(source_lang_change) = source_change {
+        changes.push(source_lang_change);
+    }
+
+    let hash = SourceHash::from(code);
+    let eval_result = evaluator.eval_block(code, block_id, hash);
+    let output_block = print_output_block(eval_result);
+
+    let output_block_range = find_js_output_block_by_id(text_structure, block_id);
+
+    if let Some((range, _hash)) = output_block_range {
         // Replace the existing output block
         changes.push(TextChange::Insert(range, output_block));
     } else {
@@ -154,25 +196,35 @@ pub fn evaluate_js_block(
     }
 }
 
-fn find_js_output_block_right_after(
-    text_structure: &TextStructure,
-    span_index: SpanIndex,
-) -> Option<ByteSpan> {
+fn find_next_available_block_id(text_structure: &TextStructure) -> BlockId {
+    let mut max_id = 0u32;
+
+    // Find the highest existing block ID
     text_structure
-        .filter_map_codeblocks(|lang| match lang {
-            JS_SOURCE_LANG => Some(CodeBlock::Source),
-            lang if lang.starts_with(JS_OUTPUT_LANG) => Some(CodeBlock::Output),
+        .filter_map_codeblocks(|lang| match JSBlockLang::parse(lang) {
+            Some(JSBlockLang::Source(block_id)) => block_id,
             _ => None,
         })
-        .tuple_windows()
-        .find_map(
-            |((first_index, _, _, first_type), (_, second_desc, _, second_type))| {
-                (first_index == span_index
-                    && first_type == CodeBlock::Source
-                    && second_type == CodeBlock::Output)
-                    .then(|| second_desc.byte_pos)
-            },
-        )
+        .for_each(|(_, _, _, block_id)| {
+            max_id = max_id.max(block_id.0);
+        });
+
+    BlockId(max_id + 1)
+}
+
+fn find_js_output_block_by_id(
+    text_structure: &TextStructure,
+    target_id: BlockId,
+) -> Option<(ByteSpan, SourceHash)> {
+    text_structure
+        .filter_map_codeblocks(|lang| match JSBlockLang::parse(lang) {
+            Some(JSBlockLang::Output(output_block_id, hash)) if output_block_id == target_id => {
+                Some(hash)
+            }
+            _ => None,
+        })
+        .next()
+        .map(|(_, desc, _, hash)| (desc.byte_pos, hash))
 }
 
 fn print_output_block(eval_result: BlockEvalResult) -> String {
@@ -197,10 +249,10 @@ mod tests {
 "#,
                 Some(
                     r#"
-```js
+```js 1
 'hello world' + '!'
 ```
-```js#da0b
+```js 1 > #da0b
 "hello world!"
 ```{||}
 "#,
@@ -210,19 +262,19 @@ mod tests {
             (
                 "## overrides a block if hashes don't match ##",
                 r#"
-```js
+```js 2
 'hello world' + '!'
 ```{||}
-```js#aaa
+```js 2 > #aaa
 I will be overwritten
 ```
 "#,
                 Some(
                     r#"
-```js
+```js 2
 'hello world' + '!'
 ```{||}
-```js#da0b
+```js 2 > #da0b
 "hello world!"
 ```
 "#,
@@ -232,10 +284,10 @@ I will be overwritten
             (
                 "## and it doesn't override output block if hashes match ##",
                 r#"
-```js
+```js 1
 'hello world' + '!'
 ```{||}
-```js#da0b
+```js 1 > #da0b
 I should be overwritten, but I won't
 ```
 "#,
@@ -245,19 +297,19 @@ I should be overwritten, but I won't
             (
                 "## replaces the content of the output block if cache doesn't match or doesn't parse ##",
                 r#"
-```js
+```js 5
 2 + 2
 ```{||}
-```js#oops
+```js 5 > #oops
 1
 ```
 "#,
                 Some(
                     r#"
-```js
+```js 5
 2 + 2
 ```{||}
-```js#2cd1
+```js 5 > 2cd1
 4
 ```
 "#,
@@ -267,25 +319,25 @@ I should be overwritten, but I won't
             (
                 "## doesn't remove orhpant output blocks ##",
                 r#"
-```#dfgh
+```js 10 > #dfgh
 1
 ```
-```js
+```js 5
 2 + 2
 ```{||}
-```js#2
+```js 5 > #2
 3
 ```
 "#,
                 Some(
                     r#"
-```#dfgh
+```js 10 > #dfgh
 1
 ```
-```js
+```js 5
 2 + 2
 ```{||}
-```js#2cd1
+```js 5 > #2cd1
 4
 ```
 "#,
@@ -301,65 +353,12 @@ throw new Error("yo!")
 "#,
                 Some(
                     r#"
-```js
+```js 1
 throw new Error("yo!")
 ```
-```js#b511
+```js 1 > #b511
 Error: yo!
 ```{||}
-"#,
-                ),
-            ),
-            // ________________________________________________
-            (
-                "## if we identified a missing output (for example when you copy paste blocks)
-                then we
-                ##",
-                r#"
-```js
-1
-```
-```js#4422
-1
-```
-
-```js
-1 + 1
-```
---- start: this is copy pasted ---
-```js
-45{||}
-```
---- end: this is copy pasted ---
-
-```js#c9f6
-2
-```
-"#,
-                Some(
-                    r#"
-```js
-1
-```
-```js#4422
-1
-```
-
-```js
-1 + 1
-```
-```js#c9f6
-2
-```
---- start: this is copy pasted ---
-```js
-45{||}
-```
---- end: this is copy pasted ---
-
-```js#a4a
-45
-```
 "#,
                 ),
             ),
@@ -373,7 +372,10 @@ Error: yo!
 
             // Find the JavaScript block index
             let js_block_index = structure
-                .filter_map_codeblocks(|lang| (lang == JS_SOURCE_LANG).then_some(()))
+                .filter_map_codeblocks(|lang| match JSBlockLang::parse(lang) {
+                    Some(JSBlockLang::Source(_)) => Some(()),
+                    _ => None,
+                })
                 .next()
                 .map(|(index, _, _, _)| index);
 
@@ -396,5 +398,89 @@ Error: yo!
                 ),
             }
         }
+    }
+
+    #[test]
+    fn test_javascript_block_language_parse() {
+        use super::JSBlockLang;
+        use crate::scripting::note_eval_context::{BlockId, SourceHash};
+
+        // Test "js" - source without ID
+        assert_eq!(JSBlockLang::parse("js"), Some(JSBlockLang::Source(None)));
+
+        // Test "js 5" - source with ID
+        assert_eq!(
+            JSBlockLang::parse("js 5"),
+            Some(JSBlockLang::Source(Some(BlockId(5))))
+        );
+
+        // Test "js 5 > #bc" - output with ID and hash
+        let hash = SourceHash::parse("bc").unwrap();
+        assert_eq!(
+            JSBlockLang::parse("js 5 > #bc"),
+            Some(JSBlockLang::Output(BlockId(5), hash))
+        );
+
+        // Test invalid cases
+        assert_eq!(JSBlockLang::parse(""), None);
+        assert_eq!(JSBlockLang::parse("python"), None);
+        assert_eq!(JSBlockLang::parse("js abc"), None);
+        assert_eq!(JSBlockLang::parse("js 5 > #"), None);
+        assert_eq!(JSBlockLang::parse("js 5 >"), None);
+        assert_eq!(JSBlockLang::parse("js > #bc"), None);
+        assert_eq!(JSBlockLang::parse("javascript"), None);
+    }
+}
+
+// Evaluate all live JavaScript blocks (blocks with IDs) in a text structure
+pub fn evaluate_all_live_js_blocks(
+    text_structure: &TextStructure,
+    text: &str,
+) -> Option<Vec<TextChange>> {
+    let mut evaluator = JsEvaluator::new();
+    let mut all_changes = Vec::new();
+
+    let live_blocks = text_structure
+        .filter_map_codeblocks(|lang| match JSBlockLang::parse(lang) {
+            Some(JSBlockLang::Source(Some(source_block_id))) => Some(source_block_id),
+            _ => None,
+        })
+        .map(|(span_index, _, _, block_id)| (span_index, block_id));
+
+    for (span_index, block_id) in live_blocks {
+        // Get the code for this block
+        let (_, code_text_desc) = text_structure
+            .iterate_immediate_children_of(span_index)
+            .find(|(_, desc)| desc.kind == SpanKind::Text)?;
+
+        let code = &text[code_text_desc.byte_pos.range()];
+        if code.trim().is_empty() {
+            continue;
+        }
+
+        let source_hash = SourceHash::from(code);
+
+        let output_block_range = find_js_output_block_by_id(text_structure, block_id);
+        let needs_update = if let Some((_output_range, existing_output_hash)) = output_block_range {
+            existing_output_hash != source_hash
+        } else {
+            // No output block found, skip evaluation (no outlet for output for this source)
+            continue;
+        };
+
+        if needs_update {
+            let eval_result = evaluator.eval_block(code, block_id, source_hash);
+            let output_block = print_output_block(eval_result);
+
+            if let Some((range, _hash)) = output_block_range {
+                all_changes.push(TextChange::Insert(range, output_block));
+            }
+        }
+    }
+
+    if all_changes.is_empty() {
+        None
+    } else {
+        Some(all_changes)
     }
 }

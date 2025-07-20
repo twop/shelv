@@ -103,13 +103,7 @@ pub fn render_app(
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
 
-    let footer_actions = render_footer_panel(
-        selected_note,
-        note_count,
-        command_list,
-        ctx,
-        &theme,
-    );
+    let footer_actions = render_footer_panel(selected_note, note_count, command_list, ctx, &theme);
     output_actions.extend(footer_actions);
 
     let header_actions = render_header_panel(
@@ -1075,6 +1069,7 @@ fn render_code_actions(
                 )
                 .clicked()
                 {
+                    ui.ctx().copy_text("text to copy".to_string());
                     println!("copy clicked");
                 }
             }
@@ -1449,11 +1444,12 @@ fn render_header_panel(
             ui.set_min_size(vec2(avail_width, sizes.header_footer));
 
             let header_ui_id = ui.id().with("header");
-            
+
             // Handle feedback sent animation outside taffy context
             let tooltip_animation_id = header_ui_id.with("feedback_sent_tooltip");
-            let tooltip_value = ctx.animate_bool_with_time(tooltip_animation_id, feedback_sent, 2.0);
-            
+            let tooltip_value =
+                ctx.animate_bool_with_time(tooltip_animation_id, feedback_sent, 2.0);
+
             let tui_result = tui(ui, header_ui_id)
                 .style(
                     flex_row()
@@ -1503,7 +1499,7 @@ fn render_header_panel(
                     // Right section: Feedback button, pin button, separator, and menu
                     t.style(flex_row().align_items(AlignItems::Center).gap(sizes.s))
                         .add(|t| {
-                            // Feedback button 
+                            // Feedback button
                             if render_icon_button(
                                 t,
                                 AppIcon::Feedback,
