@@ -87,6 +87,7 @@ pub enum AppAction {
 
     SlashPalette(SlashPaletteAction),
     HideApp,
+    CopyCodeBlock(NoteFile, SpanIndex),
 }
 
 impl AppAction {
@@ -172,6 +173,8 @@ pub trait AppIO {
     ) -> sentry::types::Uuid
     where
         F: FnOnce(&mut sentry::Scope);
+
+    fn copy_to_clipboard(&self, text: String);
 }
 
 pub fn process_app_action(
@@ -1046,6 +1049,21 @@ pub fn process_app_action(
                     ))])
                 }
             }
+        }
+
+        AppAction::CopyCodeBlock(note_file, span_index) => {
+            let note = state.notes.get(&note_file).unwrap();
+            let text_structure = &note.derived_state.structure;
+            let thing = text_structure
+                .iterate_immediate_children_of(span_index)
+                .find(|(_, desc)| desc.kind == SpanKind::Text);
+
+            if let Some((_, code_content_des)) = thing {
+                let code_content = &note.text[code_content_des.byte_pos.range()];
+                app_io.copy_to_clipboard(code_content.to_string());
+            }
+
+            SmallVec::new()
         }
     }
 }

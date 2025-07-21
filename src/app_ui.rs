@@ -18,6 +18,7 @@ use egui_taffy::{
     taffy::{AlignContent, AlignItems, FlexDirection, JustifyContent},
     tui, TuiBuilderLogic,
 };
+use hotwatch::blocking::Hotwatch;
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
 // use itertools::Itertools;
@@ -469,6 +470,18 @@ fn render_editor(
         for area in computed_layout.code_areas.iter() {
             let code_area = area.rect.translate(estimated_text_pos.to_vec2());
 
+            // that mambo jambo check if the cursor is inside the code area of interest, if yes:
+            //   shortcuts become avalable, such as copy block or run the bloc etc
+            let is_cursor_inside_area = cursor_range.map_or(false, |range| {
+                use egui::TextBuffer;
+                let cursor_byte_pos =
+                    editor_text.byte_index_from_char_index(range.primary.ccursor.index);
+                match text_structure.get_span_with_meta(area.code_block_span_index) {
+                    Some((code_span, _)) => code_span.byte_pos.contains_pos(cursor_byte_pos),
+                    None => false,
+                }
+            });
+
             let code_block_actions = render_code_actions(
                 ui,
                 theme,
@@ -479,20 +492,8 @@ fn render_editor(
                     .map(|(_, a)| a),
                 area.code_block_span_index,
                 note_file,
-                cursor_range.map_or(false, |range| {
-                    use egui::TextBuffer;
-                    let cursor_byte_pos =
-                        editor_text.byte_index_from_char_index(range.primary.ccursor.index);
-                    // Get the byte span of the code block
-                    if let Some((code_span, _)) =
-                        text_structure.get_span_with_meta(area.code_block_span_index)
-                    {
-                        code_span.byte_pos.contains_pos(cursor_byte_pos)
-                    } else {
-                        false
-                    }
-                }),
                 frame_hotkeys,
+                is_cursor_inside_area,
             );
             resulting_actions.extend(code_block_actions);
         }
@@ -1007,8 +1008,8 @@ fn render_code_actions(
     annotation: Option<&CodeBlockAnnotation>,
     span_index: SpanIndex,
     note_file: NoteFile,
-    is_cusor_inside: bool,
     frame_hotkeys: &mut FrameHotkeys,
+    is_cursor_inside: bool,
 ) -> EditorCommandOutput {
     let id = ui.id().with("code_annotations").with(span_index);
     let is_hovered = ui.rect_contains_pointer(code_area);
@@ -1021,6 +1022,11 @@ fn render_code_actions(
     let buttons_visible = ui
         .ctx()
         .animate_bool_with_time(buttons_anim_id, is_hovered, 0.20);
+
+    // TODO: add a setting setup of these
+    let run_hotkey = KeyboardShortcut::new(Modifiers::MAC_CMD, Key::Enter);
+    // TODO figure out how to bind cmd + c derivitave in egui, it doesn't currently work :(
+    // let copy_hotkey = KeyboardShortcut::new(Modifiers::MAC_CMD.plus(Modifiers::SHIFT), Key::Copy);
 
     // Collect dimensions for logging
     let mut dimensions = Vec::new();
@@ -1069,11 +1075,21 @@ fn render_code_actions(
                 )
                 .clicked()
                 {
-                    ui.ctx().copy_text("text to copy".to_string());
-                    println!("copy clicked");
+                    resulting_actions.push(AppAction::CopyCodeBlock(note_file, span_index));
                 }
             }
         });
+
+    // if is_cursor_inside {
+    //     frame_hotkeys.add_key_with_modifier(
+    //         copy_hotkey.modifiers,
+    //         copy_hotkey.logical_key,
+    //         move |_| {
+    //             println!("COPIED");
+    //             SmallVec::from_buf([AppAction::CopyCodeBlock(note_file, span_index)])
+    //         },
+    //     );
+    // }
 
     if let Some(annotation) = annotation {
         let left_annotation_position = pos2(code_area.left(), code_area.bottom());
@@ -1118,12 +1134,11 @@ fn render_code_actions(
             )
             .show(|tui| match annotation {
                 CodeBlockAnnotation::RunButton => {
-                    let hotkey = KeyboardShortcut::new(Modifiers::MAC_CMD, Key::Enter);
-
-                    if is_cusor_inside {
+                    if is_cursor_inside {
+                        // TODO: add a setting setup of that
                         frame_hotkeys.add_key_with_modifier(
-                            hotkey.modifiers,
-                            hotkey.logical_key,
+                            run_hotkey.modifiers,
+                            run_hotkey.logical_key,
                             move |_| {
                                 SmallVec::from_buf([AppAction::RunCodeBlock(note_file, span_index)])
                             },
@@ -1135,7 +1150,7 @@ fn render_code_actions(
                         AppIcon::Play,
                         IconButtonSize::Medium,
                         theme,
-                        Some(("Execute", Some(hotkey))),
+                        Some(("Execute", Some(run_hotkey))),
                     )
                     .clicked()
                     {
