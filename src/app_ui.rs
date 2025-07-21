@@ -11,7 +11,7 @@ use eframe::{
         Sense, Shadow, StrokeKind, TextEdit, TextFormat, TextStyle, TextWrapMode, TopBottomPanel,
         Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
     },
-    emath::{Align, Align2},
+    emath::{self, Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
 };
 use egui_taffy::{
@@ -46,8 +46,8 @@ use crate::{
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
     ui_components::{
-        apply_icon_btn_styling, render_icon_button, render_icon_toggle_button, rich_text_tooltip,
-        IconButtonSize,
+        apply_icon_btn_styling, rich_text_tooltip,
+        IconButton, IconButtonSize,
     },
 };
 
@@ -1013,7 +1013,12 @@ fn render_code_actions(
 ) -> EditorCommandOutput {
     let id = ui.id().with("code_annotations").with(span_index);
     let is_hovered = ui.rect_contains_pointer(code_area);
-    let alpha = ui.ctx().animate_bool(id, is_hovered);
+    let alpha = ui.ctx().animate_bool_with_time_and_easing(
+        id,
+        is_hovered,
+        0.2,
+        emath::easing::cubic_in_out,
+    );
 
     let monospace = &theme.fonts.family.code;
     let mut resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
@@ -1058,22 +1063,16 @@ fn render_code_actions(
                 .gap(theme.sizes.xs),
         )
         .show(|tui| {
-            let button_color = theme
-                .colors
-                .subtle_text_color
-                .gamma_multiply(0.2)
-                .lerp_to_gamma(theme.colors.button_fg, alpha);
-
             // Only show the copy button if the mouse is over the code area
             if buttons_visible > 0.0 {
-                if render_icon_button(
-                    tui,
-                    AppIcon::Copy,
-                    IconButtonSize::Medium,
-                    theme,
-                    Some(("Copy code", None)),
-                )
-                .clicked()
+                if tui
+                    .ui_add(
+                        IconButton::new(AppIcon::Copy, theme)
+                            .size(IconButtonSize::Medium)
+                            .tooltip("Copy code", None)
+                            .fade(alpha),
+                    )
+                    .clicked()
                 {
                     resulting_actions.push(AppAction::CopyCodeBlock(note_file, span_index));
                 }
@@ -1145,14 +1144,13 @@ fn render_code_actions(
                         );
                     }
 
-                    if render_icon_button(
-                        tui,
-                        AppIcon::Play,
-                        IconButtonSize::Medium,
-                        theme,
-                        Some(("Execute", Some(run_hotkey))),
-                    )
-                    .clicked()
+                    if tui
+                        .ui_add(
+                            IconButton::new(AppIcon::Play, theme)
+                                .size(IconButtonSize::Medium)
+                                .tooltip("Execute", Some(run_hotkey)),
+                        )
+                        .clicked()
                     {
                         resulting_actions.push(AppAction::RunCodeBlock(note_file, span_index));
                     }
@@ -1479,12 +1477,10 @@ fn render_header_panel(
                     t.style(flex_row().align_items(AlignItems::Center).gap(sizes.m))
                         .add(|t| {
                             // Close button
-                            if render_icon_button(
-                                t,
-                                AppIcon::Close,
-                                IconButtonSize::Large,
-                                theme,
-                                Some(("Hide Shelv", None)),
+                            if t.ui_add(
+                                IconButton::new(AppIcon::Close, theme)
+                                    .size(IconButtonSize::Large)
+                                    .tooltip("Hide Shelv", None),
                             )
                             .clicked()
                             {
@@ -1515,12 +1511,10 @@ fn render_header_panel(
                     t.style(flex_row().align_items(AlignItems::Center).gap(sizes.s))
                         .add(|t| {
                             // Feedback button
-                            if render_icon_button(
-                                t,
-                                AppIcon::Feedback,
-                                IconButtonSize::Large,
-                                theme,
-                                Some(("Send this note to report a bug or share feedback.", None)),
+                            if t.ui_add(
+                                IconButton::new(AppIcon::Feedback, theme)
+                                    .size(IconButtonSize::Large)
+                                    .tooltip("Send this note to report a bug or share feedback.", None),
                             )
                             .clicked()
                             {
@@ -1528,22 +1522,20 @@ fn render_header_panel(
                             }
 
                             // Pin button with tooltip and keyboard shortcut
-                            if render_icon_toggle_button(
-                                t,
-                                AppIcon::Pin,
-                                IconButtonSize::Large,
-                                is_window_pinned,
-                                theme,
-                                Some((
-                                    if is_window_pinned {
-                                        "Unpin window"
-                                    } else {
-                                        "Pin window"
-                                    },
-                                    command_list
-                                        .find(CommandInstruction::PinWindow)
-                                        .and_then(|cmd| cmd.shortcut),
-                                )),
+                            if t.ui_add(
+                                IconButton::new(AppIcon::Pin, theme)
+                                    .size(IconButtonSize::Large)
+                                    .toggled(is_window_pinned)
+                                    .tooltip(
+                                        if is_window_pinned {
+                                            "Unpin window"
+                                        } else {
+                                            "Pin window"
+                                        },
+                                        command_list
+                                            .find(CommandInstruction::PinWindow)
+                                            .and_then(|cmd| cmd.shortcut),
+                                    ),
                             )
                             .clicked()
                             {

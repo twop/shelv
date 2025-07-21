@@ -1,5 +1,5 @@
 use eframe::egui::{Color32, KeyboardShortcut, RichText, Stroke};
-use egui_taffy::{Tui, TuiBuilder, TuiBuilderLogic, TuiInnerResponse};
+use egui_taffy::{AsTuiBuilder, Tui, TuiBuilder, TuiBuilderLogic, TuiInnerResponse, TuiWidget};
 
 use crate::{
     settings_parsing::format_mac_shortcut_with_symbols,
@@ -50,53 +50,97 @@ pub fn apply_icon_btn_styling(style: &mut eframe::egui::Style) {
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
-pub fn render_icon_button(
-    tui: &mut Tui,
+/// IconButton widget that implements TuiWidget trait with builder pattern and fade animation
+pub struct IconButton<'theme> {
     icon: AppIcon,
     size: IconButtonSize,
-    theme: &AppTheme,
-    tooltip: Option<(&str, Option<KeyboardShortcut>)>,
-) -> TuiInnerResponse<eframe::egui::Response> {
-    let icon_size = size.get_icon_font_size(theme);
-
-    tui.mut_egui_style(apply_icon_btn_styling).button(|tui| {
-        let label = tui.label(icon.render(icon_size, theme.colors.subtle_text_color));
-
-        if let Some((tooltip_text, shortcut)) = tooltip {
-            label.on_hover_ui(|ui| {
-                ui.label(rich_text_tooltip(tooltip_text, shortcut, theme));
-            })
-        } else {
-            label
-        }
-    })
+    tooltip: Option<(String, Option<KeyboardShortcut>)>,
+    fade: f32,
+    is_toggled: bool,
+    theme: &'theme AppTheme,
 }
 
-// Helper function to render toggle icon button - to be called inside tui.show(|t| { ... })
-pub fn render_icon_toggle_button(
-    tui: &mut Tui,
-    icon: AppIcon,
-    size: IconButtonSize,
-    is_toggled: bool,
-    theme: &AppTheme,
-    tooltip: Option<(&str, Option<KeyboardShortcut>)>,
-) -> TuiInnerResponse<eframe::egui::Response> {
-    let icon_size = size.get_icon_font_size(theme);
-    let icon_color = if is_toggled {
-        theme.colors.button_pressed_fg
-    } else {
-        theme.colors.subtle_text_color
-    };
-
-    tui.mut_egui_style(apply_icon_btn_styling).button(|tui| {
-        let label = tui.label(icon.render(icon_size, icon_color));
-
-        if let Some((tooltip_text, shortcut)) = tooltip {
-            label.on_hover_ui(|ui| {
-                ui.label(rich_text_tooltip(tooltip_text, shortcut, theme));
-            })
-        } else {
-            label
+impl<'theme> IconButton<'theme> {
+    /// Create a new IconButton with required icon parameter
+    pub fn new(icon: AppIcon, theme: &'theme AppTheme) -> Self {
+        Self {
+            icon,
+            theme,
+            size: IconButtonSize::Medium,
+            tooltip: None,
+            fade: 1.0,
+            is_toggled: false,
         }
-    })
+    }
+
+    /// Set the button size
+    pub fn size(mut self, size: IconButtonSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// Set the tooltip text and optional keyboard shortcut
+    pub fn tooltip(mut self, text: impl Into<String>, shortcut: Option<KeyboardShortcut>) -> Self {
+        self.tooltip = Some((text.into(), shortcut));
+        self
+    }
+
+    /// Set the fade value from 0.0 to 1.0 for animations
+    pub fn fade(mut self, fade: f32) -> Self {
+        self.fade = fade.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Set whether the button is in a toggled state
+    pub fn toggled(mut self, is_toggled: bool) -> Self {
+        self.is_toggled = is_toggled;
+        self
+    }
+}
+
+impl<'theme> TuiWidget for IconButton<'theme> {
+    type Response = eframe::egui::Response;
+
+    fn taffy_ui(self, tuib: TuiBuilder) -> Self::Response {
+        let tui = tuib.tui();
+        let Self {
+            icon,
+            size,
+            tooltip,
+            fade,
+            is_toggled,
+            theme,
+        } = self;
+
+        {
+            let icon_size = size.get_icon_font_size(theme);
+
+            let base_color = if is_toggled {
+                theme.colors.button_pressed_fg
+            } else {
+                theme.colors.subtle_text_color
+            };
+
+            // Apply fade animation using gamma_multiply and lerp_to_gamma pattern
+            let icon_color = theme
+                .colors
+                .subtle_text_color
+                .gamma_multiply(0.2)
+                .lerp_to_gamma(base_color, fade);
+
+            tui.mut_egui_style(apply_icon_btn_styling)
+                .button(|tui| {
+                    let label = tui.label(icon.render(icon_size, icon_color));
+
+                    if let Some((tooltip_text, shortcut)) = tooltip.as_ref() {
+                        label.on_hover_ui(|ui| {
+                            ui.label(rich_text_tooltip(tooltip_text, shortcut.clone(), theme));
+                        })
+                    } else {
+                        label
+                    }
+                })
+                .response
+        }
+    }
 }
