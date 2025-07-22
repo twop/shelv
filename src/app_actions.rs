@@ -590,7 +590,9 @@ pub fn process_app_action(
 
                                 (!found_matching_output).then_some(())
                             } else {
-                                (lang == LLM_LANG).then_some(())
+                                // TODO for now I decided to disable the feature, it just doesn't feel right
+                                // (lang == LLM_LANG).then_some(())
+                                None
                             }
                         })
                         .map(|(index, _, _, _)| (index, CodeBlockAnnotation::RunButton));

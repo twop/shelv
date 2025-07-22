@@ -420,7 +420,7 @@ impl AppState {
                 CommandInstruction::MarkdownH2,
                 CommandInstruction::MarkdownH3,
                 CommandInstruction::EnterInsideKDL,
-                CommandInstruction::RunLLMBlock,
+                // CommandInstruction::RunLLMBlock,
                 CommandInstruction::ShowPrompt,
                 CommandInstruction::ShowSlashPallete,
                 // CommandInstruction::HideSlashPallete,
@@ -614,9 +614,8 @@ fn execute_instruction(
             _ => SmallVec::new(),
         },
 
-        CI::RunLLMBlock => prepare_to_run_llm_block(ctx.app_state, CodeBlockAddress::NoteSelection)
-            .unwrap_or_default(),
-
+        // CI::RunLLMBlock => prepare_to_run_llm_block(ctx.app_state, CodeBlockAddress::NoteSelection)
+        //     .unwrap_or_default(),
         CI::ShowPrompt => inline_llm_prompt_command_handler(ctx).unwrap_or_default(),
 
         CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),
