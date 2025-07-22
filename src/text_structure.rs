@@ -19,11 +19,11 @@ use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter}
 use crate::{
     byte_span::ByteSpan,
     nord::Nord,
-    scripting::note_eval::JS_OUTPUT_LANG,
+    scripting::note_eval::JSBlockLang,
     theme::{AppTheme, ColorManipulation, ColorTheme, FontTheme},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct SpanIndex(usize);
 
 #[derive(Debug)]
@@ -733,11 +733,14 @@ impl TextStructure {
                     _ => "".to_string(),
                 };
 
-                let lang = match lang.as_str() {
-                    // "ts" => "typescript",
-                    // "rs" => "rust",
-                    l if l.starts_with(JS_OUTPUT_LANG) => "js",
-                    l => l,
+                let lang = if let Some(_) = JSBlockLang::parse(&lang) {
+                    "js"
+                } else {
+                    match lang.as_str() {
+                        "ts" => "typescript",
+                        "rs" => "rust",
+                        l => l,
+                    }
                 };
 
                 match syntax_set.find_syntax_by_extension(lang) {
@@ -895,22 +898,9 @@ impl TextStructure {
                     ),
                 }
             } else if state.code_block_lang > 0 {
-                // there need to be several improvements:
-                // 1. after '#' it should be probably grey and subtle
-                // 2. take into account case like that '```js date.js', note that 'date.js' is meant to be a file name there
-                //    but the entire 'js date.js' will be parsed as a lang, thus we need to do additional parsing
-                // 3. the color is a bit too bright, possibly switch to something more neutral
-                job.append(
-                    text.get(pos..point.str_offset).unwrap_or(""),
-                    0.0,
-                    TextFormat::simple(
-                        FontId {
-                            size: theme.fonts.size.tiny,
-                            family: theme.fonts.family.code.clone(),
-                        },
-                        theme.colors.md_code,
-                    ),
-                )
+                // Handle granular syntax highlighting for code block languages
+                let lang_text = text.get(pos..point.str_offset).unwrap_or("");
+                append_granular_lang_highlight(&mut job, lang_text, theme);
             } else if state.code_block > 0 {
                 job.append(
                     text.get(pos..point.str_offset).unwrap_or(""),
@@ -1563,6 +1553,182 @@ pub fn create_layout_job_from_text_diff(parts: &[TextDiffPart], theme: &AppTheme
     }
 
     job
+}
+
+fn append_granular_lang_highlight(job: &mut LayoutJob, lang_text: &str, theme: &AppTheme) {
+    let font_id = FontId {
+        size: theme.fonts.size.tiny,
+        family: theme.fonts.family.code.clone(),
+    };
+
+    if lang_text.starts_with("js#") {
+        // Handle new "js n #hash" and legacy "js#hash" formats
+        if lang_text.contains(" #") {
+            // Handle "js n #hash" format - js in normal, id and hash in subtle
+            let parts: Vec<&str> = lang_text.splitn(2, " #").collect();
+            if parts.len() == 2 {
+                let js_and_id = parts[0];
+                let hash_part = parts[1];
+
+                if js_and_id.contains(' ') {
+                    // "js n" part - split further
+                    let id_parts: Vec<&str> = js_and_id.splitn(2, ' ').collect();
+                    if id_parts.len() == 2 {
+                        // "js" part
+                        job.append(
+                            id_parts[0],
+                            0.0,
+                            TextFormat::simple(font_id.clone(), theme.colors.md_code),
+                        );
+                        // " " separator
+                        job.append(
+                            " ",
+                            0.0,
+                            TextFormat::simple(font_id.clone(), theme.colors.subtle_text_color),
+                        );
+                        // id part
+                        job.append(
+                            id_parts[1],
+                            0.0,
+                            TextFormat::simple(font_id.clone(), theme.colors.subtle_text_color),
+                        );
+                    } else {
+                        // Fallback
+                        job.append(
+                            js_and_id,
+                            0.0,
+                            TextFormat::simple(font_id.clone(), theme.colors.md_code),
+                        );
+                    }
+                } else {
+                    // Just "js" part
+                    job.append(
+                        js_and_id,
+                        0.0,
+                        TextFormat::simple(font_id.clone(), theme.colors.md_code),
+                    );
+                }
+
+                // " #" separator
+                job.append(
+                    " #",
+                    0.0,
+                    TextFormat::simple(font_id.clone(), theme.colors.subtle_text_color),
+                );
+
+                // hash part
+                job.append(
+                    hash_part,
+                    0.0,
+                    TextFormat::simple(font_id.clone(), theme.colors.subtle_text_color),
+                );
+            } else {
+                // Fallback
+                job.append(
+                    lang_text,
+                    0.0,
+                    TextFormat::simple(font_id, theme.colors.md_code),
+                );
+            }
+        } else {
+            // Legacy "js#hash" format
+            let parts: Vec<&str> = lang_text.splitn(2, '#').collect();
+            if parts.len() == 2 {
+                // "js" part
+                job.append(
+                    parts[0],
+                    0.0,
+                    TextFormat::simple(font_id.clone(), theme.colors.md_code),
+                );
+                // "#" separator
+                job.append(
+                    "#",
+                    0.0,
+                    TextFormat::simple(font_id.clone(), theme.colors.subtle_text_color),
+                );
+                // hash part
+                job.append(
+                    parts[1],
+                    0.0,
+                    TextFormat::simple(font_id.clone(), theme.colors.subtle_text_color),
+                );
+            } else {
+                // Fallback
+                job.append(
+                    lang_text,
+                    0.0,
+                    TextFormat::simple(font_id, theme.colors.md_code),
+                );
+            }
+        }
+    } else if lang_text.starts_with("js ") {
+        // Handle js n format - js in normal color, id in subtle color
+        let parts: Vec<&str> = lang_text.splitn(2, ' ').collect();
+        if parts.len() == 2 {
+            // "js" part
+            job.append(
+                parts[0],
+                0.0,
+                TextFormat::simple(font_id.clone(), theme.colors.md_code),
+            );
+            // " " separator
+            job.append(
+                " ",
+                0.0,
+                TextFormat::simple(font_id.clone(), theme.colors.subtle_text_color),
+            );
+            // id part
+            job.append(
+                parts[1],
+                0.0,
+                TextFormat::simple(font_id.clone(), theme.colors.subtle_text_color),
+            );
+        } else {
+            // Fallback for malformed js format
+            job.append(
+                lang_text,
+                0.0,
+                TextFormat::simple(font_id, theme.colors.md_code),
+            );
+        }
+    } else if lang_text.contains('#') {
+        // Handle other formats with hash - language in normal color, hash in subtle color
+        let parts: Vec<&str> = lang_text.splitn(2, '#').collect();
+        if parts.len() == 2 {
+            // Language part
+            job.append(
+                parts[0],
+                0.0,
+                TextFormat::simple(font_id.clone(), theme.colors.md_code),
+            );
+            // "#" separator
+            job.append(
+                "#",
+                0.0,
+                TextFormat::simple(font_id.clone(), theme.colors.subtle_text_color),
+            );
+            // hash part
+            job.append(
+                parts[1],
+                0.0,
+                TextFormat::simple(font_id.clone(), theme.colors.subtle_text_color),
+            );
+        } else {
+            // Fallback
+            job.append(
+                lang_text,
+                0.0,
+                TextFormat::simple(font_id, theme.colors.md_code),
+            );
+        }
+    } else {
+        // Default case - highlight entire language normally
+        job.append(
+            lang_text,
+            0.0,
+            TextFormat::simple(font_id, theme.colors.md_code),
+        );
+    }
 }
 
 #[cfg(test)]

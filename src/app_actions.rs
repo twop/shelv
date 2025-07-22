@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, io, path::PathBuf};
 
-use boa_engine::ast::expression::Parenthesized;
 use eframe::egui::{text::LayoutJob, Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
 
 use serde_json::{to_value, Value};
@@ -9,27 +8,30 @@ use smallvec::SmallVec;
 
 use crate::{
     app_state::{
-        compute_editor_text_id, AppState, FeedbackState, InlineLLMPromptState,
-        InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, NoteDerivedState,
-        ParsedPromptResponse, RenderAction, SlashPalette, TextSelectionAddress, UnsavedChange,
+        compute_editor_text_id, AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState,
+        InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, ParsedPromptResponse, RenderAction,
+        SlashPalette, TextSelectionAddress, UnsavedChange,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
-        run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
+        run_llm::{prepare_to_run_llm_block, CodeBlockAddress, LLM_LANG},
     },
     effects::text_change_effect::{apply_text_changes, TextChange},
     feedback::FeedbackType,
     persistent_state::{get_tutorial_note_content, NoteFile},
     scripting::{
-        note_eval::{execute_code_blocks, execute_live_scripts},
-        settings_eval::{eval_js_scripts_in_settings_note, Scripts, SettingsNoteEvalContext},
+        note_eval::{evaluate_all_live_js_blocks, evaluate_js_block, JSBlockLang},
+        settings_eval::{
+            eval_js_scripts_in_settings_note, eval_kdl_in_settings_note, Scripts,
+            SettingsNoteEvalContext,
+        },
     },
     settings_parsing::LlmSettings,
     text_structure::{
         create_layout_job_from_text_diff, CodeBlockMeta, SpanIndex, SpanKind, SpanMeta,
-        TextDiffPart, TextStructure,
+        TextDiffPart,
     },
 };
 
@@ -69,7 +71,7 @@ pub enum AppAction {
     HandleMsgToApp(MsgToApp),
     EvalNote(NoteFile),
     AskLLM(LLMBlockRequest),
-    RunLLMBLock(NoteFile, SpanIndex),
+    RunCodeBlock(NoteFile, SpanIndex),
     SubmitFeedback,
     OpenFeedbackWindow,
     CloseFeedbackWindow,
@@ -85,6 +87,7 @@ pub enum AppAction {
 
     SlashPalette(SlashPaletteAction),
     HideApp,
+    CopyCodeBlock(NoteFile, SpanIndex),
 }
 
 impl AppAction {
@@ -170,6 +173,8 @@ pub trait AppIO {
     ) -> sentry::types::Uuid
     where
         F: FnOnce(&mut sentry::Scope);
+
+    fn copy_to_clipboard(&self, text: String);
 }
 
 pub fn process_app_action(
@@ -567,7 +572,39 @@ pub fn process_app_action(
             }
 
             let requested_changes = match note_file {
-                NoteFile::Note(_) => execute_live_scripts(&text_structure, text),
+                NoteFile::Note(_) => {
+                    let run_button_annotations = text_structure
+                        .filter_map_codeblocks(|lang| {
+                            if let Some(JSBlockLang::Source(link_id)) = JSBlockLang::parse(lang) {
+                                let found_matching_output = match link_id {
+                                    None => false,
+                                    Some(link_id) => text_structure
+                                        .filter_map_codeblocks(JSBlockLang::parse)
+                                        .any(|(_, _, _, js_lang)| match js_lang {
+                                            JSBlockLang::Output(out_link_id, _) => {
+                                                out_link_id == link_id
+                                            }
+                                            _ => false,
+                                        }),
+                                };
+
+                                (!found_matching_output).then_some(())
+                            } else {
+                                // TODO for now I decided to disable the feature, it just doesn't feel right
+                                // (lang == LLM_LANG).then_some(())
+                                None
+                            }
+                        })
+                        .map(|(index, _, _, _)| (index, CodeBlockAnnotation::RunButton));
+
+                    note.derived_state.code_block_annotations.clear();
+                    note.derived_state
+                        .code_block_annotations
+                        .extend(run_button_annotations);
+
+                    // Evaluate all live JavaScript blocks
+                    evaluate_all_live_js_blocks(text_structure, text)
+                }
 
                 NoteFile::Settings => {
                     println!("####### eval settings");
@@ -575,21 +612,21 @@ pub fn process_app_action(
                     let (settings_scripts, block_annotations) =
                         eval_js_scripts_in_settings_note(text, text_structure);
 
-                    note.derived_state.code_block_annotations = block_annotations;
-
-                    let mut cx = SettingsNoteEvalContext {
+                    let cx = SettingsNoteEvalContext {
                         cmd_list: &mut state.commands,
                         scripts: &settings_scripts,
-                        should_force_eval: true,
                         app_io,
                         llm_settings: &mut state.llm_settings,
                     };
 
-                    let kdl_actions = execute_code_blocks(&mut cx, &text_structure, &text);
+                    let mut kdl_annotations = eval_kdl_in_settings_note(&text, &text_structure, cx);
+
+                    kdl_annotations.extend(block_annotations);
+                    note.derived_state.code_block_annotations = kdl_annotations;
 
                     state.settings_scripts = Some(settings_scripts);
 
-                    kdl_actions
+                    None
                 }
             };
 
@@ -748,28 +785,41 @@ pub fn process_app_action(
             SmallVec::new()
         }
 
-        AppAction::RunLLMBLock(note_file, span_index) => {
-            //
+        AppAction::RunCodeBlock(note_file, span_index) => {
+            let note = state.notes.get(&note_file).unwrap();
+            let text_structure = &note.derived_state.structure;
 
-            let mut scripts = state
-                .settings_scripts
-                .take()
-                .unwrap_or_else(|| Scripts::new());
+            match text_structure.find_meta(span_index) {
+                Some(SpanMeta::CodeBlock(CodeBlockMeta {
+                    closed: true,
+                    lang,
+                    lang_byte_span: _,
+                })) if matches!(JSBlockLang::parse(lang), Some(JSBlockLang::Source(_))) => {
+                    evaluate_js_block(span_index, text_structure, &note.text)
+                        .map(|changes| {
+                            SmallVec::from_buf([AppAction::ApplyTextChanges {
+                                target: note_file,
+                                changes,
+                                // NOTE that this will refresh the state of run button annotations
+                                // NOTE #2 that it will not rerun js twice due to hashing
+                                // maybe not the most elegant, but whatever
+                                should_trigger_eval: true,
+                            }])
+                        })
+                        .unwrap_or_default()
+                }
 
-            let result = prepare_to_run_llm_block(
-                CommandContext {
-                    app_state: state,
-                    ui_state: state.to_ui_state(),
-                    app_focus: compute_app_focus(ctx, state),
-                    scripts: &mut scripts,
-                },
-                CodeBlockAddress::TargetBlock(note_file, span_index),
-            )
-            .unwrap_or_default();
-
-            state.settings_scripts = Some(scripts);
-
-            result
+                Some(SpanMeta::CodeBlock(CodeBlockMeta {
+                    closed: true,
+                    lang,
+                    lang_byte_span: _,
+                })) if lang == LLM_LANG => prepare_to_run_llm_block(
+                    state,
+                    CodeBlockAddress::TargetBlock(note_file, span_index),
+                )
+                .unwrap_or_default(),
+                _ => SmallVec::default(),
+            }
         }
 
         AppAction::ShowPrompt(address) => {
@@ -1001,6 +1051,21 @@ pub fn process_app_action(
                     ))])
                 }
             }
+        }
+
+        AppAction::CopyCodeBlock(note_file, span_index) => {
+            let note = state.notes.get(&note_file).unwrap();
+            let text_structure = &note.derived_state.structure;
+            let thing = text_structure
+                .iterate_immediate_children_of(span_index)
+                .find(|(_, desc)| desc.kind == SpanKind::Text);
+
+            if let Some((_, code_content_des)) = thing {
+                let code_content = &note.text[code_content_des.byte_pos.range()];
+                app_io.copy_to_clipboard(code_content.to_string());
+            }
+
+            SmallVec::new()
         }
     }
 }

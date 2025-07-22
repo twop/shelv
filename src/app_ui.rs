@@ -1,21 +1,24 @@
 use eframe::{
     egui::{
         self,
+        debug_text::print,
         scroll_area::ScrollBarVisibility,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
         text_selection::text_cursor_state::cursor_rect,
-        Context, CursorIcon, FontFamily, FontSelection, Id, Key, KeyboardShortcut, Label, Layout,
-        Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense, TextEdit, TextFormat,
-        TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
+        Context, CursorIcon, FontFamily, FontSelection, Frame, Id, Key, KeyboardShortcut, Label,
+        LayerId, Layout, Margin, Modal, Modifiers, Order, Painter, Response, RichText, ScrollArea,
+        Sense, Shadow, StrokeKind, TextEdit, TextFormat, TextStyle, TextWrapMode, TopBottomPanel,
+        Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
     },
-    emath::{Align, Align2},
+    emath::{self, Align, Align2},
     epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
 };
 use egui_taffy::{
-    taffy::{AlignContent, JustifyContent},
+    taffy::{AlignContent, AlignItems, FlexDirection, JustifyContent},
     tui, TuiBuilderLogic,
 };
+use hotwatch::blocking::Hotwatch;
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
 // use itertools::Itertools;
@@ -25,24 +28,32 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 use crate::{
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
-        ComputedLayout, FeedbackState, InlineLLMPromptState, InlinePromptStatus, LayoutParams,
-        RenderAction, SlashPalette,
+        CodeBlockAnnotation, ComputedLayout, FeedbackState, InlineLLMPromptState,
+        InlinePromptStatus, LayoutParams, RenderAction, SlashPalette,
     },
     byte_span::UnOrderedByteSpan,
-    command::{CommandInstruction, CommandList, FrameHotkeys, SlashPaletteCmd, PROMOTED_COMMANDS},
+    command::{
+        CommandInstruction, CommandList, EditorCommandOutput, FrameHotkeys, SlashPaletteCmd,
+        PROMOTED_COMMANDS,
+    },
     commands::{inline_llm_prompt::compute_inline_prompt_text_input_id, run_llm::LLM_LANG},
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{flex_column, flex_row, StyleBuilder},
-    text_structure::{InteractiveTextPart, TextStructure},
+    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
+    text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
+    ui_components::{
+        apply_icon_btn_styling, rich_text_tooltip,
+        IconButton, IconButtonSize,
+    },
 };
 
 pub struct AppRenderData<'a> {
     pub selected_note: NoteFile,
+    pub code_block_annotations: &'a [(SpanIndex, CodeBlockAnnotation)],
     pub note_count: usize,
     pub text_edit_id: Id,
     pub byte_cursor: Option<UnOrderedByteSpan>,
@@ -88,22 +99,22 @@ pub fn render_app(
         mut render_actions,
         feedback,
         frame_hotkeys,
+        code_block_annotations,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
 
-    let footer_actions = render_footer_panel(
-        selected_note,
-        note_count,
-        feedback.as_ref().map(|f| f.is_sent).unwrap_or(false),
-        command_list,
-        ctx,
-        &theme,
-    );
+    let footer_actions = render_footer_panel(selected_note, note_count, command_list, ctx, &theme);
     output_actions.extend(footer_actions);
 
-    let header_actions =
-        render_header_panel(ctx, theme, command_list, selected_note, is_window_pinned);
+    let header_actions = render_header_panel(
+        ctx,
+        theme,
+        command_list,
+        selected_note,
+        is_window_pinned,
+        feedback.as_ref().map(|f| f.is_sent).unwrap_or(false),
+    );
     output_actions.extend(header_actions);
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
@@ -162,6 +173,7 @@ pub fn render_app(
 
     let (text_has_changed, text_structure, computed_layout, updated_cursor, editor_actions) =
         egui::CentralPanel::default()
+            .frame(Frame::central_panel(&ctx.style()).inner_margin(Margin::ZERO))
             .show(ctx, |ui| {
                 {
                     let avail_space = ui.available_rect_before_wrap();
@@ -187,12 +199,9 @@ pub fn render_app(
                 }
 
                 egui::ScrollArea::vertical()
-                    .id_source(text_edit_id)
+                    .id_salt(text_edit_id)
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-
-                        //                        ctx.memory_ui(ui);
-
                         let (
                             changed,
                             layout,
@@ -215,6 +224,7 @@ pub fn render_app(
                             selected_note,
                             command_list,
                             frame_hotkeys,
+                            code_block_annotations,
                             ctx,
                         );
 
@@ -356,6 +366,7 @@ fn render_editor(
     note_file: NoteFile,
     command_list: &CommandList,
     frame_hotkeys: &mut FrameHotkeys,
+    code_block_annotations: &[(SpanIndex, CodeBlockAnnotation)],
     ctx: &egui::Context,
 ) -> (
     bool, // if the text was changed, TODO rework this mess
@@ -368,8 +379,14 @@ fn render_editor(
     let mut resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
     let mut structure_wrapper = Some(text_structure);
 
-    let estimated_text_pos = ui.next_widget_position();
-    // let available_width = ui.available_width();
+    let text_edit_margin = Margin {
+        left: (theme.sizes.l) as i8,
+        right: (theme.sizes.l) as i8,
+        top: (theme.sizes.l) as i8,
+        bottom: (theme.sizes.l) as i8,
+    };
+
+    let estimated_text_pos = ui.next_widget_position() + text_edit_margin.left_top();
 
     let code_bg = ui.visuals().code_bg_color;
     let code_bg_rounding = ui.visuals().widgets.inactive.corner_radius;
@@ -377,7 +394,8 @@ fn render_editor(
         for area in computed_layout.code_areas.iter() {
             let background_rect = area
                 .rect
-                .shrink(0.5)
+                // .shrink(0.5)
+                .expand(1.)
                 .translate(estimated_text_pos.to_vec2());
 
             ui.painter()
@@ -416,7 +434,6 @@ fn render_editor(
         res
     };
 
-    // let mut edited_text = state.markdown.clone();
     let TextEditOutput {
         response: text_edit_response,
         galley_pos,
@@ -430,6 +447,7 @@ fn render_editor(
         .lock_focus(true)
         .desired_width(f32::INFINITY)
         .frame(false)
+        .margin(text_edit_margin)
         .layouter(&mut layouter)
         .show(ui);
 
@@ -445,71 +463,45 @@ fn render_editor(
         ui.scroll_to_rect(primary_cursor_pos, None);
     }
 
-    // floating buttons over code blocks
-    ui.scope(|ui| {
-        set_menu_bar_style(ui);
-
-        if let Some(computed_layout) = &computed_layout {
-            for (i, area) in computed_layout
-                .code_areas
-                .iter()
-                .filter(|area| &area.lang == LLM_LANG)
-                .enumerate()
-            {
-                let code_area = area.rect.translate(estimated_text_pos.to_vec2());
-
-                {
-                    let is_hovered = ui.rect_contains_pointer(code_area);
-
-                    let mut ui = ui.new_child(
-                        UiBuilder::new()
-                            .max_rect(code_area.translate(Vec2::new(-theme.sizes.xs, 0.0)))
-                            .layout(Layout::right_to_left(Align::TOP))
-                            .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
-                    );
-
-                    let alpha = ui
-                        .ctx()
-                        .animate_bool(ui.id().with("hover").with(i), is_hovered);
-
-                    let button_color = theme
-                        .colors
-                        .subtle_text_color
-                        .gamma_multiply(0.2)
-                        .lerp_to_gamma(theme.colors.button_fg, alpha);
-
-                    let run_btn = ui
-                        .button(AppIcon::Play.render(theme.sizes.toolbar_icon, button_color))
-                        .on_hover_ui(|ui| {
-                            let tooltip_text = "Execute code block";
-                            let tooltip_text = command_list
-                                .find(CommandInstruction::RunLLMBlock)
-                                .and_then(|cmd| cmd.shortcut)
-                                .map(|shortcut| {
-                                    format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
-                                })
-                                .unwrap_or_else(|| tooltip_text.to_string());
-
-                            ui.label(
-                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
-                            );
-                        });
-
-                    if run_btn.clicked() {
-                        resulting_actions.push(AppAction::RunLLMBLock(
-                            note_file,
-                            area.code_block_span_index,
-                        ));
-                    }
-                }
-            }
-        }
-    });
-
     let text_structure = structure_wrapper.unwrap();
+
+    // ------- FLOATING BUTTONS -------
+    if let Some(computed_layout) = &computed_layout {
+        for area in computed_layout.code_areas.iter() {
+            let code_area = area.rect.translate(estimated_text_pos.to_vec2());
+
+            // that mambo jambo check if the cursor is inside the code area of interest, if yes:
+            //   shortcuts become avalable, such as copy block or run the bloc etc
+            let is_cursor_inside_area = cursor_range.map_or(false, |range| {
+                use egui::TextBuffer;
+                let cursor_byte_pos =
+                    editor_text.byte_index_from_char_index(range.primary.ccursor.index);
+                match text_structure.get_span_with_meta(area.code_block_span_index) {
+                    Some((code_span, _)) => code_span.byte_pos.contains_pos(cursor_byte_pos),
+                    None => false,
+                }
+            });
+
+            let code_block_actions = render_code_actions(
+                ui,
+                theme,
+                code_area,
+                code_block_annotations
+                    .iter()
+                    .find(|(idx, _)| *idx == area.code_block_span_index)
+                    .map(|(_, a)| a),
+                area.code_block_span_index,
+                note_file,
+                frame_hotkeys,
+                is_cursor_inside_area,
+            );
+            resulting_actions.extend(code_block_actions);
+        }
+    }
 
     let overlay_layer_width = galley.job.wrap.max_width - 2. * estimated_text_pos.x;
 
+    // ------- LLM PROMPT -------
     match inline_llm_prompt {
         Some(inline_llm_prompt)
             if inline_llm_prompt.address.note_file == note_file
@@ -549,6 +541,7 @@ fn render_editor(
         None => (),
     }
 
+    // ------- SLASH PALETTE -------
     if let Some(palette) = slash_palette {
         let slash_char_pos = char_index_from_byte_index(editor_text, palette.slash_byte_pos);
         let relative_slash_pos = galley.pos_from_ccursor(CCursor::new(slash_char_pos));
@@ -747,32 +740,15 @@ fn render_inline_prompt(
                 ))
             };
 
-            let render_tooltip =
-                |ui: &mut Ui, tooltip_text: &str, shortcut: Option<KeyboardShortcut>| {
-                    ui.label({
-                        // RichText::new(tooltip_text)
-                        RichText::new(match shortcut {
-                            Some(shortcut) => {
-                                format!(
-                                    "{} ({})",
-                                    tooltip_text,
-                                    format_mac_shortcut_with_symbols(shortcut)
-                                )
-                            }
-                            None => tooltip_text.to_string(),
-                        })
-                        .color(theme.colors.subtle_text_color)
-                    })
-                };
             ui.horizontal(|ui| match &inline_llm_prompt.status {
                 InlinePromptStatus::NotStarted => {
                     if render_btn(ui, AppIcon::Play, "Run")
                         .on_hover_ui(|ui| {
-                            render_tooltip(
-                                ui,
+                            ui.label(rich_text_tooltip(
                                 "Prompt AI",
                                 Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
-                            );
+                                theme,
+                            ));
                         })
                         .clicked()
                     {
@@ -781,11 +757,11 @@ fn render_inline_prompt(
                     ui.add_space(theme.sizes.s);
                     if render_btn(ui, AppIcon::Close, "Cancel")
                         .on_hover_ui(|ui| {
-                            render_tooltip(
-                                ui,
+                            ui.label(rich_text_tooltip(
                                 "Cancel prompt",
                                 Some(KeyboardShortcut::new(Modifiers::NONE, Key::Escape)),
-                            );
+                                theme,
+                            ));
                         })
                         .clicked()
                     {
@@ -799,13 +775,13 @@ fn render_inline_prompt(
 
                 InlinePromptStatus::Done { prompt } => {
                     if prompt == &inline_llm_prompt.prompt
-                        && render_btn(ui, AppIcon::Accept, "Accept")
+                        && render_btn(ui, AppIcon::Check, "Accept")
                             .on_hover_ui(|ui| {
-                                render_tooltip(
-                                    ui,
+                                ui.label(rich_text_tooltip(
                                     "Accept suggestions",
                                     Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
-                                );
+                                    theme,
+                                ));
                             })
                             .clicked()
                     {
@@ -815,11 +791,11 @@ fn render_inline_prompt(
                     if prompt != &inline_llm_prompt.prompt
                         && render_btn(ui, AppIcon::Play, "Re-run")
                             .on_hover_ui(|ui| {
-                                render_tooltip(
-                                    ui,
+                                ui.label(rich_text_tooltip(
                                     "Re-run using the new prompt",
                                     Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
-                                );
+                                    theme,
+                                ));
                             })
                             .clicked()
                     {
@@ -829,11 +805,11 @@ fn render_inline_prompt(
                     ui.add_space(theme.sizes.s);
                     if render_btn(ui, AppIcon::Close, "Cancel")
                         .on_hover_ui(|ui| {
-                            render_tooltip(
-                                ui,
+                            ui.label(rich_text_tooltip(
                                 "Reject changes",
                                 Some(KeyboardShortcut::new(Modifiers::NONE, Key::Escape)),
-                            );
+                                theme,
+                            ));
                         })
                         .clicked()
                     {
@@ -906,7 +882,7 @@ fn render_slash_palette(
             .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
     );
 
-    let frame_resp = egui::Frame::new()
+    let frame_resp = egui::Frame::none()
         .fill(theme.colors.code_bg_color)
         .inner_margin(theme.sizes.s)
         .stroke(prompt_ui.visuals().window_stroke)
@@ -1025,6 +1001,213 @@ fn render_slash_palette(
     (frame_resp.rect, resulting_actions)
 }
 
+fn render_code_actions(
+    ui: &mut Ui,
+    theme: &AppTheme,
+    code_area: Rect,
+    annotation: Option<&CodeBlockAnnotation>,
+    span_index: SpanIndex,
+    note_file: NoteFile,
+    frame_hotkeys: &mut FrameHotkeys,
+    is_cursor_inside: bool,
+) -> EditorCommandOutput {
+    let id = ui.id().with("code_annotations").with(span_index);
+    let is_hovered = ui.rect_contains_pointer(code_area);
+    let alpha = ui.ctx().animate_bool_with_time_and_easing(
+        id,
+        is_hovered,
+        0.2,
+        emath::easing::cubic_in_out,
+    );
+
+    let monospace = &theme.fonts.family.code;
+    let mut resulting_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
+
+    let buttons_anim_id = ui.id().with("buttons_overlay_anim").with(span_index);
+    let buttons_visible = ui
+        .ctx()
+        .animate_bool_with_time(buttons_anim_id, is_hovered, 0.20);
+
+    // TODO: add a setting setup of these
+    let run_hotkey = KeyboardShortcut::new(Modifiers::MAC_CMD, Key::Enter);
+    // TODO figure out how to bind cmd + c derivitave in egui, it doesn't currently work :(
+    // let copy_hotkey = KeyboardShortcut::new(Modifiers::MAC_CMD.plus(Modifiers::SHIFT), Key::Copy);
+
+    // Collect dimensions for logging
+    let mut dimensions = Vec::new();
+    dimensions.push(format!("Code area: {:?}", code_area));
+    dimensions.push(format!(
+        "Initial available space: {:?}",
+        ui.available_rect_before_wrap()
+    ));
+
+    // Create a child UI for buttons on the right side
+    let mut buttons_ui = ui.new_child(
+        UiBuilder::new()
+            .max_rect(code_area)
+            .layout(Layout::top_down(Align::TOP))
+            .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
+    );
+
+    // Render buttons on the right side (copy button)
+    tui(&mut buttons_ui, id.with("right_buttons"))
+        .reserve_available_width()
+        .style(
+            flex_row()
+                .flex_direction(FlexDirection::RowReverse)
+                .align_items(AlignItems::Start)
+                .align_content(AlignContent::Stretch)
+                .width(code_area.width())
+                .auto_height()
+                .padding(theme.sizes.xs)
+                .gap(theme.sizes.xs),
+        )
+        .show(|tui| {
+            // Only show the copy button if the mouse is over the code area
+            if buttons_visible > 0.0 {
+                if tui
+                    .ui_add(
+                        IconButton::new(AppIcon::Copy, theme)
+                            .size(IconButtonSize::Medium)
+                            .tooltip("Copy code", None)
+                            .fade(alpha),
+                    )
+                    .clicked()
+                {
+                    resulting_actions.push(AppAction::CopyCodeBlock(note_file, span_index));
+                }
+            }
+        });
+
+    // if is_cursor_inside {
+    //     frame_hotkeys.add_key_with_modifier(
+    //         copy_hotkey.modifiers,
+    //         copy_hotkey.logical_key,
+    //         move |_| {
+    //             println!("COPIED");
+    //             SmallVec::from_buf([AppAction::CopyCodeBlock(note_file, span_index)])
+    //         },
+    //     );
+    // }
+
+    if let Some(annotation) = annotation {
+        let left_annotation_position = pos2(code_area.left(), code_area.bottom());
+
+        let left_annotation_rect = Rect::from_min_max(
+            pos2(ui.max_rect().left(), code_area.top()),
+            left_annotation_position,
+        );
+
+        let mut left_ui = ui.new_child(
+            UiBuilder::new()
+                .max_rect(left_annotation_rect)
+                .layout(Layout::top_down(Align::RIGHT))
+                .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
+        );
+
+        // DBG: visualize the area allocated for extra stuff
+        // left_ui.painter().rect_stroke(
+        //     left_ui.available_rect_before_wrap(),
+        //     0.,
+        //     Stroke::new(1., Color32::LIGHT_YELLOW),
+        //     StrokeKind::Inside,
+        // );
+        dimensions.push(format!(
+            "Left area rect: {:?}, avail space {:?}",
+            left_annotation_rect,
+            left_ui.available_rect_before_wrap()
+        ));
+
+        // Render annotations on the left side (applied/error icons)
+        tui(&mut left_ui, id.with("left_annotations"))
+            .reserve_available_width()
+            .style(
+                flex_column()
+                    .flex_direction(FlexDirection::Column)
+                    .align_items(AlignItems::Center)
+                    .align_content(AlignContent::Center)
+                    .width(left_annotation_rect.width())
+                    .auto_height()
+                    // .padding(theme.sizes.xs)
+                    .gap(theme.sizes.xs),
+            )
+            .show(|tui| match annotation {
+                CodeBlockAnnotation::RunButton => {
+                    if is_cursor_inside {
+                        // TODO: add a setting setup of that
+                        frame_hotkeys.add_key_with_modifier(
+                            run_hotkey.modifiers,
+                            run_hotkey.logical_key,
+                            move |_| {
+                                SmallVec::from_buf([AppAction::RunCodeBlock(note_file, span_index)])
+                            },
+                        );
+                    }
+
+                    if tui
+                        .ui_add(
+                            IconButton::new(AppIcon::Play, theme)
+                                .size(IconButtonSize::Medium)
+                                .tooltip("Execute", Some(run_hotkey)),
+                        )
+                        .clicked()
+                    {
+                        resulting_actions.push(AppAction::RunCodeBlock(note_file, span_index));
+                    }
+                }
+
+                CodeBlockAnnotation::Applied { message } => {
+                    tui.label(
+                        AppIcon::Check
+                            .render(theme.fonts.size.normal, theme.colors.success_fg_color),
+                    )
+                    .on_hover_ui(|ui| {
+                        ui.style_mut().interaction.selectable_labels = true;
+                        ScrollArea::both().show(ui, |ui| {
+                            ui.add(
+                                Label::new(
+                                    RichText::new(message)
+                                        .color(theme.colors.subtle_text_color)
+                                        .family(monospace.clone()),
+                                )
+                                .wrap_mode(TextWrapMode::Extend),
+                            )
+                        });
+                    });
+                }
+
+                CodeBlockAnnotation::Error { title, message } => {
+                    tui.label(
+                        AppIcon::Error.render(theme.fonts.size.normal, theme.colors.error_fg_color),
+                    )
+                    .on_hover_ui(|ui| {
+                        ui.style_mut().interaction.selectable_labels = true;
+                        ScrollArea::both().show(ui, |ui| {
+                            ui.label(
+                                RichText::new(title)
+                                    .strong()
+                                    .color(theme.colors.error_fg_color),
+                            );
+                            ui.add(
+                                Label::new(
+                                    RichText::new(message)
+                                        .color(theme.colors.subtle_text_color)
+                                        .family(monospace.clone()),
+                                )
+                                .wrap_mode(TextWrapMode::Extend),
+                            )
+                        });
+                    });
+                }
+            });
+    }
+
+    // Print all dimensions at once
+    // println!("UI DIMENSIONS:\n{}", dimensions.join("\n"));
+
+    resulting_actions
+}
+
 fn render_slash_cmd(
     ui: &mut Ui,
     theme: &AppTheme,
@@ -1141,7 +1324,6 @@ fn restore_cursor_from_note_state(
 fn render_footer_panel(
     selected: NoteFile,
     note_count: usize,
-    feedback_sent: bool,
     command_list: &CommandList,
     ctx: &Context,
     theme: &AppTheme,
@@ -1165,8 +1347,6 @@ fn render_footer_panel(
                 let sizes = &theme.sizes;
                 let avail_width = ui.available_width();
                 ui.set_min_size(vec2(avail_width, sizes.header_footer));
-
-                set_menu_bar_style(ui);
 
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     let items = tooltips
@@ -1236,70 +1416,6 @@ fn render_footer_panel(
                         });
                     }
                 });
-
-                // TODO Maybe this should be a global notification/toast UI instead of just font size.
-                // ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                //     let font_animation_id = ui.id().with("font_size");
-                //     let color_animation_id = ui.id().with("message_color");
-
-                //     let font_size_value =
-                //         ctx.animate_value_with_time(font_animation_id, font_size as f32, 2.0);
-                //     let show_font_message = font_size_value != font_size as f32;
-
-                //     let show_hide_value = ctx.animate_value_with_time(
-                //         color_animation_id,
-                //         if show_font_message { 1.0 } else { 0.0 },
-                //         0.2,
-                //     );
-                //     let interpolated_font_color = interpolate_color(
-                //         Color32::TRANSPARENT,
-                //         theme.colors.subtle_text_color,
-                //         show_hide_value,
-                //     );
-
-                //     ui.add_space(theme.sizes.xl);
-                //     ui.label(
-                //         RichText::new(format!("Font scaling set to {}", font_size))
-                //             .color(interpolated_font_color)
-                //             .font(FontId {
-                //                 size: theme.fonts.size.normal,
-                //                 family: theme.fonts.family.bold.clone(),
-                //             }),
-                //     );
-                // });
-
-                let icon_block_width = sizes.xl * 2.;
-
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.set_width(icon_block_width);
-
-                    let share_btn = ui
-                        .button(
-                            AppIcon::Feedback.render(sizes.toolbar_icon, theme.colors.button_fg),
-                        )
-                        .on_hover_ui(|ui| {
-                            ui.label(
-                                RichText::new("Send this note to report a bug or share feedback.")
-                                    .color(theme.colors.subtle_text_color),
-                            );
-                        });
-
-                    if share_btn.clicked() {
-                        actions.push(AppAction::OpenFeedbackWindow);
-                    }
-
-                    let tooltip_animation_id = ui.id().with("feedback_sent_tooltip");
-                    let tooltip_value =
-                        ctx.animate_bool_with_time(tooltip_animation_id, feedback_sent, 2.0);
-
-                    if feedback_sent {
-                        if tooltip_value < 1. {
-                            share_btn.show_tooltip_text(RichText::new(
-                                "Feedback sent, we appreciate your input!",
-                            ));
-                        }
-                    }
-                });
             });
         });
 
@@ -1323,176 +1439,208 @@ fn render_header_panel(
     command_list: &CommandList,
     selected_note: NoteFile,
     is_window_pinned: bool,
+    feedback_sent: bool,
 ) -> SmallVec<[AppAction; 1]> {
     TopBottomPanel::top("top_panel")
         .show_separator_line(false)
         .show(ctx, |ui| {
             let mut resulting_actions: SmallVec<[AppAction; 1]> = Default::default();
-            // println!("-----");
-            // println!("before menu {:?}", ui.available_size());
-            ui.horizontal(|ui| {
-                let sizes = &theme.sizes;
+            let sizes = &theme.sizes;
 
-                let avail_width = ui.available_width();
-                let avail_rect = ui.available_rect_before_wrap();
-                ui.painter().line_segment(
-                    [avail_rect.left(), avail_rect.right()]
-                        .map(|x| pos2(x, avail_rect.top() + sizes.header_footer)),
-                    Stroke::new(1.0, theme.colors.outline_fg),
-                );
-                ui.set_min_size(vec2(avail_width, sizes.header_footer));
-                let icon_block_width = sizes.xl * 2.;
+            let avail_width = ui.available_width();
+            let avail_rect = ui.available_rect_before_wrap();
+            ui.painter().line_segment(
+                [avail_rect.left(), avail_rect.right()]
+                    .map(|x| pos2(x, avail_rect.top() + sizes.header_footer)),
+                Stroke::new(1.0, theme.colors.outline_fg),
+            );
+            ui.set_min_size(vec2(avail_width, sizes.header_footer));
 
-                set_menu_bar_style(ui);
+            let header_ui_id = ui.id().with("header");
 
-                // println!("before x {:?}", ui.available_size());
+            // Handle feedback sent animation outside taffy context
+            let tooltip_animation_id = header_ui_id.with("feedback_sent_tooltip");
+            let tooltip_value =
+                ctx.animate_bool_with_time(tooltip_animation_id, feedback_sent, 2.0);
 
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.set_width(icon_block_width);
-
-                    if ui
-                        .button(
-                            AppIcon::Close
-                                .render(sizes.toolbar_icon, theme.colors.subtle_text_color),
-                        )
-                        .on_hover_ui(|ui| {
-                            ui.label({
-                                RichText::new("Hide Shelv").color(theme.colors.subtle_text_color)
-                            });
-                        })
-                        .clicked()
-                    {
-                        resulting_actions.push(AppAction::HideApp)
-                    }
-
-                    ui.add_space(theme.sizes.m);
-
-                    ui.label(
-                        RichText::new(format!(
-                            "Shelv - {}",
-                            match selected_note {
-                                NoteFile::Note(index) => format!("note {}", index + 1),
-                                NoteFile::Settings => "settings".to_string(),
-                            }
-                        ))
-                        .color(theme.colors.subtle_text_color)
-                        .font(FontId {
-                            size: theme.fonts.size.normal,
-                            family: theme.fonts.family.bold.clone(),
-                        }),
-                    );
-                });
-
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.menu_button(
-                        AppIcon::Menu.render(sizes.toolbar_icon, theme.colors.subtle_text_color),
-                        |ui| {
-                            ui.set_max_width(200.0);
-
-                            if ui
-                                .button(AppIcon::Tutorial.render_with_text(
-                                    theme.fonts.size.normal,
-                                    theme.colors.normal_text_color,
-                                    "Start tutorial",
-                                ))
-                                .clicked()
+            let tui_result = tui(ui, header_ui_id)
+                .style(
+                    flex_row()
+                        .width(avail_width)
+                        .height(sizes.header_footer)
+                        .align_items(AlignItems::Center)
+                        .justify_content(JustifyContent::SpaceBetween)
+                        .padding(sizes.xs),
+                )
+                .show(|t| {
+                    // Left section: Close button and title
+                    t.style(flex_row().align_items(AlignItems::Center).gap(sizes.m))
+                        .add(|t| {
+                            // Close button
+                            if t.ui_add(
+                                IconButton::new(AppIcon::Close, theme)
+                                    .size(IconButtonSize::Large)
+                                    .tooltip("Hide Shelv", None),
+                            )
+                            .clicked()
                             {
-                                ui.close_menu();
-                                resulting_actions.push(AppAction::StartTutorial);
+                                resulting_actions.push(AppAction::HideApp);
                             }
 
-                            ui.separator();
-
-                            for (icon, text, link) in [
-                                (
-                                    &AppIcon::Discord,
-                                    "Join our Discord",
-                                    "https://discord.gg/sSGHwNKy",
-                                ),
-                                (
-                                    &AppIcon::Twitter,
-                                    "Tweet us @shelvdotapp",
-                                    "https://twitter.com/shelvdotapp",
-                                ),
-                                (
-                                    &AppIcon::HomeSite,
-                                    "Visit https://shelv.app",
-                                    "https://shelv.app",
-                                ),
-                            ] {
-                                if ui
-                                    .button(icon.render_with_text(
-                                        theme.fonts.size.normal,
-                                        theme.colors.normal_text_color,
-                                        text,
+                            // Title
+                            t.ui_add(
+                                Label::new(
+                                    RichText::new(format!(
+                                        "Shelv - {}",
+                                        match selected_note {
+                                            NoteFile::Note(index) => format!("note {}", index + 1),
+                                            NoteFile::Settings => "settings".to_string(),
+                                        }
                                     ))
-                                    .clicked()
-                                {
-                                    ui.close_menu();
-                                    resulting_actions.push(AppAction::OpenLink(link.to_string()));
-                                }
-                            }
-
-                            ui.separator();
-
-                            if ui
-                                .button(AppIcon::Folder.render_with_text(
-                                    theme.fonts.size.normal,
-                                    theme.colors.normal_text_color,
-                                    "Open notes folder",
-                                ))
-                                .clicked()
-                            {
-                                ui.close_menu();
-                                resulting_actions.push(AppAction::OpenNotesInFinder);
-                            }
-                        },
-                    );
-
-                    // ui.add_space(theme.sizes.s);
-                    ui.label(
-                        AppIcon::VerticalSeparator
-                            .render(sizes.toolbar_icon, theme.colors.outline_fg),
-                    );
-                    // ui.add_space(theme.sizes.s);
-
-                    let resp = ui
-                        .button(AppIcon::Pin.render(
-                            sizes.toolbar_icon,
-                            if is_window_pinned {
-                                theme.colors.button_pressed_fg
-                            } else {
-                                theme.colors.subtle_text_color
-                            },
-                        ))
-                        .on_hover_ui(|ui| {
-                            let tooltip_text = if is_window_pinned {
-                                "Unpin window"
-                            } else {
-                                "Pin window"
-                            };
-
-                            let tooltip_text = command_list
-                                .find(CommandInstruction::PinWindow)
-                                .and_then(|cmd| cmd.shortcut)
-                                .map(|shortcut| {
-                                    format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
-                                })
-                                .unwrap_or_else(|| tooltip_text.to_string());
-
-                            ui.label(
-                                RichText::new(tooltip_text).color(theme.colors.subtle_text_color),
+                                    .color(theme.colors.subtle_text_color)
+                                    .font(FontId {
+                                        size: theme.fonts.size.normal,
+                                        family: theme.fonts.family.bold.clone(),
+                                    }),
+                                )
+                                .extend(),
                             );
                         });
 
-                    // TODO handle that with shortcuts
-                    if resp.clicked() {
-                        resulting_actions.push(AppAction::SetWindowPinned(!is_window_pinned));
-                    }
+                    // Right section: Feedback button, pin button, separator, and menu
+                    t.style(flex_row().align_items(AlignItems::Center).gap(sizes.s))
+                        .add(|t| {
+                            // Feedback button
+                            if t.ui_add(
+                                IconButton::new(AppIcon::Feedback, theme)
+                                    .size(IconButtonSize::Large)
+                                    .tooltip("Send this note to report a bug or share feedback.", None),
+                            )
+                            .clicked()
+                            {
+                                resulting_actions.push(AppAction::OpenFeedbackWindow);
+                            }
+
+                            // Pin button with tooltip and keyboard shortcut
+                            if t.ui_add(
+                                IconButton::new(AppIcon::Pin, theme)
+                                    .size(IconButtonSize::Large)
+                                    .toggled(is_window_pinned)
+                                    .tooltip(
+                                        if is_window_pinned {
+                                            "Unpin window"
+                                        } else {
+                                            "Pin window"
+                                        },
+                                        command_list
+                                            .find(CommandInstruction::PinWindow)
+                                            .and_then(|cmd| cmd.shortcut),
+                                    ),
+                            )
+                            .clicked()
+                            {
+                                resulting_actions
+                                    .push(AppAction::SetWindowPinned(!is_window_pinned));
+                            }
+
+                            // Separator
+                            t.label(
+                                AppIcon::VerticalSeparator
+                                    .render(sizes.toolbar_icon, theme.colors.outline_fg),
+                            );
+
+                            // Menu button - use ui_add_manual to embed the original menu_button
+                            t.ui_add_manual(
+                                |ui| {
+                                    apply_icon_btn_styling(ui.style_mut());
+                                    ui.menu_button(
+                                        AppIcon::Menu.render(
+                                            sizes.toolbar_icon,
+                                            theme.colors.subtle_text_color,
+                                        ),
+                                        |ui| {
+                                            ui.set_max_width(200.0);
+
+                                            if ui
+                                                .button(AppIcon::Tutorial.render_with_text(
+                                                    theme.fonts.size.normal,
+                                                    theme.colors.normal_text_color,
+                                                    "Start tutorial",
+                                                ))
+                                                .clicked()
+                                            {
+                                                ui.close_menu();
+                                                resulting_actions.push(AppAction::StartTutorial);
+                                            }
+
+                                            ui.separator();
+
+                                            for (icon, text, link) in [
+                                                (
+                                                    &AppIcon::Discord,
+                                                    "Join our Discord",
+                                                    "https://discord.gg/sSGHwNKy",
+                                                ),
+                                                (
+                                                    &AppIcon::Twitter,
+                                                    "Tweet us @shelvdotapp",
+                                                    "https://twitter.com/shelvdotapp",
+                                                ),
+                                                (
+                                                    &AppIcon::HomeSite,
+                                                    "Visit https://shelv.app",
+                                                    "https://shelv.app",
+                                                ),
+                                            ] {
+                                                if ui
+                                                    .button(icon.render_with_text(
+                                                        theme.fonts.size.normal,
+                                                        theme.colors.normal_text_color,
+                                                        text,
+                                                    ))
+                                                    .clicked()
+                                                {
+                                                    ui.close_menu();
+                                                    resulting_actions.push(AppAction::OpenLink(
+                                                        link.to_string(),
+                                                    ));
+                                                }
+                                            }
+
+                                            ui.separator();
+
+                                            if ui
+                                                .button(AppIcon::Folder.render_with_text(
+                                                    theme.fonts.size.normal,
+                                                    theme.colors.normal_text_color,
+                                                    "Open notes folder",
+                                                ))
+                                                .clicked()
+                                            {
+                                                ui.close_menu();
+                                                resulting_actions
+                                                    .push(AppAction::OpenNotesInFinder);
+                                            }
+                                        },
+                                    )
+                                    .response
+                                },
+                                |mut val, _ui| {
+                                    // Menu button can grow minimally
+                                    val.max_size = val.min_size;
+                                    val.infinite = egui::Vec2b::FALSE;
+                                    val
+                                },
+                            );
+                        });
                 });
 
-                // println!("before help {:?}", ui.available_size());
-            });
+            // Handle feedback sent animation - show tooltip if feedback was recently sent
+            if feedback_sent && tooltip_value < 1. {
+                // We need to show the tooltip on the feedback button, but since we're outside the taffy context,
+                // we'll just let the animation run for now. The tooltip will be handled by the button's hover state
+                // in future iterations if needed.
+            }
 
             resulting_actions
         })

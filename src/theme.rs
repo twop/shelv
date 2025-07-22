@@ -31,9 +31,11 @@ pub enum AppIcon {
     Menu,
     Folder,
     Play,
-    Accept,
+    Check,
     Refresh,
     Send,
+    Error,
+    Copy,
 }
 
 impl AppIcon {
@@ -109,9 +111,11 @@ impl AppIcon {
             AppIcon::Menu => P::LIST,
             AppIcon::Folder => P::FOLDER_SIMPLE,
             AppIcon::Play => P::PLAY,
-            AppIcon::Accept => P::CHECK,
+            AppIcon::Check => P::CHECK,
             AppIcon::Refresh => P::ARROW_CLOCKWISE,
             AppIcon::Send => P::PAPER_PLANE_TILT,
+            AppIcon::Error => P::WARNING,
+            AppIcon::Copy => P::COPY_SIMPLE,
         }
     }
 }
@@ -258,6 +262,10 @@ pub struct ColorTheme {
     pub md_code: Color32,
 
     // ---------
+    // General UI colors
+    pub success_fg_color: Color32,
+
+    // ---------
     // egui settings and general colors
     pub rounding_controls: CornerRadius,
     pub rounding_window: CornerRadius,
@@ -362,6 +370,8 @@ impl ColorTheme {
         // A good color for error text (e.g. red).
         let error_fg_color = Nord::NORD11;
 
+        let success_fg_color = Nord::NORD14;
+
         Self {
             rounding_controls,
             rounding_window,
@@ -392,6 +402,7 @@ impl ColorTheme {
             md_code,
             subtle_text_color,
             md_link,
+            success_fg_color,
         }
     }
 }
@@ -599,6 +610,7 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         md_link: _,
         subtle_text_color: _,
         md_code: _,
+        success_fg_color: _,
     } = color_theme.clone();
 
     // --- window ---

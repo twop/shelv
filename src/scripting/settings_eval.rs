@@ -1,7 +1,7 @@
 use std::{error::Error, rc::Rc};
 
 use boa_engine::{
-    builtins::promise::PromiseState, property::PropertyKey, Context, JsError, JsValue, Module,
+    Context, JsError, JsValue, Module, builtins::promise::PromiseState, property::PropertyKey,
 };
 use boa_parser::Source;
 use itertools::Itertools;
@@ -15,7 +15,7 @@ use crate::{
         ScriptCall, SlashPaletteCmd, TextSource,
     },
     settings_parsing::{
-        parse_top_level_settings_block, GlobalBinding, GlobalCommand, LlmSettings, LocalBinding,
+        GlobalBinding, GlobalCommand, LlmSettings, LocalBinding, parse_top_level_settings_block,
     },
     text_structure::{SpanIndex, SpanKind, TextStructure},
     theme::{AppTheme, FontTheme},
@@ -24,12 +24,10 @@ use crate::{
 use super::{
     js_module_loader::InMemoryModuleLoader,
     note_eval::HostWithLocalTimezone,
-    note_eval_context::{BlockEvalResult, CodeBlockKind, NoteEvalContext, SourceHash},
+    note_eval_context::{BlockEvalResult, SourceHash},
 };
 
 pub const SETTINGS_BLOCK_LANG: &str = "kdl";
-pub const SETTINGS_BLOCK_LANG_OUTPUT: &str = "kdl#";
-
 pub const SETTINGS_SCRIPT_BLOCK_LANG: &str = "js";
 
 #[derive(Debug, Clone, Copy)]
@@ -196,7 +194,7 @@ fn eval_script_block(
             .chain(
                 exports
                     .iter()
-                    .map(|export| format!("\"{}\"", export.name.as_str())),
+                    .map(|export| format!("{}", export.name.as_str())),
             )
             .join("\n\t"),
     };
@@ -212,183 +210,183 @@ fn eval_script_block(
     CodeBlockAnnotation::Applied { message: body }
 }
 
+pub fn eval_kdl_in_settings_note<IO: AppIO>(
+    text: &str,
+    text_structure: &TextStructure,
+    mut eval_ctx: SettingsNoteEvalContext<IO>,
+) -> Vec<(SpanIndex, CodeBlockAnnotation)> {
+    let mut annotations: Vec<(SpanIndex, CodeBlockAnnotation)> = Vec::new();
+
+    let code_blocks: SmallVec<[_; 8]> = text_structure
+        .filter_map_codeblocks(|lang| (lang == SETTINGS_BLOCK_LANG).then_some(0))
+        .filter_map(|(index, _, _, _)| {
+            let (_, code_desc) = text_structure
+                .iterate_immediate_children_of(index)
+                .find(|(_, desc)| desc.kind == SpanKind::Text)?;
+
+            let code = &text[code_desc.byte_pos.range()];
+
+            Some((index, code))
+        })
+        .collect();
+
+    for (index, code) in code_blocks {
+        annotations.push((index, eval_settings_block(&mut eval_ctx, code)));
+    }
+
+    annotations
+}
+
+fn eval_settings_block<IO: AppIO>(
+    eval_ctx: &mut SettingsNoteEvalContext<IO>,
+    block_body: &str,
+    // theme: &AppTheme,
+) -> CodeBlockAnnotation {
+    // TODO report if applying bindings failed
+
+    let settings = match parse_top_level_settings_block(block_body) {
+        Ok(settings) => settings,
+        Err(err) => {
+            let report = miette::Report::new(err);
+            let body = format!("{report:? }");
+            let plain_bytes = strip_ansi_escapes::strip(body.as_bytes());
+            return CodeBlockAnnotation::Error {
+                title: "Hm, that doesn't look right".to_string(),
+                message: String::from_utf8(plain_bytes).unwrap(),
+            };
+        }
+    };
+
+    // let has_any_bindings =
+    //     !(settings.global_bindings.is_empty() && settings.bindings.is_empty());
+
+    for GlobalBinding {
+        shortcut,
+        global_commands,
+    } in settings.global_bindings.iter()
+    {
+        let shortcut = shortcut.value();
+        let [command] = global_commands.as_slice() else {
+            return CodeBlockAnnotation::Error {
+                title: "Oops".to_string(),
+                message: "Currently only 1 command per binding is supported".to_string(),
+            };
+        };
+
+        println!("applying global {shortcut:?} to {command:?}");
+        match command {
+            GlobalCommand::ShowHideApp => {
+                match eval_ctx
+                    .app_io
+                    .bind_global_hotkey(shortcut, Box::new(|| MsgToApp::ToggleVisibility))
+                {
+                    Ok(_) => {
+                        println!("registered global {shortcut:?} to show/hide Shelv");
+                    }
+
+                    Err(err) => {
+                        println!(
+                            "error registering global {shortcut:?} to show/hide Shelv, err = {err:?}"
+                        );
+
+                        return CodeBlockAnnotation::Error {
+                            title: "OS refused to register shortcut".to_string(),
+                            message: err,
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    for LocalBinding {
+        shortcut,
+        instructions: instruction,
+        slash_alias,
+        description,
+        phosphor_icon,
+    } in settings.bindings
+    {
+        let [instruction] = instruction.as_slice() else {
+            return CodeBlockAnnotation::Error {
+                title: "Syntax error".to_string(),
+                message: "Currently only 1 command per binding is supported".to_string(),
+            };
+        };
+
+        println!("applying {shortcut:?} to {instruction:?}");
+        let validated_instruction = match instruction {
+            CommandInstruction::InsertText(ForwardToChild(source)) => {
+                if let TextSource::Script(ScriptCall { func_name: name }) = &source {
+                    match eval_ctx.scripts.find_exports(name).as_slice() {
+                        [] => {
+                            return CodeBlockAnnotation::Error {
+                                title: "Oops".to_string(),
+                                message: format!(
+                                    "No matching exports for '{name}' were found in js blocks"
+                                ),
+                            };
+                        }
+                        [_] => (),
+                        _ => {
+                            return CodeBlockAnnotation::Error {
+                                title: "Oops".to_string(),
+                                message: format!(
+                                    "Multiple matching exports for '{name}' were found in js blocks"
+                                ),
+                            };
+                        }
+                    }
+                }
+
+                instruction
+            }
+            instruction => instruction,
+        };
+
+        if let Some(prefix) = slash_alias {
+            let cmd = SlashPaletteCmd::from_instruction(
+                prefix,
+                validated_instruction.clone(),
+                CommandScope::Focus(AppFocus::NoteEditor),
+            )
+            .icon(
+                phosphor_icon.unwrap_or_else(|| egui_phosphor::light::USER_CIRCLE_GEAR.to_string()),
+            )
+            .description(
+                description
+                    .unwrap_or_else(|| validated_instruction.human_description().to_string()),
+            )
+            .shortcut(shortcut.as_ref().map(|v| v.value()));
+
+            eval_ctx.cmd_list.add_slash_command(cmd);
+        }
+
+        eval_ctx
+            .cmd_list
+            .add_editor_cmd(CommandInstance::user_defined(
+                validated_instruction.clone(),
+                shortcut.map(|s| s.value()),
+                CommandScope::Focus(AppFocus::NoteEditor),
+            ));
+    }
+
+    if let Some(last_llm_settings) = settings.llm_settings {
+        *eval_ctx.llm_settings = Some(last_llm_settings);
+    }
+
+    CodeBlockAnnotation::Applied {
+        message: "Applied".to_string(),
+    }
+}
+
 // ------- KDL settings eval -------
 pub struct SettingsNoteEvalContext<'cx, IO: AppIO> {
     // parsed_bindings: Vec<Result<TopLevelKdlSettings, SettingsParseError>>,
     pub cmd_list: &'cx mut CommandList,
     pub scripts: &'cx Scripts,
-    pub should_force_eval: bool,
     pub app_io: &'cx mut IO,
     pub llm_settings: &'cx mut Option<LlmSettings>,
-}
-
-impl<'cx, IO: AppIO> NoteEvalContext for SettingsNoteEvalContext<'cx, IO> {
-    type State = ();
-
-    fn begin(&mut self) {
-        println!("##### STARTING settings eval");
-
-        self.cmd_list.reset_to_defaults();
-
-        // TODO handle error case
-        self.app_io.cleanup_all_global_hotkeys().unwrap();
-    }
-
-    fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind> {
-        match lang {
-            SETTINGS_BLOCK_LANG => Some(CodeBlockKind::Source),
-
-            output if output.starts_with(SETTINGS_BLOCK_LANG_OUTPUT) => {
-                let hex_str = &output.strip_prefix(SETTINGS_BLOCK_LANG_OUTPUT)?;
-                Some(CodeBlockKind::Output(SourceHash::parse(hex_str)))
-            }
-
-            _ => None,
-        }
-    }
-
-    fn eval_block(&mut self, body: &str, hash: SourceHash, _: &mut ()) -> BlockEvalResult {
-        // TODO report if applying bindings failed
-
-        let output_lang = format!("{}{}", SETTINGS_BLOCK_LANG_OUTPUT, hash.to_string());
-
-        let settings = match parse_top_level_settings_block(body) {
-            Ok(settings) => settings,
-            Err(err) => {
-                let report = miette::Report::new(err);
-                let body = format!("{report:? }");
-                let plain_bytes = strip_ansi_escapes::strip(body.as_bytes());
-                return BlockEvalResult {
-                    body: String::from_utf8(plain_bytes).unwrap(),
-                    output_lang,
-                };
-            }
-        };
-
-        // let has_any_bindings =
-        //     !(settings.global_bindings.is_empty() && settings.bindings.is_empty());
-
-        for GlobalBinding {
-            shortcut,
-            global_commands,
-        } in settings.global_bindings.iter()
-        {
-            let shortcut = shortcut.value();
-            let [command] = global_commands.as_slice() else {
-                return BlockEvalResult {
-                    body: "Currently only 1 command per binding is supported".to_string(),
-                    output_lang,
-                };
-            };
-
-            println!("applying global {shortcut:?} to {command:?}");
-            match command {
-                GlobalCommand::ShowHideApp => {
-                    match self
-                        .app_io
-                        .bind_global_hotkey(shortcut, Box::new(|| MsgToApp::ToggleVisibility))
-                    {
-                        Ok(_) => {
-                            println!("registered global {shortcut:?} to show/hide Shelv");
-                        }
-
-                        Err(err) => {
-                            println!(
-                                "error registering global {shortcut:?} to show/hide Shelv, err = {err:?}"
-                            );
-
-                            return BlockEvalResult {
-                                body: format!("error: {:#?}", err),
-                                output_lang,
-                            };
-                        }
-                    }
-                }
-            }
-        }
-
-        for LocalBinding {
-            shortcut,
-            instructions: instruction,
-            slash_alias,
-            description,
-            phosphor_icon,
-        } in settings.bindings
-        {
-            let [instruction] = instruction.as_slice() else {
-                return BlockEvalResult {
-                    body: "Currently only 1 command per binding is supported".to_string(),
-                    output_lang,
-                };
-            };
-
-            println!("applying {shortcut:?} to {instruction:?}");
-            let validated_instruction = match instruction {
-                CommandInstruction::InsertText(ForwardToChild(source)) => {
-                    if let TextSource::Script(ScriptCall { func_name: name }) = &source {
-                        match self.scripts.find_exports(name).as_slice() {
-                            [] => {
-                                return BlockEvalResult {
-                                    body: format!(
-                                        "No matching exports for '{name}' were found in js blocks"
-                                    ),
-                                    output_lang,
-                                };
-                            }
-                            [_] => (),
-                            _ => {
-                                return BlockEvalResult {
-                                    body: format!(
-                                        "Multiple matching exports for '{name}' were found in js blocks"
-                                    ),
-                                    output_lang,
-                                };
-                            }
-                        }
-                    }
-
-                    instruction
-                }
-                instruction => instruction,
-            };
-
-            if let Some(prefix) = slash_alias {
-                let cmd = SlashPaletteCmd::from_instruction(
-                    prefix,
-                    validated_instruction.clone(),
-                    CommandScope::Focus(AppFocus::NoteEditor),
-                )
-                .icon(
-                    phosphor_icon
-                        .unwrap_or_else(|| egui_phosphor::light::USER_CIRCLE_GEAR.to_string()),
-                )
-                .description(
-                    description
-                        .unwrap_or_else(|| validated_instruction.human_description().to_string()),
-                )
-                .shortcut(shortcut.as_ref().map(|v| v.value()));
-
-                self.cmd_list.add_slash_command(cmd);
-            }
-
-            self.cmd_list.add_editor_cmd(CommandInstance::user_defined(
-                validated_instruction.clone(),
-                shortcut.map(|s| s.value()),
-                CommandScope::Focus(AppFocus::NoteEditor),
-            ));
-        }
-
-        if let Some(last_llm_settings) = settings.llm_settings {
-            *self.llm_settings = Some(last_llm_settings);
-        }
-
-        let body = "applied".to_string();
-        BlockEvalResult { body, output_lang }
-    }
-
-    fn should_force_eval(&self) -> bool {
-        self.should_force_eval
-    }
 }
 
 pub fn parse_and_eval_settings_script_block(

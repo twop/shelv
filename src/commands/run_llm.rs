@@ -4,13 +4,14 @@ use smallvec::SmallVec;
 
 use crate::{
     app_actions::{AppAction, Conversation, ConversationPart, LLMBlockRequest},
+    app_state::AppState,
     byte_span::ByteSpan,
     command::{
-        CommandContext, EditorCommandOutput, TextCommandContext, try_extract_text_command_context,
+        try_extract_text_command_context, CommandContext, EditorCommandOutput, TextCommandContext,
     },
     effects::text_change_effect::TextChange,
     persistent_state::NoteFile,
-    scripting::note_eval_context::{CodeBlockKind, SourceHash},
+    scripting::note_eval_context::SourceHash,
     text_structure::{CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextStructure},
 };
 
@@ -23,7 +24,7 @@ pub enum CodeBlockAddress {
 pub(crate) const LLM_LANG: &str = "ai";
 
 pub fn prepare_to_run_llm_block(
-    CommandContext { app_state, .. }: CommandContext,
+    app_state: &AppState,
     address: CodeBlockAddress,
 ) -> Option<EditorCommandOutput> {
     const LLM_LANG_OLD: &str = "llm";
@@ -81,11 +82,11 @@ pub fn prepare_to_run_llm_block(
     // Check if we are in an LLM code block
     let llm_blocks: SmallVec<[_; 6]> = text_structure
         .filter_map_codeblocks(|lang| match lang {
-            LLM_LANG | LLM_LANG_OLD => Some(CodeBlockKind::Source),
+            LLM_LANG | LLM_LANG_OLD => Some((true, None)), // Source block
 
             output if output.starts_with(LLM_LANG) => {
                 let hex_str = &output[LLM_LANG.len()..];
-                Some(CodeBlockKind::Output(SourceHash::parse(hex_str)))
+                Some((false, SourceHash::parse(hex_str))) // Output block with hash
             }
 
             _ => None,
@@ -93,11 +94,11 @@ pub fn prepare_to_run_llm_block(
         .collect();
 
     // find source llm code block
-    let (index_in_array, (block_span_index, block_desc, _, _)) = llm_blocks
+    let (index_in_array, (block_span_index, block_desc, _, block_type)) = llm_blocks
         .iter()
         .enumerate()
-        .find(|(_pos_index, (_, desc, _, kind))| {
-            desc.byte_pos.contains(cursor) && *kind == CodeBlockKind::Source
+        .find(|(_pos_index, (_, desc, _, (is_source, _)))| {
+            desc.byte_pos.contains(cursor) && *is_source
         })?;
 
     let (_, question_desc) = text_structure
@@ -113,7 +114,7 @@ pub fn prepare_to_run_llm_block(
     // check the next block
     let (replacemen_pos, output_block) = match llm_blocks.get(index_in_array + 1) {
         // if it is llm output just reuse that one
-        Some((_index, desc, _, CodeBlockKind::Output(_))) => {
+        Some((_index, desc, _, (is_source, _))) if !is_source => {
             (desc.byte_pos, format!("```{address}\n```"))
         }
 
@@ -145,12 +146,14 @@ pub fn prepare_to_run_llm_block(
         let inner_content = text[inner_content_range.range()].trim();
 
         match kind {
-            CodeBlockKind::Source => {
+            (true, _) => {
+                // Source block
                 conversation
                     .parts
                     .push(ConversationPart::Question(inner_content.to_string()));
             }
-            CodeBlockKind::Output(_) => {
+            (false, _) => {
+                // Output block
                 conversation
                     .parts
                     .push(ConversationPart::Answer(inner_content.to_string()));

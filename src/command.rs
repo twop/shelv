@@ -241,8 +241,8 @@ pub enum CommandInstruction {
     BracketAutoclosingInsideKDL,
 
     // Async Code blocks
-    #[knus(name = "ExecutePrompt")]
-    RunLLMBlock,
+    // #[knus(name = "ExecutePrompt")]
+    // RunLLMBlock,
 
     #[knus(name = "ShowPrompt")]
     ShowPrompt,
@@ -253,14 +253,14 @@ pub enum CommandInstruction {
 }
 
 /// Commands that we promote in UI
-pub const PROMOTED_COMMANDS: [CommandInstruction; 9] = const {
+pub const PROMOTED_COMMANDS: [CommandInstruction; 8] = const {
     [
         CommandInstruction::PinWindow,
         CommandInstruction::MarkdownBold,
         CommandInstruction::MarkdownItalic,
         CommandInstruction::MarkdownStrikethrough,
         CommandInstruction::MarkdownCodeBlock(None),
-        CommandInstruction::RunLLMBlock,
+        // CommandInstruction::RunLLMBlock,
         CommandInstruction::MarkdownH1,
         CommandInstruction::MarkdownH2,
         CommandInstruction::MarkdownH3,
@@ -297,7 +297,7 @@ impl CommandInstruction {
             Self::SwitchToSettings => "Open Settings".into(),
             Self::PinWindow => "Toggle Always on Top".into(),
             Self::HideApp => "Hide Window".into(),
-            Self::RunLLMBlock => "Execute AI Block".into(),
+            // Self::RunLLMBlock => "Execute AI Block".into(),
             CommandInstruction::ShowPrompt => "Show AI Prompt".into(),
             CommandInstruction::EnterInsideKDL => "Auto indent KDL".into(),
             CommandInstruction::BracketAutoclosingInsideKDL => {
@@ -337,7 +337,7 @@ impl CommandInstruction {
             C::SwitchToNote(_) => shortcut(Modifiers::COMMAND, Key::Num0),
             C::SwitchToSettings => shortcut(Modifiers::COMMAND, Key::Comma),
             C::PinWindow => shortcut(Modifiers::COMMAND, Key::P),
-            C::RunLLMBlock => shortcut(Modifiers::COMMAND, Key::Enter),
+            // C::RunLLMBlock => shortcut(Modifiers::COMMAND, Key::Enter),
             C::ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
             C::EnterInsideKDL => shortcut(Modifiers::NONE, Key::Enter),
             C::BracketAutoclosingInsideKDL => shortcut(Modifiers::SHIFT, Key::OpenBracket),
@@ -371,7 +371,7 @@ impl CommandInstruction {
             Self::SwitchToSettings => Some("SwitchToSettings;".into()),
             Self::PinWindow => Some("PinWindow;".into()),
             Self::HideApp => Some("HideApp;".into()),
-            Self::RunLLMBlock => Some("ExecutePrompt;".into()),
+            // Self::RunLLMBlock => Some("ExecutePrompt;".into()),
             Self::ShowPrompt => Some("ShowPrompt;".into()),
             Self::InsertText(ForwardToChild(source)) => match source {
                 TextSource::Str(text) => {

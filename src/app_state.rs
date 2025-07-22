@@ -115,9 +115,11 @@ pub struct NoteDerivedState {
 
 impl NoteDerivedState {
     pub fn new_from(text: &str) -> Self {
+        let structure = TextStructure::new(text);
+        // TODO: add code block annotations at the start somehow
         Self {
             code_block_annotations: Vec::new(),
-            structure: TextStructure::new(text),
+            structure,
         }
     }
 }
@@ -418,7 +420,7 @@ impl AppState {
                 CommandInstruction::MarkdownH2,
                 CommandInstruction::MarkdownH3,
                 CommandInstruction::EnterInsideKDL,
-                CommandInstruction::RunLLMBlock,
+                // CommandInstruction::RunLLMBlock,
                 CommandInstruction::ShowPrompt,
                 CommandInstruction::ShowSlashPallete,
                 // CommandInstruction::HideSlashPallete,
@@ -486,11 +488,12 @@ impl AppState {
             slash_palette_commands,
         );
 
-        // schedule
-        let deferred_actions = vec![
-            AppAction::EvalNote(NoteFile::Settings),
-            AppAction::FocusRequest(FocusTarget::CurrentNote),
-        ];
+        // schedule notes eval, most importantly settings, but that will also make code annotations appear
+        let deferred_actions: Vec<_> = notes
+            .keys()
+            .map(|key| AppAction::EvalNote(*key))
+            .chain([AppAction::FocusRequest(FocusTarget::CurrentNote)])
+            .collect();
 
         Self {
             is_pinned: is_window_pinned,
@@ -611,10 +614,8 @@ fn execute_instruction(
             _ => SmallVec::new(),
         },
 
-        CI::RunLLMBlock => {
-            prepare_to_run_llm_block(ctx, CodeBlockAddress::NoteSelection).unwrap_or_default()
-        }
-
+        // CI::RunLLMBlock => prepare_to_run_llm_block(ctx.app_state, CodeBlockAddress::NoteSelection)
+        //     .unwrap_or_default(),
         CI::ShowPrompt => inline_llm_prompt_command_handler(ctx).unwrap_or_default(),
 
         CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),

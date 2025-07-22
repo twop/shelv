@@ -392,6 +392,10 @@ impl AppIO for RealAppIO {
     {
         return sentry::with_scope(scope, || sentry::capture_message(message, level));
     }
+
+    fn copy_to_clipboard(&self, text: String) {
+        self.egui_ctx.copy_text(text);
+    }
 }
 
 fn prepare_auth_resolver() -> AuthResolver {

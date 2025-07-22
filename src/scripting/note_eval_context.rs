@@ -19,26 +19,16 @@ impl SourceHash {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Copy)]
-pub enum CodeBlockKind {
-    Source,
-    Output(Option<SourceHash>),
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub struct BlockId(pub u32);
+
+impl BlockId {
+    pub fn to_string(&self) -> String {
+        format!("{}", self.0)
+    }
 }
 
 pub struct BlockEvalResult {
     pub body: String,
     pub output_lang: String,
-}
-
-pub trait NoteEvalContext {
-    type State;
-    fn begin(&mut self) -> Self::State;
-    fn try_parse_block_lang(lang: &str) -> Option<CodeBlockKind>;
-    fn eval_block(
-        &mut self,
-        body: &str,
-        hash: SourceHash,
-        state: &mut Self::State,
-    ) -> BlockEvalResult;
-    fn should_force_eval(&self) -> bool;
 }
