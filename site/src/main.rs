@@ -23,23 +23,23 @@ pub enum TextColor {
     #[tw(class = "text-nord8")]
     Primary,
 
-    #[tw(class = "text-nord8")]
-    H1,
-
     #[tw(class = "text-nord12")]
-    H2,
+    SubHeader,
 
-    #[tw(class = "text-nord12")]
+    #[tw(class = "text-nord7")]
+    MainHeader,
+
+    #[tw(class = "text-nord11")]
     Red,
 }
 
 #[derive(TwVariant)]
 pub enum BackgroundColor {
-    #[tw(default, class = "bg-nord0")]
+    #[tw(default, class = "bg-nord0-darker")]
     Default,
-    #[tw(class = "bg-nord0")]
+    #[tw(class = "bg-nord0-darker")]
     Dark,
-    #[tw(class = "bg-nord6")]
+    #[tw(class = "bg-nord0-dark")]
     Light,
     #[tw(class = "bg-nord8")]
     Button,
@@ -49,6 +49,8 @@ pub enum BackgroundColor {
     Input,
     #[tw(class = "bg-nord3")]
     InputHovered,
+    #[tw(class = "bg-transparent")]
+    Transparent,
 }
 
 #[derive(TwVariant)]
@@ -89,6 +91,9 @@ pub enum HeaderSize {
     #[tw(default, class = "text-2xl mb-4 leading-8 font-semibold sm:text-3xl sm:leading-9")]
     H4,
 
+    #[tw(class = "text-5xl leading-tight font-bold sm:text-6xl sm:leading-none lg:text-7xl")]
+    H1,
+    
     #[tw(class = "text-4xl leading-10 font-semibold sm:text-5xl sm:leading-none lg:text-5xl")]
     H2,
 }
@@ -141,7 +146,7 @@ fn home_page() -> Element {
                 page_header(),
                 block_layout(
                     slogan_and_mac_store_link(),
-                    img_component("screenshot-welcome", "app screenshot with welcome note", IMG_W, IMG_H, true),
+                    img_component("screenshot-ai-prompt", "Shelv app showing AI-powered quick prompt feature in action", IMG_W, IMG_H, true),
                     MainSide::Left
                 )
             ))),
@@ -153,26 +158,28 @@ fn home_page() -> Element {
         theme(ThemeColor::Light, content((
                 block_layout(
                     (
-                        block_header("Markdown Native"),
-                        block_text("Shelv is built on markdown, which means you can quickly format your ideas in an expressive way that is open and portable to where ever they need to go.")
+                        block_header("Make it yours with custom commands"),
+                        block_text("Settings is just another note, so just add kdl + js codeblocks to configure shelv. Create custom keyboard shortcuts, extend the slash menu, and build scriptable automation with live JavaScript blocks.")
                     ),
-                    img_component("screenshot-markdown", "app screenshot with markdown features", IMG_W, IMG_H, false),
-                    MainSide::Left
+                    img_component("screenshot-custom-commands", "Creating and using custom commands via shortcuts and slash menu", IMG_W, IMG_H, false),
+                    MainSide::Right
                 ),
                 space(false, false, false, true),
                 block_layout(
-                    img_component("screenshot-shortcuts", "app screenshot with shortcuts", IMG_W, IMG_H, false),
+                    img_component("screenshot-live-code", "Creating live JavaScript code blocks and AI-powered list conversion", IMG_W, IMG_H, false),
                     (
-                        block_header("Keyboard shortcuts"),
-                        block_text("Show/Hide Shelv with a system wide shortcut, so it is there when you need it."),
+                        block_header("All the markdown essentials, and more"),
+                        block_text("Start with everything you expect from modern notes - beautiful Markdown, syntax highlighting, and intuitive organization. Then go further with live JavaScript blocks that execute right in your notes, turning static text into interactive playgrounds."),
                         space(true, false, false, false),
                         div((
-                            "Annotation shortcuts for ",
-                            b("Bold"),
+                            "Features include ",
+                            b("Markdown support"),
                             ", ",
-                            i("Italic"),
-                            ", Headings and ",
-                            element("code","Code blocks")
+                            b("Code syntax highlighting"),
+                            ", ",
+                            b("Live JavaScript blocks"),
+                            ", and ",
+                            b("Global shortcuts")
                         )).class("text-lg leading-7")
                     ),
                     MainSide::Right
@@ -207,7 +214,7 @@ fn home_page() -> Element {
                             )).class("text-xs leading-7")).class("py-3 flex justify-end")
                     ))
                 )).class("w-full px-4")))
-    ))
+    )).class(&tw_join!("flex flex-col", BackgroundColor::Default.as_class()))
 }
 
 // Component functions (converted from dioxus components)
@@ -228,7 +235,7 @@ fn theme(color: ThemeColor, children: impl Render + 'static) -> Element {
 }
 
 fn content(children: impl Render + 'static) -> Element {
-    div(children).class("mx-auto px-4 sm:px-6 max-w-6xl")
+    div(children).class("mx-auto px-4 sm:px-6 max-w-4xl")
 }
 
 fn block_layout(left: impl Render + 'static, right: impl Render + 'static, main: MainSide) -> Element {
@@ -260,13 +267,14 @@ fn space(sm: bool, md: bool, lg: bool, extra_on_large: bool) -> Element {
 }
 
 fn img_component(src: &str, alt: &str, width: usize, height: usize, eager: bool) -> Element {
-    div(img()
-            .class("")
-            .attr("width", &width.to_string())
-            .attr("height", &height.to_string())
-            .attr("loading", if eager { "eager" } else { "lazy" })
-            .attr("alt", alt)
-            .attr("src", &format!("/assets/images/{}.png", src))).class("py-6 lg:py-0 w-full h-full flex justify-center")
+    div(div(img()
+                .class("rounded-lg w-full h-full")
+                .attr("width", &width.to_string())
+                .attr("height", &height.to_string())
+                .attr("loading", if eager { "eager" } else { "lazy" })
+                .attr("alt", alt)
+                .attr("src", &format!("/assets/images/{}.png", src)))
+            .class("rounded-lg"/* shadow-(--shadow-underglow) */)).class("py-6 lg:py-0 w-full h-full flex justify-center")
 }
 
 fn page_header() -> Element {
@@ -327,9 +335,14 @@ fn heart() -> Element {
 }
 
 fn wave(path: String, top_color: ThemeColor) -> Element {
-    let (bg_color, fill_color) = match top_color {
-        ThemeColor::Dark => (BackgroundColor::Dark, "#2e3440"),
-        ThemeColor::Light => (BackgroundColor::Light, "#eceff4"),
+    let bg_color = match top_color {
+        ThemeColor::Dark => BackgroundColor::Dark,
+        ThemeColor::Light => BackgroundColor::Light,
+    };
+    
+    let fill_color = match top_color {
+        ThemeColor::Dark => "var(--color-nord0-dark)",
+        ThemeColor::Light => "var(--color-nord0-darker)",
     };
 
     div(danger(&format!(r#"<svg viewBox="0 0 1440 160" xmlns="http://www.w3.org/2000/svg">
@@ -354,7 +367,7 @@ fn link_to(to: &str, text: &str) -> Element {
 
 fn block_header(text: &str) -> Element {
     let header_style = HeaderTextStyle {
-        color: TextColor::H2,
+        color: TextColor::SubHeader,
         size: HeaderSize::H4,
     };
     h4(text.to_string()).class(&header_style.to_class())
@@ -368,13 +381,13 @@ fn slogan_and_mac_store_link() -> Element {
     let child = div((
                 {
                     let h1_style = HeaderTextStyle {
-                        color: TextColor::H1,
-                        size: HeaderSize::H2,
+                        color: TextColor::MainHeader,
+                        size: HeaderSize::H1,
                     };
-                    h2("A local-first, collaborative, and hackable note-taking app for the AI era")
+                    h1("AI-powered notes that adapt to your workflow")
                         .class(&h1_style.to_class())
                 },
-                p("Capture your top-of-mind using ready-to-go shelvs. Whether you're planning a trip, organizing your daily tasks, or brainstorming your next big idea, our Markdown-enabled shelves allow for a fun and efficient way to capture your thoughts without taking you out of your task.")
+                p("Shelv combines the power of AI assistance with hackable customization. Capture thoughts instantly, execute code live, and make it truly yours with custom commands and shortcuts.")
                     .class("mt-4 max-w-md mx-auto text-lg sm:text-xl md:mt-5 md:max-w-3xl")
             ));
     div((
@@ -388,7 +401,7 @@ fn slogan_and_mac_store_link() -> Element {
 
 fn mac_store_link() -> Element {
     a(img().attr("src", "/assets/images/mac-app-store-badge.svg")
-            .attr("alt", "Download Shelv on the Mac Test Flight")
+            .attr("alt", "Coming Soon on Mac")
             .class("home-app-store-buttons-mac")
             .attr("height", "64")).href("https://testflight.apple.com/join/38OBZSRD")
 }
@@ -405,7 +418,7 @@ fn render_to_string(element: Element) -> String {
                 link("").rel("stylesheet").href("/assets/app.css"),
                 link("").rel("stylesheet").href("/assets/main.css"),
             )),
-            body(element),
+            body(element).class(BackgroundColor::Default.as_class()),
         )),
     ))
 }

@@ -1,20 +1,15 @@
 @import "tailwindcss";
 
 @theme {
-  --*: initial;
-  --spacing: 4px;
 
   /* Font Configuration */
   --font-body: Inter, sans-serif;
 
-  /* Breakpoints */
-  --breakpoint-sm: 640px;
-  --breakpoint-md: 768px;
-  --breakpoint-lg: 1024px;
-
   /* Nord Color Palette */
+  --color-*: initial;
   
   /* Polar Night - Dark Backgrounds */
+  --color-nord0-darker: #1e222a;
   --color-nord0-dark: #242933;
   --color-nord0: #2e3440;
   --color-nord1: #3b4252;
@@ -38,4 +33,7 @@
   --color-nord13: #ebcb8b; /* Yellow */
   --color-nord14: #a3be8c; /* Green */
   --color-nord15: #b48ead; /* Purple */
+  
+  /* Transparent */
+  --color-transparent: transparent;
 }
