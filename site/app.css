@@ -7,6 +7,11 @@
   /* Font Configuration */
   --font-body: Inter, sans-serif;
 
+  /* Breakpoints */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+
   /* Nord Color Palette */
   
   /* Polar Night - Dark Backgrounds */
