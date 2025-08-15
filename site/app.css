@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+:root {
+    font-family: 'Inter', sans-serif;
+}
+
+@supports (font-variation-settings: normal) {
+    :root {
+        font-family: 'InterVariable', sans-serif;
+    }
+}
+
 @theme {
 
   /* Font Configuration */
@@ -17,6 +27,7 @@
   --color-nord3: #4c566a;
   
   /* Snow Storm - Light Foregrounds */
+  --color-nord4-darker: #9ba3b0;
   --color-nord4: #d8dee9;
   --color-nord5: #e5e9f0;
   --color-nord6: #eceff4;

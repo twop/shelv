@@ -14,19 +14,19 @@ const IMG_H: usize = 1128;
 // Semantic color variants using tailwind_fuse
 #[derive(TwVariant)]
 pub enum TextColor {
-    #[tw(default, class = "text-nord4")]
+    #[tw(default, class = "text-nord5")]
     Default,
 
-    #[tw(class = "text-nord3")]
+    #[tw(class = "text-nord4-darker")]
     Subtle,
 
     #[tw(class = "text-nord8")]
     Primary,
 
-    #[tw(class = "text-nord12")]
+    #[tw(class = "text-nord6")]
     SubHeader,
 
-    #[tw(class = "text-nord7")]
+    #[tw(class = "text-nord6")]
     MainHeader,
 
     #[tw(class = "text-nord11")]
@@ -81,21 +81,24 @@ enum MainSide {
 // Style structs for different component types
 #[derive(TwClass)]
 #[tw(class = "")]
-pub struct HeaderTextStyle {
+pub struct StyledText {
     color: TextColor,
-    size: HeaderSize,
+    style: TextStyle,
 }
 
 #[derive(TwVariant)]
-pub enum HeaderSize {
-    #[tw(default, class = "text-2xl mb-4 leading-8 font-semibold sm:text-3xl sm:leading-9")]
-    H4,
-
-    #[tw(class = "text-5xl leading-tight font-bold sm:text-6xl sm:leading-none lg:text-7xl")]
-    H1,
+pub enum TextStyle {
+    #[tw(class = "text-4xl leading-tight font-semibold sm:text-5xl sm:leading-none")]
+    MainHeader,
     
-    #[tw(class = "text-4xl leading-10 font-semibold sm:text-5xl sm:leading-none lg:text-5xl")]
-    H2,
+    #[tw(default, class = "text-2xl mb-4 leading-8 font-semibold sm:text-3xl sm:leading-9")]
+    SubHeader,
+    
+    #[tw(class = "text-lg leading-7 sm:text-xl sm:leading-8")]
+    Paragraph,
+    
+    #[tw(class = "text-sm leading-6 sm:text-sm sm:leading-7")]
+    Footnote,
 }
 
 #[derive(TwClass)]
@@ -118,6 +121,18 @@ pub enum HoverState {
     Underline,
     #[tw(class = "hover:text-nord10")]
     ColorChange,
+}
+
+#[derive(TwVariant)]
+pub enum SpacingSize {
+    #[tw(class = "w-full h-4 sm:h-8")]
+    Small,
+    
+    #[tw(default, class = "w-full h-8 sm:h-16")]
+    Medium,
+   
+    #[tw(class = "w-full h-16 sm:h-32")]
+    Large,
 }
 
 #[derive(TwClass)]
@@ -144,6 +159,7 @@ fn home_page() -> Element {
         // First section with hero content
         theme(ThemeColor::Dark, content((
                 page_header(),
+                space(SpacingSize::Medium),
                 block_layout(
                     slogan_and_mac_store_link(),
                     img_component("screenshot-ai-prompt", "Shelv app showing AI-powered quick prompt feature in action", IMG_W, IMG_H, true),
@@ -151,26 +167,29 @@ fn home_page() -> Element {
                 )
             ))),
         
+        space(SpacingSize::Small),
+
         // Wave separator
-        wave(UP_WAVE_PATH.to_string(), ThemeColor::Dark),
+        wave(UP_WAVE_PATH.to_string(), ThemeColor::Dark, SpacingSize::Large),
         
+
         // Second section with markdown features
         theme(ThemeColor::Light, content((
+                space(SpacingSize::Small),
                 block_layout(
-                    (
+                    img_component("screenshot-custom-commands", "Creating and using custom commands via shortcuts and slash menu", IMG_W, IMG_H, false),
+                    div((
                         block_header("Make it yours with custom commands"),
                         block_text("Settings is just another note, so just add kdl + js codeblocks to configure shelv. Create custom keyboard shortcuts, extend the slash menu, and build scriptable automation with live JavaScript blocks.")
-                    ),
-                    img_component("screenshot-custom-commands", "Creating and using custom commands via shortcuts and slash menu", IMG_W, IMG_H, false),
+                    )),
                     MainSide::Right
                 ),
-                space(false, false, false, true),
+                space(SpacingSize::Large),
                 block_layout(
-                    img_component("screenshot-live-code", "Creating live JavaScript code blocks and AI-powered list conversion", IMG_W, IMG_H, false),
-                    (
+                    div((
                         block_header("All the markdown essentials, and more"),
                         block_text("Start with everything you expect from modern notes - beautiful Markdown, syntax highlighting, and intuitive organization. Then go further with live JavaScript blocks that execute right in your notes, turning static text into interactive playgrounds."),
-                        space(true, false, false, false),
+                        space(SpacingSize::Small),
                         div((
                             "Features include ",
                             b("Markdown support"),
@@ -180,15 +199,16 @@ fn home_page() -> Element {
                             b("Live JavaScript blocks"),
                             ", and ",
                             b("Global shortcuts")
-                        )).class("text-lg leading-7")
-                    ),
-                    MainSide::Right
+                        )).class(&TextStyle::Paragraph.as_class())
+                    )),
+                    img_component("screenshot-live-code", "Creating live JavaScript code blocks and AI-powered list conversion", IMG_W, IMG_H, false),
+                    MainSide::Left
                 ),
-                space(true, false, false, false)
+                space(SpacingSize::Large)
             ))),
         
         // Wave separator
-        wave(DOWN_WAVE_PATH.to_string(), ThemeColor::Light),
+        wave(DOWN_WAVE_PATH.to_string(), ThemeColor::Light, SpacingSize::Medium),
         
         // Footer section
         theme(ThemeColor::Dark, content(div((
@@ -200,18 +220,18 @@ fn home_page() -> Element {
                     },
                     div((
                         p((
-                            "Done with ",
+                            span("Done with "),
                             heart(),
-                            " by Briskmode Labs"
-                        )).class("mt-3 text-m leading-7"),
+                            link_to("twop.me", "Simon Korzunov")
+                        )).class(&tw_join!("mt-3", TextStyle::Footnote)),
                         p((
-                            "Shoot us an email at ",
+                            "Shoot an email at ",
                             link_to("mailto:hi@shelv.app", "hi@shelv.app")
-                        )).class("mt-3 text-m leading-7"),
+                        )).class(&tw_join!("mt-3", TextStyle::Footnote)),
                         div(p((
                                 "theme inspired by ",
                                 link_to("https://www.nordtheme.com/", "Nord")
-                            )).class("text-xs leading-7")).class("py-3 flex justify-end")
+                            )).class(&TextStyle::Footnote.as_class())).class("py-3 flex justify-end")
                     ))
                 )).class("w-full px-4")))
     )).class(&tw_join!("flex flex-col", BackgroundColor::Default.as_class()))
@@ -238,32 +258,20 @@ fn content(children: impl Render + 'static) -> Element {
     div(children).class("mx-auto px-4 sm:px-6 max-w-4xl")
 }
 
-fn block_layout(left: impl Render + 'static, right: impl Render + 'static, main: MainSide) -> Element {
-    let flex_direction = match main {
-        MainSide::Right => "flex-row-reverse",
-        MainSide::Left => "flex-row",
+fn block_layout(left: Element, right: Element, main: MainSide) -> Element {
+    let direction_class = match main {
+        MainSide::Left => "flex-col",
+        MainSide::Right => "flex-col-reverse",
     };
 
-    div(div((
-            div(left).class("lg:pr-4"),
-            div(right).class("lg:pl-4")
-        )).class(&format!("flex {} lg:flex-none lg:grid lg:grid-flow-rowdense lg:grid-cols-2 lg:gap-10 lg:items-center", flex_direction))).class("relative")
+    div((
+        div(left).class("md:flex-1"),
+        div(right).class("md:flex-1")
+    )).class(&tw_join!("relative flex md:flex-row gap-8 md:gap-10 items-center", direction_class))
 }
 
-fn space(sm: bool, md: bool, lg: bool, extra_on_large: bool) -> Element {
-    let size_class = if sm {
-        "h-4 sm:h-8"
-    } else if md {
-        "h-8 sm:h-12"
-    } else if lg {
-        "h-12 sm:h-16"
-    } else {
-        "h-8 sm:h-12"
-    };
-
-    let extra_class = if extra_on_large { " lg:my-6" } else { "" };
-
-    div("").class(&format!("w-full {}{}", size_class, extra_class))
+fn space(size: SpacingSize) -> Element {
+    div("").class(&size.as_class())
 }
 
 fn img_component(src: &str, alt: &str, width: usize, height: usize, eager: bool) -> Element {
@@ -327,14 +335,14 @@ fn shelv_logo() -> impl Render {
     </svg>"#)
 }
 
-fn heart() -> Element {
+fn heart() -> impl Render {
     let heart_color = TextColor::Red;
-    div(danger(r#"<svg class="h-4 w-4 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    danger(format!(r#"<svg class="h-4 w-4 inline {color}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
-        </svg>"#)).class(&heart_color.as_class())
+        </svg>"#, color=heart_color.as_class()))
 }
 
-fn wave(path: String, top_color: ThemeColor) -> Element {
+fn wave(path: String, top_color: ThemeColor, size: SpacingSize) -> Element {
     let bg_color = match top_color {
         ThemeColor::Dark => BackgroundColor::Dark,
         ThemeColor::Light => BackgroundColor::Light,
@@ -345,7 +353,7 @@ fn wave(path: String, top_color: ThemeColor) -> Element {
         ThemeColor::Light => "var(--color-nord0-darker)",
     };
 
-    div(danger(&format!(r#"<svg viewBox="0 0 1440 160" xmlns="http://www.w3.org/2000/svg">
+    div(div(danger(&format!(r#"<svg width="100%" height="100%" viewBox="0 0 1440 160" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
             <defs>
                 <filter id="shadow">
                     <feDropShadow dx="0" dy="-20" std-deviation="5"/>
@@ -354,7 +362,7 @@ fn wave(path: String, top_color: ThemeColor) -> Element {
             <g transform="scale(1, 0.5)">
                 <path fill="{}" d="{}"/>
             </g>
-        </svg>"#, fill_color, path))).class(&bg_color.as_class())
+        </svg>"#, fill_color, path))).class("w-full h-full")).class(&tw_join!("w-full", bg_color, size))
 }
 
 fn link_to(to: &str, text: &str) -> Element {
@@ -366,29 +374,39 @@ fn link_to(to: &str, text: &str) -> Element {
 }
 
 fn block_header(text: &str) -> Element {
-    let header_style = HeaderTextStyle {
+    let header_style = StyledText {
         color: TextColor::SubHeader,
-        size: HeaderSize::H4,
+        style: TextStyle::SubHeader,
     };
     h4(text.to_string()).class(&header_style.to_class())
 }
 
 fn block_text(text: &str) -> Element {
-    p(text.to_string()).class("text-lg leading-7")
+    let text_style = StyledText {
+        color: TextColor::Subtle,
+        style: TextStyle::Paragraph,
+    };
+    p(text.to_string()).class(&text_style.to_class())
 }
 
 fn slogan_and_mac_store_link() -> Element {
     let child = div((
                 {
-                    let h1_style = HeaderTextStyle {
+                    let h1_style = StyledText {
                         color: TextColor::MainHeader,
-                        size: HeaderSize::H1,
+                        style: TextStyle::MainHeader,
                     };
                     h1("AI-powered notes that adapt to your workflow")
                         .class(&h1_style.to_class())
                 },
-                p("Shelv combines the power of AI assistance with hackable customization. Capture thoughts instantly, execute code live, and make it truly yours with custom commands and shortcuts.")
-                    .class("mt-4 max-w-md mx-auto text-lg sm:text-xl md:mt-5 md:max-w-3xl")
+                {
+                    let desc_style = StyledText {
+                        color: TextColor::Subtle,
+                        style: TextStyle::Paragraph,
+                    };
+                    p("Shelv combines the power of AI assistance with hackable customization. Capture thoughts instantly, execute code live, and make it truly yours with custom commands and shortcuts.")
+                        .class(&tw_join!("mt-4 max-w-md mx-auto md:mt-5 md:max-w-3xl", desc_style.to_class()))
+                }
             ));
     div((
         // Slogan section
@@ -415,6 +433,8 @@ fn render_to_string(element: Element) -> String {
                 title("Shelv - Hackable Playground for Ephemeral Thoughts"),
                 meta().charset("utf-8"),
                 meta().name("viewport").content("width=device-width, initial-scale=1"),
+                link("").rel("preconnect").href("https://rsms.me/"),
+                link("").rel("stylesheet").href("https://rsms.me/inter/inter.css"),
                 link("").rel("stylesheet").href("/assets/app.css"),
                 link("").rel("stylesheet").href("/assets/main.css"),
             )),
