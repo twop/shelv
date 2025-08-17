@@ -151,7 +151,7 @@ enum ButtonHeight{
 #[tw(class = r#"
     inline-flex items-center
     font-medium text-center no-underline align-middle whitespace-nowrap
-    rounded select-none border-1 px-3 transition-all duration-150"#)]
+    rounded-lg select-none border-1 px-3 transition-all duration-150"#)]
 pub struct ButtonStyle {
     variant: ButtonVariant,
     height: ButtonHeight
