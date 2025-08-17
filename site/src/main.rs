@@ -215,6 +215,13 @@ fn home_page() -> Element {
         // Wave separator
         wave(DOWN_WAVE_PATH.to_string(), ThemeColor::Light, SpacingSize::Medium),
         
+        // FAQ section
+        theme(ThemeColor::Dark, content((
+            space(SpacingSize::Large),
+            faq_section(),
+            space(SpacingSize::Large)
+        ))),
+        
         // Footer section
         theme(ThemeColor::Dark, content(div((
                     {
@@ -506,6 +513,80 @@ fn github_link() -> Element {
 fn github_icon() -> impl Render {
     danger(r#"<svg viewBox="0 0 20 20" class="size-5 fill-current">
         <path d="M10 0C4.475 0 0 4.475 0 10a9.994 9.994 0 006.838 9.488c.5.087.687-.213.687-.476 0-.237-.013-1.024-.013-1.862-2.512.463-3.162-.612-3.362-1.175-.113-.287-.6-1.175-1.025-1.412-.35-.188-.85-.65-.013-.663.788-.013 1.35.725 1.538 1.025.9 1.512 2.337 1.087 2.912.825.088-.65.35-1.088.638-1.338-2.225-.25-4.55-1.112-4.55-4.937 0-1.088.387-1.987 1.025-2.688-.1-.25-.45-1.274.1-2.65 0 0 .837-.262 2.75 1.026a9.28 9.28 0 012.5-.338c.85 0 1.7.112 2.5.337 1.912-1.3 2.75-1.024 2.75-1.024.55 1.375.2 2.4.1 2.65.637.7 1.025 1.587 1.025 2.687 0 3.838-2.337 4.688-4.562 4.938.362.312.675.912.675 1.85 0 1.337-.013 2.412-.013 2.75 0 .262.188.574.688.474A10.016 10.016 0 0020 10c0-5.525-4.475-10-10-10z"></path>
+    </svg>"#)
+}
+
+fn faq_section() -> Element {
+    div((
+        block_header("Frequently Asked Questions"),
+        space(SpacingSize::Medium),
+        div(faq_items().into_iter().map(|(question, answer)| {
+            faq_item(question, answer)
+        }).collect::<Vec<_>>()).class("flex flex-col gap-4")
+    )).class("max-w-3xl mx-auto")
+}
+
+fn faq_items() -> Vec<(&'static str, &'static str)> {
+    vec![
+        (
+            "What makes Shelv different from other note-taking apps?",
+            r#"Shelv combines the power of AI assistance with live JavaScript execution right in your notes. 
+            Unlike traditional note apps, you can run code, create custom commands, and build interactive content. 
+            It's designed as a hackable playground for ephemeral thoughts, perfect for quick calculations, 
+            data transformations, or prototyping ideas without leaving your note-taking environment."#
+        ),
+        (
+            "Is my data stored locally or in the cloud?",
+            r#"Shelv is completely local-first. All your notes, code, and configurations are stored locally on your device. 
+            There's no cloud synchronization or data collection. Your thoughts and ideas stay private and under your control. 
+            This also means Shelv works offline and loads instantly without any network dependencies."#
+        ),
+        (
+            "How does the JavaScript integration work?",
+            r#"You can create JavaScript code blocks within your notes that execute in real-time. 
+            These blocks have access to a secure sandbox environment where you can manipulate data, 
+            perform calculations, or create interactive widgets. The code runs locally using a built-in JavaScript engine, 
+            so there are no security concerns about remote code execution."#
+        ),
+        (
+            "Can I customize keyboard shortcuts and commands?",
+            r#"Absolutely! Shelv treats settings as just another note, so you can configure everything using KDL and JavaScript. 
+            Create custom keyboard shortcuts, extend the slash command menu, add new text transformations, 
+            or build completely custom workflows. The configuration system is designed to be both powerful and approachable."#
+        ),
+        (
+            "What platforms does Shelv support?",
+            r#"Currently Shelv is available for macOS through TestFlight beta. 
+            The app is built with Rust and uses native technologies for optimal performance and system integration. 
+            Support for additional platforms may be considered in the future based on community feedback and demand."#
+        )
+    ]
+}
+
+fn faq_item(question: &str, answer: &str) -> Element {
+    // TODO: add all borders to some color enum
+    let answer_text = answer.lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    div((
+        button(div((
+            span(question.to_string()).class(tw_join!("text-left flex-1", TextStyle::Paragraph, TextColor::Default)),
+            faq_chevron()
+        )).class("flex items-center justify-between w-full"))
+        .class("w-full text-left p-4 rounded-lg border border-nord3 hover:border-nord4 transition-colors duration-200")
+        .attr("onclick", "this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.faq-chevron').classList.toggle('rotate-180')"),
+        
+        div(p(answer_text).class(tw_join!(TextStyle::Footnote, TextColor::Subtle)))
+        .class("hidden p-4 text-nord4")
+    )).class("border-b border-nord2 last:border-b-0 pb-4 last:pb-0")
+}
+
+fn faq_chevron() -> impl Render {
+    danger(r#"<svg class="w-5 h-5 transition-transform duration-200 faq-chevron" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
     </svg>"#)
 }
 
