@@ -82,7 +82,7 @@ pub enum TextStyle {
     #[tw(default, class = "text-2xl mb-4 leading-8 font-semibold sm:text-3xl sm:leading-9")]
     SubHeader,
     
-    #[tw(class = "text-lg leading-7 sm:text-xl sm:leading-8")]
+    #[tw(class = "text-base sm:text-lg leading-7 sm:leading-8")]
     Paragraph,
     
     #[tw(class = "text-sm leading-6 sm:text-sm sm:leading-7")]
@@ -137,13 +137,24 @@ enum ButtonVariant {
     Secondary
 }
 
+#[derive(TwVariant)]
+enum ButtonHeight{
+    #[tw(default,class = r#" h-10"#)]
+    FixedH10,
+
+    #[tw(class = r#"py-3"#)]
+    ContentBased
+}
+
+
 #[derive(TwClass)]
 #[tw(class = r#"
     inline-flex items-center
     font-medium text-center no-underline align-middle whitespace-nowrap
-    rounded select-none border-1 h-10 px-3 transition-all duration-150"#)]
+    rounded select-none border-1 px-3 transition-all duration-150"#)]
 pub struct ButtonStyle {
-    variant: ButtonVariant
+    variant: ButtonVariant,
+    height: ButtonHeight
 }
 
 // Enum router definition
@@ -303,7 +314,7 @@ fn page_header() -> Element {
         div((
             {
                 let nav_text_color = TextColor::Subtle;
-                a("FAQ").href("#").class(&tw_join!("text-sm leading-6", nav_text_color))
+                a("FAQ").href("#faq").class(&tw_join!("text-sm leading-6", nav_text_color))
             },
             {
                 let nav_text_color = TextColor::Subtle;
@@ -497,6 +508,7 @@ fn mac_store_link() -> Element {
 
 fn secondary_button_link(href: &str, content: impl Render + 'static) -> Element {
     let button_style = ButtonStyle {
+        height: ButtonHeight::FixedH10,
         variant:ButtonVariant::Secondary
     };
     
@@ -522,8 +534,8 @@ fn faq_section() -> Element {
         space(SpacingSize::Medium),
         div(faq_items().into_iter().map(|(question, answer)| {
             faq_item(question, answer)
-        }).collect::<Vec<_>>()).class("flex flex-col gap-4")
-    )).class("max-w-3xl mx-auto")
+        }).collect::<Vec<_>>()).class("flex flex-col gap-6")
+    )).class("max-w-3xl mx-auto").id("faq")
 }
 
 fn faq_items() -> Vec<(&'static str, &'static str)> {
@@ -564,24 +576,28 @@ fn faq_items() -> Vec<(&'static str, &'static str)> {
 }
 
 fn faq_item(question: &str, answer: &str) -> Element {
-    // TODO: add all borders to some color enum
     let answer_text = answer.lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
 
+    let button_style = ButtonStyle {
+        height: ButtonHeight::ContentBased,
+        variant: ButtonVariant::Secondary
+    };
+
     div((
         button(div((
-            span(question.to_string()).class(tw_join!("text-left flex-1", TextStyle::Paragraph, TextColor::Default)),
+            span(question.to_string()).class(tw_join!("text-left flex-1", TextStyle::Paragraph)),
             faq_chevron()
         )).class("flex items-center justify-between w-full"))
-        .class("w-full text-left p-4 rounded-lg border border-nord3 hover:border-nord4 transition-colors duration-200")
+        .class(&tw_join!("w-full text-left", button_style.to_class()))
         .attr("onclick", "this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.faq-chevron').classList.toggle('rotate-180')"),
         
-        div(p(answer_text).class(tw_join!(TextStyle::Footnote, TextColor::Subtle)))
-        .class("hidden p-4 text-nord4")
-    )).class("border-b border-nord2 last:border-b-0 pb-4 last:pb-0")
+        div(p(answer_text).class(&tw_join!(TextStyle::Paragraph, TextColor::Subtle)))
+        .class("hidden p-3")
+    ))
 }
 
 fn faq_chevron() -> impl Render {
