@@ -132,9 +132,13 @@ pub struct DividerStyle {
 #[derive(TwVariant)]
 enum ButtonVariant {
     #[tw(default,class = r#"
-        border-nord4-darker hover:border-nord7 active:border-nord8
+        border-1 border-nord4-darker hover:border-nord7 active:border-nord8
         text-nord4 hover:text-nord7 active:text-nord8"#)]
-    Secondary
+    Secondary,
+    
+    #[tw(class = r#"
+        text-nord4 hover:text-nord7 active:text-nord8"#)]
+    SecondaryTextOnly
 }
 
 #[derive(TwVariant)]
@@ -151,7 +155,7 @@ enum ButtonHeight{
 #[tw(class = r#"
     inline-flex items-center
     font-medium text-center no-underline align-middle whitespace-nowrap
-    rounded-lg select-none border-1 px-3 transition-all duration-150"#)]
+    rounded-lg select-none px-3 transition-all duration-150"#)]
 pub struct ButtonStyle {
     variant: ButtonVariant,
     height: ButtonHeight
@@ -233,14 +237,32 @@ fn home_page() -> Element {
             space(SpacingSize::Large)
         ))),
         
+        // Wave separator
+        wave(UP_WAVE_PATH.to_string(), ThemeColor::Dark, SpacingSize::Medium),
+        
+        // Roadmap section
+        theme(ThemeColor::Light, content((
+            space(SpacingSize::Large),
+            roadmap_section(),
+            space(SpacingSize::Large)
+        ))),
+        
+        // Wave separator
+        wave(DOWN_WAVE_PATH.to_string(), ThemeColor::Light, SpacingSize::Medium),
+        
         // Footer section
         theme(ThemeColor::Dark, content(div((
+                    space(SpacingSize::Small),
+                    action_buttons_panel(),
+                    space(SpacingSize::Small),
+                    space(SpacingSize::Small),
                     {
                         let divider_style = DividerStyle {
                             color: BorderStyle::LineBreak,
                         };
-                        div("").class(&tw_join!("mt-8 mb-6", divider_style.to_class()))
+                        div("").class(divider_style.to_class())
                     },
+                    space(SpacingSize::Small),
                     div((
                         p((
                             span("Done with "),
@@ -604,6 +626,115 @@ fn faq_chevron() -> impl Render {
     danger(r#"<svg class="w-5 h-5 transition-transform duration-200 faq-chevron" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
     </svg>"#)
+}
+
+fn roadmap_section() -> Element {
+    div((
+        block_header("Roadmap"),
+        space(SpacingSize::Medium),
+        ol(roadmap_items().into_iter().map(|(date, completed, name, description)| {
+            roadmap_item(date, completed, name, description)
+        }).collect::<Vec<_>>()).class("relative border-s border-nord3")
+    )).class("max-w-4xl mx-auto")
+}
+
+fn roadmap_items() -> Vec<(Option<&'static str>, bool, &'static str, Vec<&'static str>)> {
+    vec![
+        (Some("Jan 2025"), true, "AI-powered text assistance", vec![
+            "Context-aware text suggestions and completions",
+            "Smart formatting and structure recommendations", 
+            "Intelligent content generation capabilities"
+        ]),
+        (Some("Dec 2024"), true, "Live JavaScript code blocks", vec![
+            "Real-time code execution within notes",
+            "Secure sandboxed JavaScript runtime",
+            "Interactive data visualization and calculations"
+        ]),
+        (Some("Nov 2024"), true, "Initial TestFlight beta release", vec![
+            "Core note-taking functionality with Markdown support",
+            "Global keyboard shortcuts for quick access",
+            "Local-first data storage and file watching"
+        ]),
+        (None, false, "Custom command system", vec![
+            "User-defined keyboard shortcuts and macros",
+            "Extensible slash command menu",
+            "JavaScript-based automation workflows"
+        ]),
+        (None, false, "Plugin architecture", vec![
+            "Third-party extension support",
+            "Community plugin marketplace",
+            "APIs for deep customization and integration"
+        ]),
+        (None, false, "Multi-window support", vec![
+            "Multiple note windows for better multitasking",
+            "Cross-window drag and drop functionality",
+            "Synchronized state across all instances"
+        ]),
+        (None, false, "Collaborative features", vec![
+            "Real-time collaborative editing",
+            "Share notes with team members",
+            "Conflict resolution and version history"
+        ]),
+    ]
+}
+
+fn roadmap_item(date: Option<&str>, completed: bool, name: &str, description: Vec<&str>) -> Element {
+    li((
+        // Timeline circle with icon
+        span(roadmap_icon(completed))
+            .class(&format!("absolute flex items-center justify-center w-6 h-6 {} rounded-full -start-3 ring-8 ring-nord0-dark", 
+                if completed { "bg-nord14" } else { "bg-nord3" })),
+        
+        // Content
+        div((
+            // Collapsible header with title, chevron, and date
+            button(div((
+                // Title with chevron right next to it
+                h3((
+                    span(name.to_string()).class(&tw_join!("font-semibold", TextStyle::Paragraph.as_class(), if completed { TextColor::Default.as_class() } else { TextColor::Subtle.as_class() })),
+                    roadmap_chevron()
+                )).class("flex items-center gap-2 mb-1"),
+                
+                // Optional date
+                if let Some(date_str) = date {
+                    div(date_str.to_string())
+                        .class(&tw_join!("block text-sm font-normal leading-none", TextColor::Subtle.as_class()))
+                } else {
+                    div("")
+                }
+            )).class("w-full"))
+            .class("w-full text-left mb-3")
+            .attr("onclick", "this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.roadmap-chevron').classList.toggle('rotate-180')"),
+            
+            // Collapsible description
+            div(ul(description.into_iter().map(|item| {
+                li(item.to_string()).class(&tw_join!("mb-1", TextStyle::Footnote.as_class(), TextColor::Subtle.as_class()))
+            }).collect::<Vec<_>>()).class("list-disc list-inside space-y-1")).class("hidden")
+        )).class("-translate-y-2")
+    )).class("mb-6 ms-6")
+}
+
+fn roadmap_chevron() -> Element {
+    let button_style = ButtonStyle {
+        height: ButtonHeight::FixedH10,
+        variant: ButtonVariant::SecondaryTextOnly
+    };
+    
+    div(danger(r#"<svg class="w-5 h-5 transition-transform duration-200 roadmap-chevron" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+    </svg>"#)).class(&button_style.to_class())
+}
+
+fn roadmap_icon(completed: bool) -> impl Render {
+    if completed {
+        danger(r#"<svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
+        </svg>"#)
+    } else {
+        danger(r#"<svg class="w-3 h-3 text-nord4" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
+        </svg>"#)
+    }
 }
 
 // HTML rendering helper
