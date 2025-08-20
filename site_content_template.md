@@ -19,6 +19,8 @@ Prompt, code block, Markdown, [with] TBD the exact content
 ## Hack It, Make It Yours
 Settings in Shelv is just a note, where you can create custom commands with [KDL](https://kdl.dev/) and JavaScript, assign and tweak keyboard shortcuts, all with live reload.
 
+The origin story: at the time I used [Bear app](https://bear.app/), which has 4 versions of date, but I wanted it in YYYY/mmm/dd format, and I keep thinking: "if only I can just define what I want". Well, with Shelv you can.
+
 #### screenshot/video
 Prompt with Add a shortcut for "day" command and using it, first with slash command then with shortcut
 **Type**: Animated GIF

@@ -704,6 +704,9 @@
   .text-nord0-darker {
     color: var(--color-nord0-darker);
   }
+  .text-nord3 {
+    color: var(--color-nord3);
+  }
   .text-nord4 {
     color: var(--color-nord4);
   }
