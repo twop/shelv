@@ -209,6 +209,9 @@
   }
 }
 @layer utilities {
+  .visible {
+    visibility: visible;
+  }
   .absolute {
     position: absolute;
   }
@@ -465,6 +468,9 @@
       margin-block-end: calc(calc(var(--spacing) * 6) * calc(1 - var(--tw-space-y-reverse)));
     }
   }
+  .gap-x-8 {
+    column-gap: calc(var(--spacing) * 8);
+  }
   .gap-x-12 {
     column-gap: calc(var(--spacing) * 12);
   }
@@ -569,6 +575,9 @@
   }
   .fill-current {
     fill: currentcolor;
+  }
+  .p-2 {
+    padding: calc(var(--spacing) * 2);
   }
   .p-3 {
     padding: calc(var(--spacing) * 3);
@@ -830,6 +839,13 @@
       }
     }
   }
+  .hover\:text-nord8 {
+    &:hover {
+      @media (hover: hover) {
+        color: var(--color-nord8);
+      }
+    }
+  }
   .hover\:text-nord10 {
     &:hover {
       @media (hover: hover) {
@@ -967,6 +983,11 @@
   .md\:mt-5 {
     @media (width >= 48rem) {
       margin-top: calc(var(--spacing) * 5);
+    }
+  }
+  .md\:flex {
+    @media (width >= 48rem) {
+      display: flex;
     }
   }
   .md\:h-18 {

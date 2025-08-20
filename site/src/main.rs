@@ -78,15 +78,21 @@ pub struct StyledText {
 pub enum TextStyle {
     #[tw(class = "text-4xl leading-tight font-semibold sm:text-5xl sm:leading-none")]
     MainHeader,
-    
-    #[tw(default, class = "text-2xl mb-4 leading-8 font-semibold sm:text-3xl sm:leading-9")]
+
+    #[tw(
+        default,
+        class = "text-2xl mb-4 leading-8 font-semibold sm:text-3xl sm:leading-9"
+    )]
     SubHeader,
-    
+
     #[tw(class = "text-base sm:text-lg leading-7 sm:leading-8")]
     Paragraph,
-    
+
     #[tw(class = "text-sm leading-6 sm:text-sm sm:leading-7")]
     Footnote,
+
+    #[tw(class = "text-sm sm:text-sm")]
+    NavMenu,
 }
 
 #[derive(TwClass)]
@@ -107,7 +113,7 @@ pub struct LinkStyle {
 pub enum HoverState {
     #[tw(default, class = "hover:underline")]
     Underline,
-    #[tw(class = "hover:text-nord10")]
+    #[tw(class = "hover:text-nord7")]
     ColorChange,
 }
 
@@ -115,10 +121,10 @@ pub enum HoverState {
 pub enum SpacingSize {
     #[tw(class = "w-full h-4 sm:h-8")]
     Small,
-    
+
     #[tw(default, class = "w-full h-8 sm:h-16")]
     Medium,
-   
+
     #[tw(class = "w-full h-16 sm:h-32")]
     Large,
 }
@@ -131,25 +137,27 @@ pub struct DividerStyle {
 
 #[derive(TwVariant)]
 enum ButtonVariant {
-    #[tw(default,class = r#"
+    #[tw(
+        default,
+        class = r#"
         border-1 border-nord4-darker hover:border-nord7 active:border-nord8
-        text-nord4 hover:text-nord7 active:text-nord8"#)]
+        text-nord4 hover:text-nord7 active:text-nord8"#
+    )]
     Secondary,
-    
+
     #[tw(class = r#"
         text-nord4 hover:text-nord7 active:text-nord8"#)]
-    SecondaryTextOnly
+    SecondaryTextOnly,
 }
 
 #[derive(TwVariant)]
-enum ButtonHeight{
-    #[tw(default,class = r#" h-10"#)]
+enum ButtonHeight {
+    #[tw(default, class = r#" h-10"#)]
     FixedH10,
 
     #[tw(class = r#"py-3"#)]
-    ContentBased
+    ContentBased,
 }
-
 
 #[derive(TwClass)]
 #[tw(class = r#"
@@ -158,7 +166,7 @@ enum ButtonHeight{
     rounded-lg select-none px-3 transition-all duration-150"#)]
 pub struct ButtonStyle {
     variant: ButtonVariant,
-    height: ButtonHeight
+    height: ButtonHeight,
 }
 
 // Enum router definition
@@ -186,13 +194,10 @@ fn home_page() -> Element {
             img_component("screenshot-ai-prompt", "Shelv app showing AI-powered quick prompt feature in action", IMG_W, IMG_H, true),
                     MainSide::Left
                 )
-            ))),
-        
-        space(SpacingSize::Small),
+))),
+       space(SpacingSize::Small),
 
-        // Wave separator
         wave(UP_WAVE_PATH.to_string(), ThemeColor::Dark, SpacingSize::Large),
-        
 
         // Second section with markdown features
         theme(ThemeColor::Light, content((
@@ -206,7 +211,7 @@ fn home_page() -> Element {
                     // TODO: Record this demo GIF
                     img_component("screenshot-custom-commands", "Creating and using custom commands via shortcuts and slash menu", IMG_W, IMG_H, false),
                     div((
-                        block_header("Hack It, Make It Yours"),
+                        block_header("Hack It, Make It Yours").id("features"),
                         p((
                             "Settings in Shelv is just a note, where you can create custom commands with ",
                             link_to("https://kdl.dev/", "KDL"),
@@ -233,30 +238,27 @@ fn home_page() -> Element {
                 ),
                 space(SpacingSize::Large)
             ))),
-        
-        // Wave separator
+
         wave(DOWN_WAVE_PATH.to_string(), ThemeColor::Light, SpacingSize::Medium),
-        
+
         // FAQ section
         theme(ThemeColor::Dark, content((
             space(SpacingSize::Large),
             faq_section(),
             space(SpacingSize::Large)
         ))),
-        
-        // Wave separator
+
         wave(UP_WAVE_PATH.to_string(), ThemeColor::Dark, SpacingSize::Medium),
-        
+
         // Roadmap section
         theme(ThemeColor::Light, content((
             space(SpacingSize::Large),
             roadmap_section(),
             space(SpacingSize::Large)
         ))),
-        
-        // Wave separator
+
         wave(DOWN_WAVE_PATH.to_string(), ThemeColor::Light, SpacingSize::Medium),
-        
+
         // Footer section
         theme(ThemeColor::Dark, content(div((
                     space(SpacingSize::Small),
@@ -302,7 +304,7 @@ fn theme(color: ThemeColor, children: impl Render + 'static) -> Element {
             text: TextColor::Default,
         },
     };
-    
+
     div(children).class(&tw_join!("relative text-base", theme_style.to_class()))
 }
 
@@ -316,10 +318,10 @@ fn block_layout(left: Element, right: Element, main: MainSide) -> Element {
         MainSide::Right => "flex-col-reverse",
     };
 
-    div((
-        div(left).class("md:flex-1"),
-        div(right).class("md:flex-1")
-    )).class(&tw_join!("relative flex md:flex-row gap-8 md:gap-10 items-center", direction_class))
+    div((div(left).class("md:flex-1"), div(right).class("md:flex-1"))).class(&tw_join!(
+        "relative flex md:flex-row gap-8 md:gap-10 items-center",
+        direction_class
+    ))
 }
 
 fn space(size: SpacingSize) -> Element {
@@ -328,37 +330,60 @@ fn space(size: SpacingSize) -> Element {
 
 fn img_component(src: &str, alt: &str, width: usize, height: usize, eager: bool) -> Element {
     div(div(img()
-                .class("rounded-lg w-full h-full")
-                .attr("width", &width.to_string())
-                .attr("height", &height.to_string())
-                .attr("loading", if eager { "eager" } else { "lazy" })
-                .attr("alt", alt)
-                .attr("src", &format!("/assets/images/{}.png", src)))
-            .class("rounded-lg"/* shadow-(--shadow-underglow) */)).class("py-6 lg:py-0 w-full h-full flex justify-center")
+        .class("rounded-lg w-full h-full")
+        .attr("width", &width.to_string())
+        .attr("height", &height.to_string())
+        .attr("loading", if eager { "eager" } else { "lazy" })
+        .attr("alt", alt)
+        .attr("src", &format!("/assets/images/{}.png", src)))
+    .class("rounded-lg" /* shadow-(--shadow-underglow) */))
+    .class("py-6 lg:py-0 w-full h-full flex justify-center")
 }
 
 fn page_header() -> Element {
     div((
         div(shelv_logo()).class("inline-flex items-center space-x-2 leading-6 font-medium transition ease-in-out duration-150"),
-        div((
-            {
-                let nav_text_color = TextColor::Subtle;
-                a("FAQ").href("#faq").class(&tw_join!("text-sm leading-6", nav_text_color))
-            },
-            {
-                let nav_text_color = TextColor::Subtle;
-                a("Discord").href("#").class(&tw_join!("text-sm leading-6", nav_text_color))
-            },
-            {
-                let nav_text_color = TextColor::Subtle;
-                a("License").href("#").class(&tw_join!("text-sm leading-6", nav_text_color))
-            }
-        )).class("flex gap-x-12")
+
+        // Desktop navigation - visible on md screens and up
+
+// (
+//             {
+//                 let nav_text_color = TextColor::Subtle;
+//                 a("Features").href("#features").class(&tw_join!("text-sm leading-6", nav_text_color))
+//             },
+//             {
+//                 let nav_text_color = TextColor::Subtle;
+//                 a("FAQ").href("#faq").class(&tw_join!("text-sm leading-6", nav_text_color))
+//             },
+//             {
+//                 let nav_text_color = TextColor::Subtle;
+//                 a("Roadmap").href("#roadmap").class(&tw_join!("text-sm leading-6", nav_text_color))
+//             },
+//             {
+//                 let nav_text_color = TextColor::Subtle;
+//                 a("License").href("#").class(&tw_join!("text-sm leading-6", nav_text_color))
+//             }
+//         )
+       div(Vec::from([
+            ("Features","#features"),
+            ("FAQ", "#faq"),
+            ("Roadmap" ,"#roadmap")
+       ].map(|(name, link_to)| {
+               a(name).href(link_to).class(&tw_join!(TextStyle::NavMenu, LinkStyle{ color: TextColor::Subtle, hover: HoverState::ColorChange }.to_class()))
+           } ))).class("hidden md:flex gap-x-8"),
+
+        // Discord icon - always visible
+        div(
+            a(discord_icon())
+                .href("#")
+                .class(&tw_join!(ButtonVariant::SecondaryTextOnly, TextColor::Subtle ))
+        )
     )).class("flex justify-between items-center py-6")
 }
 
 fn shelv_logo() -> impl Render {
-    danger(r#"<svg 
+    danger(
+        r#"<svg 
             fill="none" 
             viewBox="0 0 181 51" 
             width="110" 
@@ -440,14 +465,18 @@ fn shelv_logo() -> impl Render {
                     result="shape"/>
             </filter>
         </defs>
-    </svg>"#)
+    </svg>"#,
+    )
 }
 
 fn heart() -> impl Render {
     let heart_color = TextColor::Red;
-    danger(format!(r#"<svg class="h-4 w-4 inline {color}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    danger(format!(
+        r#"<svg class="h-4 w-4 inline {color}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
-        </svg>"#, color=heart_color.as_class()))
+        </svg>"#,
+        color = heart_color.as_class()
+    ))
 }
 
 fn wave(path: String, top_color: ThemeColor, size: SpacingSize) -> Element {
@@ -455,7 +484,7 @@ fn wave(path: String, top_color: ThemeColor, size: SpacingSize) -> Element {
         ThemeColor::Dark => BackgroundColor::Dark,
         ThemeColor::Light => BackgroundColor::Light,
     };
-    
+
     let fill_color = match top_color {
         ThemeColor::Dark => "var(--color-nord0-dark)",
         ThemeColor::Light => "var(--color-nord0-darker)",
@@ -499,76 +528,89 @@ fn block_text(text: &str) -> Element {
 
 fn slogan_and_mac_store_link() -> Element {
     let child = div((
-                {
-                    let h1_style = StyledText {
-                        color: TextColor::MainHeader,
-                        style: TextStyle::MainHeader,
-                    };
-                    h1("Hackable, Local, AI-powered notes")
-                        .class(&h1_style.to_class())
-                },
-                {
-                    let desc_style = StyledText {
-                        color: TextColor::Subtle,
-                        style: TextStyle::Paragraph,
-                    };
-                    p("Shelv is a scriptable, plain text notes app with integrated AI features for macOS, written in Rust (by the way (tm)).")
+        {
+            let h1_style = StyledText {
+                color: TextColor::MainHeader,
+                style: TextStyle::MainHeader,
+            };
+            h1("Hackable, Local, AI-powered notes").class(&h1_style.to_class())
+        },
+        {
+            let desc_style = StyledText {
+                color: TextColor::Subtle,
+                style: TextStyle::Paragraph,
+            };
+            p("Shelv is a scriptable, plain text notes app with integrated AI features for macOS, written in Rust (by the way (tm)).")
                         .class(&tw_join!("mt-4 max-w-md mx-auto md:mt-5 md:max-w-3xl", desc_style.to_class()))
-                }
-            ));
+        },
+    ));
     div((
         // Slogan section
         div(child).class("text-center lg:text-left"),
-        
         // Action buttons panel section
-        div(action_buttons_panel()).class("mt-8 sm:max-w-lg sm:mx-auto text-center sm:text-center lg:text-left lg:mx-0")
+        div(action_buttons_panel())
+            .class("mt-8 sm:max-w-lg sm:mx-auto text-center sm:text-center lg:text-left lg:mx-0"),
     ))
 }
 
 fn action_buttons_panel() -> Element {
-    div((
-        mac_store_link(),
-        github_link()
-    )).class("flex flex-col sm:flex-row gap-4 items-center justify-center lg:justify-start")
+    div((mac_store_link(), github_link()))
+        .class("flex flex-col sm:flex-row gap-4 items-center justify-center lg:justify-start")
 }
 
 fn mac_store_link() -> Element {
-    a(img().attr("src", "/assets/images/mac-app-store-badge.svg")
-            .attr("alt", "Coming Soon on Mac")
-            .class("home-app-store-buttons-mac h-10")
-            .attr("height", "48")).href("https://testflight.apple.com/join/38OBZSRD")
+    a(img()
+        .attr("src", "/assets/images/mac-app-store-badge.svg")
+        .attr("alt", "Coming Soon on Mac")
+        .class("home-app-store-buttons-mac h-10")
+        .attr("height", "48"))
+    .href("https://testflight.apple.com/join/38OBZSRD")
 }
 
 fn secondary_button_link(href: &str, content: impl Render + 'static) -> Element {
     let button_style = ButtonStyle {
         height: ButtonHeight::FixedH10,
-        variant:ButtonVariant::Secondary
+        variant: ButtonVariant::Secondary,
     };
-    
+
     a(content).class(&button_style.to_class()).href(href)
 }
 
 fn github_link() -> Element {
-    secondary_button_link("https://github.com/briskmode/shelv", (
-        github_icon(),
-        span("Give us a star").class("ml-2")
-    ))
+    secondary_button_link(
+        "https://github.com/briskmode/shelv",
+        (github_icon(), span("Give us a star").class("ml-2")),
+    )
 }
 
 fn github_icon() -> impl Render {
-    danger(r#"<svg viewBox="0 0 20 20" class="size-5 fill-current">
+    danger(
+        r#"<svg viewBox="0 0 20 20" class="size-5 fill-current">
         <path d="M10 0C4.475 0 0 4.475 0 10a9.994 9.994 0 006.838 9.488c.5.087.687-.213.687-.476 0-.237-.013-1.024-.013-1.862-2.512.463-3.162-.612-3.362-1.175-.113-.287-.6-1.175-1.025-1.412-.35-.188-.85-.65-.013-.663.788-.013 1.35.725 1.538 1.025.9 1.512 2.337 1.087 2.912.825.088-.65.35-1.088.638-1.338-2.225-.25-4.55-1.112-4.55-4.937 0-1.088.387-1.987 1.025-2.688-.1-.25-.45-1.274.1-2.65 0 0 .837-.262 2.75 1.026a9.28 9.28 0 012.5-.338c.85 0 1.7.112 2.5.337 1.912-1.3 2.75-1.024 2.75-1.024.55 1.375.2 2.4.1 2.65.637.7 1.025 1.587 1.025 2.687 0 3.838-2.337 4.688-4.562 4.938.362.312.675.912.675 1.85 0 1.337-.013 2.412-.013 2.75 0 .262.188.574.688.474A10.016 10.016 0 0020 10c0-5.525-4.475-10-10-10z"></path>
-    </svg>"#)
+    </svg>"#,
+    )
+}
+
+fn discord_icon() -> impl Render {
+    danger(
+        r#"<svg viewBox="0 0 24 24" class="size-5 fill-current">
+        <path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419-.0002 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9554 2.4189-2.1568 2.4189Z"/>
+    </svg>"#,
+    )
 }
 
 fn faq_section() -> Element {
     div((
         block_header("Frequently Asked Questions"),
         space(SpacingSize::Medium),
-        div(faq_items().into_iter().map(|(question, answer)| {
-            faq_item(question, answer)
-        }).collect::<Vec<_>>()).class("flex flex-col gap-6")
-    )).class("max-w-3xl mx-auto").id("faq")
+        div(faq_items()
+            .into_iter()
+            .map(|(question, answer)| faq_item(question, answer))
+            .collect::<Vec<_>>())
+        .class("flex flex-col gap-6"),
+    ))
+    .class("max-w-3xl mx-auto")
+    .id("faq")
 }
 
 fn faq_items() -> Vec<(&'static str, Element)> {
@@ -637,7 +679,7 @@ fn faq_item(question: &str, answer: Element) -> Element {
 
     let button_style = ButtonStyle {
         height: ButtonHeight::ContentBased,
-        variant: ButtonVariant::Secondary
+        variant: ButtonVariant::Secondary,
     };
 
     div((
@@ -647,75 +689,123 @@ fn faq_item(question: &str, answer: Element) -> Element {
         )).class("flex items-center justify-between w-full"))
         .class(&tw_join!("w-full text-left", button_style.to_class()))
         .attr("onclick", "this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.faq-chevron').classList.toggle('rotate-180')"),
-        
-        div(answer)
+
+       div(answer)
         .class("hidden p-3")
     ))
 }
 
 fn faq_chevron() -> impl Render {
-    danger(r#"<svg class="w-5 h-5 transition-transform duration-200 faq-chevron" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    danger(
+        r#"<svg class="w-5 h-5 transition-transform duration-200 faq-chevron" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-    </svg>"#)
+    </svg>"#,
+    )
 }
 
 fn roadmap_section() -> Element {
     div((
-        block_header("Roadmap"),
+        block_header("Roadmap").id("roadmap"),
         space(SpacingSize::Medium),
-        ol(roadmap_items().into_iter().map(|(date, completed, name, description)| {
-            roadmap_item(date, completed, name, description)
-        }).collect::<Vec<_>>()).class("relative border-s border-nord3")
-    )).class("max-w-4xl mx-auto")
+        ol(roadmap_items()
+            .into_iter()
+            .map(|(date, completed, name, description)| {
+                roadmap_item(date, completed, name, description)
+            })
+            .collect::<Vec<_>>())
+        .class("relative border-s border-nord3"),
+    ))
+    .class("max-w-4xl mx-auto")
 }
 
 fn roadmap_items() -> Vec<(Option<&'static str>, bool, &'static str, Vec<&'static str>)> {
     vec![
-        (Some("Aug 2025"), true, "Initial launch on macOS", vec![
-            "Barebones editing with 4 notes",
-            "Optimized for quick capture",
-            "No API exposed to JS scripts"
-        ]),
-        (None, false, "Multi-file + workspace support", vec![
-            "Workspace folder with notes inside",
-            "Import from Obsidian",
-            "File tree + workspace viewer"
-        ]),
-        (None, false, "Agentic mode", vec![
-            "Tools/MCP that allow to search/move/create/edit notes",
-            "UI for having agentic workflows, probably just a chat that is going to be just another file",
-            "Files that define custom workflows, similar to Claude Code"
-        ]),
-        (None, false, "Core editing features", vec![
-            "Semantic selection: expand and shrink cursor selection with markdown AST nodes",
-            "Jump to an element, jump to any word on the screen with a couple of keystrokes (similar to Vimium and Helix)",
-            "Search, Redo etc"
-        ]),
+        (
+            Some("Aug 2025"),
+            true,
+            "Initial launch on macOS",
+            vec![
+                "Barebones editing with 4 notes",
+                "Optimized for quick capture",
+                "No API exposed to JS scripts",
+            ],
+        ),
+        (
+            None,
+            false,
+            "Multi-file + workspace support",
+            vec![
+                "Workspace folder with notes inside",
+                "Import from Obsidian",
+                "File tree + workspace viewer",
+            ],
+        ),
+        (
+            None,
+            false,
+            "Agentic mode",
+            vec![
+                "Tools/MCP that allow to search/move/create/edit notes",
+                "UI for having agentic workflows, probably just a chat that is going to be just another file",
+                "Files that define custom workflows, similar to Claude Code",
+            ],
+        ),
+        (
+            None,
+            false,
+            "Core editing features",
+            vec![
+                "Semantic selection: expand and shrink cursor selection with markdown AST nodes",
+                "Jump to an element, jump to any word on the screen with a couple of keystrokes (similar to Vimium and Helix)",
+                "Search, Redo etc",
+            ],
+        ),
         (None, false, "Support for pasting/rendering images", vec![]),
-        (None, false, "Rich API exposed to JS + better scripting capabilities", vec![
-            "Sharing code among notes"
-        ]),
-        (None, false, "Sync", vec![
-            "I plan to use Automerge for personal syncing, which can be also used for collaboration",
-            "Dump to git, e.g. backup all the notes to git, potentially with AI-generated change summary"
-        ]),
-        (None, false, "Web version", vec![
-            "Mobile (including web) version is TBD"
-        ]),
-        (None, false, "Collaboration", vec![
-            "Share a note via link (co-editing on the web)",
-            "Share workspace, that is, co-ownership of a collection of folder+notes"
-        ])
+        (
+            None,
+            false,
+            "Rich API exposed to JS + better scripting capabilities",
+            vec!["Sharing code among notes"],
+        ),
+        (
+            None,
+            false,
+            "Sync",
+            vec![
+                "I plan to use Automerge for personal syncing, which can be also used for collaboration",
+                "Dump to git, e.g. backup all the notes to git, potentially with AI-generated change summary",
+            ],
+        ),
+        (
+            None,
+            false,
+            "Web version",
+            vec!["Mobile (including web) version is TBD"],
+        ),
+        (
+            None,
+            false,
+            "Collaboration",
+            vec![
+                "Share a note via link (co-editing on the web)",
+                "Share workspace, that is, co-ownership of a collection of folder+notes",
+            ],
+        ),
     ]
 }
 
-fn roadmap_item(date: Option<&str>, completed: bool, name: &str, description: Vec<&str>) -> Element {
+fn roadmap_item(
+    date: Option<&str>,
+    completed: bool,
+    name: &str,
+    description: Vec<&str>,
+) -> Element {
     li((
         // Timeline circle with icon
         span(roadmap_icon(completed))
             .class(&format!("absolute flex items-center justify-center w-6 h-6 {} rounded-full -start-3 ring-8 ring-nord0-dark", 
                 if completed { "bg-nord14" } else { "bg-nord3" })),
-        
+
         // Content
         div((
             // Collapsible header with title, chevron, and date
@@ -725,9 +815,9 @@ fn roadmap_item(date: Option<&str>, completed: bool, name: &str, description: Ve
                     span(name.to_string()).class(&tw_join!("font-semibold", TextStyle::Paragraph.as_class(), if completed { TextColor::Default.as_class() } else { TextColor::Subtle.as_class() })),
                     roadmap_chevron()
                 )).class("flex items-center gap-2 mb-1"),
-                
+
                 // Optional date
-                if let Some(date_str) = date {
+               if let Some(date_str) = date {
                     div(date_str.to_string())
                         .class(&tw_join!("block text-sm font-normal leading-none", TextColor::Subtle.as_class()))
                 } else {
@@ -736,7 +826,7 @@ fn roadmap_item(date: Option<&str>, completed: bool, name: &str, description: Ve
             )).class("w-full"))
             .class("w-full text-left mb-3")
             .attr("onclick", "this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.roadmap-chevron').classList.toggle('rotate-180')"),
-            
+
             // Collapsible description
             div(ul(description.into_iter().map(|item| {
                 li(item.to_string()).class(&tw_join!("mb-1", TextStyle::Footnote.as_class(), TextColor::Subtle.as_class()))
@@ -748,9 +838,9 @@ fn roadmap_item(date: Option<&str>, completed: bool, name: &str, description: Ve
 fn roadmap_chevron() -> Element {
     let button_style = ButtonStyle {
         height: ButtonHeight::FixedH10,
-        variant: ButtonVariant::SecondaryTextOnly
+        variant: ButtonVariant::SecondaryTextOnly,
     };
-    
+
     div(danger(r#"<svg class="w-5 h-5 transition-transform duration-200 roadmap-chevron" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
     </svg>"#)).class(&button_style.to_class())
@@ -758,32 +848,60 @@ fn roadmap_chevron() -> Element {
 
 fn roadmap_icon(completed: bool) -> impl Render {
     if completed {
-        danger(r#"<svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+        danger(
+            r#"<svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
             <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
-        </svg>"#)
+        </svg>"#,
+        )
     } else {
-        danger(r#"<svg class="w-3 h-3 text-nord4" fill="currentColor" viewBox="0 0 20 20">
+        danger(
+            r#"<svg class="w-3 h-3 text-nord4" fill="currentColor" viewBox="0 0 20 20">
             <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
-        </svg>"#)
+        </svg>"#,
+        )
     }
 }
 
 fn features_bullet_list() -> Element {
     let features = vec![
-        ("Markdown Support", "Full CommonMark with extensions, including TODOs"),
-        ("Code Syntax Highlighting", "A lot of languages are supported"),
-        ("Live JavaScript Blocks", "Execute JS code directly in notes"),
+        (
+            "Markdown Support",
+            "Full CommonMark with extensions, including TODOs",
+        ),
+        (
+            "Code Syntax Highlighting",
+            "A lot of languages are supported",
+        ),
+        (
+            "Live JavaScript Blocks",
+            "Execute JS code directly in notes",
+        ),
         ("Slash Menu", "Quick access to all commands and features"),
-        ("Keyboard optimized", "Everything is available via shortcuts"),
+        (
+            "Keyboard optimized",
+            "Everything is available via shortcuts",
+        ),
     ];
 
-    ul(features.into_iter().map(|(title, description)| {
-        li((
-            span(title.to_string()).class(&tw_join!("font-bold", TextColor::Default, TextStyle::Footnote)),
-            br(),
-            span(description.to_string()).class(&tw_join!(TextColor::Subtle, TextStyle::Footnote, "pl-4"))
-        ))
-    }).collect::<Vec<_>>()).class("list-disc flex flex-col gap-4 list-inside pl-2")
+    ul(features
+        .into_iter()
+        .map(|(title, description)| {
+            li((
+                span(title.to_string()).class(&tw_join!(
+                    "font-bold",
+                    TextColor::Default,
+                    TextStyle::Footnote
+                )),
+                br(),
+                span(description.to_string()).class(&tw_join!(
+                    TextColor::Subtle,
+                    TextStyle::Footnote,
+                    "pl-4"
+                )),
+            ))
+        })
+        .collect::<Vec<_>>())
+    .class("list-disc flex flex-col gap-4 list-inside pl-2")
 }
 
 // HTML rendering helper
@@ -794,9 +912,13 @@ fn render_to_string(element: Element) -> String {
             head((
                 title("Shelv - Hackable Playground for Ephemeral Thoughts"),
                 meta().charset("utf-8"),
-                meta().name("viewport").content("width=device-width, initial-scale=1"),
+                meta()
+                    .name("viewport")
+                    .content("width=device-width, initial-scale=1"),
                 link("").rel("preconnect").href("https://rsms.me/"),
-                link("").rel("stylesheet").href("https://rsms.me/inter/inter.css"),
+                link("")
+                    .rel("stylesheet")
+                    .href("https://rsms.me/inter/inter.css"),
                 link("").rel("stylesheet").href("/assets/app.css"),
                 link("").rel("stylesheet").href("/assets/main.css"),
             )),
@@ -809,14 +931,14 @@ fn render_to_string(element: Element) -> String {
 async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], 4000));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    
+
     println!("Server running on http://127.0.0.1:4000");
-    
+
     // Create the main router with enum_router
     let app_router = Route::router();
-    
+
     // Add static file serving for assets
     let router = app_router.nest_service("/assets", ServeDir::new("assets"));
-    
+
     axum::serve(listener, router).await.unwrap();
 }
