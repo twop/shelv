@@ -182,7 +182,8 @@ fn home_page() -> Element {
                 space(SpacingSize::Small),
                 block_layout(
                     slogan_and_mac_store_link(),
-                    img_component("screenshot-ai-prompt", "Shelv app showing AI-powered quick prompt feature in action", IMG_W, IMG_H, true),
+                    // Screenshot: Prompt, code block, Markdown, TBD the exact content
+            img_component("screenshot-ai-prompt", "Shelv app showing AI-powered quick prompt feature in action", IMG_W, IMG_H, true),
                     MainSide::Left
                 )
             ))),
@@ -197,30 +198,36 @@ fn home_page() -> Element {
         theme(ThemeColor::Light, content((
                 space(SpacingSize::Small),
                 block_layout(
+                    // Animated GIF: Demo showing:
+                    // 1. Quick prompt to create a "day" insert feature
+                    // 2. Triggering the new feature via keyboard shortcut  
+                    // 3. Using the same feature via slash menu
+                    // Alt Text: "Creating and using a custom 'day' command via shortcuts and slash menu"
+                    // TODO: Record this demo GIF
                     img_component("screenshot-custom-commands", "Creating and using custom commands via shortcuts and slash menu", IMG_W, IMG_H, false),
                     div((
-                        block_header("Make it yours with custom commands"),
-                        block_text("Settings is just another note, so just add kdl + js codeblocks to configure shelv. Create custom keyboard shortcuts, extend the slash menu, and build scriptable automation with live JavaScript blocks.")
+                        block_header("Hack It, Make It Yours"),
+                        p((
+                            "Settings in Shelv is just a note, where you can create custom commands with ",
+                            link_to("https://kdl.dev/", "KDL"),
+                            " and JavaScript, assign and tweak keyboard shortcuts, all with live reload."
+                        )).class(&tw_join!(TextColor::Subtle, TextStyle::Footnote))
                     )),
                     MainSide::Right
                 ),
                 space(SpacingSize::Large),
                 block_layout(
                     div((
-                        block_header("All the markdown essentials, and more"),
-                        block_text("Start with everything you expect from modern notes - beautiful Markdown, syntax highlighting, and intuitive organization. Then go further with live JavaScript blocks that execute right in your notes, turning static text into interactive playgrounds."),
+                        block_header("Markdown essentials and more"),
                         space(SpacingSize::Small),
-                        div((
-                            "Features include ",
-                            b("Markdown support"),
-                            ", ",
-                            b("Code syntax highlighting"),
-                            ", ",
-                            b("Live JavaScript blocks"),
-                            ", and ",
-                            b("Global shortcuts")
-                        )).class(&TextStyle::Paragraph.as_class())
+                        features_bullet_list()
                     )),
+                    // Animated GIF: Demo showing:
+                    // 1. Creating a live JavaScript block via slash menu
+                    // 2. Writing and executing JavaScript code
+                    // 3. Quick prompt to convert bullet list to numbered list
+                    // Alt Text: "Creating live JavaScript code and converting list formats with AI"
+                    // TODO: Record this demo GIF
                     img_component("screenshot-live-code", "Creating live JavaScript code blocks and AI-powered list conversion", IMG_W, IMG_H, false),
                     MainSide::Left
                 ),
@@ -270,7 +277,7 @@ fn home_page() -> Element {
                             link_to("twop.me", "Simon Korzunov")
                         )).class(&tw_join!("mt-3", TextStyle::Footnote)),
                         p((
-                            "Shoot an email at ",
+                            "Shoot us an email at ",
                             link_to("mailto:hi@shelv.app", "hi@shelv.app")
                         )).class(&tw_join!("mt-3", TextStyle::Footnote)),
                         div(p((
@@ -337,6 +344,10 @@ fn page_header() -> Element {
             {
                 let nav_text_color = TextColor::Subtle;
                 a("FAQ").href("#faq").class(&tw_join!("text-sm leading-6", nav_text_color))
+            },
+            {
+                let nav_text_color = TextColor::Subtle;
+                a("Discord").href("#").class(&tw_join!("text-sm leading-6", nav_text_color))
             },
             {
                 let nav_text_color = TextColor::Subtle;
@@ -493,7 +504,7 @@ fn slogan_and_mac_store_link() -> Element {
                         color: TextColor::MainHeader,
                         style: TextStyle::MainHeader,
                     };
-                    h1("AI-powered notes that adapt to your workflow")
+                    h1("Hackable, Local, AI-powered notes")
                         .class(&h1_style.to_class())
                 },
                 {
@@ -501,7 +512,7 @@ fn slogan_and_mac_store_link() -> Element {
                         color: TextColor::Subtle,
                         style: TextStyle::Paragraph,
                     };
-                    p("Shelv combines the power of AI assistance with hackable customization. Capture thoughts instantly, execute code live, and make it truly yours with custom commands and shortcuts.")
+                    p("Shelv is a scriptable, plain text notes app with integrated AI features for macOS, written in Rust (by the way (tm)).")
                         .class(&tw_join!("mt-4 max-w-md mx-auto md:mt-5 md:max-w-3xl", desc_style.to_class()))
                 }
             ));
@@ -560,49 +571,69 @@ fn faq_section() -> Element {
     )).class("max-w-3xl mx-auto").id("faq")
 }
 
-fn faq_items() -> Vec<(&'static str, &'static str)> {
+fn faq_items() -> Vec<(&'static str, Element)> {
     vec![
         (
-            "What makes Shelv different from other note-taking apps?",
-            r#"Shelv combines the power of AI assistance with live JavaScript execution right in your notes. 
-            Unlike traditional note apps, you can run code, create custom commands, and build interactive content. 
-            It's designed as a hackable playground for ephemeral thoughts, perfect for quick calculations, 
-            data transformations, or prototyping ideas without leaving your note-taking environment."#
+            "Is Shelv coming to Mobile/Window/Web?",
+            p((
+                "Yes, but with time. Shelv is written in Rust + ",
+                link_to("https://egui.rs/", "egui"),
+                ", so it is possible to port it as is on all these platforms."
+            )).class(&tw_join!(TextStyle::Paragraph, TextColor::Subtle))
         ),
         (
-            "Is my data stored locally or in the cloud?",
-            r#"Shelv is completely local-first. All your notes, code, and configurations are stored locally on your device. 
-            There's no cloud synchronization or data collection. Your thoughts and ideas stay private and under your control. 
-            This also means Shelv works offline and loads instantly without any network dependencies."#
+            "How do you make money?",
+            p((
+                "I don't. I worked on Shelv for over 2 years, and I had a dream to start company(still do), but as of now, it is a labor of love, because I couldn't find a good business model, if you have ideas please let me know. Tentatively I plan to add ability just to buy tokens, but that seems lame. I plan to cap to $20/month the claude account assosiated with the app, but you can choose your providers for AI features, includind ",
+                link_to("https://ollama.com/", "Ollama"),
+                "."
+            )).class(&tw_join!(TextStyle::Paragraph, TextColor::Subtle))
         ),
         (
-            "How does the JavaScript integration work?",
-            r#"You can create JavaScript code blocks within your notes that execute in real-time. 
-            These blocks have access to a secure sandbox environment where you can manipulate data, 
-            perform calculations, or create interactive widgets. The code runs locally using a built-in JavaScript engine, 
-            so there are no security concerns about remote code execution."#
+            "Do you have sync?",
+            p((
+                "Not yet, I'm a local first movement fan, and wanted to use ",
+                link_to("https://github.com/automerge/automerge", "Automerge"),
+                " forever, but I want to implement e2e encryption with Rust sever, which is being worked on right now, and it is darn had to do an e2e encrypted scalable sync technically and from product point of view."
+            )).class(&tw_join!(TextStyle::Paragraph, TextColor::Subtle))
         ),
         (
-            "Can I customize keyboard shortcuts and commands?",
-            r#"Absolutely! Shelv treats settings as just another note, so you can configure everything using KDL and JavaScript. 
-            Create custom keyboard shortcuts, extend the slash command menu, add new text transformations, 
-            or build completely custom workflows. The configuration system is designed to be both powerful and approachable."#
+            "Is Shelv open source?",
+            p((
+                "Yes and no, it has a licence inspired by ",
+                link_to("https://polyformproject.org/licenses/strict/1.0.0", "PolyForm Strict 1.0.0 license"),
+                ". Which means that you cannot use Shelv compiled from source for work or repackage it to a new app. However that applies to the \"build from\" source option, you can (and hopefully will) just use the version from the app store."
+            )).class(&tw_join!(TextStyle::Paragraph, TextColor::Subtle))
         ),
         (
-            "What platforms does Shelv support?",
-            r#"Currently Shelv is available for macOS through TestFlight beta. 
-            The app is built with Rust and uses native technologies for optimal performance and system integration. 
-            Support for additional platforms may be considered in the future based on community feedback and demand."#
+            "Is it Native?",
+            p((
+                "Native is a spectrum, shelv is written in Rust using ",
+                link_to("https://egui.rs/", "egui"),
+                " as the gui toolkit, which in turn is using wgpu, not Swift UI tech stack. Maybe the closest analogy would be ",
+                link_to("https://flutter.dev/", "Flutter"),
+                " that is painting every pixel. Are Flutter apps native? I think so."
+            )).class(&tw_join!(TextStyle::Paragraph, TextColor::Subtle))
+        ),
+        (
+            "Are my beloved vim motions supported?",
+            p((
+                "I am a ",
+                link_to("https://helix-editor.com/", "Helix"),
+                " user myself, but markdown and text are a bit different from code, that said, I would love to support modal editing in the future. I do think that some features can be added for just \"insert\" mode (which is the only mode at the moment) that can enhance editing, for example: jump to a word, press any buttons with a label(vimium style), expand + shrink semantic selection etc. I need to work on Shelv full-time to justify adding vim or helix motions to egui TextEdit, vote with you money I guess, oh wait, I don't have a way to actually recieve money..."
+            )).class(&tw_join!(TextStyle::Paragraph, TextColor::Subtle))
+        ),
+        (
+            "Are you collecting any analytics?",
+            p((
+                "Not at the moment (besides crash reporting), I'm not fundamentally opposed to collecting statistics, because it is hard to know if a feature is even used without some observability, but I do think it can be done with privacy in mind (at least anonymizing and being mindful of where the data is stored). Probably in the future, however, when and if I add monetization, I'll likely start collecting emails associated with a purchase and/or install"
+            )).class(&tw_join!(TextStyle::Paragraph, TextColor::Subtle))
         )
     ]
 }
 
-fn faq_item(question: &str, answer: &str) -> Element {
-    let answer_text = answer.lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
+fn faq_item(question: &str, answer: Element) -> Element {
+    // answer is now an Element, not a string
 
     let button_style = ButtonStyle {
         height: ButtonHeight::ContentBased,
@@ -617,7 +648,7 @@ fn faq_item(question: &str, answer: &str) -> Element {
         .class(&tw_join!("w-full text-left", button_style.to_class()))
         .attr("onclick", "this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.faq-chevron').classList.toggle('rotate-180')"),
         
-        div(p(answer_text).class(&tw_join!(TextStyle::Paragraph, TextColor::Subtle)))
+        div(answer)
         .class("hidden p-3")
     ))
 }
@@ -640,41 +671,41 @@ fn roadmap_section() -> Element {
 
 fn roadmap_items() -> Vec<(Option<&'static str>, bool, &'static str, Vec<&'static str>)> {
     vec![
-        (Some("Jan 2025"), true, "AI-powered text assistance", vec![
-            "Context-aware text suggestions and completions",
-            "Smart formatting and structure recommendations", 
-            "Intelligent content generation capabilities"
+        (Some("Aug 2025"), true, "Initial launch on macOS", vec![
+            "Barebones editing with 4 notes",
+            "Optimized for quick capture",
+            "No API exposed to JS scripts"
         ]),
-        (Some("Dec 2024"), true, "Live JavaScript code blocks", vec![
-            "Real-time code execution within notes",
-            "Secure sandboxed JavaScript runtime",
-            "Interactive data visualization and calculations"
+        (None, false, "Multi-file + workspace support", vec![
+            "Workspace folder with notes inside",
+            "Import from Obsidian",
+            "File tree + workspace viewer"
         ]),
-        (Some("Nov 2024"), true, "Initial TestFlight beta release", vec![
-            "Core note-taking functionality with Markdown support",
-            "Global keyboard shortcuts for quick access",
-            "Local-first data storage and file watching"
+        (None, false, "Agentic mode", vec![
+            "Tools/MCP that allow to search/move/create/edit notes",
+            "UI for having agentic workflows, probably just a chat that is going to be just another file",
+            "Files that define custom workflows, similar to Claude Code"
         ]),
-        (None, false, "Custom command system", vec![
-            "User-defined keyboard shortcuts and macros",
-            "Extensible slash command menu",
-            "JavaScript-based automation workflows"
+        (None, false, "Core editing features", vec![
+            "Semantic selection: expand and shrink cursor selection with markdown AST nodes",
+            "Jump to an element, jump to any word on the screen with a couple of keystrokes (similar to Vimium and Helix)",
+            "Search, Redo etc"
         ]),
-        (None, false, "Plugin architecture", vec![
-            "Third-party extension support",
-            "Community plugin marketplace",
-            "APIs for deep customization and integration"
+        (None, false, "Support for pasting/rendering images", vec![]),
+        (None, false, "Rich API exposed to JS + better scripting capabilities", vec![
+            "Sharing code among notes"
         ]),
-        (None, false, "Multi-window support", vec![
-            "Multiple note windows for better multitasking",
-            "Cross-window drag and drop functionality",
-            "Synchronized state across all instances"
+        (None, false, "Sync", vec![
+            "I plan to use Automerge for personal syncing, which can be also used for collaboration",
+            "Dump to git, e.g. backup all the notes to git, potentially with AI-generated change summary"
         ]),
-        (None, false, "Collaborative features", vec![
-            "Real-time collaborative editing",
-            "Share notes with team members",
-            "Conflict resolution and version history"
+        (None, false, "Web version", vec![
+            "Mobile (including web) version is TBD"
         ]),
+        (None, false, "Collaboration", vec![
+            "Share a note via link (co-editing on the web)",
+            "Share workspace, that is, co-ownership of a collection of folder+notes"
+        ])
     ]
 }
 
@@ -735,6 +766,24 @@ fn roadmap_icon(completed: bool) -> impl Render {
             <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
         </svg>"#)
     }
+}
+
+fn features_bullet_list() -> Element {
+    let features = vec![
+        ("Markdown Support", "Full CommonMark with extensions, including TODOs"),
+        ("Code Syntax Highlighting", "A lot of languages are supported"),
+        ("Live JavaScript Blocks", "Execute JS code directly in notes"),
+        ("Slash Menu", "Quick access to all commands and features"),
+        ("Keyboard optimized", "Everything is available via shortcuts"),
+    ];
+
+    ul(features.into_iter().map(|(title, description)| {
+        li((
+            span(title.to_string()).class(&tw_join!("font-bold", TextColor::Default, TextStyle::Footnote)),
+            br(),
+            span(description.to_string()).class(&tw_join!(TextColor::Subtle, TextStyle::Footnote, "pl-4"))
+        ))
+    }).collect::<Vec<_>>()).class("list-disc flex flex-col gap-4 list-inside pl-2")
 }
 
 // HTML rendering helper

@@ -1,44 +1,26 @@
 # Shelv Website Content Template
 
-## Hero Section
+## Hackable, Local,  AI-powered notes
+Shelv is scriptable, plain text notes app with integrated ai-features for macOS, written in Rust (btw (tm)). 
 
-### Tagline
-**TODO: Refine tagline**
-"AI-powered notes that adapt to your workflow"
-
-### Description  
-**TODO: Polish hero description**
-"Shelv combines the power of AI assistance with hackable customization. Capture thoughts instantly, execute code live, and make it truly yours with custom commands and shortcuts."
-
-### Call to Action
-**Button Text**: "Coming Soon on Mac"
-**Link**: TestFlight/App Store URL
-
-### Hero Screenshot
-**Image**: App screenshot showing quick prompt feature with spellcheck prompt
-**Alt Text**: "Shelv app showing AI-powered spellcheck prompt in action"
-**TODO**: Create this screenshot with spellcheck prompt example
+### screenshot
+Prompt, code block, Markdown, TBD the exact content
 
 ---
 
-## Features Section
+## Hackable, Local, AI-Powered Notes
+Shelv is a scriptable, plain text notes app with integrated AI features for macOS, written in Rust (by the way (tm)). 
 
-### Feature 1: Hackable Settings
+### Screenshot
+Prompt, code block, Markdown, [with] TBD the exact content
 
-#### Headline
-**TODO: Refine headline**
-"Make it yours with custom commands"
+---
 
-#### Description
-**TODO: Expand on customization benefits**
-"Settings is just another note, so just add kdl + js codeblocks to configure shelv, try quick prompt to get started"
+## Hack It, Make It Yours
+Settings in Shelv is just a note, where you can create custom commands with [KDL](https://kdl.dev/) and JavaScript, assign and tweak keyboard shortcuts, all with live reload.
 
-**Key Points:**
-- Custom keyboard shortcuts
-- Slash menu extensibility  
-- Scriptable automation with js blocks
-
-#### Visual Content
+#### screenshot/video
+Prompt with Add a shortcut for "day" command and using it, first with slash command then with shortcut
 **Type**: Animated GIF
 **Content**: Demo showing:
 1. Quick prompt to create a "day" insert feature
@@ -49,25 +31,17 @@
 
 ---
 
-### Feature 2: Table Stakes and More
+## Markdown essentials and more
+>> notes: bold should be paragraph size, but description should be footnote fontsize, starting on new line
 
-#### Headline  
-**TODO: Make more compelling**
-"Yep, all the markdown essentials are there, and more"
-
-#### Description
-**TODO: Strengthen the foundation message**
-"Start with everything you expect from modern notes - beautiful Markdown, syntax highlighting, and intuitive organization. Then go further with live JavaScript blocks that execute right in your notes, turning static text into interactive playgrounds."
-
-**Feature List:**
-- **Markdown Support**: Full CommonMark with extensions
+- **Markdown Support**: Full CommonMark with extensions, including TODOs
 - **Code Syntax Highlighting**: A lot of languages are supported
-- **Live JavaScript Blocks**: Execute code directly in notes
+- **Live JavaScript Blocks**: Execute JS code directly in notes
 - **Slash Menu**: Quick access to all commands and features
-- **Todo Lists**: Interactive checkboxes with smart formatting
-- **Global Shortcuts**: Access from anywhere on your system
+- **Keyboard optimized**:  Everything is available via shortcuts
 
-#### Visual Content
+
+#### GIF/Screenshot
 **Type**: Animated GIF  
 **Content**: Demo showing:
 1. Creating a live JavaScript block via slash menu
@@ -76,46 +50,60 @@
 **Alt Text**: "Creating live JavaScript code and converting list formats with AI"
 **TODO**: Record this demo GIF
 
----
 
-## Additional Sections (Future)
+### Frequently Asked Questions
 
-### Social Proof
-**TODO**: Add when available
-- User testimonials
-- Usage statistics  
-- Community highlights
+- Is Shelv coming to Mobile/Window/Web
+	* Yes, but with time. Shelv is written in Rust + [egui](https://egui.rs/), so it is possible to port it as is on all these platforms
+- How do you make money?
+	* I don't. I worked on Shelv for over 2 years, and I had a dream to start company(still do), but as of now, it is a labor of love, because I couldn't find a good business model, if you have ideas please let me know. Tentatively I plan to add ability just to buy tokens, but that seems lame. I plan to cap to $20/month the claude account assosiated with the app, but you can choose your providers for AI features, includind [Ollama](https://ollama.com/).
+- Do you have sync?
+	* Not yet, I'm a local first movement fan, and wanted to use [Automerge](https://github.com/automerge/automerge) forever, but I want to implement e2e encryption with Rust sever, which is being worked on right now, and it is darn had to do an e2e encrypted scalable sync technically and from product point of view.
+- Is Shelv open source?
+	* Yes and no, it has a licence inspired by  [ PolyForm Strict 1.0.0 license](https://polyformproject.org/licenses/strict/1.0.0). Which means that you cannot use Shelv compiled from source for work or repackage it to a new app. However that applies to the "build from" source option, you can (and hopefully will) just use the version from the app store.
+- Is it Native?
+	* Native is a spectrum, shelv is written in Rust using [egui](https://egui.rs/) as the gui toolkit, which in turn is using wgpu, not Swift UI tech stack. Maybe the closest analogy would be [Flutter](https://flutter.dev/) that is painting every pixel. Are Flutter apps native? I think so.
+- Are my beloved vim motions supported?
+	* I am a [Helix](https://helix-editor.com/) user myself, but markdown and text are a bit different from code, that said, I would love to support modal editing in the future. I do think that some features can be added for just "insert" mode (which is the only mode at the moment) that can enhance editing, for example: jump to a word, press any buttons with a label(vimium style), expand + shrink semantic selection etc. I need to work on Shelv full-time to justify adding vim or helix motions to egui TextEdit, vote with you money I guess, oh wait, I don't have a way to actually recieve money...
+- Are you collecting any analytics?
+	* Not at the moment (besides crash reporting), I'm not fundamentally opposed to collecting statistics, because it is hard to know if a feature is even used without some observability, but I do think it can be done with privacy in mind (at least anonymizing and being mindful of where the data is stored). Probably in the future, however, when and if I add monetization, I'll likely start collecting emails associated with a purchase and/or install
 
-### FAQ
-**TODO**: Common questions about:
-- Platform availability
-- Pricing model
-- Data storage/privacy
-- Customization limits
+### Roadmap
+- Done:
+	* Initial launch on macOS: Aug 2025
+		* Barebones editing with 4 notes
+		* Optimized for quick capture
+		* No API exposed to JS scripts
+- Coming:
+	* Multi-file + workspace support
+		* Workspace folder with notes inside
+		* Import from [Obsidian](https://obsidian.md/)
+		* File tree + workspace viewer
+	* Agentic mode
+		* Tools/MCP that allow to search/move/create/edit notes
+		* UI for having agentic workflows, probably just a chat that is going to be just another file
+		* Files that define custom workflows, similar to Claude Code
+	* Core editing features:
+		* Semantic selection: expand and shrink cursor selection with markdown AST nodes
+		* Jump to an *element*, jump to any word on the screen with a couple of keystrokes (similar to Vimium and Helix)
+		* Search, Redo etc
+	* Support for pasting/rendering images
+	* Rich API exposed to JS + better scripting capabilities (like sharing code among notes)
+	* Sync 
+		* I plan to use [Automerge](https://github.com/automerge/automerge) for personal syncing, which can be also used for collaboration
+		* Dump to git, e.g. backup all the notes to git, potentially with AI-generated change summary
+	* Web version
+		* Mobile (including web) version is TBD
+	* Collaboration
+		* Share a note via link (co-editing on the web)
+		* Share workspace, that is, co-ownership of a collection of folder+notes
 
 ### Footer
-**Company**: Briskmode Labs
-**Contact**: hi@shelv.app
-**Social Links**: [TBD]
-**Legal**: Privacy Policy, Terms of Service
+>> keep as is
 
 ---
+>> Some editing notes
 
-## Content Guidelines
-
-### Tone of Voice
-- **Technical but approachable**: Smart without being intimidating
-- **Action-oriented**: Focus on what users can do
-- **Authentic**: Avoid marketing fluff, be direct about capabilities
-
-### Key Messaging Themes
-1. **AI Integration**: Not just AI-powered, but AI that enhances your existing workflow
-2. **Hackability**: Extensible and customizable without requiring programming skills
-3. **Foundation**: Solid, reliable note-taking with modern features
-4. **Speed**: Quick capture, instant access, efficient workflows
-
-### Visual Strategy
-- Use actual app screenshots and GIFs, not mockups
-- Show real workflows, not perfect demo scenarios  
-- Highlight the AI and customization features prominently
-- Keep the Nord color scheme consistent with app branding
+### Tone of Voice (for AI editing)
+- **Technical but written in a fun way**
+- **Authentic and open**: Avoid marketing fluff, be direct
