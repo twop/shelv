@@ -6723,3 +6723,8 @@ checksum = "99a5bab8d7dedf81405c4bb1f2b83ea057643d9cb28778cea9eecddeedd2e028"
 dependencies = [
  "zune-core",
 ]
+
+[[patch.unused]]
+name = "winit"
+version = "0.30.7"
+source = "git+https://github.com/mpasalic/winit-no-private-apis.git?branch=private-apis-removed-for-0.30.7#bf1a3fc24e45172ea5a8050e522dc0c1e8f0e14c"

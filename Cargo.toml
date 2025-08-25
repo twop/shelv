@@ -78,8 +78,8 @@ strip-ansi-escapes = "0.2.0"
 chrono = "0.4.40"
 egui_taffy = "0.7.0"
 
-# [patch.crates-io]
-# winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.5" }
+[patch.crates-io]
+winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.7" }
 
 [package.metadata.bundle]
 name = "Shelv"
