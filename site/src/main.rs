@@ -67,6 +67,8 @@ pub enum BorderStyle {
     Default,
     #[tw(class = "border-nord3")]
     LineBreak,
+    #[tw(class = "border-nord3")]
+    MediaBorder,
 }
 
 // Theme management enums
@@ -374,7 +376,11 @@ fn img_component(src: &str, alt: &str, width: usize, height: usize, eager: bool)
         .attr("loading", if eager { "eager" } else { "lazy" })
         .attr("alt", alt)
         .attr("src", src))
-    .class("rounded-(--media-radius) shadow-underglow"))
+    .class(tw_join!(
+        BorderStyle::MediaBorder,
+        "border-1 rounded-(--media-radius) shadow-underglow"
+    )))
+    // .class("rounded-(--media-radius) shadow-underglow"))
     .class("py-6 lg:py-0 w-full h-full flex justify-center")
 }
 
