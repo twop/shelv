@@ -14,8 +14,15 @@ const DOWN_WAVE_PATH: &str = concat!(
     "M0,224L80,186.7C160,149,320,75,480,53.3C640,32,800,64,960,85.3C1120,107,1280,117,1360,122.7L1440,128",
     "L1440,320L1360,320C1280,320,1120,320,960,320C800,320,640,320,480,320C320,320,160,320,80,320L0,320Z"
 );
-const IMG_W: usize = 1180;
-const IMG_H: usize = 1128;
+
+const IMG_HERO_PATH: &str = "assets/media/hero-1132x1376.png";
+const SIZE_IMG_HERO: (usize, usize) = (1132, 1376);
+
+const SIZE_VID_HACK_SETTINGS: (usize, usize) = (1126, 1244);
+const VID_HACK_SETTINGS_PATH: &str = "assets/media/hack_settings_1126x1244.mov";
+
+const IMG_MARKDOWN_PATH: &str = "assets/media/hero-1132x1376.png";
+const SIZE_IMG_MARKDOWN: (usize, usize) = (1132, 1376);
 
 // Semantic color variants using tailwind_fuse
 #[derive(TwVariant)]
@@ -207,10 +214,12 @@ fn home_page() -> Element {
                 block_layout(
                     slogan_and_mac_store_link(),
                     // Screenshot: Prompt, code block, Markdown, TBD the exact content
-            img_component("screenshot-ai-prompt", "Shelv app showing AI-powered quick prompt feature in action", IMG_W, IMG_H, true),
+            {
+                let (w,h) = SIZE_IMG_HERO;
+                img_component(IMG_HERO_PATH, "Shelv app showing AI-powered quick prompt feature in action", w, h, true)},
                     MainSide::Left
                 )
-))),
+        ))),
        space(SpacingSize::Small),
 
         wave(UP_WAVE_PATH.to_string(), ThemeColor::Dark, SpacingSize::Large),
@@ -225,7 +234,9 @@ fn home_page() -> Element {
                     // 3. Using the same feature via slash menu
                     // Alt Text: "Creating and using a custom 'day' command via shortcuts and slash menu"
                     // TODO: Record this demo GIF
-                    img_component("screenshot-custom-commands", "Creating and using custom commands via shortcuts and slash menu", IMG_W, IMG_H, false),
+                    {
+                        let (w,h) = SIZE_VID_HACK_SETTINGS;
+                        video_component([(VID_HACK_SETTINGS_PATH, VideoFileType::Mov)], "Creating and using a custom 'day' command via shortcuts and slash menu", w, h, false)},
                     div((
                         block_header("Hack It, Make It Yours").id("features"),
                         p((
@@ -255,9 +266,12 @@ fn home_page() -> Element {
                     // 3. Quick prompt to convert bullet list to numbered list
                     // Alt Text: "Creating live JavaScript code and converting list formats with AI"
                     // TODO: Record this demo GIF
-                    img_component("screenshot-live-code",
+                    {
 
-                         "Creating live JavaScript code blocks and AI-powered list conversion", IMG_W, IMG_H, false),
+                        let (w,h) = SIZE_IMG_MARKDOWN;
+                        img_component(IMG_MARKDOWN_PATH,
+
+                         "Demo of markdown features and slash command", w, h, false)},
                     MainSide::Left
                 ),
                 space(SpacingSize::Large)
@@ -354,14 +368,47 @@ fn space(size: SpacingSize) -> Element {
 
 fn img_component(src: &str, alt: &str, width: usize, height: usize, eager: bool) -> Element {
     div(div(img()
-        .class("rounded-lg w-full h-full")
+        .class("rounded-(--media-radius) w-full h-full")
         .attr("width", &width.to_string())
         .attr("height", &height.to_string())
         .attr("loading", if eager { "eager" } else { "lazy" })
         .attr("alt", alt)
-        .attr("src", &format!("/assets/images/{}.png", src)))
-    .class("rounded-lg" /* shadow-(--shadow-underglow) */))
+        .attr("src", src))
+    .class("rounded-(--media-radius) shadow-underglow"))
     .class("py-6 lg:py-0 w-full h-full flex justify-center")
+}
+
+enum VideoFileType {
+    Mov,
+    Webm,
+}
+fn video_component(
+    sources: impl IntoIterator<Item = (&'static str, VideoFileType)>,
+    _alt: &str,
+    width: usize,
+    height: usize,
+    _eager: bool,
+) -> Element {
+    let sources = sources
+        .into_iter()
+        .map(|(source, file_format)| {
+            let file_format = match file_format {
+                VideoFileType::Mov => "video/mp4",
+                VideoFileType::Webm => "video/webm",
+            };
+
+            format!("<source src=\"{source}\" type=\"{file_format}\">")
+        })
+        .fold("".to_string(), |total, source| {
+            total + "\n" + source.as_str()
+        });
+
+    div(div(danger(&format!(
+        r#"<video class="rounded-(--media-radius) w-full h-full shadow-underglow" width="{width}" height="{height}" autoplay muted loop playsinline>
+            {sources}
+            Your browser does not support the video tag.
+        </video>"# 
+    )))).class("py-6 lg:py-0 w-full h-full flex justify-center")
 }
 
 fn page_header() -> Element {
@@ -474,7 +521,7 @@ fn action_buttons_panel() -> Element {
 
 fn mac_store_link() -> Element {
     a(img()
-        .attr("src", "/assets/images/mac-app-store-badge.svg")
+        .attr("src", "/assets/media/mac-app-store-badge.svg")
         .attr("alt", "Coming Soon on Mac")
         .class("home-app-store-buttons-mac h-10")
         .attr("height", "48"))
@@ -857,7 +904,6 @@ fn render_to_string(element: Element) -> String {
                     .rel("stylesheet")
                     .href("https://rsms.me/inter/inter.css"),
                 link("").rel("stylesheet").href("/assets/app.css"),
-                link("").rel("stylesheet").href("/assets/main.css"),
             )),
             body(element).class(BackgroundColor::Default.as_class()),
         )),

@@ -2,6 +2,13 @@
 
 :root {
     font-family: 'Inter', sans-serif;
+    --media-radius: 10px;
+}
+
+
+
+.shadow-underglow {
+    box-shadow: 4px 4px 16px color-mix(in srgb, var(--color-nord13) 30%, transparent);
 }
 
 @supports (font-variation-settings: normal) {

@@ -11,9 +11,20 @@ Prompt, code block, Markdown, TBD the exact content
 ## Hackable, Local, AI-Powered Notes
 Shelv is a scriptable, plain text notes app with integrated AI features for macOS, written in Rust (by the way (tm)). 
 
-### Screenshot
-Prompt, code block, Markdown, [with] TBD the exact content
+## Screenshot
+```
+### Hi there
+ [Shelv](shelv.app) is:
+-   _simple_
+-  **markdown** flavored
+- `hackable`
 
+notes with built-in AI fetures. 
+
+Check it out here
+>> propmt: 
+add link to /twop/shelv repo on github at the end.
+````
 ---
 
 ## Hack It, Make It Yours
