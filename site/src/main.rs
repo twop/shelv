@@ -976,10 +976,10 @@ fn render_to_string(element: Element) -> String {
 
 #[tokio::main]
 async fn main() {
-    let addr = SocketAddr::from(([127, 0, 0, 1], 4000));
+    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
-    println!("Server running on http://127.0.0.1:4000");
+    println!("Server running on http://127.0.0.1:8080");
 
     // Create the main router with enum_router
     let app_router = Route::router();
