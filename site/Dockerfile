@@ -17,4 +17,6 @@ RUN cargo build --release --bin site
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 COPY --from=builder /app/target/release/site /usr/local/bin
+# Copy assets folder for static files (CSS, icons, media)
+COPY --from=builder /app/assets ./assets
 ENTRYPOINT ["/usr/local/bin/site"]

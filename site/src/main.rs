@@ -958,7 +958,7 @@ fn render_to_string(element: Element) -> String {
         doctype(),
         html((
             head((
-                title("Shelv - Hackable Playground for Ephemeral Thoughts"),
+                title("Shelv - Hackable, Local, AI-powered notes"),
                 meta().charset("utf-8"),
                 meta()
                     .name("viewport")
@@ -968,6 +968,7 @@ fn render_to_string(element: Element) -> String {
                     .rel("stylesheet")
                     .href("https://rsms.me/inter/inter.css"),
                 link("").rel("stylesheet").href("/assets/app.css"),
+                link("").rel("icon").href("/assets/media/favicon.ico"),
             )),
             body(element).class(BackgroundColor::Default.as_class()),
         )),
@@ -976,10 +977,10 @@ fn render_to_string(element: Element) -> String {
 
 #[tokio::main]
 async fn main() {
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
-    println!("Server running on http://127.0.0.1:8080");
+    println!("Server running on http://0.0.0.0:8080");
 
     // Create the main router with enum_router
     let app_router = Route::router();
