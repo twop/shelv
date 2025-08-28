@@ -177,6 +177,18 @@ enum ButtonHeight {
     ContentBased,
 }
 
+#[derive(TwVariant)]
+pub enum IconSize {
+    #[tw(default, class = "size-5")]
+    Default,
+
+    #[tw(class = "size-4")]
+    Small,
+
+    #[tw(class = "size-3")]
+    ExtraSmall,
+}
+
 #[derive(TwClass)]
 #[tw(class = r#"
     inline-flex items-center
@@ -312,21 +324,35 @@ fn home_page() -> Element {
                         div("").class(divider_style.to_class())
                     },
                     space(SpacingSize::Small),
-                    div((
-                        p((
-                            span("Done with "),
-                            heart(),
-                            link_to("twop.me", "Simon Korzunov")
-                        )).class(&tw_join!("mt-3", TextStyle::SmallGeneralText)),
-                        p((
-                            "Shoot an email at ",
-                            link_to("mailto:hi@shelv.app", "hi@shelv.app")
-                        )).class(&tw_join!("mt-3", TextStyle::SmallGeneralText)),
-                        div(p((
-                                "theme inspired by ",
-                                link_to("https://www.nordtheme.com/", "Nord")
-                            )).class(&TextStyle::SmallGeneralText.as_class())).class("py-3 flex justify-end")
-                    ))
+                    {
+                        let link_style = tw_join!("inline", LinkStyle { color: TextColor::Primary, hover: HoverState::Underline }.to_class());
+                        div((
+                            p((
+                                span("Done with "),
+                                heart(),
+                                " by Simon Korzunov ",
+                                    a(github_icon(IconSize::Small)).href("https://github.com/twop").class(&link_style)
+                                ,
+                                " ",
+                                    a(linkedin_icon(IconSize::Small)).href("https://www.linkedin.com/in/skorzunov").class(&link_style)
+                                ,
+                                " and Mirza Pasalic ",
+                                    a(github_icon(IconSize::Small)).href("https://github.com/mpasalic").class(&link_style)
+                                ,
+                                " ",
+                                    a(linkedin_icon(IconSize::Small)).href("https://www.linkedin.com/in/mpasalic").class(&link_style)
+                                ,
+                            )).class(&tw_join!("mt-3", TextStyle::SmallGeneralText)),
+                            p((
+                                "Shoot an email at ",
+                                link_to("mailto:hi@shelv.app", "hi@shelv.app")
+                            )).class(&tw_join!("mt-3", TextStyle::SmallGeneralText)),
+                            div(p((
+                                    "theme inspired by ",
+                                    link_to("https://www.nordtheme.com/", "Nord")
+                                )).class(&TextStyle::SmallGeneralText.as_class())).class("py-3 flex justify-end")
+                        ))
+                }
                 )).class("w-full px-4")))
     )).class(&tw_join!("flex flex-col", BackgroundColor::Default.as_class()))
 }
@@ -434,7 +460,7 @@ fn page_header() -> Element {
 
         // Discord icon - always visible
         div(
-            a(discord_icon())
+            a(discord_icon(IconSize::Default))
                 .href("#")
                 .class(&tw_join!(ButtonVariant::SecondaryTextOnly, TextColor::Subtle ))
         )
@@ -546,19 +572,30 @@ fn secondary_button_link(href: &str, content: impl Render + 'static) -> Element 
 
 fn github_link() -> Element {
     secondary_button_link(
-        "https://github.com/briskmode/shelv",
-        (github_icon(), span("Give us a star").class("ml-2")),
+        "https://github.com/twop/shelv",
+        (
+            github_icon(IconSize::Default),
+            span("Give us a star").class("ml-2"),
+        ),
     )
 }
 
-fn github_icon() -> impl Render {
+fn github_icon(size: IconSize) -> impl Render {
     let svg_content = include_str!("../assets/icons/github.svg");
-    danger(svg_content.replace("<class>", "size-5 fill-current"))
+    let classes = tw_join!(size, "fill-current inline");
+    danger(svg_content.replace("<class>", &classes))
 }
 
-fn discord_icon() -> impl Render {
+fn discord_icon(size: IconSize) -> impl Render {
     let svg_content = include_str!("../assets/icons/discord.svg");
-    danger(svg_content.replace("<class>", "size-5 fill-current"))
+    let classes = tw_join!(size, "fill-current inline");
+    danger(svg_content.replace("<class>", &classes))
+}
+
+fn linkedin_icon(size: IconSize) -> impl Render {
+    let svg_content = include_str!("../assets/icons/linkedin.svg");
+    let classes = tw_join!(size, "fill-current inline");
+    danger(svg_content.replace("<class>", &classes))
 }
 
 fn faq_section() -> Element {
