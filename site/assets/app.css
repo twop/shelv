@@ -39,6 +39,8 @@
     --default-mono-font-family: var(--font-mono);
     --color-nord0-darker: #1e222a;
     --color-nord0-dark: #242933;
+    --color-nord1: #3b4252;
+    --color-nord2: #434c5e;
     --color-nord3: #4c566a;
     --color-nord4-darker: #9ba3b0;
     --color-nord4: #d8dee9;
@@ -403,6 +405,12 @@
     --tw-border-style: solid;
     border-style: solid;
   }
+  .border-nord1 {
+    border-color: var(--color-nord1);
+  }
+  .border-nord2 {
+    border-color: var(--color-nord2);
+  }
   .border-nord3 {
     border-color: var(--color-nord3);
   }
@@ -426,9 +434,6 @@
   }
   .fill-current {
     fill: currentcolor;
-  }
-  .p-1 {
-    padding: calc(var(--spacing) * 1);
   }
   .p-3 {
     padding: calc(var(--spacing) * 3);

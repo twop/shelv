@@ -32,15 +32,9 @@ Settings in Shelv is just a note, where you can create custom commands with [KDL
 
 The origin story: at the time I used [Bear app](https://bear.app/), which has 4 versions of date, but I wanted it in YYYY/mmm/dd format, and I keep thinking: "if only I can just define what I want". Well, with Shelv you can.
 
-#### screenshot/video
-Prompt with Add a shortcut for "day" command and using it, first with slash command then with shortcut
-**Type**: Animated GIF
-**Content**: Demo showing:
-1. Quick prompt to create a "day" insert feature
-2. Triggering the new feature via keyboard shortcut
-3. Using the same feature via slash menu
-**Alt Text**: "Creating and using a custom 'day' command via shortcuts and slash menu"
-**TODO**: Record this demo GIF
+#### video
+Video that adds "day" command via a quick prompt: "Add shortcut for inserting the current day of the week"
+
 
 ---
 
@@ -54,18 +48,39 @@ Prompt with Add a shortcut for "day" command and using it, first with slash comm
 - **Keyboard optimized**:  Everything is available via shortcuts
 
 
-#### GIF/Screenshot
-**Type**: Animated GIF  
-**Content**: Demo showing:
-1. Creating a live JavaScript block via slash menu
-2. Writing and executing JavaScript code
-3. Quick prompt to convert bullet list to numbered list
-**Alt Text**: "Creating live JavaScript code and converting list formats with AI"
-**TODO**: Record this demo GIF
+#### Screenshot
+```
+### Markdown essentials
+1. lists,**bold**, *italic*, ~strikethrough~
+	* [ ] todos, `monospace`
+```rs
+println!("Just syntax highlighted")
+```
+
+### Live JS code blocks + Slash palette
+```js 1
+console.log('I can be run!');
+new Map().set("with", "live reload")
+```
+```js 1 > #e904
+I can be run!
+Map { "with" → "live reload" }
+```
+
+Just type /
+```
 
 
 ### Frequently Asked Questions
+- I'm sick of AI hype, is Shelv yet another AI-'something'?
+I hope not, my opinions toward AI (or rather LLMs) are mixed. My current position can be roughly outlined as:
+	* AI is not a "higher-level abstraction" like programming languages over assembly. For a simple reason: it is not deterministic.
+	* Using AI may and likely will cause skill degradation if used as a solo replacement for typing code or writing prose (like "vibe coding").
+	* I think the best use of it (at the moment) is if you can expertly assess the output. So the UX I'm leaning towards will try to emphasize that idea.
+	* Luckily, working with text, adding small scripts, etc. qualifies as such.
+	* But moreover, I think it can be used as a discovery tool - try asking with a quick prompt, "What are the current keybindings?"
 
+I hope I've convinced you to give Shelv a try.
 - Is Shelv coming to Mobile/Window/Web
 	* Yes, but with time. Shelv is written in Rust + [egui](https://egui.rs/), so it is possible to port it as is on all these platforms
 - How do you make money?

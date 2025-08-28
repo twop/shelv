@@ -21,7 +21,7 @@ const SIZE_IMG_HERO: (usize, usize) = (1132, 1376);
 const SIZE_VID_HACK_SETTINGS: (usize, usize) = (1126, 1244);
 const VID_HACK_SETTINGS_PATH: &str = "assets/media/hack_settings_1126x1244.mov";
 
-const IMG_MARKDOWN_PATH: &str = "assets/media/hero-1132x1376.png";
+const IMG_MARKDOWN_PATH: &str = "assets/media/markdown_and_slash_palette_1132x1376.png";
 const SIZE_IMG_MARKDOWN: (usize, usize) = (1132, 1376);
 
 // Semantic color variants using tailwind_fuse
@@ -67,7 +67,7 @@ pub enum BorderStyle {
     Default,
     #[tw(class = "border-nord3")]
     LineBreak,
-    #[tw(class = "border-nord3")]
+    #[tw(class = "border-nord2")]
     MediaBorder,
 }
 
@@ -409,8 +409,9 @@ fn video_component(
             total + "\n" + source.as_str()
         });
 
+    let border_class = BorderStyle::MediaBorder.as_class();
     div(div(danger(&format!(
-        r#"<video class="rounded-(--media-radius) w-full h-full shadow-underglow" width="{width}" height="{height}" autoplay muted loop playsinline>
+        r#"<video class="rounded-(--media-radius) w-full h-full shadow-underglow border-1 {border_class}" width="{width}" height="{height}" autoplay muted loop playsinline>
             {sources}
             Your browser does not support the video tag.
         </video>"# 
@@ -576,6 +577,26 @@ fn faq_section() -> Element {
 
 fn faq_items() -> Vec<(&'static str, Element)> {
     vec![
+        (
+            "I'm sick of AI hype, is Shelv yet another AI-'something'?",
+            p((
+                "I hope not, my opinions toward AI (or rather LLMs) are mixed. My current position can be roughly outlined as:",
+                br(),
+                br(),
+                "- AI is not a \"higher-level abstraction\" like programming languages over assembly. For a simple reason: it is not deterministic.",
+                br(),
+                "- Using AI may and likely will cause skill degradation if used as a solo replacement for typing code or writing prose (like \"vibe coding\").",
+                br(),
+                "- I think the best use of it (at the moment) is if you can expertly assess the output. So the UX I'm leaning towards will try to emphasize that idea.",
+                br(),
+                "- Luckily, working with text, adding small scripts, etc. qualifies as such.",
+                br(),
+                "- But moreover, I think it can be used as a discovery tool - try asking with a quick prompt, \"What are the current keybindings?\"",
+                br(),
+                br(),
+                "I hope I've convinced you to give Shelv a try."
+            )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
+        ),
         (
             "Is Shelv coming to Mobile/Window/Web?",
             p((
