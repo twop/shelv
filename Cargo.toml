@@ -1,5 +1,9 @@
-# [workspace]
-# members = ["dioxus-site"]
+[workspace]
+members = [".", "site"]
+default-members = ["."]
+
+[workspace.package]
+edition = "2024"
 
 [package]
 name = "shelv"

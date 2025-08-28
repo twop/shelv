@@ -1,0 +1,13 @@
+{
+  "name": "site",
+  "version": "1.0.0",
+  "description": "Shelv website using modern Rust web stack",
+  "scripts": {
+    "build-css": "tailwindcss -i app.css -o assets/app.css",
+    "watch-css": "tailwindcss -i app.css -o assets/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.11",
+    "tailwindcss": "^4.1.11"
+  }
+}
