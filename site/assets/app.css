@@ -413,9 +413,6 @@
     --tw-border-style: solid;
     border-style: solid;
   }
-  .border-nord1 {
-    border-color: var(--color-nord1);
-  }
   .border-nord2 {
     border-color: var(--color-nord2);
   }
