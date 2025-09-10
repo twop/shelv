@@ -60,7 +60,7 @@ directories-next = "2.0.0"
 hotwatch = "0.5.0"
 itertools = "0.13.0"
 kdl = { version = "4.6.0" }
-genai = "0.1.7"
+genai = "0.3.5"
 tokio = { version = "1.40.0", features = ["full"] }
 tokio-stream = "0.1.15"
 sentry = "0.34.0"

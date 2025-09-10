@@ -9,11 +9,13 @@ use std::{
 
 use eframe::egui;
 use genai::{
+    ModelIden, ModelName, ServiceTarget,
     adapter::AdapterKind,
     chat::{ChatMessage, ChatRequest, ChatStreamEvent, StreamChunk},
-    resolver::AuthResolver,
+    resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver},
 };
 use global_hotkey::GlobalHotKeyManager;
+use similar::DiffableStr;
 
 use crate::{
     app_actions::{
@@ -57,7 +59,8 @@ impl RealAppIO {
     }
 }
 
-pub const DEFAULT_LLM_MODEL: &str = "claude-3-haiku-20240307";
+pub const DEFAULT_REAL_LLM_MODEL: &str = "claude-3-5-haiku-20241022";
+pub const SHELV_LLM_PROXY_MODEL: &str = "shelv-claude";
 
 impl AppIO for RealAppIO {
     fn hide_app(&self, mode: HideMode) {
@@ -188,7 +191,7 @@ impl AppIO for RealAppIO {
 
             let (model, system_prompt, use_shelv_propmpt) = llm_settings
                 .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt))
-                .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None, true));
+                .unwrap_or_else(|| (SHELV_LLM_PROXY_MODEL.to_string(), None, true));
 
             if use_shelv_propmpt {
                 chat_req
@@ -203,10 +206,12 @@ impl AppIO for RealAppIO {
             }
 
             let auth_resolver = prepare_auth_resolver();
+            let service_target_resolver = prepare_service_target_resolver();
             // println!("-----llm req: {chat_req:#?}");
             // -- Build the new client with this adapter_config
             let client = genai::Client::builder()
                 .with_auth_resolver(auth_resolver)
+                .with_service_target_resolver(service_target_resolver)
                 .build();
 
             let chat_res = client
@@ -280,7 +285,7 @@ impl AppIO for RealAppIO {
 
         let (model, system_prompt, use_shelv_propmpt) = llm_settings
             .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt))
-            .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None, true));
+            .unwrap_or_else(|| (SHELV_LLM_PROXY_MODEL.to_string(), None, true));
 
         let chat_req = ChatRequest::new(Vec::from_iter(
             use_shelv_propmpt
@@ -346,9 +351,11 @@ impl AppIO for RealAppIO {
             println!("-----llm inline req: {chat_req:#?}");
 
             let auth_resolver = prepare_auth_resolver();
+            let service_target_resolver = prepare_service_target_resolver();
 
             let client = genai::Client::builder()
                 .with_auth_resolver(auth_resolver)
+                .with_service_target_resolver(service_target_resolver)
                 .build();
 
             let chat_res = client
@@ -398,6 +405,32 @@ impl AppIO for RealAppIO {
     }
 }
 
+fn prepare_service_target_resolver() -> ServiceTargetResolver {
+    ServiceTargetResolver::from_resolver_fn(
+        |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
+            let ServiceTarget { model, .. } = &service_target;
+
+            if *model.model_name == *ModelName::from(SHELV_LLM_PROXY_MODEL) {
+                // For now, this is a noop - just redirect to the default claude API
+                // In the future, this will route to our proxy server
+                let endpoint = Endpoint::from_static("https://api.anthropic.com/v1/");
+                let key = "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";
+                let auth = AuthData::from_single(key);
+                let model = ModelIden::new(AdapterKind::Anthropic, "claude-3-haiku-20240307");
+
+                Ok(ServiceTarget {
+                    endpoint,
+                    auth,
+                    model,
+                })
+            } else {
+                // For all other models, pass through unchanged
+                Ok(service_target)
+            }
+        },
+    )
+}
+
 fn prepare_auth_resolver() -> AuthResolver {
     let auth_resolver = AuthResolver::from_resolver_fn(
         move |model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
@@ -406,7 +439,9 @@ fn prepare_auth_resolver() -> AuthResolver {
                 model_name,
             } = model_iden;
 
-            if adapter_kind != AdapterKind::Anthropic {
+            let model_name: &str = &model_name;
+            if model_name != SHELV_LLM_PROXY_MODEL {
+            // if adapter_kind != AdapterKind::Anthropic {
                 return Err(genai::resolver::Error::Custom("Currently we only support Anthropic models".to_string()));
             }
 

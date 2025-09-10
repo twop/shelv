@@ -1732,9 +1732,9 @@ dependencies = [
 
 [[package]]
 name = "genai"
-version = "0.1.23"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81635eee94381ede61515ee832ee8b67bbe1548fe126f98d092f68ac9e96dacc"
+checksum = "8957a26f596fad1248e60f6cd4c08eecaf1933168ce92f70a97c0d0773334620"
 dependencies = [
  "bytes",
  "derive_more 2.0.1",
@@ -1747,6 +1747,7 @@ dependencies = [
  "serde_with",
  "tokio",
  "tokio-stream",
+ "tracing",
  "value-ext",
 ]
 
@@ -5581,7 +5582,19 @@ checksum = "784e0ac535deb450455cbfa28a6f0df145ea1bb7ae51b821cf5e7927fdcfbdd0"
 dependencies = [
  "log",
  "pin-project-lite",
+ "tracing-attributes",
  "tracing-core",
+]
+
+[[package]]
+name = "tracing-attributes"
+version = "0.1.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81383ab64e72a7a8b8e13130c49e3dab29def6d0c7d76a03087b3cf71c5c6903"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
 ]
 
 [[package]]
