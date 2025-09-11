@@ -48,7 +48,7 @@ smallvec = "1.10.0"
 tray-icon = "0.14.0"
 egui-phosphor = { version = "0.9.0", features = ["light"] }
 # tray-item = "0.7.1"
-winit = "0.30.7"
+winit = "0.30.9"
 linkify = "0.10.0"
 objc2 = "0.5.1"
 boa_engine = "0.20.0"
@@ -83,7 +83,7 @@ chrono = "0.4.40"
 egui_taffy = "0.7.0"
 
 [patch.crates-io]
-winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.7" }
+winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.9" }
 
 [package.metadata.bundle]
 name = "Shelv"
