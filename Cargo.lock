@@ -4919,6 +4919,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "enum_router",
+ "futures",
  "http",
  "hyped",
  "reqwest",

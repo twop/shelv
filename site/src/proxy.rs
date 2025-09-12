@@ -1,4 +1,5 @@
 use axum::{body::Body, extract::Request, http::StatusCode, response::Response};
+use futures::StreamExt;
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1";
 const SHELV_TOKEN: &str = "shelv-token";
@@ -58,12 +59,11 @@ pub async fn proxy_anthropic(req: Request) -> Result<Response<Body>, (StatusCode
 
     let status = anthropic_response.status();
     let headers = anthropic_response.headers().clone();
-    let body = anthropic_response.bytes().await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read response body from Anthropic API: {}", e),
-        )
-    })?;
+
+    // Convert the streaming response to axum Body
+    let stream = anthropic_response
+        .bytes_stream()
+        .map(|result| result.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)));
 
     let mut response = Response::builder().status(status);
 
@@ -73,7 +73,7 @@ pub async fn proxy_anthropic(req: Request) -> Result<Response<Body>, (StatusCode
         }
     }
 
-    let response = response.body(Body::from(body)).map_err(|e| {
+    let response = response.body(Body::from_stream(stream)).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to build response: {}", e),
