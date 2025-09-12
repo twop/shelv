@@ -53,8 +53,11 @@ pub struct LlmSettings {
     #[knus(child(name = "systemPrompt"), unwrap(argument))]
     pub system_prompt: Option<String>,
 
-    #[knus(child(name = "useShelvSystemPrompt"), unwrap(argument), default = true)]
-    pub use_shelv_system_prompt: bool,
+    #[knus(child(name = "token"), unwrap(argument))]
+    pub token: Option<String>,
+
+    #[knus(child(name = "useShelvSystemPrompt"), unwrap(argument))]
+    pub use_shelv_system_prompt: Option<bool>,
 }
 
 #[derive(Debug, knus::Decode, PartialEq)]

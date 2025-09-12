@@ -5,6 +5,8 @@ use std::net::SocketAddr;
 use tailwind_fuse::*;
 use tower_http::services::ServeDir;
 
+mod proxy;
+
 // Constants from original dioxus site
 const UP_WAVE_PATH: &str = concat!(
     "M0,128L120,144C240,160,480,192,720,208C960,224,1200,224,1320,224L1440,224L1440,320L1320,320",
@@ -204,6 +206,9 @@ pub struct ButtonStyle {
 pub enum Route {
     #[get("/")]
     Root,
+
+    #[post("/api/llm-claude/v1")]
+    ProxyAnthropicPost,
 }
 
 fn strip_out_newlines(text: &str) -> String {
@@ -217,6 +222,12 @@ fn strip_out_newlines(text: &str) -> String {
 // Route handlers
 async fn root() -> Html<String> {
     Html(render_to_string(home_page()))
+}
+
+async fn proxy_anthropic_post(
+    req: axum::extract::Request,
+) -> Result<axum::response::Response, (axum::http::StatusCode, String)> {
+    proxy::proxy_anthropic(req).await
 }
 
 fn home_page() -> Element {

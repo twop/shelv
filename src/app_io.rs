@@ -9,13 +9,12 @@ use std::{
 
 use eframe::egui;
 use genai::{
-    ModelIden, ModelName, ServiceTarget,
+    ModelIden, ServiceTarget,
     adapter::AdapterKind,
     chat::{ChatMessage, ChatRequest, ChatStreamEvent, StreamChunk},
     resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver},
 };
 use global_hotkey::GlobalHotKeyManager;
-use similar::DiffableStr;
 
 use crate::{
     app_actions::{
@@ -189,9 +188,9 @@ impl AppIO for RealAppIO {
                 parts
             });
 
-            let (model, system_prompt, use_shelv_propmpt) = llm_settings
-                .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt))
-                .unwrap_or_else(|| (SHELV_LLM_PROXY_MODEL.to_string(), None, true));
+            let (model, system_prompt, use_shelv_propmpt, token) = llm_settings
+                .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt.unwrap_or(true), s.token))
+                .unwrap_or_else(|| (SHELV_LLM_PROXY_MODEL.to_string(), None, true, None));
 
             if use_shelv_propmpt {
                 chat_req
@@ -205,8 +204,11 @@ impl AppIO for RealAppIO {
                     .insert(0, ChatMessage::system(system_prompt));
             }
 
-            let auth_resolver = prepare_auth_resolver();
-            let service_target_resolver = prepare_service_target_resolver();
+            let (service_target_resolver, auth_resolver) = if model == SHELV_LLM_PROXY_MODEL {
+                prepare_shelv_providers()
+            } else {
+                prepare_general_providers(token.as_deref())
+            };
             // println!("-----llm req: {chat_req:#?}");
             // -- Build the new client with this adapter_config
             let client = genai::Client::builder()
@@ -283,9 +285,9 @@ impl AppIO for RealAppIO {
             egui_ctx.request_repaint();
         };
 
-        let (model, system_prompt, use_shelv_propmpt) = llm_settings
-            .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt))
-            .unwrap_or_else(|| (SHELV_LLM_PROXY_MODEL.to_string(), None, true));
+        let (model, system_prompt, use_shelv_propmpt, token) = llm_settings
+            .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt.unwrap_or(true), s.token))
+            .unwrap_or_else(|| (SHELV_LLM_PROXY_MODEL.to_string(), None, true, None));
 
         let chat_req = ChatRequest::new(Vec::from_iter(
             use_shelv_propmpt
@@ -350,8 +352,11 @@ impl AppIO for RealAppIO {
         tokio::spawn(async move {
             println!("-----llm inline req: {chat_req:#?}");
 
-            let auth_resolver = prepare_auth_resolver();
-            let service_target_resolver = prepare_service_target_resolver();
+            let (service_target_resolver, auth_resolver) = if model == SHELV_LLM_PROXY_MODEL {
+                prepare_shelv_providers()
+            } else {
+                prepare_general_providers(token.as_deref())
+            };
 
             let client = genai::Client::builder()
                 .with_auth_resolver(auth_resolver)
@@ -405,54 +410,73 @@ impl AppIO for RealAppIO {
     }
 }
 
-fn prepare_service_target_resolver() -> ServiceTargetResolver {
-    ServiceTargetResolver::from_resolver_fn(
-        |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
-            let ServiceTarget { model, .. } = &service_target;
+fn create_shelv_claude_providers() -> (AuthData, ModelIden, Endpoint) {
+    // Route to our proxy server running on localhost:8080
+    let endpoint = Endpoint::from_static("http://localhost:8080/api/llm-claude/v1");
+    let auth = AuthData::from_single("shelv-token");
+    let model = ModelIden::new(AdapterKind::Anthropic, DEFAULT_REAL_LLM_MODEL);
 
-            if *model.model_name == *ModelName::from(SHELV_LLM_PROXY_MODEL) {
-                // For now, this is a noop - just redirect to the default claude API
-                // In the future, this will route to our proxy server
-                let endpoint = Endpoint::from_static("https://api.anthropic.com/v1/");
-                let key = "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";
-                let auth = AuthData::from_single(key);
-                let model = ModelIden::new(AdapterKind::Anthropic, "claude-3-haiku-20240307");
-
-                Ok(ServiceTarget {
-                    endpoint,
-                    auth,
-                    model,
-                })
-            } else {
-                // For all other models, pass through unchanged
-                Ok(service_target)
-            }
-        },
-    )
+    (auth, model, endpoint)
 }
 
-fn prepare_auth_resolver() -> AuthResolver {
+fn create_non_shelv_claude_providers(
+    adapter_kind: AdapterKind,
+    token: Option<&str>,
+) -> Result<AuthData, genai::resolver::Error> {
+    if let Some(token) = token {
+        Ok(AuthData::from_single(token))
+    } else {
+        // Some models like Ollama may not require a token
+        Ok(AuthData::from_single(""))
+    }
+}
+
+fn prepare_shelv_providers() -> (ServiceTargetResolver, AuthResolver) {
+    let service_target_resolver = ServiceTargetResolver::from_resolver_fn(
+        |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
+            let (auth, model, endpoint) = create_shelv_claude_providers();
+
+            Ok(ServiceTarget {
+                endpoint,
+                auth,
+                model,
+            })
+        },
+    );
+
+    let auth_resolver = AuthResolver::from_resolver_fn(
+        move |_model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
+            // For shelv-claude models, auth is handled by service target resolver
+            let (auth, _, _) = create_shelv_claude_providers();
+            Ok(Some(auth))
+        },
+    );
+
+    (service_target_resolver, auth_resolver)
+}
+
+fn prepare_general_providers(token: Option<&str>) -> (ServiceTargetResolver, AuthResolver) {
+    let service_target_resolver = ServiceTargetResolver::from_resolver_fn(
+        |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
+            // For all other models, pass through unchanged
+            Ok(service_target)
+        },
+    );
+
+    let token_owned = token.map(|t| t.to_string());
     let auth_resolver = AuthResolver::from_resolver_fn(
         move |model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
             let genai::ModelIden {
                 adapter_kind,
-                model_name,
+                model_name: _,
             } = model_iden;
 
-            let model_name: &str = &model_name;
-            if model_name != SHELV_LLM_PROXY_MODEL {
-            // if adapter_kind != AdapterKind::Anthropic {
-                return Err(genai::resolver::Error::Custom("Currently we only support Anthropic models".to_string()));
-            }
-
-            // YES it is OK to hardcode it here, it is heavily rate limited AND unique for this specific usage
-            let key = "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";
-
-            Ok(Some(genai::resolver::AuthData::from_single(key)))
+            let auth = create_non_shelv_claude_providers(adapter_kind, token_owned.as_deref())?;
+            Ok(Some(auth))
         },
     );
 
-    auth_resolver
+    (service_target_resolver, auth_resolver)
 }
 
 fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<String>, io::Error> {
