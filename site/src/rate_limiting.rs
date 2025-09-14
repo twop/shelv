@@ -29,17 +29,19 @@ impl RateLimiter {
     }
 
     pub fn try_add_call_record(&mut self, call_record: ApiCallRecord) -> bool {
-        // Remove calls outside the time window
-        let timestamp = call_record.timestamp;
-        let cutoff_time = timestamp - chrono::Duration::from_std(self.time_window).unwrap();
-        self.calls.retain(|call| call.timestamp > cutoff_time);
-
-        // Check if we can add a new call
         if self.calls.len() < self.max_calls {
             self.calls.push(call_record);
             true
         } else {
-            false
+            let timestamp = call_record.timestamp;
+            let cutoff_time = timestamp - chrono::Duration::from_std(self.time_window).unwrap();
+            if self.max_calls > 0 && self.calls[0].timestamp < cutoff_time {
+                self.calls.remove(0);
+                self.calls.push(call_record);
+                true
+            } else {
+                false
+            }
         }
     }
 
@@ -88,7 +90,7 @@ mod tests {
 
         // After time window passes, should allow new calls
         assert!(limiter.try_add_call_record(ApiCallRecord::new(later_time)));
-        assert_eq!(limiter.calls_count(), 1);
+        assert_eq!(limiter.calls_count(), 2);
     }
 
     #[test]

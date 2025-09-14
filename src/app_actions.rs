@@ -1,37 +1,40 @@
 use std::{collections::BTreeMap, io, path::PathBuf};
 
-use eframe::egui::{text::LayoutJob, Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand};
+use eframe::egui::{
+    Context, FontId, Id, KeyboardShortcut, OpenUrl, TextFormat, ViewportCommand,
+    text::{LayoutJob, LayoutSection},
+};
 
-use serde_json::{to_value, Value};
+use serde_json::{Value, to_value};
 use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
 
 use crate::{
     app_state::{
-        compute_editor_text_id, AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState,
-        InlineLLMResponseChunk, InlinePromptStatus, MsgToApp, ParsedPromptResponse, RenderAction,
-        SlashPalette, TextSelectionAddress, UnsavedChange,
+        AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk,
+        InlinePromptStatus, MsgToApp, ParsedPromptResponse, RenderAction, SlashPalette,
+        TextSelectionAddress, UnsavedChange, compute_editor_text_id,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
-        run_llm::{prepare_to_run_llm_block, CodeBlockAddress, LLM_LANG},
+        run_llm::{CodeBlockAddress, LLM_LANG, prepare_to_run_llm_block},
     },
-    effects::text_change_effect::{apply_text_changes, TextChange},
+    effects::text_change_effect::{TextChange, apply_text_changes},
     feedback::FeedbackType,
-    persistent_state::{get_tutorial_note_content, NoteFile},
+    persistent_state::{NoteFile, get_tutorial_note_content},
     scripting::{
-        note_eval::{evaluate_all_live_js_blocks, evaluate_js_block, JSBlockLang},
+        note_eval::{JSBlockLang, evaluate_all_live_js_blocks, evaluate_js_block},
         settings_eval::{
-            eval_js_scripts_in_settings_note, eval_kdl_in_settings_note, Scripts,
-            SettingsNoteEvalContext,
+            Scripts, SettingsNoteEvalContext, eval_js_scripts_in_settings_note,
+            eval_kdl_in_settings_note,
         },
     },
     settings_parsing::LlmSettings,
     text_structure::{
-        create_layout_job_from_text_diff, CodeBlockMeta, SpanIndex, SpanKind, SpanMeta,
-        TextDiffPart,
+        CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, create_error_text_layout_job,
+        create_layout_job_from_text_diff,
     },
 };
 
@@ -428,6 +431,13 @@ pub fn process_app_action(
                     response,
                     address: target_address,
                 } => match state.inline_llm_prompt.take() {
+                    Some(prompt_state) if prompt_state.address != target_address => {
+                        println!(
+                            "Address didn't match, propt={:#?}, target={:#?}",
+                            prompt_state.address, target_address
+                        );
+                        Default::default()
+                    }
                     Some(prompt_state) if prompt_state.address == target_address => {
                         match response {
                             InlineLLMResponseChunk::Chunk(chunk) => {
@@ -471,9 +481,9 @@ pub fn process_app_action(
                                                 }
                                             }),
                                     );
+                                } else {
+                                    println!("----response_text: {response_text:#?}");
                                 }
-
-                                // println!("----diff_parts: {diff_parts:#?}");
 
                                 let layout_job =
                                     create_layout_job_from_text_diff(&diff_parts, &state.theme);
@@ -523,6 +533,37 @@ pub fn process_app_action(
                                     layout_job,
                                     status,
                                     fresh_response,
+                                    parsed_response,
+                                });
+                                SmallVec::new()
+                            }
+                            InlineLLMResponseChunk::ResponseError(err) => {
+                                let InlineLLMPromptState {
+                                    response_text: _,
+                                    prompt,
+                                    address,
+                                    diff_parts: _,
+                                    layout_job: _,
+                                    status: _,
+                                    fresh_response: _,
+                                    parsed_response,
+                                } = prompt_state;
+
+                                let status = InlinePromptStatus::Done {
+                                    prompt: prompt.clone(),
+                                };
+                                state.inline_llm_prompt = Some(InlineLLMPromptState {
+                                    response_text: err.clone(),
+                                    prompt,
+                                    address,
+                                    diff_parts: vec![],
+                                    layout_job: create_error_text_layout_job(
+                                        "Failed",
+                                        &err,
+                                        &state.theme,
+                                    ),
+                                    status,
+                                    fresh_response: true,
                                     parsed_response,
                                 });
                                 SmallVec::new()

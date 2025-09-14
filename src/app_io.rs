@@ -122,152 +122,8 @@ impl AppIO for RealAppIO {
         Ok(())
     }
 
-    fn execute_llm_block(&self, question: LLMBlockRequest, cx: SettingsForAiRequests) {
-        let egui_ctx = self.egui_ctx.clone();
-        let sender = self.msg_queue.clone();
-
-        // const MODEL_ANTHROPIC: &str = "claude-3-haiku-20240307";
-
-        let LLMBlockRequest {
-            conversation,
-            output_code_block_address,
-            note_id,
-        } = question;
-
-        let SettingsForAiRequests {
-            commands,
-            llm_settings,
-        } = cx;
-        let shelv_system_prompt = include_str!("./prompts/shelv-system-prompt.md").replace(
-            "{{current_keybindings}}",
-            &create_ai_keybindings_documentation(commands),
-        );
-
-        // cloned because it is goint to be used inside async block
-        let llm_settings = llm_settings.cloned();
-
-        let send = move |chunk: String| {
-            sender
-                .send(MsgToApp::LLMBlockResponseChunk(LLMBlockResponseChunk {
-                    chunk: chunk.to_string(),
-                    address: output_code_block_address.clone(),
-                    note_id,
-                }))
-                .unwrap();
-
-            egui_ctx.request_repaint();
-        };
-
-        let (chat_req, service_target_resolver, auth_resolver, model) = {
-            let mut chat_req = ChatRequest::new({
-                // Note that some AI apis (lile anthropic) requires to be user -> assistant -> user -> ...
-                // that means that markdown parts in between ai blocks either need to be "system" or user
-                // in case of "user" they need to be merged with the quesion (ai block content)
-                // for now pure string contatenation should work
-                //  but potentially we might consider annotating somehow, like <md> </md> with system prompt
-                let mut parts = Vec::new();
-                let mut current_user_content: Option<String> = None;
-
-                for part in conversation.parts {
-                    match part {
-                        // TODO potentially use some meta prompt to inject markdown content)
-                        ConversationPart::Markdown(content)
-                        | ConversationPart::Question(content) => match &mut current_user_content {
-                            Some(user_content) => {
-                                user_content.push_str("\n\n");
-                                user_content.push_str(&content);
-                            }
-                            None => {
-                                current_user_content = Some(content);
-                            }
-                        },
-                        ConversationPart::Answer(content) => {
-                            if let Some(user_content) = current_user_content.take() {
-                                parts.push(ChatMessage::user(user_content));
-                            }
-                            parts.push(ChatMessage::assistant(content));
-                        }
-                    }
-                }
-
-                if let Some(current_user_content) = current_user_content {
-                    parts.push(ChatMessage::user(current_user_content));
-                }
-
-                parts
-            });
-
-            let (model, system_prompt, use_shelv_propmpt, token) = llm_settings
-                .map(|s| {
-                    (
-                        s.model,
-                        s.system_prompt,
-                        s.use_shelv_system_prompt.unwrap_or(true),
-                        s.token,
-                    )
-                })
-                .unwrap_or_else(|| (SHELV_LLM_PROXY_MODEL.to_string(), None, true, None));
-
-            if use_shelv_propmpt {
-                chat_req
-                    .messages
-                    .insert(0, ChatMessage::system(shelv_system_prompt));
-            }
-
-            if let Some(system_prompt) = system_prompt {
-                chat_req
-                    .messages
-                    .insert(0, ChatMessage::system(system_prompt));
-            }
-
-            let (service_target_resolver, auth_resolver) = if model == SHELV_LLM_PROXY_MODEL {
-                prepare_shelv_providers(&self.shelv_api_server, &self.shelv_magic_token)
-            } else {
-                prepare_general_providers(token.as_deref())
-            };
-
-            (chat_req, service_target_resolver, auth_resolver, model)
-        };
-
-        let debug_chat_prompts = self.debug_chat_prompts;
-        tokio::spawn(async move {
-            if debug_chat_prompts {
-                println!("-----llm req: {chat_req:#?}");
-            }
-            // -- Build the new client with this adapter_config
-            let client = genai::Client::builder()
-                .with_auth_resolver(auth_resolver)
-                .with_service_target_resolver(service_target_resolver)
-                .build();
-
-            let chat_res = client
-                .exec_chat_stream(model.as_str(), chat_req.clone(), None)
-                .await;
-
-            // println!(
-            //     "-----llm resp: {:#?}",
-            //     match &chat_res {
-            //         Ok(resp) => "Ok".to_string(),
-            //         Err(e) => "Err".to_string(),
-            //     }
-            // );
-
-            match chat_res {
-                Ok(mut stream) => {
-                    while let Some(stream_event) = stream.stream.next().await {
-                        match stream_event {
-                            Ok(ChatStreamEvent::Chunk(StreamChunk { content })) => send(content),
-                            Ok(_) => (),
-                            Err(e) => {
-                                send(format!("Error getting response: {:#?}", e));
-                                break;
-                            }
-                        }
-                    }
-                }
-                Err(err) => send(format!("{:#?}", err)),
-            };
-        });
+    fn execute_llm_block(&self, _question: LLMBlockRequest, _cx: SettingsForAiRequests) {
+        unreachable!("That should not be called, the feature is removed")
     }
 
     fn execute_llm_prompt(&self, quesion: LLMPromptRequest, cx: SettingsForAiRequests) {
@@ -295,13 +151,10 @@ impl AppIO for RealAppIO {
         let llm_settings = llm_settings.cloned();
 
         // None -> end of the stream
-        let send = move |chunk: Option<String>| {
+        let send = move |chunk: InlineLLMResponseChunk| {
             sender
                 .send(MsgToApp::InlineLLMResponse {
-                    response: (match chunk {
-                        Some(chunk) => InlineLLMResponseChunk::Chunk(chunk),
-                        None => InlineLLMResponseChunk::End,
-                    }),
+                    response: (chunk),
                     address: selection_location,
                 })
                 .unwrap();
@@ -340,8 +193,8 @@ impl AppIO for RealAppIO {
 
                         user_template
                             .replace("{{prompt}}", &prompt)
-                            .replace("{{selection}}", &selection)
                             .replace("{{before}}", &before_selection)
+                            .replace("{{selection}}", &selection)
                             .replace("{{after}}", &after_selection)
                     }),
                 ]),
@@ -404,24 +257,30 @@ impl AppIO for RealAppIO {
                 .exec_chat_stream(model.as_str(), chat_req, None)
                 .await;
 
+            use InlineLLMResponseChunk::*;
             match chat_res {
                 Ok(mut stream) => {
                     while let Some(stream_event) = stream.stream.next().await {
                         match stream_event {
                             Ok(ChatStreamEvent::Chunk(StreamChunk { content })) => {
-                                send(Some(content))
+                                send(Chunk(content))
                             }
-                            Ok(ChatStreamEvent::End(_)) => send(None),
+                            Ok(ChatStreamEvent::End(_)) => send(End),
                             Ok(ChatStreamEvent::Start) => (),
                             Ok(ChatStreamEvent::ReasoningChunk(_)) => (),
                             Err(e) => {
-                                send(Some(format!("Error getting response: {:#?}", e)));
+                                send(ResponseError(format!(
+                                    "Error getting response chunk: {:#?}",
+                                    e
+                                )));
                                 break;
                             }
                         }
                     }
                 }
-                Err(err) => send(Some(format!("{:#?}", err))),
+                Err(err) => {
+                    send(ResponseError(format!("Error sending request: {:#?}", err)));
+                }
             };
         });
     }
