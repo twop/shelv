@@ -16,4 +16,5 @@ tower-http = { version = "0.6", features = ["fs"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 http = "1.0"
 futures = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
 dotenvy = { workspace = true }

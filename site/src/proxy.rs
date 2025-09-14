@@ -16,7 +16,7 @@ pub struct Config {
 }
 
 pub async fn proxy_anthropic(
-    State(config): State<Arc<Config>>,
+    config: &Config,
     req: Request,
 ) -> Result<Response<Body>, (StatusCode, String)> {
     println!("proxy_anthropic req: {req:#?}");
