@@ -1,22 +1,52 @@
-use axum::{body::Body, extract::Request, http::StatusCode, response::Response};
+use axum::{
+    body::Body,
+    extract::{Request, State},
+    http::StatusCode,
+    response::Response,
+};
 use futures::StreamExt;
+use std::sync::Arc;
 
-const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1";
-const SHELV_TOKEN: &str = "shelv-token";
-const ANTHROPIC_API_KEY: &str = "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";
+const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 
-pub async fn proxy_anthropic(req: Request) -> Result<Response<Body>, (StatusCode, String)> {
+#[derive(Clone)]
+pub struct Config {
+    pub shelv_magic_token: String,
+    pub anthropic_api_key: Option<String>,
+}
+
+pub async fn proxy_anthropic(
+    State(config): State<Arc<Config>>,
+    req: Request,
+) -> Result<Response<Body>, (StatusCode, String)> {
+    println!("proxy_anthropic req: {req:#?}");
+    // Short-circuit if no API key is configured
+    let anthropic_api_key = match &config.anthropic_api_key {
+        Some(key) => key,
+        None => {
+            println!("Err proxy llm req: Anthropic API key not configured");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Anthropic API key not configured".to_string(),
+            ));
+        }
+    };
+
     // Extract and verify the authorization header
     let auth_header = req
         .headers()
-        .get("authorization")
+        .get("x-api-key")
         .and_then(|h| h.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing or invalid authorization header".to_string(),
-        ))?;
+        .ok_or_else(|| {
+            println!("Err proxy llm req: Missing or invalid authorization header");
+            (
+                StatusCode::UNAUTHORIZED,
+                "Missing or invalid authorization header".to_string(),
+            )
+        })?;
 
-    if !auth_header.contains(SHELV_TOKEN) {
+    if !auth_header.contains(&config.shelv_magic_token) {
+        println!("Err proxy llm req: Invalid magic token in auth header");
         return Err((
             StatusCode::UNAUTHORIZED,
             format!("Are you trying to get delicious claude api not from Shelv?"),
@@ -27,6 +57,7 @@ pub async fn proxy_anthropic(req: Request) -> Result<Response<Body>, (StatusCode
 
     let (parts, body) = req.into_parts();
     let body_bytes = axum::body::to_bytes(body, usize::MAX).await.map_err(|e| {
+        println!("Err proxy llm req: Failed to read request body: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to read request body: {}", e),
@@ -37,7 +68,7 @@ pub async fn proxy_anthropic(req: Request) -> Result<Response<Body>, (StatusCode
 
     let mut anthropic_request = client
         .request(req.method().clone(), ANTHROPIC_API_URL)
-        .header("authorization", format!("Bearer {}", ANTHROPIC_API_KEY));
+        .header("x-api-key", format!("{}", anthropic_api_key));
 
     // Add other headers (except authorization which we're replacing)
     for (key, value) in req.headers() {
@@ -51,6 +82,7 @@ pub async fn proxy_anthropic(req: Request) -> Result<Response<Body>, (StatusCode
     }
 
     let anthropic_response = anthropic_request.send().await.map_err(|e| {
+        println!("Err proxy llm req: Failed to send request to Anthropic API: {e:#?}");
         (
             StatusCode::BAD_GATEWAY,
             format!("Failed to send request to Anthropic API: {}", e),
@@ -74,11 +106,13 @@ pub async fn proxy_anthropic(req: Request) -> Result<Response<Body>, (StatusCode
     }
 
     let response = response.body(Body::from_stream(stream)).map_err(|e| {
+        println!("Err proxy llm req: Failed to build response: {}", e);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to build response: {}", e),
         )
     })?;
 
+    println!("Ok: Successfully proxied request to Anthropic API");
     Ok(response)
 }

@@ -1,7 +1,7 @@
-use axum::response::Html;
+use axum::{extract::State, response::Html};
 use enum_router::router;
 use hyped::*;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 use tailwind_fuse::*;
 use tower_http::services::ServeDir;
 
@@ -202,12 +202,14 @@ pub struct ButtonStyle {
 }
 
 // Enum router definition
-#[router]
+#[router(Arc<proxy::Config>)]
 pub enum Route {
     #[get("/")]
     Root,
 
-    #[post("/api/llm-claude/v1")]
+    // note that this is how the client will see construct url using genai
+    // note that messages are coming from anthropic api url pattern
+    #[post("/api/llm-claude/v1/messages")]
     ProxyAnthropicPost,
 }
 
@@ -225,9 +227,10 @@ async fn root() -> Html<String> {
 }
 
 async fn proxy_anthropic_post(
+    State(config): State<Arc<proxy::Config>>,
     req: axum::extract::Request,
 ) -> Result<axum::response::Response, (axum::http::StatusCode, String)> {
-    proxy::proxy_anthropic(req).await
+    proxy::proxy_anthropic(State(config), req).await
 }
 
 fn home_page() -> Element {
@@ -993,11 +996,26 @@ async fn main() {
 
     println!("Server running on http://0.0.0.0:8080");
 
+    // Load .env file from embedded string
+    let env_content = include_str!("../../.env");
+    let _ = dotenvy::from_read(std::io::Cursor::new(env_content));
+
+    // Create config from environment variables (no fallbacks needed since .env is checked in)
+    let config = Arc::new(proxy::Config {
+        shelv_magic_token: std::env::var("SHELV_MAGIC_TOKEN")
+            .expect("SHELV_MAGIC_TOKEN must be set in .env file"),
+        anthropic_api_key: std::env::var("ANTHROPIC_API_KEY")
+            .ok()
+            .filter(|s| !s.is_empty()), // Filter out empty strings
+    });
+
     // Create the main router with enum_router
     let app_router = Route::router();
 
-    // Add static file serving for assets
-    let router = app_router.nest_service("/assets", ServeDir::new("assets"));
+    // Add static file serving for assets and state
+    let router = app_router
+        .nest_service("/assets", ServeDir::new("assets"))
+        .with_state(config);
 
     axum::serve(listener, router).await.unwrap();
 }

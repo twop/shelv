@@ -39,6 +39,9 @@ pub struct RealAppIO {
     egui_ctx: egui::Context,
     msg_queue: SyncSender<MsgToApp>,
     shelv_folder: PathBuf,
+    shelv_api_server: String,
+    shelv_magic_token: String,
+    debug_chat_prompts: bool,
 }
 
 impl RealAppIO {
@@ -47,6 +50,9 @@ impl RealAppIO {
         egui_ctx: egui::Context,
         msg_queue: SyncSender<MsgToApp>,
         shelv_folder: PathBuf,
+        shelv_api_server: String,
+        shelv_magic_token: String,
+        debug_chat_prompts: bool,
     ) -> Self {
         Self {
             hotkeys_manager,
@@ -54,6 +60,9 @@ impl RealAppIO {
             egui_ctx,
             msg_queue,
             shelv_folder,
+            shelv_api_server,
+            shelv_magic_token,
+            debug_chat_prompts,
         }
     }
 }
@@ -149,7 +158,7 @@ impl AppIO for RealAppIO {
             egui_ctx.request_repaint();
         };
 
-        tokio::spawn(async move {
+        let (chat_req, service_target_resolver, auth_resolver, model) = {
             let mut chat_req = ChatRequest::new({
                 // Note that some AI apis (lile anthropic) requires to be user -> assistant -> user -> ...
                 // that means that markdown parts in between ai blocks either need to be "system" or user
@@ -189,7 +198,14 @@ impl AppIO for RealAppIO {
             });
 
             let (model, system_prompt, use_shelv_propmpt, token) = llm_settings
-                .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt.unwrap_or(true), s.token))
+                .map(|s| {
+                    (
+                        s.model,
+                        s.system_prompt,
+                        s.use_shelv_system_prompt.unwrap_or(true),
+                        s.token,
+                    )
+                })
                 .unwrap_or_else(|| (SHELV_LLM_PROXY_MODEL.to_string(), None, true, None));
 
             if use_shelv_propmpt {
@@ -205,11 +221,19 @@ impl AppIO for RealAppIO {
             }
 
             let (service_target_resolver, auth_resolver) = if model == SHELV_LLM_PROXY_MODEL {
-                prepare_shelv_providers()
+                prepare_shelv_providers(&self.shelv_api_server, &self.shelv_magic_token)
             } else {
                 prepare_general_providers(token.as_deref())
             };
-            // println!("-----llm req: {chat_req:#?}");
+
+            (chat_req, service_target_resolver, auth_resolver, model)
+        };
+
+        let debug_chat_prompts = self.debug_chat_prompts;
+        tokio::spawn(async move {
+            if debug_chat_prompts {
+                println!("-----llm req: {chat_req:#?}");
+            }
             // -- Build the new client with this adapter_config
             let client = genai::Client::builder()
                 .with_auth_resolver(auth_resolver)
@@ -286,7 +310,14 @@ impl AppIO for RealAppIO {
         };
 
         let (model, system_prompt, use_shelv_propmpt, token) = llm_settings
-            .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt.unwrap_or(true), s.token))
+            .map(|s| {
+                (
+                    s.model,
+                    s.system_prompt,
+                    s.use_shelv_system_prompt.unwrap_or(true),
+                    s.token,
+                )
+            })
             .unwrap_or_else(|| (SHELV_LLM_PROXY_MODEL.to_string(), None, true, None));
 
         let chat_req = ChatRequest::new(Vec::from_iter(
@@ -347,16 +378,22 @@ impl AppIO for RealAppIO {
             ));
         }
 
-        std::fs::write(debug_file, contents).unwrap();
+        let (service_target_resolver, auth_resolver) = if model == SHELV_LLM_PROXY_MODEL {
+            prepare_shelv_providers(&self.shelv_api_server, &self.shelv_magic_token)
+        } else {
+            prepare_general_providers(token.as_deref())
+        };
 
+        let debug_chat_prompts = self.debug_chat_prompts;
         tokio::spawn(async move {
-            println!("-----llm inline req: {chat_req:#?}");
-
-            let (service_target_resolver, auth_resolver) = if model == SHELV_LLM_PROXY_MODEL {
-                prepare_shelv_providers()
-            } else {
-                prepare_general_providers(token.as_deref())
-            };
+            if debug_chat_prompts {
+                println!("-----llm inline req: {chat_req:#?}");
+                if let Err(err) = std::fs::write(&debug_file, contents) {
+                    println!("failed to dump llm logs err: {err:#?}");
+                } else {
+                    println!("written llm logs here: {debug_file:#?}");
+                }
+            }
 
             let client = genai::Client::builder()
                 .with_auth_resolver(auth_resolver)
@@ -410,31 +447,19 @@ impl AppIO for RealAppIO {
     }
 }
 
-fn create_shelv_claude_providers() -> (AuthData, ModelIden, Endpoint) {
-    // Route to our proxy server running on localhost:8080
-    let endpoint = Endpoint::from_static("http://localhost:8080/api/llm-claude/v1");
-    let auth = AuthData::from_single("shelv-token");
-    let model = ModelIden::new(AdapterKind::Anthropic, DEFAULT_REAL_LLM_MODEL);
+fn prepare_shelv_providers(
+    api_server: &str,
+    magic_token: &str,
+) -> (ServiceTargetResolver, AuthResolver) {
+    let api_server = api_server.to_string();
+    let magic_token = magic_token.to_string();
 
-    (auth, model, endpoint)
-}
-
-fn create_non_shelv_claude_providers(
-    adapter_kind: AdapterKind,
-    token: Option<&str>,
-) -> Result<AuthData, genai::resolver::Error> {
-    if let Some(token) = token {
-        Ok(AuthData::from_single(token))
-    } else {
-        // Some models like Ollama may not require a token
-        Ok(AuthData::from_single(""))
-    }
-}
-
-fn prepare_shelv_providers() -> (ServiceTargetResolver, AuthResolver) {
     let service_target_resolver = ServiceTargetResolver::from_resolver_fn(
-        |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
-            let (auth, model, endpoint) = create_shelv_claude_providers();
+        move |_service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
+            // TODO use router enum string representation, but that will require project restructuring due to reuse
+            let endpoint = Endpoint::from_owned(format!("{}/api/llm-claude/v1/", &api_server));
+            let auth = AuthData::from_single(magic_token.clone());
+            let model = ModelIden::new(AdapterKind::Anthropic, DEFAULT_REAL_LLM_MODEL);
 
             Ok(ServiceTarget {
                 endpoint,
@@ -447,8 +472,7 @@ fn prepare_shelv_providers() -> (ServiceTargetResolver, AuthResolver) {
     let auth_resolver = AuthResolver::from_resolver_fn(
         move |_model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
             // For shelv-claude models, auth is handled by service target resolver
-            let (auth, _, _) = create_shelv_claude_providers();
-            Ok(Some(auth))
+            Ok(None)
         },
     );
 
@@ -458,7 +482,6 @@ fn prepare_shelv_providers() -> (ServiceTargetResolver, AuthResolver) {
 fn prepare_general_providers(token: Option<&str>) -> (ServiceTargetResolver, AuthResolver) {
     let service_target_resolver = ServiceTargetResolver::from_resolver_fn(
         |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
-            // For all other models, pass through unchanged
             Ok(service_target)
         },
     );
@@ -467,12 +490,12 @@ fn prepare_general_providers(token: Option<&str>) -> (ServiceTargetResolver, Aut
     let auth_resolver = AuthResolver::from_resolver_fn(
         move |model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
             let genai::ModelIden {
-                adapter_kind,
+                adapter_kind: _,
                 model_name: _,
             } = model_iden;
 
-            let auth = create_non_shelv_claude_providers(adapter_kind, token_owned.as_deref())?;
-            Ok(Some(auth))
+            let auth = token_owned.map(|token|AuthData::from_single(token)) ;
+            Ok(auth)
         },
     );
 
