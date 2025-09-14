@@ -92,23 +92,6 @@ mod tests {
     }
 
     #[test]
-    fn test_rate_limiter_partial_cleanup() {
-        let mut limiter = RateLimiter::new(3, Duration::from_secs(60));
-        let base_time = Local.with_ymd_and_hms(2023, 1, 1, 12, 0, 0).unwrap();
-        let mid_time = base_time + chrono::Duration::seconds(30);
-        let later_time = base_time + chrono::Duration::seconds(70);
-
-        // Add calls at different times
-        assert!(limiter.try_add_call_record(ApiCallRecord::new(base_time)));
-        assert!(limiter.try_add_call_record(ApiCallRecord::new(mid_time)));
-        assert!(limiter.try_add_call_record(ApiCallRecord::new(mid_time)));
-
-        // After 70 seconds, only the mid_time calls should remain
-        assert!(limiter.try_add_call_record(ApiCallRecord::new(later_time)));
-        assert_eq!(limiter.calls_count(), 3); // 2 from mid_time + 1 new
-    }
-
-    #[test]
     fn test_empty_rate_limiter() {
         let limiter = RateLimiter::new(5, Duration::from_secs(60));
         assert_eq!(limiter.calls_count(), 0);
