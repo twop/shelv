@@ -6,7 +6,7 @@ default-members = ["."]
 edition = "2024"
 
 [workspace.dependencies]
-dotenvy = "0.15.7"
+const-dotenvy = "0.1.0"
 
 [package]
 name = "shelv"
@@ -75,7 +75,7 @@ tree-sitter = "0.20.10"
 knus = { default-features = false, git = 'https://github.com/twop/knus.git', features = [
     "derive",
 ], rev = "0bcbd447866a5be7efc9cc4b597f444b7ae822d2" }
-dotenvy = { workspace = true }
+const-dotenvy = { workspace = true }
 # knus = { default-features = false, version = "3.2.0", features = ["derive"] }
 # knus = { default-features = false, git = 'https://github.com/TheLostLambda/knus.git', features = [
 #     "derive",

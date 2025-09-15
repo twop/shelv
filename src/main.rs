@@ -82,28 +82,23 @@ impl MyApp<RealAppIO> {
 
         let (msg_queue_tx, msg_queue_rx) = sync_channel::<MsgToApp>(10);
 
-        // Load .env file from embedded string
-        let env_content = include_str!("../.env");
-        let _ = dotenvy::from_read(std::io::Cursor::new(env_content));
-
-        // Get environment variables (no fallbacks needed since .env is checked in)
-        let shelv_api_server =
-            std::env::var("SHELV_API_SERVER").expect("SHELV_API_SERVER must be set in .env file");
-
-        let shelv_magic_token =
-            std::env::var("SHELV_MAGIC_TOKEN").expect("SHELV_MAGIC_TOKEN must be set in .env file");
-
-        let debug_chat_prompts = std::env::var("SHELV_DEBUG_CHAT_PROMPTS")
-            .map(|v| v == "true")
-            .unwrap_or(false);
+        let (shelv_api_server, shelv_magic_token, debug_chat_prompts): (
+            &'static str,
+            &'static str,
+            bool,
+        ) = const_dotenvy::dotenvy!(
+            SHELV_API_SERVER: &'static str,
+            SHELV_MAGIC_TOKEN: &'static str,
+            SHELV_DEBUG_CHAT_PROMPTS: bool = false
+        );
 
         let app_io = RealAppIO::new(
             GlobalHotKeyManager::new().unwrap(),
             cc.egui_ctx.clone(),
             msg_queue_tx.clone(),
             persistence_folder.clone(),
-            shelv_api_server,
-            shelv_magic_token,
+            shelv_api_server.to_string(),
+            shelv_magic_token.to_string(),
             debug_chat_prompts,
         );
 

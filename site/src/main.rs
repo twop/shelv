@@ -1016,17 +1016,17 @@ async fn main() {
 
     println!("Server running on http://0.0.0.0:8080");
 
-    // Load .env file from embedded string
-    let env_content = include_str!("../../.env");
-    let _ = dotenvy::from_read(std::io::Cursor::new(env_content));
+    let (shelv_magic_token, anthropic_api_key): (&'static str, &'static str) = const_dotenvy::dotenvy!(
+        SHELV_MAGIC_TOKEN: &'static str,
+        ANTHROPIC_API_KEY: &'static str,
+    );
 
-    // Create config and rate limiter
     let config = proxy::Config {
-        shelv_magic_token: std::env::var("SHELV_MAGIC_TOKEN")
-            .expect("SHELV_MAGIC_TOKEN must be set in .env file"),
-        anthropic_api_key: std::env::var("ANTHROPIC_API_KEY")
-            .ok()
-            .filter(|s| !s.is_empty()), // Filter out empty strings
+        shelv_magic_token: shelv_magic_token.to_string(),
+        anthropic_api_key: match anthropic_api_key {
+            "" => None,
+            key => Some(key.to_string()),
+        },
     };
 
     let rate_limiter = rate_limiting::RateLimiter::new(20, Duration::from_secs(60));
