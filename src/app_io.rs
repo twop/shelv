@@ -9,9 +9,10 @@ use std::{
 
 use eframe::egui;
 use genai::{
+    ModelIden, ServiceTarget,
     adapter::AdapterKind,
     chat::{ChatMessage, ChatRequest, ChatStreamEvent, StreamChunk},
-    resolver::AuthResolver,
+    resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver},
 };
 use global_hotkey::GlobalHotKeyManager;
 
@@ -38,6 +39,9 @@ pub struct RealAppIO {
     egui_ctx: egui::Context,
     msg_queue: SyncSender<MsgToApp>,
     shelv_folder: PathBuf,
+    shelv_api_server: String,
+    shelv_magic_token: String,
+    debug_chat_prompts: bool,
 }
 
 impl RealAppIO {
@@ -46,6 +50,9 @@ impl RealAppIO {
         egui_ctx: egui::Context,
         msg_queue: SyncSender<MsgToApp>,
         shelv_folder: PathBuf,
+        shelv_api_server: String,
+        shelv_magic_token: String,
+        debug_chat_prompts: bool,
     ) -> Self {
         Self {
             hotkeys_manager,
@@ -53,11 +60,15 @@ impl RealAppIO {
             egui_ctx,
             msg_queue,
             shelv_folder,
+            shelv_api_server,
+            shelv_magic_token,
+            debug_chat_prompts,
         }
     }
 }
 
-pub const DEFAULT_LLM_MODEL: &str = "claude-3-haiku-20240307";
+pub const DEFAULT_REAL_LLM_MODEL: &str = "claude-3-5-haiku-20241022";
+pub const SHELV_LLM_PROXY_MODEL: &str = "shelv-claude";
 
 impl AppIO for RealAppIO {
     fn hide_app(&self, mode: HideMode) {
@@ -111,132 +122,8 @@ impl AppIO for RealAppIO {
         Ok(())
     }
 
-    fn execute_llm_block(&self, question: LLMBlockRequest, cx: SettingsForAiRequests) {
-        let egui_ctx = self.egui_ctx.clone();
-        let sender = self.msg_queue.clone();
-
-        // const MODEL_ANTHROPIC: &str = "claude-3-haiku-20240307";
-
-        let LLMBlockRequest {
-            conversation,
-            output_code_block_address,
-            note_id,
-        } = question;
-
-        let SettingsForAiRequests {
-            commands,
-            llm_settings,
-        } = cx;
-        let shelv_system_prompt = include_str!("./prompts/shelv-system-prompt.md").replace(
-            "{{current_keybindings}}",
-            &create_ai_keybindings_documentation(commands),
-        );
-
-        // cloned because it is goint to be used inside async block
-        let llm_settings = llm_settings.cloned();
-
-        let send = move |chunk: String| {
-            sender
-                .send(MsgToApp::LLMBlockResponseChunk(LLMBlockResponseChunk {
-                    chunk: chunk.to_string(),
-                    address: output_code_block_address.clone(),
-                    note_id,
-                }))
-                .unwrap();
-
-            egui_ctx.request_repaint();
-        };
-
-        tokio::spawn(async move {
-            let mut chat_req = ChatRequest::new({
-                // Note that some AI apis (lile anthropic) requires to be user -> assistant -> user -> ...
-                // that means that markdown parts in between ai blocks either need to be "system" or user
-                // in case of "user" they need to be merged with the quesion (ai block content)
-                // for now pure string contatenation should work
-                //  but potentially we might consider annotating somehow, like <md> </md> with system prompt
-                let mut parts = Vec::new();
-                let mut current_user_content: Option<String> = None;
-
-                for part in conversation.parts {
-                    match part {
-                        // TODO potentially use some meta prompt to inject markdown content)
-                        ConversationPart::Markdown(content)
-                        | ConversationPart::Question(content) => match &mut current_user_content {
-                            Some(user_content) => {
-                                user_content.push_str("\n\n");
-                                user_content.push_str(&content);
-                            }
-                            None => {
-                                current_user_content = Some(content);
-                            }
-                        },
-                        ConversationPart::Answer(content) => {
-                            if let Some(user_content) = current_user_content.take() {
-                                parts.push(ChatMessage::user(user_content));
-                            }
-                            parts.push(ChatMessage::assistant(content));
-                        }
-                    }
-                }
-
-                if let Some(current_user_content) = current_user_content {
-                    parts.push(ChatMessage::user(current_user_content));
-                }
-
-                parts
-            });
-
-            let (model, system_prompt, use_shelv_propmpt) = llm_settings
-                .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt))
-                .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None, true));
-
-            if use_shelv_propmpt {
-                chat_req
-                    .messages
-                    .insert(0, ChatMessage::system(shelv_system_prompt));
-            }
-
-            if let Some(system_prompt) = system_prompt {
-                chat_req
-                    .messages
-                    .insert(0, ChatMessage::system(system_prompt));
-            }
-
-            let auth_resolver = prepare_auth_resolver();
-            // println!("-----llm req: {chat_req:#?}");
-            // -- Build the new client with this adapter_config
-            let client = genai::Client::builder()
-                .with_auth_resolver(auth_resolver)
-                .build();
-
-            let chat_res = client
-                .exec_chat_stream(model.as_str(), chat_req.clone(), None)
-                .await;
-
-            // println!(
-            //     "-----llm resp: {:#?}",
-            //     match &chat_res {
-            //         Ok(resp) => "Ok".to_string(),
-            //         Err(e) => "Err".to_string(),
-            //     }
-            // );
-
-            match chat_res {
-                Ok(mut stream) => {
-                    while let Some(stream_event) = stream.stream.next().await {
-                        match stream_event {
-                            Ok(ChatStreamEvent::Chunk(StreamChunk { content })) => send(content),
-                            Ok(_) => (),
-                            Err(e) => {
-                                send(format!("Error getting response: {:#?}", e));
-                                break;
-                            }
-                        }
-                    }
-                }
-                Err(err) => send(format!("{:#?}", err)),
-            };
-        });
+    fn execute_llm_block(&self, _question: LLMBlockRequest, _cx: SettingsForAiRequests) {
+        unreachable!("That should not be called, the feature is removed")
     }
 
     fn execute_llm_prompt(&self, quesion: LLMPromptRequest, cx: SettingsForAiRequests) {
@@ -264,13 +151,10 @@ impl AppIO for RealAppIO {
         let llm_settings = llm_settings.cloned();
 
         // None -> end of the stream
-        let send = move |chunk: Option<String>| {
+        let send = move |chunk: InlineLLMResponseChunk| {
             sender
                 .send(MsgToApp::InlineLLMResponse {
-                    response: (match chunk {
-                        Some(chunk) => InlineLLMResponseChunk::Chunk(chunk),
-                        None => InlineLLMResponseChunk::End,
-                    }),
+                    response: (chunk),
                     address: selection_location,
                 })
                 .unwrap();
@@ -278,9 +162,16 @@ impl AppIO for RealAppIO {
             egui_ctx.request_repaint();
         };
 
-        let (model, system_prompt, use_shelv_propmpt) = llm_settings
-            .map(|s| (s.model, s.system_prompt, s.use_shelv_system_prompt))
-            .unwrap_or_else(|| (DEFAULT_LLM_MODEL.to_string(), None, true));
+        let (model, system_prompt, use_shelv_propmpt, token) = llm_settings
+            .map(|s| {
+                (
+                    s.model,
+                    s.system_prompt,
+                    s.use_shelv_system_prompt.unwrap_or(true),
+                    s.token,
+                )
+            })
+            .unwrap_or_else(|| (SHELV_LLM_PROXY_MODEL.to_string(), None, true, None));
 
         let chat_req = ChatRequest::new(Vec::from_iter(
             use_shelv_propmpt
@@ -302,8 +193,8 @@ impl AppIO for RealAppIO {
 
                         user_template
                             .replace("{{prompt}}", &prompt)
-                            .replace("{{selection}}", &selection)
                             .replace("{{before}}", &before_selection)
+                            .replace("{{selection}}", &selection)
                             .replace("{{after}}", &after_selection)
                     }),
                 ]),
@@ -340,39 +231,56 @@ impl AppIO for RealAppIO {
             ));
         }
 
-        std::fs::write(debug_file, contents).unwrap();
+        let (service_target_resolver, auth_resolver) = if model == SHELV_LLM_PROXY_MODEL {
+            prepare_shelv_providers(&self.shelv_api_server, &self.shelv_magic_token)
+        } else {
+            prepare_general_providers(token.as_deref())
+        };
 
+        let debug_chat_prompts = self.debug_chat_prompts;
         tokio::spawn(async move {
-            println!("-----llm inline req: {chat_req:#?}");
-
-            let auth_resolver = prepare_auth_resolver();
+            if debug_chat_prompts {
+                println!("-----llm inline req: {chat_req:#?}");
+                if let Err(err) = std::fs::write(&debug_file, contents) {
+                    println!("failed to dump llm logs err: {err:#?}");
+                } else {
+                    println!("written llm logs here: {debug_file:#?}");
+                }
+            }
 
             let client = genai::Client::builder()
                 .with_auth_resolver(auth_resolver)
+                .with_service_target_resolver(service_target_resolver)
                 .build();
 
             let chat_res = client
                 .exec_chat_stream(model.as_str(), chat_req, None)
                 .await;
 
+            use InlineLLMResponseChunk::*;
             match chat_res {
                 Ok(mut stream) => {
                     while let Some(stream_event) = stream.stream.next().await {
                         match stream_event {
                             Ok(ChatStreamEvent::Chunk(StreamChunk { content })) => {
-                                send(Some(content))
+                                send(Chunk(content))
                             }
-                            Ok(ChatStreamEvent::End(_)) => send(None),
+                            Ok(ChatStreamEvent::End(_)) => send(End),
                             Ok(ChatStreamEvent::Start) => (),
                             Ok(ChatStreamEvent::ReasoningChunk(_)) => (),
                             Err(e) => {
-                                send(Some(format!("Error getting response: {:#?}", e)));
+                                send(ResponseError(format!(
+                                    "Error getting response chunk: {:#?}",
+                                    e
+                                )));
                                 break;
                             }
                         }
                     }
                 }
-                Err(err) => send(Some(format!("{:#?}", err))),
+                Err(err) => {
+                    send(ResponseError(format!("Error sending request: {:#?}", err)));
+                }
             };
         });
     }
@@ -398,26 +306,59 @@ impl AppIO for RealAppIO {
     }
 }
 
-fn prepare_auth_resolver() -> AuthResolver {
-    let auth_resolver = AuthResolver::from_resolver_fn(
-        move |model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
-            let genai::ModelIden {
-                adapter_kind,
-                model_name,
-            } = model_iden;
+fn prepare_shelv_providers(
+    api_server: &str,
+    magic_token: &str,
+) -> (ServiceTargetResolver, AuthResolver) {
+    let api_server = api_server.to_string();
+    let magic_token = magic_token.to_string();
 
-            if adapter_kind != AdapterKind::Anthropic {
-                return Err(genai::resolver::Error::Custom("Currently we only support Anthropic models".to_string()));
-            }
+    let service_target_resolver = ServiceTargetResolver::from_resolver_fn(
+        move |_service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
+            // TODO use router enum string representation, but that will require project restructuring due to reuse
+            let endpoint = Endpoint::from_owned(format!("{}/api/llm-claude/v1/", &api_server));
+            let auth = AuthData::from_single(magic_token.clone());
+            let model = ModelIden::new(AdapterKind::Anthropic, DEFAULT_REAL_LLM_MODEL);
 
-            // YES it is OK to hardcode it here, it is heavily rate limited AND unique for this specific usage
-            let key = "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";
-
-            Ok(Some(genai::resolver::AuthData::from_single(key)))
+            Ok(ServiceTarget {
+                endpoint,
+                auth,
+                model,
+            })
         },
     );
 
-    auth_resolver
+    let auth_resolver = AuthResolver::from_resolver_fn(
+        move |_model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
+            // For shelv-claude models, auth is handled by service target resolver
+            Ok(None)
+        },
+    );
+
+    (service_target_resolver, auth_resolver)
+}
+
+fn prepare_general_providers(token: Option<&str>) -> (ServiceTargetResolver, AuthResolver) {
+    let service_target_resolver = ServiceTargetResolver::from_resolver_fn(
+        |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
+            Ok(service_target)
+        },
+    );
+
+    let token_owned = token.map(|t| t.to_string());
+    let auth_resolver = AuthResolver::from_resolver_fn(
+        move |model_iden: genai::ModelIden| -> Result<Option<genai::resolver::AuthData>, genai::resolver::Error> {
+            let genai::ModelIden {
+                adapter_kind: _,
+                model_name: _,
+            } = model_iden;
+
+            let auth = token_owned.map(|token|AuthData::from_single(token)) ;
+            Ok(auth)
+        },
+    );
+
+    (service_target_resolver, auth_resolver)
 }
 
 fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<String>, io::Error> {

@@ -2,13 +2,13 @@ use std::{
     collections::BTreeMap,
     hash::{Hash, Hasher},
     path::PathBuf,
-    sync::{mpsc::Receiver, Arc},
+    sync::{Arc, mpsc::Receiver},
 };
 
 use eframe::{
     egui::{
-        text::{CCursor, LayoutJob},
         Id, Rect, Ui,
+        text::{CCursor, LayoutJob},
     },
     epaint::Galley,
 };
@@ -22,15 +22,15 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        call_with_text_ctx, AppFocus, CommandContext, CommandInstruction, CommandList,
-        CommandScope, EditorCommandOutput, SlashPaletteCmd, UiState,
+        AppFocus, CommandContext, CommandInstruction, CommandList, CommandScope,
+        EditorCommandOutput, SlashPaletteCmd, UiState, call_with_text_ctx,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
         inline_llm_prompt::inline_llm_prompt_command_handler,
         insert_text::call_replace_text,
         kdl_lang::on_enter_inside_kdl_block,
-        run_llm::{prepare_to_run_llm_block, CodeBlockAddress},
+        run_llm::{CodeBlockAddress, prepare_to_run_llm_block},
         slash_pallete::show_slash_pallete,
         space_after_task_markers::on_space_after_task_markers,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
@@ -334,6 +334,7 @@ pub struct LLMBlockResponseChunk {
 
 #[derive(Debug)]
 pub enum InlineLLMResponseChunk {
+    ResponseError(String),
     Chunk(String),
     End,
 }

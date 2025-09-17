@@ -1,9 +1,18 @@
-use axum::response::Html;
+use axum::{extract::State, http::StatusCode, response::Html};
 use enum_router::router;
 use hyped::*;
-use std::net::SocketAddr;
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tailwind_fuse::*;
 use tower_http::services::ServeDir;
+
+use crate::rate_limiting::ApiCallRecord;
+
+mod proxy;
+mod rate_limiting;
 
 // Constants from original dioxus site
 const UP_WAVE_PATH: &str = concat!(
@@ -200,10 +209,15 @@ pub struct ButtonStyle {
 }
 
 // Enum router definition
-#[router]
+#[router(Arc<(proxy::Config, Mutex<rate_limiting::RateLimiter>)>)]
 pub enum Route {
     #[get("/")]
     Root,
+
+    // note that this is how the client will see construct url using genai
+    // note that messages are coming from anthropic api url pattern
+    #[post("/api/llm-claude/v1/messages")]
+    ProxyAnthropicPost,
 }
 
 fn strip_out_newlines(text: &str) -> String {
@@ -217,6 +231,26 @@ fn strip_out_newlines(text: &str) -> String {
 // Route handlers
 async fn root() -> Html<String> {
     Html(render_to_string(home_page()))
+}
+
+async fn proxy_anthropic_post(
+    State(state): State<Arc<(proxy::Config, Mutex<rate_limiting::RateLimiter>)>>,
+    req: axum::extract::Request,
+) -> Result<axum::response::Response, (axum::http::StatusCode, String)> {
+    // Rate limiting check
+    let (config, rate_limiter) = &*state;
+    {
+        let mut limiter = rate_limiter.lock().unwrap();
+        if !limiter.try_add_call_record(ApiCallRecord::new(chrono::Local::now())) {
+            println!("EXIT: Rate limit exceeded");
+            return Err((
+                StatusCode::TOO_MANY_REQUESTS,
+                "Rate limit exceeded. Please try again later.".to_string(),
+            ));
+        }
+    }
+
+    proxy::proxy_anthropic(&config, req).await
 }
 
 fn home_page() -> Element {
@@ -982,11 +1016,29 @@ async fn main() {
 
     println!("Server running on http://0.0.0.0:8080");
 
+    let (shelv_magic_token, anthropic_api_key): (&'static str, &'static str) = const_dotenvy::dotenvy!(
+        SHELV_MAGIC_TOKEN: &'static str,
+        ANTHROPIC_API_KEY: &'static str,
+    );
+
+    let config = proxy::Config {
+        shelv_magic_token: shelv_magic_token.to_string(),
+        anthropic_api_key: match anthropic_api_key {
+            "" => None,
+            key => Some(key.to_string()),
+        },
+    };
+
+    let rate_limiter = rate_limiting::RateLimiter::new(20, Duration::from_secs(60));
+    let state = Arc::new((config, Mutex::new(rate_limiter)));
+
     // Create the main router with enum_router
     let app_router = Route::router();
 
-    // Add static file serving for assets
-    let router = app_router.nest_service("/assets", ServeDir::new("assets"));
+    // Add static file serving for assets and state
+    let router = app_router
+        .nest_service("/assets", ServeDir::new("assets"))
+        .with_state(state);
 
     axum::serve(listener, router).await.unwrap();
 }

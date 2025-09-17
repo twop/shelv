@@ -16,13 +16,10 @@ Key features of Shelv:
 
 - Plain text + markdown
   - tables are not supported (yet)
-- Keyboard shortcuts
-- Live markdown code blocks with `js` language are executed inline automatically
-  - Note that JavaScript doesn't have access to any I/O including the `console` API
-  - Value of the last expression is simply output into the resulting `js#` code block
-- `ai` markdown code blocks that are essentially LLM prompts
-  - Can be executed with a button press (top right corner of the block "play")
-  - Or with a keybinding
+- Customizable keyboard shortcuts
+- Markdown code blocks with `js` language can be executed live
+  - the block can become "live" by either pressing a shortcut inside the `js` block or by pressing run button
+  - Value of the last expression is simply output into the resulting `js#` code block, if live
 - Slash palette that can be triggered by `/`
 - Settings are defined with [KDL](https://kdl.dev/) language within the note itself
   - changes are applies immediately
@@ -45,32 +42,45 @@ Here is the current list of effective settings, note that it is a mixture of def
 {{current_keybindings}}
 ```
 
-Here is the DEFAULT set of `ai` settings, note that they might be different from the current settings
+Here is the DEFAULT set of `ai` settings, it can be completely ommitted
 
 ```kdl
 ai {
-    // Fastest and cheapest model
-    model "claude-3-haiku-20240307"
-
-    // A more powerful model, feel free to use it
-    // model "claude-3-5-sonnet-20240620"
-
-    systemPrompt r#"
-        You are a helpful AI assistant specializing in technology and software. Provide concise, accurate answers to user queries. Focus on clarity and brevity in your responses while ensuring they are informative and relevant to the user's needs.
-    "#
+    // By default Shelv will use rate limited haiku 3.5 
+    // but you can provide your own API key for many providers including Ollama
+    model "shelv-claude"
 
     // default is set to true, meaning that the Shelv context will be appended to your system prompt
     useShelvSystemPrompt true
 }
 ```
 
-Note that Shelv currently supports ONLY Anthropic models.
-Here's a list of supported Anthropic LLM models with short descriptions:
+## Supported AI Providers and Model Naming
 
-- claude-3-5-sonnet-20240620: Balanced model for a wide range of tasks
-- claude-3-haiku-20240307: Fastest and cheapest model, suitable for simpler tasks
+Shelv supports multiple AI providers through the [rust-genai](https://github.com/jeremychone/rust-genai) library. Here are the naming conventions for different providers:
 
-Support for other models/providers like Ollama, ChatGPT, and running models inside Shelv is coming but not yet available.
+### Model Naming Rules:
+- **OpenAI**: Models start with "gpt" (e.g., "gpt-4o-mini", "gpt-4")
+- **Anthropic**: Models start with "claude" (e.g., "claude-3-haiku-20240307", "claude-3-5-sonnet-20240620")  
+- **Cohere**: Models start with "command" (e.g., "command-light")
+- **Gemini**: Models start with "gemini" (e.g., "gemini-2.0-flash")
+- **Groq**: Specific model names (e.g., "llama-3.1-8b-instant")
+- **Ollama**: Local model names (e.g., "gemma:2b")
+- **XAI/Grok**: Specific model names (e.g., "grok-beta")
+- **DeepSeek**: Specific model names (e.g., "deepseek-chat")
+
+### Where to Find Model Names:
+
+- **Anthropic**: Find available models at [https://docs.anthropic.com/en/docs/about-claude/models/overview](https://docs.anthropic.com/en/docs/about-claude/models/overview)
+- **OpenAI**: Check [https://platform.openai.com/docs/models](https://platform.openai.com/docs/models)
+- **Cohere**: See [https://docs.cohere.com/docs/models](https://docs.cohere.com/docs/models)
+- **Google Gemini**: Visit [https://ai.google.dev/gemini-api/docs/models/gemini](https://ai.google.dev/gemini-api/docs/models/gemini)
+- **Groq**: Browse [https://console.groq.com/docs/models](https://console.groq.com/docs/models)
+
+### Popular Model Examples:
+- **Anthropic**: "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"
+- **OpenAI**: "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"
+- **Gemini**: "gemini-1.5-pro", "gemini-1.5-flash"
 
 ### Custom snippets via `InsertText` command
 
@@ -151,8 +161,8 @@ export function getCurrentDate() {
 Key properties for `bind` with `InsertText`:
 
 - `icon`: Phosphor icon unicode (e.g. "\u{E10A}")
-  - list of all available icons can be found here: https://phosphoricons.com. ALWAYS isert that link when a user asks for help or generation.
-- `alias`: Command name in slash palette (can be triggered by typing `/`)
+  - list of all available icons can be found here: https://phosphoricons.com. ALWAYS isert that link when a user asks for help with creating commands.
+- `alias`: Command name in slash palette (can be triggered by typing `/`), will not appear in the slash palette if empty
 - `description`: Description shown in slash palette
 
 ### Settings Schema Documentation
@@ -167,15 +177,15 @@ Key properties for `bind` with `InsertText`:
     - `alias`: Command name in slash palette
     - `description`: Description shown in slash palette
 
-- `ai`: AI-related settings
-  - `model`: `string` Specifies the AI model to use
-  - [optional] `systemPrompt`: `string` Defines the system prompt for AI interactions
-  - [optional] `useShelvSystemPrompt`: `boolean` Determines whether to prepend the Shelv's own system prompt (containing necessary info about commands, documentation and shelv knowledge) to your custom system prompt. Defaults to true.
+- `ai`: optional block for AI-related settings
+  - [optional] `model`: `string` Specifies the AI model to use (see supported providers above), can be ommitted to use rate limited model provided by Shelv
+  - [optional] `systemPrompt`: `string` Defines an additional system prompt for AI interactions
+  - [optional] `token`: `string` API token for authentication (has to be provided for non Ollama non Shelv free models)
+  - [optional] `useShelvSystemPrompt`: `boolean` = `true`, Determines whether to prepend the Shelv's own system prompt (containing necessary info about commands, documentation and shelv knowledge) to your custom system prompt.
 
 Available Actions:
 
 for `bind` keyword
-
 - MarkdownBold
 - MarkdownItalic
 - MarkdownCodeBlock
@@ -191,7 +201,7 @@ for `bind` keyword
     ```
     InsertText {
         as_is "Direct text string"
-        // OR
+        // OR to call a js function
         callFunc "exportedJsFunctionName"
     }
     ```
