@@ -18,7 +18,7 @@ RUN cargo build --release -p site
 # We do not need the Rust toolchain to run the binary!
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
-RUN apt-get update && apt-get install -y libssl3 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y openssl ca-certificates
 COPY --from=builder /app/target/release/site /usr/local/bin
 # Copy assets folder for static files (CSS, icons, media)
 COPY --from=builder /app/site/assets ./assets

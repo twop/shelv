@@ -22,7 +22,13 @@ pub async fn proxy_anthropic(
     println!("proxy_anthropic req: {req:#?}");
     // Short-circuit if no API key is configured
     let anthropic_api_key = match &config.anthropic_api_key {
-        Some(key) => key,
+        Some(key) if key.is_empty() => {
+            println!("Err proxy llm req: Anthropic API key is empty");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Anthropic API key is empty".to_string(),
+            ));
+        }
         None => {
             println!("Err proxy llm req: Anthropic API key not configured");
             return Err((
@@ -30,6 +36,7 @@ pub async fn proxy_anthropic(
                 "Anthropic API key not configured".to_string(),
             ));
         }
+        Some(key) => key,
     };
 
     // Extract and verify the authorization header

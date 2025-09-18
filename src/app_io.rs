@@ -270,8 +270,9 @@ impl AppIO for RealAppIO {
                             Ok(ChatStreamEvent::ReasoningChunk(_)) => (),
                             Err(e) => {
                                 send(ResponseError(format!(
-                                    "Error getting response chunk: {:#?}",
-                                    e
+                                    "Error getting response chunk: {debug:#?}\n{err}",
+                                    debug = e,
+                                    err = e
                                 )));
                                 break;
                             }

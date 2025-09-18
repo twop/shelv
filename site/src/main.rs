@@ -1023,6 +1023,12 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
     println!("Server running on http://0.0.0.0:8080");
+    println!(
+        "DANGER: token last 4 = {:?}",
+        anthropic_api_key
+            .as_ref()
+            .map(|k| &k[((k.len() - 5).max(0))..])
+    );
 
     let config = proxy::Config {
         shelv_magic_token,
