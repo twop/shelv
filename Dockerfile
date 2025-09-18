@@ -21,4 +21,4 @@ WORKDIR /app
 COPY --from=builder /app/target/release/site /usr/local/bin
 # Copy assets folder for static files (CSS, icons, media)
 COPY --from=builder /app/site/assets ./assets
-ENTRYPOINT ["/usr/local/bin/site"]
+ENTRYPOINT ["/usr/local/bin/"]
