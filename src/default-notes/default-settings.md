@@ -7,18 +7,21 @@
 // Alpha-numeric keys: A-Z or `0-9`
 
 global "Cmd Option S" {ShowHideApp;}
-
 ```
 
+## Custom commands
 
-## AI configuration
-```settings
-ai {
-	model "claude-3-haiku-20240307"
-	// model "claude-3-5-sonnet-20240620"
+Here is an example of a simple custom command that wraps selection with `[]`, adds `()` and sets the cursor inside
+- `{selection}` -> the currently selected text in a note, can be empty
+- `{||}` -> cursor with no selection
+- `{|}this will be selected{|}` -> cursor with selection
 
-	systemPrompt r#"
-	You are a helpful assistant in tech. Be very concise with your answers
-	"#
+```kdl
+// (Cmd K): Insert Markdown Link
+// you can find more icons unicode symbols here: https://phosphoricons.com/ 
+bind "Cmd K" icon="\u{E2E2}" alias="link" description="Insert Markdown Link" {
+   InsertText {
+        as_is "[{{selection}}]({||})"
+    }
 }
 ```
