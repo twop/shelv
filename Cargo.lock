@@ -4944,6 +4944,7 @@ dependencies = [
  "axum",
  "chrono",
  "const-dotenvy",
+ "dotenvy",
  "enum_router",
  "futures",
  "http",

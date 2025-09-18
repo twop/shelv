@@ -13,7 +13,7 @@ RUN cargo chef cook --manifest-path "site/Cargo.toml" --release --recipe-path re
 
 # Build application
 COPY . .
-RUN --mount=type=secret,id=ANTHROPIC_API_KEY ANTHROPIC_API_KEY="$(cat /run/secrets/ANTHROPIC_API_KEY)" cargo build --release -p site
+RUN cargo build --release -p site
 
 # We do not need the Rust toolchain to run the binary!
 FROM debian:bookworm-slim AS runtime

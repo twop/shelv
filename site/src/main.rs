@@ -1011,22 +1011,22 @@ fn render_to_string(element: Element) -> String {
 
 #[tokio::main]
 async fn main() {
+    // this loads environment variables from .env file if it exists
+    dotenvy::dotenv().ok();
+
+    let shelv_magic_token = std::env::var("SHELV_MAGIC_TOKEN")
+        .expect("SHELV_MAGIC_TOKEN environment variable is required");
+
+    let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY").ok();
+
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
     println!("Server running on http://0.0.0.0:8080");
 
-    let (shelv_magic_token, anthropic_api_key): (&'static str, &'static str) = const_dotenvy::dotenvy!(
-        SHELV_MAGIC_TOKEN: &'static str,
-        ANTHROPIC_API_KEY: &'static str,
-    );
-
     let config = proxy::Config {
-        shelv_magic_token: shelv_magic_token.to_string(),
-        anthropic_api_key: match anthropic_api_key {
-            "" => None,
-            key => Some(key.to_string()),
-        },
+        shelv_magic_token,
+        anthropic_api_key,
     };
 
     let rate_limiter = rate_limiting::RateLimiter::new(20, Duration::from_secs(60));
