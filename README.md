@@ -45,8 +45,6 @@ I can be run!
 Map { "with" → "live reload" }
 ```
 
-Note the syntax `js 1` and `js 1 > #e904`, `1` indicates block id that is automatically assigned when you run the block.
-
 ---
 
 ## Default Shortcuts
@@ -240,7 +238,7 @@ Not at the moment (besides crash reporting), I'm not fundamentally opposed to co
 
 ### Prerequisites
 - Rust (latest stable version)
-- macOS (for now only on macOS, I wish I would have enough money and time to make Windows, Linux, Web and mobile version! But alas)
+- macOS (for now only on macOS, I wish I would have enough money and time to make Windows, Linux, Web and mobile versions! But alas)
 
 ### Build Commands
 ```bash
