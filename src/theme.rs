@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use eframe::{
     egui::{
-        self,
+        self, FontDefinitions, RichText, TextStyle, ThemePreference, Vec2, Visuals, WidgetText,
         style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets},
-        vec2, FontDefinitions, RichText, TextStyle, ThemePreference, Vec2, Visuals, WidgetText,
+        vec2,
     },
     epaint::{Color32, CornerRadius, FontFamily, FontId, Shadow, Stroke},
 };
@@ -19,6 +19,7 @@ pub enum AppIcon {
     Twitter,
     HomeSite,
     Discord,
+    Github,
     Pin,
     VerticalSeparator,
     Feedback,
@@ -47,7 +48,7 @@ impl AppIcon {
     }
 
     pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> WidgetText {
-        use egui::{text::LayoutJob, FontId, TextFormat};
+        use egui::{FontId, TextFormat, text::LayoutJob};
 
         let mut job = LayoutJob::default();
 
@@ -99,6 +100,7 @@ impl AppIcon {
             AppIcon::Twitter => P::X_LOGO,
             AppIcon::HomeSite => P::HOUSE_SIMPLE,
             AppIcon::Discord => P::DISCORD_LOGO,
+            AppIcon::Github => P::GITHUB_LOGO,
             AppIcon::Pin => P::PUSH_PIN,
             AppIcon::VerticalSeparator => P::LINE_VERTICAL,
             AppIcon::Feedback => P::SMILEY,

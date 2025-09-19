@@ -80,5 +80,5 @@ Onboarding Feedback Report
 We seriously appreciate you for sharing any feedback with us! Thank you <3
 
 Bonus tasks:
-- [ ] Get involved by joining our community on [Discord](https://discord.gg/sSGHwNKy)
+- [ ] Get involved by joining our community on [Discord](https://discord.gg/PJhJgugJ9U)
 - [ ] Spread the word! Send folks to [shelv.app](https://shelv.app) to learn more about Shelv.
