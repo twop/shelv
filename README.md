@@ -335,7 +335,7 @@ cargo test
 ## Links
 
 - **[Homepage](https://shelv.app)** - sources under `/site` folder
-- **[Discord](https://discord.gg/sSGHwNKy)** - ask help, give feedback, or just say "hi"!
+- **[Discord](https://discord.gg/sSGHwNKy)** - ask for help, give feedback, or just say "hi"!
 
 ---
 
