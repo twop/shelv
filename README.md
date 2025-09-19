@@ -49,7 +49,56 @@ Map { "with" → "live reload" }
 
 ## Default Shortcuts
 
-*Placeholder - to be filled in later*
+Here is the list of keybindings that work out of the box, please tweak them to your liking. 
+
+*Note: there can be only one keybinding for a given command, the last declared wins*
+
+```kdl
+// (⌥ ⌘ B): Toggle Code Block
+bind "Option Cmd B" icon="\u{EAFE}" alias="code" description="Toggle Code Block" { MarkdownCodeBlock; }
+
+// (⌘ B): Toggle Bold
+bind "Cmd B" icon="\u{E5BE}" alias="bold" description="Toggle Bold" { MarkdownBold; }
+
+// (⌘ I): Toggle Italic
+bind "Cmd I" icon="\u{E5C0}" alias="italic" description="Toggle Italic" { MarkdownItalic; }
+
+// (⇧ ⌘ E): Toggle Strikethrough
+bind "Shift Cmd E" icon="\u{E5C2}" alias="strike" description="Toggle Strikethrough" { MarkdownStrikethrough; }
+
+// (⌥ ⌘ 1): Heading 1
+bind "Option Cmd 1" icon="\u{E6BC}" alias="h1" description="Heading 1" { MarkdownH1; }
+
+// (⌥ ⌘ 2): Heading 2
+bind "Option Cmd 2" icon="\u{E6BE}" alias="h2" description="Heading 2" { MarkdownH2; }
+
+// (⌥ ⌘ 3): Heading 3
+bind "Option Cmd 3" icon="\u{E6C0}" alias="h3" description="Heading 3" { MarkdownH3; }
+
+// (⌃ Enter): Show AI Prompt
+bind "Ctrl Enter" icon="\u{E6A2}" alias="ai" description="Show AI Prompt" { ShowPrompt; }
+
+// (⌘ ,): Open Settings
+bind "Cmd Comma" { SwitchToSettings; }
+
+// (⌘ P): Toggle Always on Top
+bind "Cmd P" { PinWindow; }
+
+// (Escape): Hide Window
+bind "Escape" { HideApp; }
+
+// (⌘ 1): Shelf 1
+bind "Cmd 1" { SwitchToNote 0; }
+
+// (⌘ 2): Shelf 2
+bind "Cmd 2" { SwitchToNote 1; }
+
+// (⌘ 3): Shelf 3
+bind "Cmd 3" { SwitchToNote 2; }
+
+// (⌘ 4): Shelf 4
+bind "Cmd 4" { SwitchToNote 3; }
+```
 
 ---
 
