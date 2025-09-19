@@ -6,46 +6,46 @@ Shelv is scriptable, plain text notes app with integrated ai-features for macOS,
 
 ![Shelv app showing AI-powered quick prompt feature in action](site/assets/media/hero-1132x1376.png)
 
----
-
-## Hack It, Make It Yours
+### Make It Yours
 
 Settings in Shelv is just a note, where you can create custom commands with [KDL](https://kdl.dev/) and JavaScript, assign and tweak keyboard shortcuts, all with live reload.
 
 The origin story: at the time I used [Bear app](https://bear.app/), which has 4 versions of date, but I wanted it in YYYY/mmm/dd format, and I keep thinking: "if only I can just define what I want". Well, with Shelv you can.
 
-![Creating and using a custom 'day' command via shortcuts and slash menu](site/assets/media/hack_settings_1126x1244.mov)
 
 ---
 
-## Markdown essentials and more
+## Features
 
 - **Markdown Support**: Full CommonMark with extensions, including TODOs
 - **Code Syntax Highlighting**: A lot of languages are supported
 - **Live JavaScript Blocks**: Execute JS code directly in notes
 - **Slash Menu**: Quick access to all commands and features
-- **Keyboard optimized**: Everything is available via shortcuts
+- **Keyboard minded**: Most actilns are available via shortcuts
+- **Quick Prompt**: You can ask AI about your text selection, with the note as the context + shelv system info. And yes, you can choose your models.
 
-### Example
-
-### Markdown essentials
+### Markdown stuff
 1. lists,**bold**, *italic*, ~strikethrough~
 	* [ ] todos, `monospace`
+
 ```rs
 println!("Just syntax highlighted")
 ```
 
-### Live JS code blocks + Slash palette
+### Live JS code blocks
+
 ```js 1
 console.log('I can be run!');
 new Map().set("with", "live reload")
 ```
+
+will produce this output if you press "Run" button that will appear on the left of JS code blocks.
 ```js 1 > #e904
 I can be run!
 Map { "with" → "live reload" }
 ```
 
-![Demo of markdown features and slash command](site/assets/media/markdown_and_slash_palette_1132x1376.png)
+Note the syntax `js 1` and `js 1 > #e904`, `1` indicates block id that is automatically assigned when you run the block.
 
 ---
 
@@ -137,7 +137,8 @@ Shelv supports multiple AI providers through the [rust-genai](https://github.com
 
 ## Frequently Asked Questions
 
-**I'm sick of AI hype, is Shelv yet another AI-'something'?**
+<details>
+<summary>I'm sick of AI hype, is Shelv yet another AI-'something'?</summary>
 
 I hope not, my opinions toward AI (or rather LLMs) are mixed. My current position can be roughly outlined as:
 - AI is not a "higher-level abstraction" like programming languages over assembly. For a simple reason: it is not deterministic.
@@ -148,33 +149,56 @@ I hope not, my opinions toward AI (or rather LLMs) are mixed. My current positio
 
 I hope I've convinced you to give Shelv a try.
 
-**Is Shelv coming to Mobile/Window/Web**
+</details>
+
+<details>
+<summary>Is Shelv coming to Mobile/Window/Web?</summary>
 
 Yes, but with time. Shelv is written in Rust + [egui](https://egui.rs/), so it is possible to port it as is on all these platforms.
 
-**How do you make money?**
+</details>
+
+<details>
+<summary>How do you make money?</summary>
 
 I don't. I worked on Shelv for over 2 years, and I had a dream to start company(still do), but as of now, it is a labor of love, because I couldn't find a good business model, if you have ideas please let me know. Tentatively I plan to add ability just to buy tokens, but that seems lame. I plan to cap to $20/month the claude account assosiated with the app, but you can choose your providers for AI features, includind [Ollama](https://ollama.com/).
 
-**Do you have sync?**
+</details>
+
+<details>
+<summary>Do you have sync?</summary>
 
 Not yet, I'm a local first movement fan, and wanted to use [Automerge](https://github.com/automerge/automerge) forever, but I want to implement e2e encryption with Rust sever, which is being worked on right now, and it is darn had to do an e2e encrypted scalable sync technically and from product point of view.
 
-**Is Shelv open source?**
+</details>
+
+<details>
+<summary>Is Shelv open source?</summary>
 
 Yes and no, it has a licence inspired by [PolyForm Strict 1.0.0 license](https://polyformproject.org/licenses/strict/1.0.0). Which means that you cannot use Shelv compiled from source for work or repackage it to a new app. However that applies to the "build from" source option, you can (and hopefully will) just use the version from the app store.
 
-**Is it Native?**
+</details>
+
+<details>
+<summary>Is it Native?</summary>
 
 Native is a spectrum, shelv is written in Rust using [egui](https://egui.rs/) as the gui toolkit, which in turn is using wgpu, not Swift UI tech stack. Maybe the closest analogy would be [Flutter](https://flutter.dev/) that is painting every pixel. Are Flutter apps native? I think so.
 
-**Are my beloved vim motions supported?**
+</details>
+
+<details>
+<summary>Are my beloved vim motions supported?</summary>
 
 I am a [Helix](https://helix-editor.com/) user myself, but markdown and text are a bit different from code, that said, I would love to support modal editing in the future. I do think that some features can be added for just "insert" mode (which is the only mode at the moment) that can enhance editing, for example: jump to a word, press any buttons with a label(vimium style), expand + shrink semantic selection etc. I need to work on Shelv full-time to justify adding vim or helix motions to egui TextEdit, vote with you money I guess, oh wait, I don't have a way to actually recieve money...
 
-**Are you collecting any analytics?**
+</details>
+
+<details>
+<summary>Are you collecting any analytics?</summary>
 
 Not at the moment (besides crash reporting), I'm not fundamentally opposed to collecting statistics, because it is hard to know if a feature is even used without some observability, but I do think it can be done with privacy in mind (at least anonymizing and being mindful of where the data is stored). Probably in the future, however, when and if I add monetization, I'll likely start collecting emails associated with a purchase and/or install.
+
+</details>
 
 ---
 
@@ -216,7 +240,7 @@ Not at the moment (besides crash reporting), I'm not fundamentally opposed to co
 
 ### Prerequisites
 - Rust (latest stable version)
-- macOS (other platforms coming soon)
+- macOS (for now only on macOS, I wish I would have enough money and time to make Windows, Linux, Web and mobile version! But alas)
 
 ### Build Commands
 ```bash
@@ -230,9 +254,7 @@ cargo check
 cargo test
 ```
 
-### Architecture
-
-Shelv is built with:
+### Shelv is built with:
 - **[Rust](https://github.com/rust-lang/rust)** for core application logic
 - **[egui](https://github.com/emilk/egui) + [eframe](https://github.com/emilk/egui/tree/master/crates/eframe)** for cross-platform GUI
 - **[Boa engine](https://github.com/boa-dev/boa)** for JavaScript runtime in code blocks
