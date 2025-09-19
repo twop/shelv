@@ -87,6 +87,24 @@ bind "Cmd T" {
 
 JavaScript functions must be exported from `js` code blocks in the settings note. Each block is evaluated as a separate js module from top to bottom, with exported variables automatically imported into subsequent modules.
 
+#### Example: inserting the current day of the week
+
+```js
+export function getCurrentDayOfWeek() {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const now = new Date();
+    return days[now.getDay()];
+}
+```
+
+```kdl
+bind "Cmd D" icon="\u{E4E5}" alias="day" description="Insert current day of the week" {
+    InsertText {
+        callFunc "getCurrentDayOfWeek"
+    }
+}
+```
+
 ### Supported AI Providers
 
 Shelv supports multiple AI providers through the [rust-genai](https://github.com/jeremychone/rust-genai) library:
