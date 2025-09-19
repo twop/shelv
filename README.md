@@ -4,7 +4,7 @@
 
 Shelv is scriptable, plain text notes app with integrated ai-features for macOS, written in Rust (btw (tm)).
 
-![Shelv app showing AI-powered quick prompt feature in action](site/assets/media/hero-1132x1376.png)
+![Shelv app showing AI-powered quick prompt feature in action](site/assets/media/github-composition.png)
 
 ### Make It Yours
 
@@ -281,6 +281,16 @@ cargo test
 - **[genai](https://github.com/jeremychone/rust-genai)** for LLM integration
 - **[KDL](https://github.com/kdl-org/kdl)** for configuration language
 
+---
+
+## Links
+
+- **[Homepage](https://shelv.app)** - sources under `/site` folder
+- **[Discord](https://discord.gg/sSGHwNKy)** - ask help, give feedback, or just say "hi"!
+
+---
+
 ## License
 
 Shelv uses a license inspired by [PolyForm Strict 1.0.0 license](https://polyformproject.org/licenses/strict/1.0.0). You cannot use Shelv compiled from source for commercial work or repackage it into a new app. However, you can use the version from the app store for any purpose.
+
