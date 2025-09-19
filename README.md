@@ -4,7 +4,7 @@
 
 Shelv is scriptable, plain text notes app with integrated ai-features for macOS, written in Rust (btw (tm)).
 
-![Shelv app showing AI-powered quick prompt feature in action](site/assets/media/github-composition.png)
+![Shelv app showing AI-powered quick prompt feature in action](assets/for_readme/github-composition.png)
 
 ### Make It Yours
 
