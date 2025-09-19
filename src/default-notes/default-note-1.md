@@ -50,6 +50,6 @@ days * workingHours
 ## Links
 - [Home](https://shelv.app)
 - [Github](https://github.com/twop/shelv)
-- [Discord](https://discord.gg/sSGHwNKy)
+- [Discord](https://discord.gg/PJhJgugJ9U)
 	* Join to get help, share your experience or just to say hi!
 
