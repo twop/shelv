@@ -10,7 +10,7 @@ Shelv is scriptable, plain text notes app with integrated ai-features for macOS,
 
 Settings in Shelv is just a note, where you can create custom commands with [KDL](https://kdl.dev/) and JavaScript, assign and tweak keyboard shortcuts, all with live reload.
 
-The origin story: at the time I used [Bear app](https://bear.app/), which has 4 versions of date, but I wanted it in YYYY/mmm/dd format, and I keep thinking: "if only I can just define what I want". Well, with Shelv you can.
+**The origin story:** at the time I used [Bear app](https://bear.app/), which had 4 different formats of dates, but I wanted `YYYY/mmm/dd`, and I kept thinking: "if only I could _define_ what I want". Well, with Shelv you can.
 
 
 ---
@@ -21,8 +21,8 @@ The origin story: at the time I used [Bear app](https://bear.app/), which has 4 
 - **Code Syntax Highlighting**: A lot of languages are supported
 - **Live JavaScript Blocks**: Execute JS code directly in notes
 - **Slash Menu**: Quick access to all commands and features
-- **Keyboard minded**: Most actilns are available via shortcuts
-- **Quick Prompt**: You can ask AI about your text selection, with the note as the context + shelv system info. And yes, you can choose your models.
+- **Keyboard minded**: Most actions are available via shortcuts
+- **Quick Prompt**: You can ask AI about your text selection, with the note as the context (the models are also configurable!)
 
 ### Markdown stuff
 1. lists,**bold**, *italic*, ~strikethrough~
@@ -106,11 +106,11 @@ bind "Cmd 4" { SwitchToNote 3; }
 
 ### Shelv Settings
 
-Settings are defined in the settings note and can be accessed by clicking a gear button on the bottom bar, using a shortcut, or clicking on a link inside a note: `shelv://settings`.
+Settings are defined in the settings note and can be accessed by clicking a gear button on the bottom bar (or `⌘ + ,`).
 
-Settings can contain any number of markdown code blocks with `kdl` language. These blocks define the app's behavior.
+Settings can contain any number of markdown code blocks with `kdl` language. These blocks change the app's behavior.
 
-#### Custom Snippets via `InsertText` Command
+#### Example: Custom Snippets via `InsertText` Command
 
 The `InsertText` command allows you to insert either static or dynamic text into your notes:
 
@@ -136,7 +136,7 @@ bind "Cmd T" {
 
 JavaScript functions must be exported from `js` code blocks in the settings note. Each block is evaluated as a separate js module from top to bottom, with exported variables automatically imported into subsequent modules.
 
-#### Example: inserting the current day of the week
+#### Example: Inserting the current day of the week
 
 ```js
 export function getCurrentDayOfWeek() {
@@ -178,11 +178,13 @@ Shelv supports multiple AI providers through the [rust-genai](https://github.com
 - `alias`: Command name in slash palette
 - `description`: Description shown in slash palette
 
+Example: `bind "Cmd T" icon="\u{E10A}" alias="test" description="Insert test text"`
+
 #### AI Settings Block
 - `model`: Specifies the AI model to use (optional, defaults to rate limited model)
-- `systemPrompt`: Additional system prompt for AI interactions (optional)
+- `systemPrompt`: Add additional instructions to the default system prompt for AI interactions (optional)
 - `token`: API token for authentication (required for non-Ollama/non-Shelv models)
-- `useShelvSystemPrompt`: Whether to prepend Shelv's system prompt (default: true)
+- `useShelvSystemPrompt`: Whether to prepend Shelv's default system prompt (default: true)
 
 #### Available Actions
 
@@ -219,21 +221,21 @@ I hope I've convinced you to give Shelv a try.
 <details>
 <summary>Is Shelv coming to Mobile/Window/Web?</summary>
 
-Yes, but with time. Shelv is written in Rust + [egui](https://egui.rs/), so it is possible to port it as is on all these platforms.
+Yes, but with time (and perhaps your help). Shelv is written in Rust + [egui](https://egui.rs/), which has some cross-platform support.
 
 </details>
 
 <details>
 <summary>How do you make money?</summary>
 
-I don't. I worked on Shelv for over 2 years, and I had a dream to start company(still do), but as of now, it is a labor of love, because I couldn't find a good business model, if you have ideas please let me know. Tentatively I plan to add ability just to buy tokens, but that seems lame. I plan to cap to $20/month the claude account assosiated with the app, but you can choose your providers for AI features, includind [Ollama](https://ollama.com/).
+I don't. I worked on Shelv for over 2 years, and I had a dream to start company (still do), but as of now, it's a labor of love. In the future, there may be a way to purchase AI tokens. Currently, Shelv uses my personal token with a cap, but you can always configure your own provider (including [Ollama](https://ollama.com/).
 
 </details>
 
 <details>
-<summary>Do you have sync?</summary>
+<summary>Does Shelv have sync functionality?</summary>
 
-Not yet, I'm a local first movement fan, and wanted to use [Automerge](https://github.com/automerge/automerge) forever, but I want to implement e2e encryption with Rust sever, which is being worked on right now, and it is darn had to do an e2e encrypted scalable sync technically and from product point of view.
+Not yet, I'm a local first movement fan, and wanted to use [Automerge](https://github.com/automerge/automerge) since forever, ideally with e2e encryption with a pure Rust server. This is something that's being worked on right now, but e2e encrypted scalable sync ain't easy both technically and from a product perspective.
 
 </details>
 
@@ -242,8 +244,8 @@ Not yet, I'm a local first movement fan, and wanted to use [Automerge](https://g
 
 Yes and no, Shelv is licensed under the [Komorebi License](https://github.com/LGUG2Z/komorebi-license) 2.0.0, so more like "source available".
 
-Which means that you cannot use Shelv compiled from source for work or repackage it to a new app, but you can fork it for non-commercial personal use or with the intention of contributing changes back.
-However that applies to the "build from" source option, you can (and hopefully will) just use the version from the app store, which grants **personal** commercial use (such as using it at work for productivity). 
+This limits you from compiling Shelv for work or repackaging it to a new app, but you can fork it for non-commercial personal use or with the intention of contributing changes back.
+However you can (and hopefully always) just use the version from the app store, which grants **personal** commercial use (such as using it at work for productivity). 
 
 Read more [below](#License)
 
@@ -252,21 +254,21 @@ Read more [below](#License)
 <details>
 <summary>Is it Native?</summary>
 
-Native is a spectrum, shelv is written in Rust using [egui](https://egui.rs/) as the gui toolkit, which in turn is using wgpu, not Swift UI tech stack. Maybe the closest analogy would be [Flutter](https://flutter.dev/) that is painting every pixel. Are Flutter apps native? I think so.
+Native is a spectrum, Shelv is written in Rust using [egui](https://egui.rs/) as the gui toolkit, not Swift UI tech stack. Maybe the closest analogy would be [Flutter](https://flutter.dev/) that is painting every pixel. Are Flutter apps native? I think so.
 
 </details>
 
 <details>
 <summary>Are my beloved vim motions supported?</summary>
 
-I am a [Helix](https://helix-editor.com/) user myself, but markdown and text are a bit different from code, that said, I would love to support modal editing in the future. I do think that some features can be added for just "insert" mode (which is the only mode at the moment) that can enhance editing, for example: jump to a word, press any buttons with a label(vimium style), expand + shrink semantic selection etc. I need to work on Shelv full-time to justify adding vim or helix motions to egui TextEdit, vote with you money I guess, oh wait, I don't have a way to actually recieve money...
+I am a [Helix](https://helix-editor.com/) user myself, but markdown and text are a bit different from code. That said, I would love to support modal editing in the future. Perhaps some features can be added for "insert" mode (which is the only mode at the moment) that can enhance editing, for example: jump to a word, press any buttons with a label(vimium style), expand + shrink semantic selection etc. I need to work on Shelv full-time to justify adding vim or helix motions to egui TextEdit, vote with your money I guess, oh wait, I don't have a way to actually recieve money...
 
 </details>
 
 <details>
 <summary>Are you collecting any analytics?</summary>
 
-Not at the moment (besides crash reporting), I'm not fundamentally opposed to collecting statistics, because it is hard to know if a feature is even used without some observability, but I do think it can be done with privacy in mind (at least anonymizing and being mindful of where the data is stored). Probably in the future, however, when and if I add monetization, I'll likely start collecting emails associated with a purchase and/or install.
+Not at the moment (besides crash reporting), but I'm not fundamentally opposed to collecting statistics, because it is hard to know if a feature is even used without some observability. I do think it can be done with privacy in mind (at least anonymizing and being mindful of where the data is stored). Probably in the future, however, when and if I add monetization, I'll likely start collecting emails associated with a purchase and/or install.
 
 </details>
 
@@ -278,7 +280,7 @@ Not at the moment (besides crash reporting), I'm not fundamentally opposed to co
 - Initial launch on macOS: Sep 2025
   - Barebones editing with 4 notes
   - Optimized for quick capture
-  - No API exposed to JS scripts
+  - No Shelv API exposed to JS scripts
 
 **Coming:**
 - Multi-file + workspace support
