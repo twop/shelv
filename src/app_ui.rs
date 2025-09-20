@@ -1,22 +1,22 @@
 use eframe::{
     egui::{
-        self,
+        self, Context, CursorIcon, FontFamily, FontSelection, Frame, Id, Key, KeyboardShortcut,
+        Label, LayerId, Layout, Margin, Modal, Modifiers, Order, Painter, Response, RichText,
+        ScrollArea, Sense, Shadow, StrokeKind, TextEdit, TextFormat, TextStyle, TextWrapMode,
+        TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
         debug_text::print,
         scroll_area::ScrollBarVisibility,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
         text_selection::text_cursor_state::cursor_rect,
-        Context, CursorIcon, FontFamily, FontSelection, Frame, Id, Key, KeyboardShortcut, Label,
-        LayerId, Layout, Margin, Modal, Modifiers, Order, Painter, Response, RichText, ScrollArea,
-        Sense, Shadow, StrokeKind, TextEdit, TextFormat, TextStyle, TextWrapMode, TopBottomPanel,
-        Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
     },
     emath::{self, Align, Align2},
-    epaint::{pos2, vec2, Color32, FontId, Rect, Stroke},
+    epaint::{Color32, FontId, Rect, Stroke, pos2, vec2},
 };
 use egui_taffy::{
+    TuiBuilderLogic,
     taffy::{AlignContent, AlignItems, FlexDirection, JustifyContent},
-    tui, TuiBuilderLogic,
+    tui,
 };
 use hotwatch::blocking::Hotwatch;
 use itertools::Itertools;
@@ -33,8 +33,8 @@ use crate::{
     },
     byte_span::UnOrderedByteSpan,
     command::{
-        CommandInstruction, CommandList, EditorCommandOutput, FrameHotkeys, SlashPaletteCmd,
-        PROMOTED_COMMANDS,
+        CommandInstruction, CommandList, EditorCommandOutput, FrameHotkeys, PROMOTED_COMMANDS,
+        SlashPaletteCmd,
     },
     commands::{inline_llm_prompt::compute_inline_prompt_text_input_id, run_llm::LLM_LANG},
     effects::text_change_effect::TextChange,
@@ -42,13 +42,10 @@ use crate::{
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
+    taffy_styles::{StyleBuilder, flex_column, flex_row, style},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
-    ui_components::{
-        apply_icon_btn_styling, rich_text_tooltip,
-        IconButton, IconButtonSize,
-    },
+    ui_components::{IconButton, IconButtonSize, apply_icon_btn_styling, rich_text_tooltip},
 };
 
 pub struct AppRenderData<'a> {
@@ -1514,7 +1511,10 @@ fn render_header_panel(
                             if t.ui_add(
                                 IconButton::new(AppIcon::Feedback, theme)
                                     .size(IconButtonSize::Large)
-                                    .tooltip("Send this note to report a bug or share feedback.", None),
+                                    .tooltip(
+                                        "Send this note to report a bug or share feedback.",
+                                        None,
+                                    ),
                             )
                             .clicked()
                             {
@@ -1577,19 +1577,20 @@ fn render_header_panel(
 
                                             for (icon, text, link) in [
                                                 (
-                                                    &AppIcon::Discord,
-                                                    "Join our Discord",
-                                                    "https://discord.gg/sSGHwNKy",
-                                                ),
-                                                (
-                                                    &AppIcon::Twitter,
-                                                    "Tweet us @shelvdotapp",
-                                                    "https://twitter.com/shelvdotapp",
-                                                ),
-                                                (
                                                     &AppIcon::HomeSite,
                                                     "Visit https://shelv.app",
                                                     "https://shelv.app",
+                                                ),
+                                                (
+                                                    &AppIcon::Discord,
+                                                    "Join our Discord",
+                                                    include_str!("../assets/discord_invite.txt")
+                                                        .trim(),
+                                                ),
+                                                (
+                                                    &AppIcon::Github,
+                                                    "Give as a Star or file an issue",
+                                                    "https://github.com/twop/shelv",
                                                 ),
                                             ] {
                                                 if ui

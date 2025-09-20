@@ -1,15 +1,15 @@
 use app_actions::{
-    compute_app_focus, process_app_action, AppAction, AppIO, HideMode, SlashPaletteAction,
+    AppAction, AppIO, HideMode, SlashPaletteAction, compute_app_focus, process_app_action,
 };
 use app_io::RealAppIO;
-use app_state::{compute_editor_text_id, AppInitData, AppState, MsgToApp};
-use app_ui::{is_shortcut_match, render_app, AppRenderData, RenderAppResult};
+use app_state::{AppInitData, AppState, MsgToApp, compute_editor_text_id};
+use app_ui::{AppRenderData, RenderAppResult, is_shortcut_match, render_app};
 use command::{AppFocusState, CommandContext, EditorCommandOutput};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
 use hotwatch::{
-    notify::event::{DataChange, ModifyKind},
     Event, EventKind, Hotwatch,
+    notify::event::{DataChange, ModifyKind},
 };
 use image::ImageFormat;
 use persistent_state::{load_and_migrate, try_save, v1};
@@ -19,17 +19,18 @@ use theme::{configure_styles, get_font_definitions};
 use tokio::runtime::Runtime;
 
 use tray_icon::{
-    menu::{Menu, MenuEvent, MenuItem},
     Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
+    menu::{Menu, MenuEvent, MenuItem},
 };
 // use tray_item::TrayItem;G1
 
 use std::{path::PathBuf, sync::mpsc::sync_channel};
 
 use eframe::{
+    CreationContext,
     egui::{self},
     epaint::vec2,
-    get_value, CreationContext,
+    get_value,
 };
 
 use crate::{app_state::UnsavedChange, persistent_state::extract_note_file};
@@ -81,11 +82,24 @@ impl MyApp<RealAppIO> {
 
         let (msg_queue_tx, msg_queue_rx) = sync_channel::<MsgToApp>(10);
 
+        let (shelv_api_server, shelv_magic_token, debug_chat_prompts): (
+            &'static str,
+            &'static str,
+            bool,
+        ) = const_dotenvy::dotenvy!(
+            SHELV_API_SERVER: &'static str,
+            SHELV_MAGIC_TOKEN: &'static str,
+            SHELV_DEBUG_CHAT_PROMPTS: bool = false
+        );
+
         let app_io = RealAppIO::new(
             GlobalHotKeyManager::new().unwrap(),
             cc.egui_ctx.clone(),
             msg_queue_tx.clone(),
             persistence_folder.clone(),
+            shelv_api_server.to_string(),
+            shelv_magic_token.to_string(),
+            debug_chat_prompts,
         );
 
         // let open_hotkey = global_open_hotkey.clone();

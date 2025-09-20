@@ -1,9 +1,18 @@
-use axum::response::Html;
+use axum::{extract::State, http::StatusCode, response::Html};
 use enum_router::router;
 use hyped::*;
-use std::net::SocketAddr;
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tailwind_fuse::*;
 use tower_http::services::ServeDir;
+
+use crate::rate_limiting::ApiCallRecord;
+
+mod proxy;
+mod rate_limiting;
 
 // Constants from original dioxus site
 const UP_WAVE_PATH: &str = concat!(
@@ -200,10 +209,15 @@ pub struct ButtonStyle {
 }
 
 // Enum router definition
-#[router]
+#[router(Arc<(proxy::Config, Mutex<rate_limiting::RateLimiter>)>)]
 pub enum Route {
     #[get("/")]
     Root,
+
+    // note that this is how the client will see construct url using genai
+    // note that messages are coming from anthropic api url pattern
+    #[post("/api/llm-claude/v1/messages")]
+    ProxyAnthropicPost,
 }
 
 fn strip_out_newlines(text: &str) -> String {
@@ -217,6 +231,26 @@ fn strip_out_newlines(text: &str) -> String {
 // Route handlers
 async fn root() -> Html<String> {
     Html(render_to_string(home_page()))
+}
+
+async fn proxy_anthropic_post(
+    State(state): State<Arc<(proxy::Config, Mutex<rate_limiting::RateLimiter>)>>,
+    req: axum::extract::Request,
+) -> Result<axum::response::Response, (axum::http::StatusCode, String)> {
+    // Rate limiting check
+    let (config, rate_limiter) = &*state;
+    {
+        let mut limiter = rate_limiter.lock().unwrap();
+        if !limiter.try_add_call_record(ApiCallRecord::new(chrono::Local::now())) {
+            println!("EXIT: Rate limit exceeded");
+            return Err((
+                StatusCode::TOO_MANY_REQUESTS,
+                "Rate limit exceeded. Please try again later.".to_string(),
+            ));
+        }
+    }
+
+    proxy::proxy_anthropic(&config, req).await
 }
 
 fn home_page() -> Element {
@@ -461,7 +495,7 @@ fn page_header() -> Element {
         // Discord icon - always visible
         div(
             a(discord_icon(IconSize::Default))
-                .href("#")
+                .href(include_str!("../../assets/discord_invite.txt").trim())
                 .class(&tw_join!(ButtonVariant::SecondaryTextOnly, TextColor::Subtle ))
         )
     )).class("flex justify-between items-center py-6")
@@ -669,15 +703,24 @@ fn faq_items() -> Vec<(&'static str, Element)> {
         ),
         (
             "Is Shelv open source?",
-            p((
-                "Yes and no, it has a licence inspired by ",
-                link_to("https://polyformproject.org/licenses/strict/1.0.0", "PolyForm Strict 1.0.0 license"),
-                strip_out_newlines(r#"
-                    . This limits you from compiling Shelv for work or repackaging it to a new app, 
-                    but you can fork it for non-commercial personal use or with the intention of contributing changes back.
-                    However you can (and hopefully always) just use the version from the app store, which grants personal commercial use (such as using it at work for productivity).
-                "#)
-            )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
+            div((
+                p((
+                    "Shelv is licensed under the ",
+                    link_to("https://github.com/twop/shelv/blob/main/LICENSE", "Komorebi License"),
+                    " 2.0.0. The overall structure is inspired by the ",
+                    link_to("https://github.com/LGUG2Z/komorebi", "komorebi project"),
+                    "."
+                )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle)),
+                br(),
+                p("Summary:").class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Default, "font-semibold")),
+                ul(vec![
+                    "You can fork Shelv for the intended purpose of contributing features upstream or for non-commercial use only",
+                    "You can use the Mac App Store version for personal use at work or home freely", 
+                    "In the future, there might be a team license available for purchase separately"
+                ].into_iter().map(|item| {
+                    li(item.to_string()).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
+                }).collect::<Vec<_>>()).class("list-disc list-inside space-y-1 mt-2")
+            ))
         ),
         (
             "Is it Native?",
@@ -974,16 +1017,40 @@ fn render_to_string(element: Element) -> String {
 
 #[tokio::main]
 async fn main() {
+    // this loads environment variables from .env file if it exists
+    dotenvy::dotenv().ok();
+
+    let shelv_magic_token = std::env::var("SHELV_MAGIC_TOKEN")
+        .expect("SHELV_MAGIC_TOKEN environment variable is required");
+
+    let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY").ok();
+
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
     println!("Server running on http://0.0.0.0:8080");
+    println!(
+        "DANGER: token last 4 = {:?}",
+        anthropic_api_key
+            .as_ref()
+            .map(|k| &k[((k.len() - 5).max(0))..])
+    );
+
+    let config = proxy::Config {
+        shelv_magic_token,
+        anthropic_api_key,
+    };
+
+    let rate_limiter = rate_limiting::RateLimiter::new(20, Duration::from_secs(60));
+    let state = Arc::new((config, Mutex::new(rate_limiter)));
 
     // Create the main router with enum_router
     let app_router = Route::router();
 
-    // Add static file serving for assets
-    let router = app_router.nest_service("/assets", ServeDir::new("assets"));
+    // Add static file serving for assets and state
+    let router = app_router
+        .nest_service("/assets", ServeDir::new("assets"))
+        .with_state(state);
 
     axum::serve(listener, router).await.unwrap();
 }

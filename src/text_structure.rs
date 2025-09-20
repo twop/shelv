@@ -1555,6 +1555,30 @@ pub fn create_layout_job_from_text_diff(parts: &[TextDiffPart], theme: &AppTheme
     job
 }
 
+pub fn create_error_text_layout_job(
+    title: &str,
+    error_message: &str,
+    theme: &AppTheme,
+) -> LayoutJob {
+    let mut job = LayoutJob::default();
+
+    let title_format = TextFormat::simple(
+        FontId::new(theme.fonts.size.h3, theme.fonts.family.normal.clone()),
+        theme.colors.error_fg_color,
+    );
+
+    let error_text_format = TextFormat::simple(
+        FontId::new(theme.fonts.size.normal, theme.fonts.family.normal.clone()),
+        theme.colors.normal_text_color,
+    );
+
+    job.append(title, 0.0, title_format.clone());
+    job.append("\n\n", 0.0, error_text_format.clone());
+    job.append(error_message, 0.0, error_text_format.clone());
+
+    job
+}
+
 fn append_granular_lang_highlight(job: &mut LayoutJob, lang_text: &str, theme: &AppTheme) {
     let font_id = FontId {
         size: theme.fonts.size.tiny,

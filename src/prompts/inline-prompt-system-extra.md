@@ -1,42 +1,35 @@
 ## Prompt instructions
 
-- User prompt pattern uses XML-style tags:
+The user request is defined in "-- Request --" header below
+- User request pattern uses XML-style tags:
   - <prompt>: Contains the user prompt
   - <selection>: Target text to be modified, can be empty if content needs to be generated and note replaced
-  - <before>: Text preceding the selection
-  - <after>: Text following the selection
+  - the rest of the content is untagged
+  - 
 
 Example:
 
 ```md
 <prompt>Remove redundancy from this text</prompt>
-<before>Context: The following sentence contains repetition.</before>
+Context: The following sentence contains repetition.
 <selection>The redundant wording keeps repeating the same words redundantly in a redundant way.</selection>
-<after>Next sentence follows here.</after>
+Next sentence follows here.
 ```
 
-Processing Instructions:
-
-1. Focus modifications only on text within <selection> tags
-2. Return ONLY
-  - <reasoning> tag reasoning steps for the prompt
-  - <selection_replacement> node that will replace <selection> content in the user prompt
-  - <explanation> tag to provide explanation for the suggested replacement
-3. Utilize context from <before> and <after> when relevant
-4. Consider the full context when making modifications
-5. When making code suggestions ignore corresponding output code blocks like `js#` or `kdl#`, those will be added by Shelv after evaluation.
-
-
-## Prompt
+## -- Request --
 <prompt>
 {{prompt}}
 </prompt>
-<before>
-{{before}}
-</before>
-<selection>
-{{selection}}
-</selection>
-<after>
-{{after}}
-</after>
+{{before}}<selection>{{selection}}</selection>{{after}}
+
+
+
+## Processing Instructions:
+1. Focus modifications only on text within <selection> tags
+2. Return ONLY your response formatted as html-like tags:
+  - <reasoning> tag reasoning steps for the prompt
+  - <selection_replacement> node that will replace <selection> content in the user prompt
+  - <explanation> tag to provide explanation for the suggested replacement
+3. Consider the full context when making modifications
+4. Untagged response text is going to be ignored, and only tagged will be shown to the user
+
