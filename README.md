@@ -313,16 +313,16 @@ Not at the moment (besides crash reporting), I'm not fundamentally opposed to co
 - macOS (for now only on macOS, I wish I would have enough money and time to make Windows, Linux, Web and mobile versions! But alas)
 
 ### Build Commands
+
 ```bash
 # Run the application
 cargo run
 
-# Check code for errors (preferred for development)
-cargo check
-
 # Run tests
 cargo test
 ```
+
+Yep, that is it.
 
 ### Shelv is built with:
 - **[Rust](https://github.com/rust-lang/rust)** for core application logic
@@ -352,7 +352,7 @@ cargo test
 - You can use the Mac App Store version for personal use at work or home freely
 - In the future, there might be a team license available for purchase separately
 
-*The overall structure is inspired by the [komorebi project](https://github.com/LGUG2Z/komorebi). Thank you @LGUG2Z for being an inspiration!*
+*The overall structure is inspired by the [komorebi project](https://github.com/LGUG2Z/komorebi). Thank you [LGUG2Z](https://github.com/LGUG2Z) for being an inspiration!*
 
 ### Komorebi License
 
