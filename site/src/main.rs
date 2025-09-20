@@ -293,10 +293,10 @@ fn home_page() -> Element {
                             " and JavaScript, assign and tweak keyboard shortcuts, all with live reload.",
                             br(),
                             br(),
-                           "The origin story: I used " ,
+                           "The origin story: at the time I used " ,
                             link_to("https://bear.app/", "Bear"),
-                            ", which has 4 versions of date, but I wanted it in YYYY/mmm/dd format, ",
-                            "and I keep thinking: \"if only I can just define what I want\".")),
+                            ", which had 4 different formats of dates, but I wanted YYYY/mmm/dd, ",
+                            "and I kept thinking: \"if only I could define what I want\". Well, with Shelv you can.")),
                     )).class(&tw_join!(TextColor::Subtle, TextStyle::SmallGeneralText)),
 
                     MainSide::Right
@@ -671,20 +671,18 @@ fn faq_items() -> Vec<(&'static str, Element)> {
         (
             "Is Shelv coming to Mobile/Window/Web?",
             p((
-                "Yes, but with time. Shelv is written in Rust + ",
+                "Yes, but with time (and perhaps your help). Shelv is written in Rust + ",
                 link_to("https://egui.rs/", "egui"),
-                ", so it is possible to port it to all these platforms."
+                ", which has some cross-platform support."
             )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
         ),
         (
             "How do you make money?",
             p((
                 strip_out_newlines(r#"
-                    I don't. I worked on Shelv for over 2 years, and I had a dream to start company(still do), 
-                    but as of now, it is a labor of love, because I couldn't find a good business model, 
-                    if you have ideas please let me know. Tentatively I plan to add ability just to buy tokens, 
-                    but that seems lame. I plan to cap to $20/month the claude account assosiated with the app, 
-                    but you can choose your providers for AI features, includind 
+                    I don't. I worked on Shelv for over 2 years, and I had a dream to start company (still do), 
+                    but as of now, it's a labor of love. In the future, there may be a way to purchase AI tokens. 
+                    Currently, Shelv uses my personal token with a cap, but you can always configure your own provider (including 
                 "#),
                 " ",
                 link_to("https://ollama.com/", "Ollama"),
@@ -692,15 +690,14 @@ fn faq_items() -> Vec<(&'static str, Element)> {
             )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
         ),
         (
-            "Do you have sync?",
+            "Does Shelv have sync functionality?",
             p((
                 "Not yet, I'm a local first movement fan, and wanted to use ",
                 link_to("https://github.com/automerge/automerge", "Automerge"),
                 " ",
                 strip_out_newlines(r#"
-                    forever, but I want to implement e2e encryption with Rust sever, 
-                    which is being worked on right now, and it is darn had to do an e2e encrypted 
-                    scalable sync technically and from product point of view.
+                    since forever, ideally with e2e encryption with a pure Rust server. This is something that's being worked on right now, 
+                    but e2e encrypted scalable sync ain't easy both technically and from a product perspective.
                 "#)
             )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
         ),
@@ -728,9 +725,9 @@ fn faq_items() -> Vec<(&'static str, Element)> {
         (
             "Is it Native?",
             p((
-                "Native is a spectrum, shelv is written in Rust using ",
+                "Native is a spectrum, Shelv is written in Rust using ",
                 link_to("https://egui.rs/", "egui"),
-                " as the gui toolkit, which in turn is using wgpu, not Swift UI tech stack. Maybe the closest analogy would be ",
+                " as the gui toolkit, not Swift UI tech stack. Maybe the closest analogy would be ",
                 link_to("https://flutter.dev/", "Flutter"),
                 " that is painting every pixel. Are Flutter apps native? I think so."
             )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
@@ -742,12 +739,12 @@ fn faq_items() -> Vec<(&'static str, Element)> {
                 link_to("https://helix-editor.com/", "Helix"),
                 " ",
                 strip_out_newlines(r#"
-                    user myself, but markdown and text are a bit different from code, that said, 
-                    I would love to support modal editing in the future. I do think that some features 
-                    can be added for just "insert" mode (which is the only mode at the moment) that can 
+                    user myself, but markdown and text are a bit different from code.
+                    That said, I would love to support modal editing in the future. Perhaps some features 
+                    can be added for "insert" mode (which is the only mode at the moment) that can 
                     enhance editing, for example: jump to a word, press any buttons with a label(vimium style), 
                     expand + shrink semantic selection etc. I need to work on Shelv full-time to justify 
-                    adding vim or helix motions to egui TextEdit, vote with you money I guess, 
+                    adding vim or helix motions to egui TextEdit, vote with your money I guess, 
                     oh wait, I don't have a way to actually recieve money...
                 "#)
             )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
@@ -755,9 +752,9 @@ fn faq_items() -> Vec<(&'static str, Element)> {
         (
             "Are you collecting any analytics?",
             p(strip_out_newlines(r#"
-                Not at the moment (besides crash reporting), I'm not fundamentally opposed 
+                Not at the moment (besides crash reporting), but I'm not fundamentally opposed 
                 to collecting statistics, because it is hard to know if a feature is even used 
-                without some observability, but I do think it can be done with privacy in mind 
+                without some observability. I do think it can be done with privacy in mind 
                 (at least anonymizing and being mindful of where the data is stored). 
                 Probably in the future, however, when and if I add monetization, 
                 I'll likely start collecting emails associated with a purchase and/or install
@@ -818,7 +815,7 @@ fn roadmap_items() -> Vec<(Option<&'static str>, bool, &'static str, Vec<&'stati
             vec![
                 "Barebones editing with 4 notes",
                 "Optimized for quick capture",
-                "No API exposed to JS scripts",
+                "No Shelv API exposed to JS scripts",
             ],
         ),
         (
