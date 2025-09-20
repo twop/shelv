@@ -706,15 +706,24 @@ fn faq_items() -> Vec<(&'static str, Element)> {
         ),
         (
             "Is Shelv open source?",
-            p((
-                "Yes and no, it has a licence inspired by ",
-                link_to("https://polyformproject.org/licenses/strict/1.0.0", "PolyForm Strict 1.0.0 license"),
-                strip_out_newlines(r#"
-                    . Which means that you cannot use Shelv compiled from source for work 
-                    or repackage it to a new app. However that applies to the "build from" source option, 
-                    you can (and hopefully will) just use the version from the app store.
-                "#)
-            )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
+            div((
+                p((
+                    "Shelv is licensed under the ",
+                    link_to("https://github.com/twop/shelv/blob/main/LICENSE", "Komorebi License"),
+                    " 2.0.0. The overall structure is inspired by the ",
+                    link_to("https://github.com/LGUG2Z/komorebi", "komorebi project"),
+                    "."
+                )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle)),
+                br(),
+                p("Summary:").class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Default, "font-semibold")),
+                ul(vec![
+                    "You can fork Shelv for the intended purpose of contributing features upstream or for non-commercial use only",
+                    "You can use the Mac App Store version for personal use at work or home freely", 
+                    "In the future, there might be a team license available for purchase separately"
+                ].into_iter().map(|item| {
+                    li(item.to_string()).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
+                }).collect::<Vec<_>>()).class("list-disc list-inside space-y-1 mt-2")
+            ))
         ),
         (
             "Is it Native?",

@@ -240,7 +240,12 @@ Not yet, I'm a local first movement fan, and wanted to use [Automerge](https://g
 <details>
 <summary>Is Shelv open source?</summary>
 
-Yes and no, it has a licence inspired by [PolyForm Strict 1.0.0 license](https://polyformproject.org/licenses/strict/1.0.0). Which means that you cannot use Shelv compiled from source for work or repackage it to a new app. However that applies to the "build from" source option, you can (and hopefully will) just use the version from the app store.
+Yes and no, Shelv is licensed under the [Komorebi License](https://github.com/LGUG2Z/komorebi-license) 2.0.0, so more like "source available".
+
+Which means that you cannot use Shelv compiled from source for work or repackage it to a new app, but you can fork it for non-commercial personal use or with the intention of contributing changes back.
+However that applies to the "build from" source option, you can (and hopefully will) just use the version from the app store, which grants **personal** commercial use (such as using it at work for productivity). 
+
+Read more [below](#License)
 
 </details>
 
@@ -308,16 +313,16 @@ Not at the moment (besides crash reporting), I'm not fundamentally opposed to co
 - macOS (for now only on macOS, I wish I would have enough money and time to make Windows, Linux, Web and mobile versions! But alas)
 
 ### Build Commands
+
 ```bash
 # Run the application
 cargo run
 
-# Check code for errors (preferred for development)
-cargo check
-
 # Run tests
 cargo test
 ```
+
+Yep, that is it.
 
 ### Shelv is built with:
 - **[Rust](https://github.com/rust-lang/rust)** for core application logic
@@ -341,5 +346,23 @@ cargo test
 
 ## License
 
-Shelv uses a license inspired by [PolyForm Strict 1.0.0 license](https://polyformproject.org/licenses/strict/1.0.0). You cannot use Shelv compiled from source for commercial work or repackage it into a new app. However, you can use the version from the app store for any purpose.
+### Summary
+
+- You can fork Shelv for the intended purpose of contributing features upstream or for non-commercial use only
+- You can use the Mac App Store version for personal use at work or home freely
+- In the future, there might be a team license available for purchase separately
+
+*The overall structure is inspired by the [komorebi project](https://github.com/LGUG2Z/komorebi). Thank you [LGUG2Z](https://github.com/LGUG2Z) for being an inspiration!*
+
+### Komorebi License
+
+Shelv is licensed under the [Komorebi License](https://github.com/LGUG2Z/komorebi-license) 2.0.0. 
+
+This license does not permit any kind of commercial use. If you are a business owner, the act of forking this repository, making changes to it and then using your fork in your business constitutes commercial use.
+
+If you would like to discuss commercial licensing, feel free to reach out.
+
+### Personal Commercial Use
+
+Personal commercial use (such as using Shelv for personal productivity while at work) is automatically granted with the Mac App Store version of Shelv.
 
