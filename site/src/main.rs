@@ -214,6 +214,9 @@ pub enum Route {
     #[get("/")]
     Root,
 
+    #[get("/privacy")]
+    Privacy,
+
     // note that this is how the client will see construct url using genai
     // note that messages are coming from anthropic api url pattern
     #[post("/api/llm-claude/v1/messages")]
@@ -231,6 +234,12 @@ fn strip_out_newlines(text: &str) -> String {
 // Route handlers
 async fn root() -> Html<String> {
     Html(render_to_string(home_page()))
+}
+
+async fn privacy() -> &'static str {
+    let privacy_content = include_str!("../../assets/privacy-policy.md");
+
+    privacy_content
 }
 
 async fn proxy_anthropic_post(
@@ -1033,7 +1042,7 @@ async fn main() {
         "DANGER: token last 4 = {:?}",
         anthropic_api_key
             .as_ref()
-            .map(|k| &k[((k.len() - 5).max(0))..])
+            .map(|k| &k[((k.len() as isize - 5).max(0) as usize)..])
     );
 
     let config = proxy::Config {
