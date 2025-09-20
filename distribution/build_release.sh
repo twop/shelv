@@ -14,7 +14,6 @@ fi
 echo "Modifying plist: $PLIST_FILE"
 
 /usr/libexec/PlistBuddy -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST_FILE"
-/usr/libexec/PlistBuddy -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST_FILE"
 /usr/libexec/PlistBuddy -c "Add :DTPlatformBuild string 15F31d" "$PLIST_FILE"
 /usr/libexec/PlistBuddy -c "Add :DTPlatformName string macosx" "$PLIST_FILE"
 /usr/libexec/PlistBuddy -c "Add :DTPlatformVersion string 14.5" "$PLIST_FILE"
