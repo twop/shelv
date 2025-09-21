@@ -16,6 +16,7 @@ use itertools::Itertools;
 use pulldown_cmark::HeadingLevel;
 use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
+use shared::Version;
 
 use crate::{
     app_actions::{AppAction, FocusTarget},
@@ -42,7 +43,6 @@ use crate::{
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::settings_eval::Scripts,
     settings_parsing::LlmSettings,
-    shared::Version,
     text_structure::{
         CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextHash, TextStructure,
     },

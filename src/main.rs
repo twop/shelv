@@ -33,7 +33,8 @@ use eframe::{
     get_value,
 };
 
-use crate::{app_state::UnsavedChange, persistent_state::extract_note_file, shared::Version};
+use crate::{app_state::UnsavedChange, persistent_state::extract_note_file};
+use shared::Version;
 
 mod app_actions;
 mod app_io;
@@ -51,7 +52,6 @@ mod persistent_state;
 mod picker;
 mod scripting;
 mod settings_parsing;
-mod shared;
 mod taffy_styles;
 mod text_structure;
 mod theme;

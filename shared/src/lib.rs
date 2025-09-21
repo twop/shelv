@@ -1,5 +1,3 @@
-// TODO Move this to a shared lib once we migrate to Cargo workspaces
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

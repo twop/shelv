@@ -24,6 +24,7 @@ use pulldown_cmark::CowStr;
 // use itertools::Itertools;
 use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
+use shared::Version;
 
 use crate::{
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
@@ -42,7 +43,6 @@ use crate::{
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     settings_parsing::format_mac_shortcut_with_symbols,
-    shared::Version,
     taffy_styles::{StyleBuilder, flex_column, flex_row, style},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},

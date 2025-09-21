@@ -16,13 +16,13 @@ use genai::{
     resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver},
 };
 use global_hotkey::GlobalHotKeyManager;
+use shared::{Version, VersionResponse};
 
 use crate::{
     app_actions::{AppIO, HideMode, LLMBlockRequest, LLMPromptRequest, SettingsForAiRequests},
     app_state::{InlineLLMResponseChunk, MsgToApp},
     command::create_ai_keybindings_documentation,
     persistent_state::get_utc_timestamp,
-    shared::{Version, VersionResponse},
 };
 
 use tokio_stream::StreamExt;
@@ -312,7 +312,7 @@ impl AppIO for RealAppIO {
     fn start_update_checker(&self) {
         let sender = self.msg_queue.clone();
         let current_version = self.current_version.clone();
-        let shelv_min_version_url = format!("{}/min-version", self.shelv_api_server);
+        let shelv_min_version_url = format!("{}/api/min-version", self.shelv_api_server);
         tokio::spawn(async move {
             loop {
                 let client = reqwest::Client::new();
@@ -357,7 +357,7 @@ impl AppIO for RealAppIO {
                         println!("Error requesting min version response: {err:#?}");
                     }
                 }
-                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(10 * 60)).await;
             }
         });
     }
