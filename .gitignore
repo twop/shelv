@@ -1,3 +1,6 @@
 /target
 /prompts
 .DS_Store
+*.provisionprofile
+upload_to_testflight.nu
+validate_to_testflight.nu
