@@ -1,9 +1,5 @@
 # Shelv
 
-<p align="center">
-  <img src="assets/shelv-app-icon.svg" alt="Shelv App Icon" width="128" height="128">
-</p>
-
 ## Hackable, Local, AI-powered notes
 
 Shelv is scriptable, plain text notes app with integrated ai-features for macOS, written in Rust (btw (tm)).
