@@ -1,5 +1,4 @@
-<h1 align="center" style="border-bottom: none">
-    <img src="/assets/shelv-app-icon.svg" alt="Shelv Logo" width="48" height="48" style="vertical-align: middle;">
+<h1 align="center">
     <b>
         <a href="https://shelv.app" style="vertical-align: middle;">Shelv</a>
     </b>
