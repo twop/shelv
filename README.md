@@ -6,7 +6,11 @@ Shelv is scriptable, plain text notes app with integrated ai-features for macOS,
 
 ![Shelv app showing AI-powered quick prompt feature in action](assets/for_readme/github-composition.png)
 
-[![Download on the Mac App Store](site/assets/media/mac-app-store-badge.svg)](https://apps.apple.com/us/app/shelv-notes/id6499478682)
+<p align="center">
+  <a href="https://apps.apple.com/us/app/shelv-notes/id6499478682">
+    <img src="site/assets/media/mac-app-store-badge.svg" alt="Download on the Mac App Store">
+  </a>
+</p>
 
 ### Make It Yours
 
