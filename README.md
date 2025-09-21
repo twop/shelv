@@ -1,16 +1,32 @@
-# Shelv
+<h1 align="center">
+    <b>
+        <a href="https://shelv.app" style="vertical-align: middle;">Shelv</a>
+    </b>
+</h1>
 
-## Hackable, Local, AI-powered notes
+<h3 align="center">
+    {  Hackable, Local, AI-powered notes  }
+</h3>
 
-Shelv is scriptable, plain text notes app with integrated ai-features for macOS, written in Rust (btw (tm)).
+<p align="center">
+    Shelv is scriptable, plain text notes app with integrated ai-features for macOS, written in Rust (btw (tm)).
+</p>
+
+<p align="center">
+    <a href="https://shelv.app"><b>Website</b></a> •
+    <a href="https://discord.gg/PJhJgugJ9U"><b>Discord</b></a> •
+    <a href="https://apps.apple.com/us/app/shelv-notes/id6499478682"><b>Mac App Store</b></a>
+</p>
 
 ![Shelv app showing AI-powered quick prompt feature in action](assets/for_readme/github-composition.png)
+
 
 <p align="center">
   <a href="https://apps.apple.com/us/app/shelv-notes/id6499478682">
     <img src="site/assets/media/mac-app-store-badge.svg" alt="Download on the Mac App Store">
   </a>
 </p>
+
 
 ### Make It Yours
 
