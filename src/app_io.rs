@@ -361,6 +361,13 @@ impl AppIO for RealAppIO {
             }
         });
     }
+
+    fn open_app_store_for_shelv_update(&self) {
+        open_url_with_nsworkspace("itms-apps://apps.apple.com/app/shelv-notes/id649947868")
+            .unwrap_or_else(|err| {
+                println!("Error opening app store URL: {}", err);
+            });
+    }
 }
 
 fn prepare_shelv_providers(
@@ -535,6 +542,33 @@ fn convert_egui_shortcut_to_global_hotkey(
     };
 
     global_hotkey::hotkey::HotKey::new(Some(modifiers), code)
+}
+
+fn open_url_with_nsworkspace(url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use objc2::rc::Id;
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send, msg_send_id};
+
+    unsafe {
+        let workspace: Id<AnyObject> = msg_send_id![class!(NSWorkspace), sharedWorkspace];
+
+        // Convert the Rust string to a C string
+        let c_url = CString::new(url)?;
+        let ns_string: Id<AnyObject> =
+            msg_send_id![class!(NSString), stringWithUTF8String:c_url.as_ptr()];
+
+        // Create NSURL from string
+        let nsurl: Id<AnyObject> = msg_send_id![class!(NSURL), URLWithString:&*ns_string];
+
+        // Open the URL
+        let success: bool = msg_send![&workspace, openURL:&*nsurl];
+
+        if success {
+            Ok(())
+        } else {
+            Err("NSWorkspace failed to open URL".into())
+        }
+    }
 }
 
 fn compare_versions(version_a: &Version, version_b: &Version) -> Ordering {

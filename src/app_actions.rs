@@ -88,6 +88,7 @@ pub enum AppAction {
     SlashPalette(SlashPaletteAction),
     HideApp,
     CopyCodeBlock(NoteFile, SpanIndex),
+    AppUpdateClicked,
 }
 
 impl AppAction {
@@ -177,6 +178,8 @@ pub trait AppIO {
     fn copy_to_clipboard(&self, text: String);
 
     fn start_update_checker(&self);
+
+    fn open_app_store_for_shelv_update(&self);
 }
 
 pub fn process_app_action(
@@ -1113,6 +1116,11 @@ pub fn process_app_action(
                 app_io.copy_to_clipboard(code_content.to_string());
             }
 
+            SmallVec::new()
+        }
+
+        AppAction::AppUpdateClicked => {
+            app_io.open_app_store_for_shelv_update();
             SmallVec::new()
         }
     }

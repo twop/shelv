@@ -22,9 +22,9 @@ use hotwatch::blocking::Hotwatch;
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
 // use itertools::Itertools;
+use shared::Version;
 use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
-use shared::Version;
 
 use crate::{
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
@@ -1535,12 +1535,7 @@ fn render_header_panel(
 
                             if let Some(update_btn) = update_btn {
                                 if t.ui_add(update_btn).clicked() {
-                                    // TODO worth sharing this somehow? or custom action?
-                                    // Note: itms-apps:// allows us to open the Mac App Store app directly, rather than through the browser.
-                                    resulting_actions.push(AppAction::OpenLink(
-                                        "itms-apps://apps.apple.com/app/shelv-notes/id649947868"
-                                            .to_string(),
-                                    ));
+                                    resulting_actions.push(AppAction::AppUpdateClicked);
                                 };
                             }
 
