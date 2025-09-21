@@ -1,9 +1,6 @@
 use std::{collections::BTreeMap, io, path::PathBuf};
 
-use eframe::egui::{
-    Context, FontId, Id, KeyboardShortcut, OpenUrl, TextFormat, ViewportCommand,
-    text::{LayoutJob, LayoutSection},
-};
+use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
 
 use serde_json::{Value, to_value};
 use similar::{ChangeTag, TextDiff};
@@ -13,7 +10,7 @@ use crate::{
     app_state::{
         AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk,
         InlinePromptStatus, MsgToApp, ParsedPromptResponse, RenderAction, SlashPalette,
-        TextSelectionAddress, UnsavedChange, compute_editor_text_id,
+        TextSelectionAddress, UnsavedChange, VersionState, compute_editor_text_id,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
@@ -178,6 +175,8 @@ pub trait AppIO {
         F: FnOnce(&mut sentry::Scope);
 
     fn copy_to_clipboard(&self, text: String);
+
+    fn start_update_checker(&self);
 }
 
 pub fn process_app_action(
@@ -576,6 +575,14 @@ pub fn process_app_action(
                         SmallVec::new()
                     }
                 },
+                MsgToApp::UpdateRequired(required_version) => {
+                    state.version_state = VersionState::RequiredUpdateAvailable(required_version);
+                    SmallVec::new()
+                }
+                MsgToApp::UpdateAvailable(latest_version) => {
+                    state.version_state = VersionState::UpdateAvailable(latest_version);
+                    SmallVec::new()
+                }
             }
         }
 

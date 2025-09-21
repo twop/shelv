@@ -1,6 +1,10 @@
-use axum::{extract::State, http::StatusCode, response::Html};
+use axum::{
+    Json,
+    {extract::State, http::StatusCode, response::Html},
+};
 use enum_router::router;
 use hyped::*;
+use serde::{Deserialize, Serialize};
 use std::{
     net::SocketAddr,
     sync::{Arc, Mutex},
@@ -213,6 +217,8 @@ pub struct ButtonStyle {
 pub enum Route {
     #[get("/")]
     Root,
+    #[get("/min-version")]
+    MinVersion,
 
     #[get("/privacy")]
     Privacy,
@@ -234,6 +240,20 @@ fn strip_out_newlines(text: &str) -> String {
 // Route handlers
 async fn root() -> Html<String> {
     Html(render_to_string(home_page()))
+}
+
+// TODO Replace this type with the one in the shared lib once that exists
+#[derive(Serialize, Deserialize)]
+struct VersionResponse {
+    min_version: String,
+    latest_version: String,
+}
+
+async fn min_version() -> Json<VersionResponse> {
+    Json(VersionResponse {
+        min_version: "1.3.0".to_string(),
+        latest_version: "1.3.0".to_string(),
+    })
 }
 
 async fn privacy() -> &'static str {

@@ -29,7 +29,7 @@ use crate::{
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
         CodeBlockAnnotation, ComputedLayout, FeedbackState, InlineLLMPromptState,
-        InlinePromptStatus, LayoutParams, RenderAction, SlashPalette,
+        InlinePromptStatus, LayoutParams, RenderAction, SlashPalette, VersionState,
     },
     byte_span::UnOrderedByteSpan,
     command::{
@@ -42,6 +42,7 @@ use crate::{
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     settings_parsing::format_mac_shortcut_with_symbols,
+    shared::Version,
     taffy_styles::{StyleBuilder, flex_column, flex_row, style},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
@@ -64,6 +65,7 @@ pub struct AppRenderData<'a> {
     pub render_actions: SmallVec<[RenderAction; 2]>,
     pub feedback: Option<&'a mut FeedbackState>,
     pub frame_hotkeys: &'a mut FrameHotkeys,
+    pub version_state: &'a VersionState,
 }
 
 pub struct RenderAppResult {
@@ -97,6 +99,7 @@ pub fn render_app(
         feedback,
         frame_hotkeys,
         code_block_annotations,
+        version_state,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
@@ -111,6 +114,7 @@ pub fn render_app(
         selected_note,
         is_window_pinned,
         feedback.as_ref().map(|f| f.is_sent).unwrap_or(false),
+        version_state,
     );
     output_actions.extend(header_actions);
 
@@ -1437,10 +1441,12 @@ fn render_header_panel(
     selected_note: NoteFile,
     is_window_pinned: bool,
     feedback_sent: bool,
+    version_state: &VersionState,
 ) -> SmallVec<[AppAction; 1]> {
     TopBottomPanel::top("top_panel")
         .show_separator_line(false)
         .show(ctx, |ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             let mut resulting_actions: SmallVec<[AppAction; 1]> = Default::default();
             let sizes = &theme.sizes;
 
@@ -1505,8 +1511,39 @@ fn render_header_panel(
                         });
 
                     // Right section: Feedback button, pin button, separator, and menu
+
                     t.style(flex_row().align_items(AlignItems::Center).gap(sizes.s))
                         .add(|t| {
+                            // Update button
+                            let update_btn = match version_state {
+                                VersionState::UpToDate => None,
+                                VersionState::UpdateAvailable(Version(version)) => Some(
+                                    IconButton::new(AppIcon::Download, theme)
+                                        .color(theme.colors.hyperlink_color)
+                                        .size(IconButtonSize::Large)
+                                        .text("Update Available")
+                                        .tooltip(format!("v{} available, click to open App Store to update.", version), None),
+                                ),
+                                VersionState::RequiredUpdateAvailable(Version(version)) => Some(
+                                    IconButton::new(AppIcon::Download, theme)
+                                        .color(theme.colors.warn_fg_color)
+                                        .size(IconButtonSize::Large)
+                                        .text("Required Update")
+                                        .tooltip(format!("Version ≥{} required, click to open App Store to update.", version), None),
+                                ),
+                            };
+
+                            if let Some(update_btn) = update_btn {
+                                if t.ui_add(update_btn).clicked() {
+                                    // TODO worth sharing this somehow? or custom action?
+                                    // Note: itms-apps:// allows us to open the Mac App Store app directly, rather than through the browser.
+                                    resulting_actions.push(AppAction::OpenLink(
+                                        "itms-apps://apps.apple.com/app/shelv-notes/id649947868"
+                                            .to_string(),
+                                    ));
+                                };
+                            }
+
                             // Feedback button
                             if t.ui_add(
                                 IconButton::new(AppIcon::Feedback, theme)

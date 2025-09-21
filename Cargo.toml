@@ -85,6 +85,7 @@ miette = { version = "7.2.0", features = ["fancy"] }
 strip-ansi-escapes = "0.2.0"
 chrono = "0.4.40"
 egui_taffy = "0.7.0"
+reqwest = "0.12.23"
 
 [patch.crates-io]
 winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.9" }

@@ -42,6 +42,7 @@ use crate::{
     persistent_state::{DataToSave, NoteFile, RestoredData},
     scripting::settings_eval::Scripts,
     settings_parsing::LlmSettings,
+    shared::Version,
     text_structure::{
         CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextHash, TextStructure,
     },
@@ -79,6 +80,13 @@ pub struct InlineLLMPromptState {
     pub layout_job: LayoutJob,
     pub status: InlinePromptStatus,
     pub fresh_response: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum VersionState {
+    UpToDate,
+    UpdateAvailable(Version),
+    RequiredUpdateAvailable(Version),
 }
 
 #[derive(Debug, Clone)]
@@ -205,6 +213,7 @@ pub struct AppState {
     pub deferred_actions: Vec<AppAction>,
     pub render_actions: Vec<RenderAction>,
     pub feedback: Option<FeedbackState>,
+    pub version_state: VersionState,
 }
 
 impl AppState {
@@ -350,6 +359,8 @@ pub enum MsgToApp {
         response: InlineLLMResponseChunk,
         address: TextSelectionAddress,
     },
+    UpdateRequired(Version),
+    UpdateAvailable(Version),
 }
 
 // struct MdAnnotationShortcut {
@@ -518,6 +529,7 @@ impl AppState {
             settings_scripts: None,
             render_actions: vec![],
             feedback: None,
+            version_state: VersionState::UpToDate,
         }
     }
 

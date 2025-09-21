@@ -33,7 +33,7 @@ use eframe::{
     get_value,
 };
 
-use crate::{app_state::UnsavedChange, persistent_state::extract_note_file};
+use crate::{app_state::UnsavedChange, persistent_state::extract_note_file, shared::Version};
 
 mod app_actions;
 mod app_io;
@@ -51,6 +51,7 @@ mod persistent_state;
 mod picker;
 mod scripting;
 mod settings_parsing;
+mod shared;
 mod taffy_styles;
 mod text_structure;
 mod theme;
@@ -92,15 +93,19 @@ impl MyApp<RealAppIO> {
             SHELV_DEBUG_CHAT_PROMPTS: bool = false
         );
 
-        let app_io = RealAppIO::new(
-            GlobalHotKeyManager::new().unwrap(),
-            cc.egui_ctx.clone(),
-            msg_queue_tx.clone(),
-            persistence_folder.clone(),
-            shelv_api_server.to_string(),
-            shelv_magic_token.to_string(),
-            debug_chat_prompts,
-        );
+        let current_version = env!("CARGO_PKG_VERSION");
+
+        let app_io = RealAppIO {
+            hotkeys_manager: GlobalHotKeyManager::new().unwrap(),
+            registered_hotkeys: Default::default(),
+            egui_ctx: cc.egui_ctx.clone(),
+            msg_queue: msg_queue_tx.clone(),
+            shelv_folder: persistence_folder.clone(),
+            shelv_api_server: shelv_api_server.to_string(),
+            shelv_magic_token: shelv_magic_token.to_string(),
+            debug_chat_prompts: debug_chat_prompts,
+            current_version: Version(current_version.to_string()),
+        };
 
         // let open_hotkey = global_open_hotkey.clone();
         let ctx = cc.egui_ctx.clone();
@@ -202,6 +207,9 @@ impl MyApp<RealAppIO> {
             persistent_state,
             last_saved,
         });
+
+        app_io.start_update_checker();
+
         Self {
             state,
             app_io,
@@ -408,6 +416,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             render_actions: (app_state.render_actions.drain(..)).collect(),
             frame_hotkeys: &mut frame_hotkeys,
             feedback: (&mut app_state.feedback).as_mut(),
+            version_state: &app_state.version_state,
             code_block_annotations,
         };
 
