@@ -6,6 +6,12 @@ Shelv is scriptable, plain text notes app with integrated ai-features for macOS,
 
 ![Shelv app showing AI-powered quick prompt feature in action](assets/for_readme/github-composition.png)
 
+<p align="center">
+  <a href="https://apps.apple.com/us/app/shelv-notes/id6499478682">
+    <img src="site/assets/media/mac-app-store-badge.svg" alt="Download on the Mac App Store">
+  </a>
+</p>
+
 ### Make It Yours
 
 Settings in Shelv is just a note, where you can create custom commands with [KDL](https://kdl.dev/) and JavaScript, assign and tweak keyboard shortcuts, all with live reload.
@@ -343,6 +349,8 @@ Yep, that is it.
 
 - **[Homepage](https://shelv.app)** - sources under `/site` folder
 - **[Discord](https://discord.gg/PJhJgugJ9U)** - ask for help, give feedback, or just say "hi"!
+
+[![Download on the Mac App Store](site/assets/media/mac-app-store-badge.svg)](https://apps.apple.com/us/app/shelv-notes/id6499478682)
 
 ---
 

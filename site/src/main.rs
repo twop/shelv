@@ -598,10 +598,10 @@ fn action_buttons_panel() -> Element {
 fn mac_store_link() -> Element {
     a(img()
         .attr("src", "/assets/media/mac-app-store-badge.svg")
-        .attr("alt", "Coming Soon on Mac")
+        .attr("alt", "Download on the Mac App Store")
         .class("home-app-store-buttons-mac h-10")
         .attr("height", "48"))
-    .href("https://testflight.apple.com/join/38OBZSRD")
+    .href("https://apps.apple.com/us/app/shelv-notes/id6499478682")
 }
 
 fn secondary_button_link(href: &str, content: impl Render + 'static) -> Element {
