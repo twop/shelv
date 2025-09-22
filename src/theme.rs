@@ -37,6 +37,7 @@ pub enum AppIcon {
     Send,
     Error,
     Copy,
+    Download,
 }
 
 impl AppIcon {
@@ -45,6 +46,56 @@ impl AppIcon {
             .family(eframe::epaint::FontFamily::Name("phosphor".into()))
             .color(color)
             .size(size)
+    }
+
+    pub fn render_with_text_size(
+        &self,
+        icon_size: f32,
+        text_size: f32,
+        color: Color32,
+        text: &str,
+    ) -> WidgetText {
+        use egui::{FontId, TextFormat, text::LayoutJob};
+
+        let mut job = LayoutJob::default();
+
+        // Add icon
+        job.append(
+            self.to_icon_str(),
+            0.0,
+            TextFormat {
+                font_id: FontId::new(icon_size, FontFamily::Name("phosphor".into())),
+                color,
+                valign: egui::Align::Center,
+                ..Default::default()
+            },
+        );
+
+        // Add a space between icon and text
+        job.append(
+            "  ",
+            0.0,
+            TextFormat {
+                font_id: FontId::new(text_size, FontFamily::Name("inter".into())),
+                valign: egui::Align::Center,
+                color,
+                ..Default::default()
+            },
+        );
+
+        // Add text
+        job.append(
+            text,
+            0.0,
+            TextFormat {
+                font_id: FontId::new(text_size, FontFamily::Name("inter".into())),
+                valign: egui::Align::Center,
+                color,
+                ..Default::default()
+            },
+        );
+
+        WidgetText::LayoutJob(job)
     }
 
     pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> WidgetText {
@@ -118,6 +169,7 @@ impl AppIcon {
             AppIcon::Send => P::PAPER_PLANE_TILT,
             AppIcon::Error => P::WARNING,
             AppIcon::Copy => P::COPY_SIMPLE,
+            AppIcon::Download => P::DOWNLOAD_SIMPLE,
         }
     }
 }

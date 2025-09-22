@@ -59,15 +59,14 @@ cargo bundle --release
 Add additional plist data:
 
 ```shell
-/usr/libexec/PlistBuddy -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" target/release/bundle/osx/Shelv.app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "target/release/bundle/osx/Shelv.app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :DTPlatformBuild string 15F31d" "target/release/bundle/osx/Shelv.app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :DTPlatformName string macosx" "target/release/bundle/osx/Shelv.app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :DTPlatformVersion string 14.5" "target/release/bundle/osx/Shelv.app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :DTSDKBuild string 23F73" "target/release/bundle/osx/Shelv.app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :DTSDKName string macosx14.5" "target/release/bundle/osx/Shelv.app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :DTXcode string 1540" "target/release/bundle/osx/Shelv.app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :DTXcodeBuild string 15F31d" "target/release/bundle/osx/Shelv.app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" ./target/release/bundle/osx/Shelv.app/Contents/Info.plist
+/usr/libexec/PlistBuddy -c "Add :DTPlatformBuild string 15F31d" ./target/release/bundle/osx/Shelv.app/Contents/Info.plist
+/usr/libexec/PlistBuddy -c "Add :DTPlatformName string macosx" ./target/release/bundle/osx/Shelv.app/Contents/Info.plist
+/usr/libexec/PlistBuddy -c "Add :DTPlatformVersion string 14.5" ./target/release/bundle/osx/Shelv.app/Contents/Info.plist
+/usr/libexec/PlistBuddy -c "Add :DTSDKBuild string 23F73" ./target/release/bundle/osx/Shelv.app/Contents/Info.plist
+/usr/libexec/PlistBuddy -c "Add :DTSDKName string macosx14.5" ./target/release/bundle/osx/Shelv.app/Contents/Info.plist
+/usr/libexec/PlistBuddy -c "Add :DTXcode string 1540" ./target/release/bundle/osx/Shelv.app/Contents/Info.plist
+/usr/libexec/PlistBuddy -c "Add :DTXcodeBuild string 15F31d" ./target/release/bundle/osx/Shelv.app/Contents/Info.plist
 ```
 
 2. Embed the provision profile into the bundle.

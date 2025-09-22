@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     collections::BTreeMap,
     ffi::CString,
     fs::File,
@@ -15,33 +16,33 @@ use genai::{
     resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver},
 };
 use global_hotkey::GlobalHotKeyManager;
+use shared::{Version, VersionResponse};
 
 use crate::{
-    app_actions::{
-        AppIO, ConversationPart, HideMode, LLMBlockRequest, LLMPromptRequest, SettingsForAiRequests,
-    },
-    app_state::{InlineLLMResponseChunk, LLMBlockResponseChunk, MsgToApp},
+    app_actions::{AppIO, HideMode, LLMBlockRequest, LLMPromptRequest, SettingsForAiRequests},
+    app_state::{InlineLLMResponseChunk, MsgToApp},
     command::create_ai_keybindings_documentation,
     persistent_state::get_utc_timestamp,
 };
 
 use tokio_stream::StreamExt;
 
-struct RegisteredGlobalHotkey {
+pub struct RegisteredGlobalHotkey {
     egui_shortcut: egui::KeyboardShortcut,
     system_hotkey: global_hotkey::hotkey::HotKey,
     handler: Box<dyn Fn() -> MsgToApp>,
 }
 
 pub struct RealAppIO {
-    hotkeys_manager: GlobalHotKeyManager,
-    registered_hotkeys: BTreeMap<u32, RegisteredGlobalHotkey>,
-    egui_ctx: egui::Context,
-    msg_queue: SyncSender<MsgToApp>,
-    shelv_folder: PathBuf,
-    shelv_api_server: String,
-    shelv_magic_token: String,
-    debug_chat_prompts: bool,
+    pub hotkeys_manager: GlobalHotKeyManager,
+    pub registered_hotkeys: BTreeMap<u32, RegisteredGlobalHotkey>,
+    pub egui_ctx: egui::Context,
+    pub msg_queue: SyncSender<MsgToApp>,
+    pub shelv_folder: PathBuf,
+    pub shelv_api_server: String,
+    pub shelv_magic_token: String,
+    pub debug_chat_prompts: bool,
+    pub current_version: Version,
 }
 
 impl RealAppIO {
@@ -53,6 +54,7 @@ impl RealAppIO {
         shelv_api_server: String,
         shelv_magic_token: String,
         debug_chat_prompts: bool,
+        current_version: Version,
     ) -> Self {
         Self {
             hotkeys_manager,
@@ -63,6 +65,7 @@ impl RealAppIO {
             shelv_api_server,
             shelv_magic_token,
             debug_chat_prompts,
+            current_version,
         }
     }
 }
@@ -305,6 +308,66 @@ impl AppIO for RealAppIO {
     fn copy_to_clipboard(&self, text: String) {
         self.egui_ctx.copy_text(text);
     }
+
+    fn start_update_checker(&self) {
+        let sender = self.msg_queue.clone();
+        let current_version = self.current_version.clone();
+        let shelv_min_version_url = format!("{}/api/min-version", self.shelv_api_server);
+        tokio::spawn(async move {
+            loop {
+                let client = reqwest::Client::new();
+                let response = client.get(shelv_min_version_url.clone()).send().await;
+
+                match response {
+                    Ok(response) => {
+                        let version_response = response.json::<VersionResponse>().await;
+
+                        match version_response {
+                            Ok(version_response) => {
+                                if let Some(msg) = match (
+                                    compare_versions(
+                                        &current_version,
+                                        &version_response.latest_version,
+                                    ),
+                                    compare_versions(
+                                        &current_version,
+                                        &version_response.min_version,
+                                    ),
+                                ) {
+                                    (_, Ordering::Less) => {
+                                        Some(MsgToApp::UpdateRequired(version_response.min_version))
+                                    }
+                                    (Ordering::Less, _) => Some(MsgToApp::UpdateAvailable(
+                                        version_response.latest_version,
+                                    )),
+                                    _ => None,
+                                } {
+                                    sender.send(msg).unwrap();
+                                }
+                            }
+                            Err(err) => {
+                                // Keep check though, hopefully someone notices they messed up and fixes it.
+                                println!("Error parsing min version response: {err:#?}");
+                                // TODO maybe log parsing errors to sentry?
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        // Keep checking though, might be intermittent network issue.
+                        println!("Error requesting min version response: {err:#?}");
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(10 * 60)).await;
+            }
+        });
+    }
+
+    fn open_app_store_for_shelv_update(&self) {
+        open_url_with_nsworkspace("itms-apps://apps.apple.com/app/shelv-notes/id649947868")
+            .unwrap_or_else(|err| {
+                println!("Error opening app store URL: {}", err);
+            });
+    }
 }
 
 fn prepare_shelv_providers(
@@ -479,4 +542,75 @@ fn convert_egui_shortcut_to_global_hotkey(
     };
 
     global_hotkey::hotkey::HotKey::new(Some(modifiers), code)
+}
+
+fn open_url_with_nsworkspace(url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use objc2::rc::Id;
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send, msg_send_id};
+
+    unsafe {
+        let workspace: Id<AnyObject> = msg_send_id![class!(NSWorkspace), sharedWorkspace];
+
+        // Convert the Rust string to a C string
+        let c_url = CString::new(url)?;
+        let ns_string: Id<AnyObject> =
+            msg_send_id![class!(NSString), stringWithUTF8String:c_url.as_ptr()];
+
+        // Create NSURL from string
+        let nsurl: Id<AnyObject> = msg_send_id![class!(NSURL), URLWithString:&*ns_string];
+
+        // Open the URL
+        let success: bool = msg_send![&workspace, openURL:&*nsurl];
+
+        if success {
+            Ok(())
+        } else {
+            Err("NSWorkspace failed to open URL".into())
+        }
+    }
+}
+
+fn compare_versions(version_a: &Version, version_b: &Version) -> Ordering {
+    let parse_versions = |Version(v): &Version| {
+        v.split('.')
+            .map(|s| s.parse::<u32>().unwrap())
+            .collect::<Vec<u32>>()
+    };
+
+    let current_version = parse_versions(version_a);
+    let min_version = parse_versions(version_b);
+
+    for (current, min) in current_version.iter().zip(min_version.iter()) {
+        use std::cmp::Ordering;
+        match current.cmp(min) {
+            Ordering::Less => return Ordering::Less,
+            Ordering::Greater => return Ordering::Greater,
+            Ordering::Equal => continue,
+        }
+    }
+
+    Ordering::Equal
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version_comparison() {
+        let v = |v: &str| Version(v.to_string());
+        let test_cases = [
+            (v("1.2.2"), v("1.2.2"), Ordering::Equal),
+            (v("1.2.3"), v("1.2.2"), Ordering::Greater),
+            (v("1.3.2"), v("1.2.2"), Ordering::Greater),
+            (v("2.0.0"), v("1.9.9"), Ordering::Greater),
+            (v("1.2.1"), v("1.2.2"), Ordering::Less),
+            (v("1.1.9"), v("1.2.0"), Ordering::Less),
+            (v("1.9.9"), v("2.0.0"), Ordering::Less),
+        ];
+        for (a, b, expected) in test_cases {
+            assert_eq!(compare_versions(&a, &b), expected);
+        }
+    }
 }

@@ -22,6 +22,9 @@ echo "Modifying plist: $PLIST_FILE"
 /usr/libexec/PlistBuddy -c "Add :DTXcode string 1540" "$PLIST_FILE"
 /usr/libexec/PlistBuddy -c "Add :DTXcodeBuild string 15F31d" "$PLIST_FILE"
 
+# ITSAppUsesNonExemptEncryption -> NO in order to bypass the App Store Connect compliance check
+/usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption string NO" "$PLIST_FILE"
+
 PROVISION_PROFILE_SOURCE="distribution/embedded.provisionprofile"
 PROVISION_PROFILE_TARGET="target/release/bundle/osx/Shelv.app/Contents/embedded.provisionprofile"
 

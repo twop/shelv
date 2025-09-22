@@ -55,9 +55,12 @@ pub struct IconButton<'theme> {
     icon: AppIcon,
     size: IconButtonSize,
     tooltip: Option<(String, Option<KeyboardShortcut>)>,
+    text: Option<String>,
+    text_size: f32,
     fade: f32,
     is_toggled: bool,
     theme: &'theme AppTheme,
+    color: Option<Color32>,
 }
 
 impl<'theme> IconButton<'theme> {
@@ -68,8 +71,11 @@ impl<'theme> IconButton<'theme> {
             theme,
             size: IconButtonSize::Medium,
             tooltip: None,
+            text: None,
             fade: 1.0,
             is_toggled: false,
+            color: None,
+            text_size: theme.fonts.size.normal,
         }
     }
 
@@ -96,6 +102,16 @@ impl<'theme> IconButton<'theme> {
         self.is_toggled = is_toggled;
         self
     }
+
+    pub fn color(mut self, color: Color32) -> Self {
+        self.color = Some(color);
+        self
+    }
+
+    pub fn text(mut self, text: impl Into<String>) -> Self {
+        self.text = Some(text.into());
+        self
+    }
 }
 
 impl<'theme> TuiWidget for IconButton<'theme> {
@@ -110,12 +126,17 @@ impl<'theme> TuiWidget for IconButton<'theme> {
             fade,
             is_toggled,
             theme,
+            color,
+            text,
+            text_size,
         } = self;
 
         {
             let icon_size = size.get_icon_font_size(theme);
 
-            let base_color = if is_toggled {
+            let base_color = if let Some(color) = color {
+                color
+            } else if is_toggled {
                 theme.colors.button_pressed_fg
             } else {
                 theme.colors.subtle_text_color
@@ -130,7 +151,13 @@ impl<'theme> TuiWidget for IconButton<'theme> {
 
             tui.mut_egui_style(apply_icon_btn_styling)
                 .button(|tui| {
-                    let label = tui.label(icon.render(icon_size, icon_color));
+                    let label = if let Some(text) = text.as_ref() {
+                        tui.label(
+                            icon.render_with_text_size(icon_size, text_size, icon_color, text),
+                        )
+                    } else {
+                        tui.label(icon.render(icon_size, icon_color))
+                    };
 
                     if let Some((tooltip_text, shortcut)) = tooltip.as_ref() {
                         label.on_hover_ui(|ui| {
