@@ -107,7 +107,7 @@ impl ScriptCall {
 
 #[derive(Debug, Clone, Hash, knus::Decode, PartialEq, Eq)]
 pub enum TextSource {
-    #[knus(name = "as_is")]
+    #[knus(name = "string")]
     Str(#[knus(argument)] String),
 
     #[knus(name = "callFunc")]

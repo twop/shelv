@@ -140,7 +140,7 @@ The `InsertText` command allows you to insert either static or dynamic text into
 ```kdl
 bind "Cmd T" icon="\u{E10A}" alias="test" description="Insert test text" {
     InsertText {
-        as_is "This is a test"
+        string "This is a test"
     }
 }
 ```
@@ -149,9 +149,7 @@ bind "Cmd T" icon="\u{E10A}" alias="test" description="Insert test text" {
 ```kdl
 bind "Cmd T" {
     InsertText {
-        text {
-            callFunc "myFunction"
-        }
+        callFunc "myFunction"
     }
 }
 ```
@@ -172,6 +170,23 @@ export function getCurrentDayOfWeek() {
 bind "Cmd D" icon="\u{E4E5}" alias="day" description="Insert current day of the week" {
     InsertText {
         callFunc "getCurrentDayOfWeek"
+    }
+}
+```
+
+#### Magic strings
+
+These patterns can be can be used for either `callFunc` or `string`
+- `{{selection}}` -> the currently selected text in a note, can be empty
+- `{||}` -> cursor with no selection
+- `{|}this will be selected{|}` -> cursor with selection, note that both opening and closing markers have to be present
+
+Here is an example of a simple custom command that wraps selection with `[]`, adds `()` and sets the cursor inside
+```kdl
+// (Cmd K): Insert Markdown Link
+bind "Cmd K" icon="\u{E2E2}" alias="link" description="Insert Markdown Link" {
+   InsertText {
+        string "[{{selection}}]({||})"
     }
 }
 ```

@@ -90,10 +90,10 @@ The `InsertText` command allows you to insert either static or dynamic text into
 
 ```kdl
 bind "Cmd T" icon="\u{E10A}" alias="test" description="Insert test text" {
-				InsertText {
-				        // meaning that this will be directly inserted at the cursor position
-								as_is "This is a test"
-				}
+  InsertText {
+      // meaning that this will be directly inserted at the cursor position
+			string "This is a test"
+	}
 }
 ```
 
@@ -101,12 +101,12 @@ bind "Cmd T" icon="\u{E10A}" alias="test" description="Insert test text" {
 
 ```kdl
 bind "Cmd T" {
-				InsertText {
-								text {
-												// HAS to be an exported js function name
-												callFunc "myFunction"
-  								}
-				}
+  InsertText {
+  	text {
+    	// HAS to be an exported js function name
+			callFunc "myFunction"
+		}
+	}
 }
 ```
 
@@ -158,6 +158,23 @@ export function getCurrentDate() {
 }
 ```
 
+These patterns can be can be used for either `callFunc` or `string`
+- `{{selection}}` -> the currently selected text in a note, can be empty
+- `{||}` -> cursor with no selection
+- `{|}this will be selected{|}` -> cursor with selection, note that both opening and closing markers have to be present
+
+Here is an example of a simple custom command that wraps selection with `[]`, adds `()` and sets the cursor inside
+```kdl
+// (Cmd K): Insert Markdown Link
+bind "Cmd K" icon="\u{E2E2}" alias="link" description="Insert Markdown Link" {
+   InsertText {
+        string "[{{selection}}]({||})"
+    }
+}
+```
+
+---
+
 Key properties for `bind` with `InsertText`:
 
 - `icon`: Phosphor icon unicode (e.g. "\u{E10A}")
@@ -200,7 +217,7 @@ for `bind` keyword
   - Format:
     ```
     InsertText {
-        as_is "Direct text string"
+        string "Direct text string"
         // OR to call a js function
         callFunc "exportedJsFunctionName"
     }

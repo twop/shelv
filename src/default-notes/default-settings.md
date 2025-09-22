@@ -21,7 +21,7 @@ Here is an example of a simple custom command that wraps selection with `[]`, ad
 // you can find more icons unicode symbols here: https://phosphoricons.com/ 
 bind "Cmd K" icon="\u{E2E2}" alias="link" description="Insert Markdown Link" {
    InsertText {
-        as_is "[{{selection}}]({||})"
+        string "[{{selection}}]({||})"
     }
 }
 ```
