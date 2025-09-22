@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "site"]
+members = [".", "site", "shared"]
 default-members = ["."]
 
 [workspace.package]
@@ -76,6 +76,7 @@ knus = { default-features = false, git = 'https://github.com/twop/knus.git', fea
     "derive",
 ], rev = "0bcbd447866a5be7efc9cc4b597f444b7ae822d2" }
 const-dotenvy = { workspace = true }
+shared = { path = "shared" }
 # knus = { default-features = false, version = "3.2.0", features = ["derive"] }
 # knus = { default-features = false, git = 'https://github.com/TheLostLambda/knus.git', features = [
 #     "derive",
@@ -85,6 +86,7 @@ miette = { version = "7.2.0", features = ["fancy"] }
 strip-ansi-escapes = "0.2.0"
 chrono = "0.4.40"
 egui_taffy = "0.7.0"
+reqwest = "0.12.23"
 
 [patch.crates-io]
 winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.9" }
