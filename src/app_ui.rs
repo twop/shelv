@@ -909,6 +909,9 @@ fn render_slash_palette(
                             RichText::new("No command matches found")
                                 .color(theme.colors.subtle_text_color)
                         });
+                        frame_hotkeys.add_key(Key::Escape, |_ctx| {
+                            [AppAction::SlashPalette(SlashPaletteAction::Hide)].into()
+                        });
                     } else {
                         frame_hotkeys.add_key(Key::ArrowDown, |_ctx| {
                             [AppAction::SlashPalette(SlashPaletteAction::NextCommand)].into()
