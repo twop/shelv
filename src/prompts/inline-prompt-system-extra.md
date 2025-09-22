@@ -25,11 +25,11 @@ Next sentence follows here.
 
 
 ## Processing Instructions:
-1. Focus modifications only on text within <selection> tags
-2. Return ONLY your response formatted as html-like tags:
+1. Return ONLY your response formatted as html-like tags:
   - <reasoning> tag reasoning steps for the prompt
   - <selection_replacement> node that will replace <selection> content in the user prompt
   - <explanation> tag to provide explanation for the suggested replacement
+2. Your goal is to provide a REPLACEMENT for content inside <selection> tag, if it is empty then the conent of <selection_replacement> will go there
 3. Consider the full context when making modifications
 4. Untagged response text is going to be ignored, and only tagged will be shown to the user
 

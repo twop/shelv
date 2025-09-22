@@ -182,9 +182,9 @@ impl AppIO for RealAppIO {
                 .into_iter()
                 .chain(system_prompt.map(|sp| ChatMessage::system(sp)))
                 .chain([
-                    ChatMessage::system(include_str!("./prompts/inline-prompt-system-extra.md")),
+                    ChatMessage::system(include_str!("./prompts/shelv-system-prompt.md")),
                     ChatMessage::user({
-                        let user_template = include_str!("./prompts/inline-prompt-user.md");
+                        let user_template = include_str!("./prompts/inline-prompt-system-extra.md");
 
                         for pl in ["{{prompt}}", "{{before}}", "{{selection}}", "{{after}}"] {
                             assert!(
