@@ -136,7 +136,7 @@ impl MyApp<RealAppIO> {
             println!("tray event: {:?}", ev);
         }));
         let tray_image = image::load_from_memory_with_format(
-            include_bytes!("../assets/tray-icon-macos-template.png",),
+            include_bytes!("../assets/shelv-tray-icon-macos-template.png",),
             ImageFormat::Png,
         )
         .unwrap();
