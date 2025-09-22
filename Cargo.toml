@@ -10,7 +10,7 @@ const-dotenvy = "0.1.0"
 
 [package]
 name = "shelv"
-version = "1.3.3"
+version = "1.3.4"
 edition = "2024"
 description = "Note taking app optimized for capturing phase."
 
@@ -94,7 +94,7 @@ winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch 
 [package.metadata.bundle]
 name = "Shelv"
 identifier = "app.shelv"
-icon = ["assets/TrayIcon.icns"]
+icon = ["assets/shelv-app-icon.icns"]
 osx_minimum_system_version = "12.0"
 resources = ["assets"]
 copyright = "Copyright (c) Briskmode Labs 2023. All rights reserved."

@@ -1,0 +1,4 @@
+- install https://alptugan.github.io/icns-creator/ from https://github.com/alptugan/icns-creator?tab=readme-ov-file
+- create iconset file from shelv-app-icon.png
+- run `iconutil -c icns shelv-app-icon.iconset` to get shelv-app-icon.icns
+- delete iconset file
