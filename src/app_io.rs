@@ -181,26 +181,23 @@ impl AppIO for RealAppIO {
                 .then(|| ChatMessage::system(shelv_system_prompt))
                 .into_iter()
                 .chain(system_prompt.map(|sp| ChatMessage::system(sp)))
-                .chain([
-                    ChatMessage::system(include_str!("./prompts/shelv-system-prompt.md")),
-                    ChatMessage::user({
-                        let user_template = include_str!("./prompts/inline-prompt-system-extra.md");
+                .chain([ChatMessage::user({
+                    let user_template = include_str!("./prompts/inline-prompt-system-extra.md");
 
-                        for pl in ["{{prompt}}", "{{before}}", "{{selection}}", "{{after}}"] {
-                            assert!(
-                                user_template.contains(pl),
-                                "Template is missing required placeholder: {}",
-                                pl
-                            );
-                        }
+                    for pl in ["{{prompt}}", "{{before}}", "{{selection}}", "{{after}}"] {
+                        assert!(
+                            user_template.contains(pl),
+                            "Template is missing required placeholder: {}",
+                            pl
+                        );
+                    }
 
-                        user_template
-                            .replace("{{prompt}}", &prompt)
-                            .replace("{{before}}", &before_selection)
-                            .replace("{{selection}}", &selection)
-                            .replace("{{after}}", &after_selection)
-                    }),
-                ]),
+                    user_template
+                        .replace("{{prompt}}", &prompt)
+                        .replace("{{before}}", &before_selection)
+                        .replace("{{selection}}", &selection)
+                        .replace("{{after}}", &after_selection)
+                })]),
         ));
 
         // Dump chat request to file for debugging and history
