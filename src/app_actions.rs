@@ -663,6 +663,7 @@ pub fn process_app_action(
                     let (settings_scripts, block_annotations) =
                         eval_js_scripts_in_settings_note(text, text_structure);
 
+                    state.commands.reset_to_defaults();
                     let cx = SettingsNoteEvalContext {
                         cmd_list: &mut state.commands,
                         scripts: &settings_scripts,

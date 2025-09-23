@@ -13,7 +13,7 @@ export function getCurrentDate() {
 
 ```kdl
 // (⌘ Y): Insert result from: getCurrentDate
-bind "Cmd Y" icon="\u{E4E5}" alias="date" description="Insert current date (YYYY/mon/DD)" { 
+bind "Cmd Y" icon="calendar" alias="date" description="Insert current date (YYYY/mon/DD)" { 
 	InsertText {
 		callFunc "getCurrentDate"
 	} 

@@ -89,7 +89,7 @@ The `InsertText` command allows you to insert either static or dynamic text into
 1. Direct text insertion:
 
 ```kdl
-bind "Cmd T" icon="\u{E10A}" alias="test" description="Insert test text" {
+bind "Cmd T" icon="text-aa" alias="test" description="Insert test text" {
   InsertText {
       // meaning that this will be directly inserted at the cursor position
 			string "This is a test"
@@ -158,15 +158,25 @@ export function getCurrentDate() {
 }
 ```
 
-These patterns can be can be used for either `callFunc` or `string`
+```kdl
+// (⌘ Y): Insert result from: getCurrentDate
+bind "Cmd Y" icon="calendar-heart" alias="date" description="Insert current date (YYYY/mon/DD)" { 
+	InsertText {
+		callFunc "getCurrentDate"
+	} 
+}
+```
+
+**Magic strings**: these patterns can be can be used for either `callFunc` or `string`
 - `{{selection}}` -> the currently selected text in a note, can be empty
 - `{||}` -> cursor with no selection
 - `{|}this will be selected{|}` -> cursor with selection, note that both opening and closing markers have to be present
 
 Here is an example of a simple custom command that wraps selection with `[]`, adds `()` and sets the cursor inside
+
 ```kdl
 // (Cmd K): Insert Markdown Link
-bind "Cmd K" icon="\u{E2E2}" alias="link" description="Insert Markdown Link" {
+bind "Cmd K" icon="link" alias="link" description="Insert Markdown Link" {
    InsertText {
         string "[{{selection}}]({||})"
     }
@@ -177,7 +187,7 @@ bind "Cmd K" icon="\u{E2E2}" alias="link" description="Insert Markdown Link" {
 
 Key properties for `bind` with `InsertText`:
 
-- `icon`: Phosphor icon unicode (e.g. "\u{E10A}")
+- `icon`: Phosphor icon name (e.g. "text-aa", "link", "heart")
   - list of all available icons can be found here: https://phosphoricons.com. ALWAYS isert that link when a user asks for help with creating commands.
 - `alias`: Command name in slash palette (can be triggered by typing `/`), will not appear in the slash palette if empty
 - `description`: Description shown in slash palette
@@ -190,7 +200,7 @@ Key properties for `bind` with `InsertText`:
 - `bind`: In-app keybindings
   - Format: `bind "Shortcut" { Action; }`
   - Optional attributes:
-    - `icon`: Phosphor icon unicode for slash palette
+    - `icon`: Phosphor icon name for slash palette (e.g. "gear", "plus", "star")
     - `alias`: Command name in slash palette
     - `description`: Description shown in slash palette
 
@@ -203,17 +213,17 @@ Key properties for `bind` with `InsertText`:
 Available Actions:
 
 for `bind` keyword
-- MarkdownBold
-- MarkdownItalic
-- MarkdownCodeBlock
-- MarkdownStrikethrough
-- MarkdownH1, MarkdownH2, MarkdownH3
-- PinWindow
-- RunLLMBlock
-- ShowPrompt
-- SwitchToNote (1-4)
-- SwitchToSettings
-- InsertText
+- `MarkdownBold`
+- `MarkdownItalic`
+- `MarkdownCodeBlock` or with optional language attribute `MarkdownCodeBlock lang="js"`
+- `MarkdownStrikethrough`
+- `MarkdownH1`, `MarkdownH2`, `MarkdownH3`
+- `PinWindow`
+- `RunLLMBlock`
+- `ShowPrompt`
+- `SwitchToNote 1..4`
+- `SwitchToSettings`
+- `InsertText`
   - Format:
     ```
     InsertText {
@@ -224,7 +234,7 @@ for `bind` keyword
     ```
 
 for `global`
-- ShowHideApp
+- `ShowHideApp`
 
 Shortcut Format: "Modifier1 Modifier2 Key"
-where modifiers are: Cmd, Option, Shift, Ctrl
+where modifiers are: `Cmd`, `Option`, `Shift`, `Ctrl`

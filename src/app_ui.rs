@@ -1259,7 +1259,7 @@ fn render_slash_cmd(
                             tui.ui_add(
                                 Label::new(
                                     RichText::new(if let Some(icon) = &cmd.phosphor_icon {
-                                        icon
+                                        icon.symbol()
                                     } else {
                                         egui_phosphor::light::GEAR
                                     })

@@ -18,8 +18,8 @@ Here is an example of a simple custom command that wraps selection with `[]`, ad
 
 ```kdl
 // (Cmd K): Insert Markdown Link
-// you can find more icons unicode symbols here: https://phosphoricons.com/ 
-bind "Cmd K" icon="\u{E2E2}" alias="link" description="Insert Markdown Link" {
+// you can find more icon names here: https://phosphoricons.com/ 
+bind "Cmd K" icon="link" alias="link" description="Insert Markdown Link" {
    InsertText {
         string "[{{selection}}]({||})"
     }
