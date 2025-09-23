@@ -77,28 +77,28 @@ Here is the list of keybindings that work out of the box, please tweak them to y
 
 ```kdl
 // (⌥ ⌘ B): Toggle Code Block
-bind "Option Cmd B" icon="\u{EAFE}" alias="code" description="Toggle Code Block" { MarkdownCodeBlock; }
+bind "Option Cmd B" icon="code-block" alias="code" description="Toggle Code Block" { MarkdownCodeBlock; }
 
 // (⌘ B): Toggle Bold
-bind "Cmd B" icon="\u{E5BE}" alias="bold" description="Toggle Bold" { MarkdownBold; }
+bind "Cmd B" icon="text-b" alias="bold" description="Toggle Bold" { MarkdownBold; }
 
 // (⌘ I): Toggle Italic
-bind "Cmd I" icon="\u{E5C0}" alias="italic" description="Toggle Italic" { MarkdownItalic; }
+bind "Cmd I" icon="text-italic" alias="italic" description="Toggle Italic" { MarkdownItalic; }
 
 // (⇧ ⌘ E): Toggle Strikethrough
-bind "Shift Cmd E" icon="\u{E5C2}" alias="strike" description="Toggle Strikethrough" { MarkdownStrikethrough; }
+bind "Shift Cmd E" icon="text-strikethrough" alias="strike" description="Toggle Strikethrough" { MarkdownStrikethrough; }
 
 // (⌥ ⌘ 1): Heading 1
-bind "Option Cmd 1" icon="\u{E6BC}" alias="h1" description="Heading 1" { MarkdownH1; }
+bind "Option Cmd 1" icon="text-h-one" alias="h1" description="Heading 1" { MarkdownH1; }
 
 // (⌥ ⌘ 2): Heading 2
-bind "Option Cmd 2" icon="\u{E6BE}" alias="h2" description="Heading 2" { MarkdownH2; }
+bind "Option Cmd 2" icon="text-h-two" alias="h2" description="Heading 2" { MarkdownH2; }
 
 // (⌥ ⌘ 3): Heading 3
-bind "Option Cmd 3" icon="\u{E6C0}" alias="h3" description="Heading 3" { MarkdownH3; }
+bind "Option Cmd 3" icon="text-h-three" alias="h3" description="Heading 3" { MarkdownH3; }
 
 // (⌃ Enter): Show AI Prompt
-bind "Ctrl Enter" icon="\u{E6A2}" alias="ai" description="Show AI Prompt" { ShowPrompt; }
+bind "Ctrl Enter" icon="sparkle" alias="ai" description="Show AI Prompt" { ShowPrompt; }
 
 // (⌘ ,): Open Settings
 bind "Cmd Comma" { SwitchToSettings; }
@@ -138,7 +138,7 @@ The `InsertText` command allows you to insert either static or dynamic text into
 
 1. **Direct text insertion:**
 ```kdl
-bind "Cmd T" icon="\u{E10A}" alias="test" description="Insert test text" {
+bind "Cmd T" icon="text-aa" alias="test" description="Insert test text" {
     InsertText {
         string "This is a test"
     }
@@ -167,7 +167,7 @@ export function getCurrentDayOfWeek() {
 ```
 
 ```kdl
-bind "Cmd D" icon="\u{E4E5}" alias="day" description="Insert current day of the week" {
+bind "Cmd D" icon="calendar" alias="day" description="Insert current day of the week" {
     InsertText {
         callFunc "getCurrentDayOfWeek"
     }
@@ -184,7 +184,7 @@ These patterns can be can be used for either `callFunc` or `string`
 Here is an example of a simple custom command that wraps selection with `[]`, adds `()` and sets the cursor inside
 ```kdl
 // (Cmd K): Insert Markdown Link
-bind "Cmd K" icon="\u{E2E2}" alias="link" description="Insert Markdown Link" {
+bind "Cmd K" icon="link" alias="link" description="Insert Markdown Link" {
    InsertText {
         string "[{{selection}}]({||})"
     }
@@ -211,11 +211,11 @@ Shelv supports multiple AI providers through the [rust-genai](https://github.com
 - `bind`: In-app keybindings - Format: `bind "Shortcut" { Action; }`
 
 #### Optional Attributes for bind
-- `icon`: Phosphor icon unicode for slash palette ([full list](https://phosphoricons.com))
+- `icon`: Phosphor icon name for slash palette (e.g., "heart", "star", "code-simple") ([full list](https://phosphoricons.com))
 - `alias`: Command name in slash palette
 - `description`: Description shown in slash palette
 
-Example: `bind "Cmd T" icon="\u{E10A}" alias="test" description="Insert test text"`
+Example: `bind "Cmd T" icon="text-aa" alias="test" description="Insert test text"`
 
 #### AI Settings Block
 - `model`: Specifies the AI model to use (optional, defaults to rate limited model)
@@ -226,16 +226,17 @@ Example: `bind "Cmd T" icon="\u{E10A}" alias="test" description="Insert test tex
 #### Available Actions
 
 **For `bind` keyword:**
-- MarkdownBold, MarkdownItalic, MarkdownCodeBlock, MarkdownStrikethrough
-- MarkdownH1, MarkdownH2, MarkdownH3
-- PinWindow, RunLLMBlock, ShowPrompt
-- SwitchToNote (1-4), SwitchToSettings
-- InsertText (with `as_is` or `callFunc` options)
+- `MarkdownBold`, `MarkdownItalic`, , `MarkdownStrikethrough`
+- `MarkdownCodeBlock` or with optional language attribute `MarkdownCodeBlock lang="js"`
+- `MarkdownH1`, `MarkdownH2`, `MarkdownH3`
+- `PinWindow`, `RunLLMBlock`, `ShowPrompt`
+- `SwitchToNote 1..4`, `SwitchToSettings`
+- `InsertText` (with `string` or `callFunc` options)
 
 **For `global` keyword:**
-- ShowHideApp
+- `ShowHideApp`
 
-**Shortcut Format:** "Modifier1 Modifier2 Key" where modifiers are: Cmd, Option, Shift, Ctrl
+**Shortcut Format:** "Modifier1 Modifier2 Key" where modifiers are: `Cmd`, `Option`, `Shift`, `Ctrl`
 
 ---
 

@@ -386,8 +386,54 @@ impl CommandInstruction {
 }
 
 #[derive(Debug, Hash, Clone)]
+pub struct PhosphorIcon {
+    name: &'static str,
+    unicode_symbol: &'static str,
+}
+
+impl PhosphorIcon {
+    pub fn symbol(&self) -> &'static str {
+        self.unicode_symbol
+    }
+
+    pub fn canonical_name(&self) -> String {
+        let kebab_name = self.name.to_lowercase().replace('_', "-");
+        kebab_name
+    }
+
+    pub fn from_string(icon_name: &str) -> Option<Self> {
+        // Convert kebab-case to UPPER_SNAKE_CASE
+        let upper_snake = icon_name.to_uppercase().replace('-', "_");
+        
+        // First try to find by key (UPPER_SNAKE_CASE)
+        if let Some((key, icon_char)) = egui_phosphor::light::ICONS
+            .iter()
+            .find(|(key, _)| *key == upper_snake)
+        {
+            return Some(PhosphorIcon {
+                name: key,
+                unicode_symbol: icon_char,
+            });
+        }
+
+        // If not found by key, try to find by value (direct unicode char)
+        if let Some((key, icon_char)) = egui_phosphor::light::ICONS
+            .iter()
+            .find(|(_, value)| *value == icon_name)
+        {
+            return Some(PhosphorIcon {
+                name: key,
+                unicode_symbol: icon_char,
+            });
+        }
+
+        None
+    }
+}
+
+#[derive(Debug, Hash, Clone)]
 pub struct SlashPaletteCmd {
-    pub phosphor_icon: Option<String>,
+    pub phosphor_icon: Option<PhosphorIcon>,
     pub prefix: String,
     pub description: String,
     pub instance: CommandInstance,
@@ -407,7 +453,7 @@ impl SlashPaletteCmd {
         }
     }
     pub fn icon(mut self, icon: String) -> Self {
-        self.phosphor_icon = Some(icon);
+        self.phosphor_icon = PhosphorIcon::from_string(&icon);
         self
     }
 
@@ -603,7 +649,6 @@ impl CommandList {
         self.keyboard_commands.extend_from_slice(&self.defaults.0);
 
         self.slash_commands.clear();
-        self.frame_hotkeys.clear();
         self.slash_commands.extend_from_slice(&self.defaults.1);
     }
 
@@ -697,8 +742,8 @@ pub fn create_ai_keybindings_documentation(cmd_list: &CommandList) -> String {
                 slash_cmd_attrs = match slash_cmd {
                     Some(cmd) => {
                         let mut attrs = String::new();
-                        if let Some(icon_char) = cmd.phosphor_icon.as_ref().and_then(|icon|icon.chars().nth(0)) {
-                            attrs.push_str(&format!("icon=\"\\u{{{:X}}}\" ", icon_char as u32));
+                        if let Some(phosphor_icon) = cmd.phosphor_icon.as_ref() {
+                            attrs.push_str(&format!("icon=\"{}\" ", phosphor_icon.canonical_name()));
                         }
 
                         attrs.push_str(&format!("alias=\"{}\" description=\"{}\" ",
@@ -733,7 +778,7 @@ fn test_keybindings_documentation_generation() {
                 CommandInstruction::MarkdownBold,
                 CommandScope::Global,
             )
-            .icon("\u{E10A}".to_string())
+            .icon(egui_phosphor::light::USER_CIRCLE_GEAR.to_string())
             .shortcut(Some(kbd_shortcut1))
             .description("Make text bold"),
         ],
@@ -746,7 +791,7 @@ fn test_keybindings_documentation_generation() {
     let docs = create_ai_keybindings_documentation(&cmd_list);
 
     let expected_docs = r#"// (⌘ B): Toggle Bold
-bind "Cmd B" icon="\u{E10A}" alias="bold" description="Make text bold" { MarkdownBold; }
+bind "Cmd B" icon="user-circle-gear" alias="bold" description="Make text bold" { MarkdownBold; }
 
 // (⌘ I): Toggle Italic
 bind "Cmd I" { MarkdownItalic; }"#;
