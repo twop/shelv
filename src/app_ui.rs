@@ -1619,7 +1619,7 @@ fn render_header_panel(
                                                 (
                                                     &AppIcon::Discord,
                                                     "Join our Discord",
-                                                    include_str!("../assets/discord_invite.txt")
+                                                    include_str!("../distribution/discord_invite.txt")
                                                         .trim(),
                                                 ),
                                                 (

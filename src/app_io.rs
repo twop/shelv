@@ -360,7 +360,7 @@ impl AppIO for RealAppIO {
     }
 
     fn open_app_store_for_shelv_update(&self) {
-        open_url_with_nsworkspace("itms-apps://apps.apple.com/app/shelv-notes/id649947868")
+        open_url_with_nsworkspace("itms-apps://apps.apple.com/app/shelv-notes/id6499478682")
             .unwrap_or_else(|err| {
                 println!("Error opening app store URL: {}", err);
             });

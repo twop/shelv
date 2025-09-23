@@ -64,26 +64,32 @@ pub enum HydrationResult {
     Partial(RestoredData, DataToSave<'static>),
 }
 
+pub enum LoadKind {
+    FreshInstall,
+    Migrated,
+    Normal,
+}
+
 pub fn load_and_migrate<'s>(
     number_of_notes: u32,
     v1_save: Option<v1::PersistentState>,
     folder: &PathBuf,
-) -> RestoredData {
+) -> (RestoredData, LoadKind) {
     let load_result = try_hydrate(number_of_notes, &folder);
 
     match (load_result, v1_save) {
-        (Ok(HydrationResult::Success(data)), _) => data,
+        (Ok(HydrationResult::Success(data)), _) => (data, LoadKind::Normal),
         (Ok(HydrationResult::FolderIsMissing) | Err(_), v1_save) => {
-            let (to_save, data) = match &v1_save {
-                Some(v1_save) => fn_migrate_from_v1(&v1_save),
-                None => bootstrap(number_of_notes),
+            let ((to_save, data), load_kind) = match &v1_save {
+                Some(v1_save) => (fn_migrate_from_v1(&v1_save), LoadKind::Migrated),
+                None => (bootstrap(number_of_notes), LoadKind::FreshInstall),
             };
             try_save(to_save, &folder).unwrap();
-            data
+            (data, load_kind)
         }
         (Ok(HydrationResult::Partial(data, to_save)), _) => {
             try_save(to_save, &folder).unwrap();
-            data
+            (data, LoadKind::Normal)
         }
     }
 }

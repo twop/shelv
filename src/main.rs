@@ -166,7 +166,8 @@ impl MyApp<RealAppIO> {
             cc.storage.and_then(|s| get_value(s, "persistent_state"));
 
         let number_of_notes = 4;
-        let persistent_state = load_and_migrate(number_of_notes, v1_save, &persistence_folder);
+        let (persistent_state, load_kind) =
+            load_and_migrate(number_of_notes, v1_save, &persistence_folder);
 
         let sender = msg_queue_tx.clone();
         let ctx = cc.egui_ctx.clone();

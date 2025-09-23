@@ -9,18 +9,19 @@ We are so *happy* that you are giving us a chance, and can't wait to learn how *
 *Tip: A quick way to create a checklist item is by typing `[]` and then hitting `space`. Try it out!*
 
 
-## Global Hotkey: `⌘ + ⌥ + s`
-The best way to use Shelv is with the **global hotkey**. Use it to quickly show and hide Shelv. The hotkey works no matter what app you are using.
-
-- [ ] Use the global hotkey (`⌘ + ⌥ + s`) to hide Shelv, and then again to show Shelv.
-
-*Note: If you'd prefer a different shortcut, it can be configured in [settings](shelv://settings).*
-
-
 ## Pinned mode
-You can control whether Shelv automatically hides or stays on the screen with the pin icon (`󰐃`). When Shelv is pinned, it will stay open even if you switch apps. Otherwise, whenever Shelv loses focus, it will get out of your way.
+You can control whether Shelv automatically hides or stays on the screen with the pin icon (`󰐃`). When Shelv is pinned, it will stay open even if you switch apps.
+Otherwise, **whenever Shelv loses focus, it will hide itself**.
 
-- [ ] Unpin Shelv by clicking the `󰐃` icon and try clicking outside the window, then use the global hotkey (`⌘ + ⌥ + s`) to return to Shelv.
+- [ ] Remember `⌘ + ⌥ + s` hotkey! Unpin Shelv by clicking the `󰐃` icon and try clicking outside the window, then use the global hotkey (`⌘ + ⌥ + s`) to return to Shelv.
+
+
+## Global Hotkey: `⌘ + ⌥ + s`
+The best way to use Shelv is with the **global hotkey**. You can use it to quickly show and hide Shelv. The hotkey works no matter what app you are using.
+
+If you'd prefer a different shortcut, it can be configured in [settings](shelv://settings).
+
+*If Shelv is pinned then global hotkey will switch focus back and forth instead of hiding it*
 
 
 ## Tray icon
