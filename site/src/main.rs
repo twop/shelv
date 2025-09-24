@@ -730,7 +730,7 @@ fn faq_items() -> Vec<(&'static str, Element)> {
             div((
                 p((
                     "Shelv is licensed under the ",
-                    link_to("https://github.com/twop/shelv/blob/main/LICENSE", "Komorebi License"),
+                    link_to("https://github.com/twop/shelv/blob/main/LICENSE.md", "Komorebi License"),
                     " 2.0.0. The overall structure is inspired by the ",
                     link_to("https://github.com/LGUG2Z/komorebi", "komorebi project"),
                     "."
