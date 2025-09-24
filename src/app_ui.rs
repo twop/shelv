@@ -461,7 +461,11 @@ fn render_editor(
         let row_height = ui.fonts(|f| f.row_height(&font_id));
         let primary_cursor_pos = cursor_rect(&galley, &cursor_range.primary, row_height);
 
-        ui.scroll_to_rect(primary_cursor_pos, None);
+        println!(
+            "## ScrollTo cursor, galley_pos={galley_pos:?}, cursor_rect={primary_cursor_pos:?}"
+        );
+
+        ui.scroll_to_rect(primary_cursor_pos.translate(galley_pos.to_vec2()), None);
     }
 
     let text_structure = structure_wrapper.unwrap();
@@ -1619,7 +1623,7 @@ fn render_header_panel(
                                                 (
                                                     &AppIcon::Discord,
                                                     "Join our Discord",
-                                                    include_str!("../assets/discord_invite.txt")
+                                                    include_str!("../distribution/discord_invite.txt")
                                                         .trim(),
                                                 ),
                                                 (

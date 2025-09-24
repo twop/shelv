@@ -64,26 +64,32 @@ pub enum HydrationResult {
     Partial(RestoredData, DataToSave<'static>),
 }
 
+pub enum LoadKind {
+    FreshInstall,
+    Migrated,
+    Normal,
+}
+
 pub fn load_and_migrate<'s>(
     number_of_notes: u32,
     v1_save: Option<v1::PersistentState>,
     folder: &PathBuf,
-) -> RestoredData {
+) -> (RestoredData, LoadKind) {
     let load_result = try_hydrate(number_of_notes, &folder);
 
     match (load_result, v1_save) {
-        (Ok(HydrationResult::Success(data)), _) => data,
+        (Ok(HydrationResult::Success(data)), _) => (data, LoadKind::Normal),
         (Ok(HydrationResult::FolderIsMissing) | Err(_), v1_save) => {
-            let (to_save, data) = match &v1_save {
-                Some(v1_save) => fn_migrate_from_v1(&v1_save),
-                None => bootstrap(number_of_notes),
+            let ((to_save, data), load_kind) = match &v1_save {
+                Some(v1_save) => (fn_migrate_from_v1(&v1_save), LoadKind::Migrated),
+                None => (bootstrap(number_of_notes), LoadKind::FreshInstall),
             };
             try_save(to_save, &folder).unwrap();
-            data
+            (data, load_kind)
         }
         (Ok(HydrationResult::Partial(data, to_save)), _) => {
             try_save(to_save, &folder).unwrap();
-            data
+            (data, LoadKind::Normal)
         }
     }
 }
@@ -132,11 +138,11 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
         {
             notes.push(note_content.to_string());
         } else {
-            notes.push(get_tutorial_note_content(searched_note_file).to_string());
+            notes.push(get_default_note_content(searched_note_file).to_string());
             println!("try_hydrate: detected missing {searched_note_file:?}");
             missing_notes.push((
                 searched_note_file,
-                get_tutorial_note_content(searched_note_file),
+                get_default_note_content(searched_note_file),
             ))
         }
     }
@@ -252,7 +258,7 @@ pub fn fn_migrate_from_v1<'s>(
             .map(|(index, note)| (NoteFile::Note(index as u32), note.as_ref()))
             .chain([(
                 NoteFile::Settings,
-                get_tutorial_note_content(NoteFile::Settings),
+                get_default_note_content(NoteFile::Settings),
             )])
             .collect(),
         is_pinned: true,
@@ -267,7 +273,7 @@ pub fn fn_migrate_from_v1<'s>(
             selected,
         },
         notes: old_state.notes.iter().map(|s| s.to_string()).collect(),
-        settings: get_tutorial_note_content(NoteFile::Settings).to_string(),
+        settings: get_default_note_content(NoteFile::Settings).to_string(),
     };
 
     (to_save, restored_data)
@@ -280,7 +286,7 @@ pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
             .into_iter()
             .map(|index| NoteFile::Note(index as u32))
             .chain([NoteFile::Settings])
-            .map(|file| (file, get_tutorial_note_content(file)))
+            .map(|file| (file, get_default_note_content(file)))
             .collect(),
         selected,
         is_pinned: true,
@@ -295,16 +301,16 @@ pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
         },
         notes: (0..number_of_notes)
             .into_iter()
-            .map(|i| get_tutorial_note_content(NoteFile::Note(i)))
+            .map(|i| get_default_note_content(NoteFile::Note(i)))
             .map(|s| s.to_string())
             .collect(),
-        settings: get_tutorial_note_content(NoteFile::Settings).to_string(),
+        settings: get_default_note_content(NoteFile::Settings).to_string(),
     };
 
     (to_save, restored_data)
 }
 
-pub fn get_tutorial_note_content(note: NoteFile) -> &'static str {
+pub fn get_default_note_content(note: NoteFile) -> &'static str {
     match note {
         NoteFile::Settings => include_str!("./default-notes/default-settings.md"),
         NoteFile::Note(0) => include_str!("./default-notes/default-note-1.md"),

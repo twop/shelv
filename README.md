@@ -18,7 +18,7 @@
     <a href="https://apps.apple.com/us/app/shelv-notes/id6499478682"><b>Mac App Store</b></a>
 </p>
 
-![Shelv app showing AI-powered quick prompt feature in action](assets/for_readme/github-composition.png)
+![Shelv app showing AI-powered quick prompt feature in action](distribution/assets/for_readme/github-composition.png)
 
 
 <p align="center">

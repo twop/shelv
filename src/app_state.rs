@@ -40,7 +40,7 @@ use crate::{
         toggle_simple_md_annotations::toggle_simple_md_annotations,
     },
     feedback::FeedbackData,
-    persistent_state::{DataToSave, NoteFile, RestoredData},
+    persistent_state::{DataToSave, LoadKind, NoteFile, RestoredData},
     scripting::settings_eval::Scripts,
     settings_parsing::LlmSettings,
     text_structure::{
@@ -376,6 +376,7 @@ impl AppState {
             msg_queue,
             persistent_state,
             last_saved,
+            load_kind,
         } = init_data;
 
         let RestoredData {
@@ -501,11 +502,16 @@ impl AppState {
         );
 
         // schedule notes eval, most importantly settings, but that will also make code annotations appear
-        let deferred_actions: Vec<_> = notes
+        let mut deferred_actions: Vec<_> = notes
             .keys()
             .map(|key| AppAction::EvalNote(*key))
             .chain([AppAction::FocusRequest(FocusTarget::CurrentNote)])
             .collect();
+
+        // Add tutorial action for fresh installs
+        if matches!(load_kind, LoadKind::FreshInstall) {
+            deferred_actions.push(AppAction::StartTutorial);
+        }
 
         Self {
             is_pinned: is_window_pinned,
@@ -568,6 +574,7 @@ pub struct AppInitData {
     pub msg_queue: Receiver<MsgToApp>,
     pub persistent_state: RestoredData,
     pub last_saved: u128,
+    pub load_kind: LoadKind,
 }
 
 fn execute_instruction(
