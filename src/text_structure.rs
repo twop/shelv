@@ -224,14 +224,14 @@ impl<'a> TextStructureBuilder<'a> {
         for step in text.char_indices().map(Some).chain([None]) {
             match step {
                 Some((index, char)) if char == '\n' => {
-                    println!("## adding {}", &text[pos..index]);
+                    // println!("## adding {}", &text[pos..index]);
                     lines.push(ByteSpan::new(pos, index));
                     pos = index + 1;
                 }
 
                 // if pos != text.len()
                 None => {
-                    println!("## adding at the end {}", &text[pos..text.len()]);
+                    // println!("## adding at the end {}", &text[pos..text.len()]);
                     lines.push(ByteSpan::new(pos, text.len()));
                 }
 
@@ -524,10 +524,10 @@ impl TextStructure {
             | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION;
 
         let parser = pulldown_cmark::Parser::new_ext(&text, md_parser_options);
-        println!("Parser output:\n{:?}", parser);
+        // println!("Parser output:\n{:?}", parser);
 
         for (ev, range) in parser.into_offset_iter() {
-            println!("{:?} {:?}", ev, range);
+            // println!("{:?} {:?}", ev, range);
             use pulldown_cmark::Event::*;
             let range = ByteSpan::from_range(&range);
             match ev {
@@ -676,7 +676,7 @@ impl TextStructure {
             }
         }
 
-        builder.print_structure();
+        // builder.print_structure();
 
         builder.finish(points)
     }

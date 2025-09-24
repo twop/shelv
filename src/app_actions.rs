@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, io, path::PathBuf};
 
+use boa_engine::ast::operations::all_private_identifiers_valid;
 use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
 
 use serde_json::{Value, to_value};
@@ -20,7 +21,7 @@ use crate::{
     },
     effects::text_change_effect::{TextChange, apply_text_changes},
     feedback::FeedbackType,
-    persistent_state::{NoteFile, get_tutorial_note_content},
+    persistent_state::NoteFile,
     scripting::{
         note_eval::{JSBlockLang, evaluate_all_live_js_blocks, evaluate_js_block},
         settings_eval::{
@@ -77,6 +78,7 @@ pub enum AppAction {
     CloseFeedbackWindow,
     StartTutorial,
     DeferToPostRender(Box<AppAction>),
+    IssueRenderAction(RenderAction),
     FocusRequest(FocusTarget),
     OpenNotesInFinder,
     ShowPrompt(TextSelectionAddress),
@@ -203,6 +205,7 @@ pub fn process_app_action(
                     match note.cursor() {
                         None => {
                             let len = note.text.len();
+                            println!("--- AppAction::SwitchToNote cursor set to the end = {len}");
                             note.update_cursor(UnOrderedByteSpan::new(len, len));
                         }
                         _ => {}
@@ -259,7 +262,11 @@ pub fn process_app_action(
                         std::mem::take(&mut note.derived_state.structure).recycle(text);
 
                     match updated_cursor {
-                        Some(cursor) => note.update_cursor(cursor),
+                        Some(cursor) => {
+                            println!("--- AppAction::Apply Text changes cursor set to {cursor:?}");
+
+                            note.update_cursor(cursor)
+                        }
                         None => note.reset_cursor(),
                     }
 
@@ -273,16 +280,15 @@ pub fn process_app_action(
             };
 
             // if the target for change is indeed the current note then scroll it to the cursor if it is present
-            if state.selected_note == note_file {
-                state
-                    .render_actions
-                    .push(RenderAction::ScrollToEditorCursorPos);
-            }
+            let scroll_action = if state.selected_note == note_file {
+                Some(AppAction::IssueRenderAction(
+                    RenderAction::ScrollToEditorCursorPos,
+                ))
+            } else {
+                None
+            };
 
-            match next_action {
-                Some(a) => [a].into(),
-                None => SmallVec::new(),
-            }
+            SmallVec::from_iter(next_action.into_iter().chain(scroll_action))
         }
 
         AppAction::HideApp => {
@@ -772,42 +778,58 @@ pub fn process_app_action(
         }
 
         AppAction::StartTutorial => {
-            // Plan:
-            // append "default" notes to the existing notes
-            // if a note is empty, just insert as is
-            // if there was a conent, insert it in the begining of the note but also add a separator
-            // "----END of tutorial----"
+            // Insert tutorial content into the first note only
+            const TUTORIAL_CONTENT: &str = include_str!("default-notes/tutorial.md");
 
-            let actions_iter = state
+            let first_note_id = NoteFile::Note(0);
+            let is_empty = state
                 .notes
-                .iter()
-                .map(|(&id, note)| (id, note.text.trim().is_empty()))
-                .filter_map(|(id, is_empty)| match get_tutorial_note_content(id) {
-                    "" => None,
-                    tutorial_conent => {
-                        let to_insert = match is_empty {
-                            true => format!("{cursor}{tutorial_conent}", cursor=TextChange::CURSOR),
-                            false => {
-                                format!("{cursor}{tutorial_conent}\n\n-------end of tutorial-------\n\n", cursor=TextChange::CURSOR)
-                            }
-                        };
-                        Some((id, TextChange::Insert(ByteSpan::point(0), to_insert)))
-                    }
-                })
-                .map(|(target, change)| AppAction::ApplyTextChanges {
-                    target,
-                    changes: [change].into(),
-                    should_trigger_eval: false,
-                });
+                .get(&first_note_id)
+                .map(|note| note.text.trim().is_empty())
+                .unwrap_or(true);
 
-            SmallVec::from_iter(actions_iter.chain([AppAction::SwitchToNote {
-                note_file: NoteFile::Note(0),
-                via_shortcut: true,
-            }]))
+            let to_insert = match is_empty {
+                true => format!(
+                    "{cursor}{tutorial_content}",
+                    cursor = TextChange::CURSOR,
+                    tutorial_content = TUTORIAL_CONTENT
+                ),
+                false => {
+                    format!(
+                        "{cursor}{tutorial_content}\n\n-------end of tutorial-------\n\n",
+                        cursor = TextChange::CURSOR,
+                        tutorial_content = TUTORIAL_CONTENT
+                    )
+                }
+            };
+
+            SmallVec::from_iter([
+                AppAction::SwitchToNote {
+                    note_file: first_note_id,
+                    via_shortcut: true,
+                },
+                AppAction::ApplyTextChanges {
+                    target: first_note_id,
+                    changes: [TextChange::Insert(ByteSpan::point(0), to_insert)].into(),
+                    should_trigger_eval: false,
+                },
+                AppAction::defer(AppAction::IssueRenderAction(
+                    RenderAction::ScrollToEditorCursorPos,
+                )),
+            ])
         }
 
         AppAction::DeferToPostRender(action) => {
             state.deferred_actions.push(*action);
+            SmallVec::new()
+        }
+
+        AppAction::IssueRenderAction(render_action) => {
+            println!(
+                "IssueRenderAction cursor={:?}",
+                state.notes.get(&state.selected_note).unwrap().cursor()
+            );
+            state.render_actions.push(render_action);
             SmallVec::new()
         }
 
@@ -818,16 +840,18 @@ pub fn process_app_action(
                 FocusTarget::CurrentNote => text_edit_id,
                 FocusTarget::SpecificId(id) => id,
             };
-            if let FocusTarget::CurrentNote = target {
-                state
-                    .render_actions
-                    .push(RenderAction::ScrollToEditorCursorPos);
-            }
             ctx.memory_mut(|mem| {
                 mem.request_focus(target_id);
             });
 
-            SmallVec::new()
+            if let FocusTarget::CurrentNote = target {
+                [AppAction::defer(AppAction::IssueRenderAction(
+                    RenderAction::ScrollToEditorCursorPos,
+                ))]
+                .into()
+            } else {
+                SmallVec::new()
+            }
         }
 
         AppAction::OpenNotesInFinder => {

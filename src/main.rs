@@ -207,6 +207,7 @@ impl MyApp<RealAppIO> {
             msg_queue: msg_queue_rx,
             persistent_state,
             last_saved,
+            load_kind,
         });
 
         app_io.start_update_checker();
@@ -450,13 +451,13 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         match byte_cursor {
             Some(cursor) => {
                 if note.cursor().is_none() {
-                    println!("[MAIN] Restored cursor from rendered data");
+                    println!("[main.rs] Restored cursor from rendered data cursor={cursor:?}");
                 }
                 note.update_cursor(cursor)
             }
             None => {
                 if note.cursor().is_some() {
-                    println!("[MAIN] Reseting cursor from rendered data");
+                    println!("[main.rs] Reseting cursor from rendered data");
                 }
                 note.reset_cursor()
             }

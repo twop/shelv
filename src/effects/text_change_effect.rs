@@ -159,9 +159,16 @@ pub fn apply_text_changes(
         }
     }
 
-    let adjusted_cursor = prev_cursor.map(|prev_cursor| match inserted_cursor {
-        Some(cursor) => UnOrderedByteSpan::new(cursor.start, cursor.end),
-        None => {
+    let adjusted_cursor = match (inserted_cursor, prev_cursor) {
+        // basically if we have a cursor override just take it
+        (Some(cursor), _) => Some(UnOrderedByteSpan::new(cursor.start, cursor.end)),
+
+        // Well, nothing changed there, still no active cursor position
+        (None, None) => None,
+
+        // That means that we have some inserts but they didn't have a cursor override
+        // This is the most tedious and complex: we need to manually compute the new position
+        (None, Some(prev_cursor)) => {
             // let mut cursor_start = prev_cursor.start;
             // let mut cursor_end = prev_cursor.end;
             let ordered = ByteSpan::new(prev_cursor.start, prev_cursor.end);
@@ -251,9 +258,9 @@ pub fn apply_text_changes(
                 (cursor_start, cursor_end)
             };
 
-            UnOrderedByteSpan::new(cursor_start, cursor_end)
+            Some(UnOrderedByteSpan::new(cursor_start, cursor_end))
         }
-    });
+    };
 
     // finally apply all the precomputed changes
     for change in actual_changes.into_iter() {
@@ -320,6 +327,42 @@ mod tests {
 
         apply_text_changes(&mut text, Some(UnOrderedByteSpan::new(0, 0)), changes).unwrap();
         assert_eq!(text, "hello world!");
+    }
+
+    #[test]
+    pub fn test_cursor_taken_from_insets() {
+        let mut text = "".to_string();
+
+        let changes = [TextChange::Insert(
+            ByteSpan::new(0, 0),
+            format!("{} <- cursor", TextChange::CURSOR),
+        )];
+
+        let new_cursor = apply_text_changes(&mut text, None, changes).unwrap();
+        assert_eq!(text, " <- cursor");
+        assert_eq!(new_cursor, Some(UnOrderedByteSpan::new(0, 0)));
+    }
+
+    #[test]
+    pub fn test_cursor_override_with_several_inserts() {
+        let mut text = "@".to_string();
+
+        let changes = [
+            TextChange::Insert(ByteSpan::new(0, 0), "before".to_string()),
+            TextChange::Insert(
+                ByteSpan::new(1, 1),
+                format!("{} <- cursor", TextChange::CURSOR),
+            ),
+        ];
+        let bytes_before = "before@".len();
+
+        let new_cursor =
+            apply_text_changes(&mut text, Some(UnOrderedByteSpan::new(0, 0)), changes).unwrap();
+        assert_eq!(text, "before@ <- cursor");
+        assert_eq!(
+            new_cursor,
+            Some(UnOrderedByteSpan::new(bytes_before, bytes_before))
+        );
     }
 
     #[test]
