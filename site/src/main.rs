@@ -518,7 +518,7 @@ fn page_header() -> Element {
         // Discord icon - always visible
         div(
             a(discord_icon(IconSize::Default))
-                .href(include_str!("../../assets/discord_invite.txt").trim())
+                .href(include_str!("../../distribution/discord_invite.txt").trim())
                 .class(&tw_join!(ButtonVariant::SecondaryTextOnly, TextColor::Subtle ))
         )
     )).class("flex justify-between items-center py-6")
