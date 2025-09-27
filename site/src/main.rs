@@ -246,7 +246,7 @@ async fn root() -> Html<String> {
 async fn min_version() -> Json<VersionResponse> {
     Json(VersionResponse {
         min_version: Version("1.3.0".to_string()),
-        latest_version: Version("1.3.8".to_string()),
+        latest_version: Version("1.3.9".to_string()),
     })
 }
 
