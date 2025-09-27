@@ -165,7 +165,9 @@ bind "Cmd T" {
 }
 ```
 
-JavaScript functions must be exported from `js` code blocks in the settings note. Each block is evaluated as a separate js module from top to bottom, with exported variables automatically imported into subsequent modules. When using the `selection` child node, the currently selected text will be passed as the first argument to your JavaScript function.
+JavaScript functions must be exported from `js` code blocks in the settings note.
+Each block is evaluated as a separate js module from top to bottom, with exported variables automatically imported into subsequent modules.
+When using the `selection` child node, the currently selected text will be passed as a js function argument.
 
 #### Example: Inserting the current day of the week
 
