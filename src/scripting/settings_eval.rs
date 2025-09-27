@@ -317,7 +317,11 @@ fn eval_settings_block<IO: AppIO>(
         println!("applying {shortcut:?} to {instruction:?}");
         let validated_instruction = match instruction {
             CommandInstruction::InsertText(ForwardToChild(source)) => {
-                if let TextSource::Script(ScriptCall { func_name: name }) = &source {
+                if let TextSource::Script(ScriptCall {
+                    func_name: name,
+                    arguments: _,
+                }) = &source
+                {
                     match eval_ctx.scripts.find_exports(name).as_slice() {
                         [] => {
                             return CodeBlockAnnotation::Error {

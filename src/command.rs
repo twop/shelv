@@ -93,17 +93,27 @@ impl CommandInstance {
         }
     }
 }
+
+#[derive(Debug, Clone, Hash, knus::Decode, PartialEq, Eq)]
+pub enum ScriptCallArgument{
+    #[knus(name = "selection")]
+    Selection
+}
+
 #[derive(Debug, Hash, Clone, knus::Decode, PartialEq, Eq)]
 pub struct ScriptCall {
     #[knus(argument)]
     pub func_name: String,
+
+    #[knus(children)]
+    pub arguments: SmallVec<[ScriptCallArgument; 1]>,
 }
 
-impl ScriptCall {
-    pub fn new(func_name: String) -> Self {
-        Self { func_name }
-    }
-}
+// impl ScriptCall {
+//     pub fn new(func_name: String) -> Self {
+//         Self { func_name }
+//     }
+// }
 
 #[derive(Debug, Clone, Hash, knus::Decode, PartialEq, Eq)]
 pub enum TextSource {

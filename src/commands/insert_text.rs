@@ -2,11 +2,12 @@ use std::{
     error::Error,
     path::{Path, PathBuf},
     rc::Rc,
+    str::FromStr,
 };
 
 use boa_engine::{
-    Context, JsError, JsNativeError, JsValue, Module, builtins::promise::PromiseState, js_string,
-    module::SimpleModuleLoader,
+    Context, JsError, JsNativeError, JsString, JsValue, Module, builtins::promise::PromiseState,
+    js_string, module::SimpleModuleLoader,
 };
 use boa_parser::Source;
 use smallvec::SmallVec;
@@ -192,8 +193,20 @@ fn run_insert_text_cmd(
                 .get(&block_hash.to_string())?
                 .namespace(&mut scripts.js_cx);
 
+            let arguments: Result<SmallVec<[_; 1]>, _> = script_call
+                .arguments
+                .iter()
+                .map(|arg| match arg {
+                    crate::command::ScriptCallArgument::Selection => {
+                        JsString::from_str(&note_text[byte_cursor.range()]).map(JsValue::String)
+                    }
+                })
+                .collect();
+
             // TODO proper error handling
             // probably with toast like UIs
+
+            let arguments = arguments.ok()?;
             match prop_type {
                 ScriptExportType::Str => namespace
                     .get(key, &mut scripts.js_cx)
@@ -206,7 +219,7 @@ fn run_insert_text_cmd(
                     .get(key, &mut scripts.js_cx)
                     .ok()?
                     .as_callable()?
-                    .call(&JsValue::undefined(), &[], &mut scripts.js_cx)
+                    .call(&JsValue::undefined(), &arguments, &mut scripts.js_cx)
                     .ok()?
                     .as_string()?
                     .to_std_string()
