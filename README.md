@@ -154,7 +154,18 @@ bind "Cmd T" {
 }
 ```
 
-JavaScript functions must be exported from `js` code blocks in the settings note. Each block is evaluated as a separate js module from top to bottom, with exported variables automatically imported into subsequent modules.
+3. **JavaScript functions with selection argument:**
+```kdl
+bind "Cmd T" {
+    InsertText {
+        callFunc "myFunction" {
+            selection
+        }
+    }
+}
+```
+
+JavaScript functions must be exported from `js` code blocks in the settings note. Each block is evaluated as a separate js module from top to bottom, with exported variables automatically imported into subsequent modules. When using the `selection` child node, the currently selected text will be passed as the first argument to your JavaScript function.
 
 #### Example: Inserting the current day of the week
 
@@ -170,6 +181,36 @@ export function getCurrentDayOfWeek() {
 bind "Cmd D" icon="calendar" alias="day" description="Insert current day of the week" {
     InsertText {
         callFunc "getCurrentDayOfWeek"
+    }
+}
+```
+
+#### Example: Using selection argument in JavaScript functions
+
+```js
+export function wrapInQuotes(selectedText) {
+    return `"${selectedText}"`;
+}
+
+export function makeUppercase(selectedText) {
+    return selectedText.toUpperCase();
+}
+```
+
+```kdl
+bind "Cmd Q" icon="quotes" alias="quote" description="Wrap selection in quotes" {
+    InsertText {
+        callFunc "wrapInQuotes" {
+            selection
+        }
+    }
+}
+
+bind "Cmd U" icon="text-aa" alias="upper" description="Make selection uppercase" {
+    InsertText {
+        callFunc "makeUppercase" {
+            selection
+        }
     }
 }
 ```
@@ -231,7 +272,19 @@ Example: `bind "Cmd T" icon="text-aa" alias="test" description="Insert test text
 - `MarkdownH1`, `MarkdownH2`, `MarkdownH3`
 - `PinWindow`, `RunLLMBlock`, `ShowPrompt`
 - `SwitchToNote 1..4`, `SwitchToSettings`
-- `InsertText` (with `string` or `callFunc` options)
+- `InsertText`
+  - Format:
+    ```
+    InsertText {
+        string "Direct text string"
+        // OR to call a js function
+        callFunc "exportedJsFunctionName"
+        // OR to call a js function with arguments
+        callFunc "exportedJsFunctionName" {
+            selection  // only selection node is currently supported
+        }
+    }
+    ```
 
 **For `global` keyword:**
 - `ShowHideApp`

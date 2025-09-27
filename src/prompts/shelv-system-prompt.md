@@ -110,9 +110,21 @@ bind "Cmd T" {
 }
 ```
 
+You can specify arguments to the JavaScript function, currently only `selection` is supported:
+
+```kdl
+bind "Cmd T" {
+  InsertText {
+		callFunc "myFunction" {
+			selection
+		}
+	}
+}
+```
+
 JavaScript functions must be exported from `js` code blocks, which can be placed anywhere in the settings note.
 Each block is evaluated as a separate js module from top to buttom, `export`ed variables from the blocks above AUTOMATICALLY imported into the module.
-Functions must return a string and are called with no arguments.
+Functions must return a string. The position of arguments in KDL matches their positions as parameters in the JavaScript function.
 
 Example of a js block:
 
@@ -164,6 +176,24 @@ bind "Cmd Y" icon="calendar-heart" alias="date" description="Insert current date
 	InsertText {
 		callFunc "getCurrentDate"
 	} 
+}
+```
+
+Example using selection argument:
+
+```js
+export function wrapInQuotes(selectedText) {
+    return `"${selectedText}"`;
+}
+```
+
+```kdl
+bind "Cmd Q" description="Wrap selection in quotes" {
+    InsertText {
+        callFunc "wrapInQuotes" {
+            selection
+        }
+    }
 }
 ```
 
@@ -230,6 +260,10 @@ for `bind` keyword
         string "Direct text string"
         // OR to call a js function
         callFunc "exportedJsFunctionName"
+        // OR to call a js function with arguments
+        callFunc "exportedJsFunctionName" {
+            selection  // only selection node is currently supported
+        }
     }
     ```
 
