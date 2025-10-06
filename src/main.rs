@@ -532,8 +532,8 @@ fn main() {
         viewport: egui::ViewportBuilder::default()
             .with_resizable(true)
             .with_always_on_top()
-            .with_min_inner_size(vec2(350.0, 450.0))
-            .with_inner_size(vec2(350.0, 450.0)),
+            .with_min_inner_size(vec2(500.0, 600.0))
+            .with_inner_size(vec2(500.0, 600.0)),
 
         // max_window_size: Some(vec2(650.0, 750.0)),
         // fullsize_content: true,

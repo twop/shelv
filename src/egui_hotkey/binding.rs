@@ -141,17 +141,17 @@ impl Binding {
 
     /// Returns true if the variant was pressed and input modifiers are matching.
     pub fn pressed(&self, input_state: impl Deref<Target = InputState>) -> bool {
-        input_state.modifiers.matches(self.modifiers) && self.variant.pressed(input_state)
+        input_state.modifiers.matches_exact(self.modifiers) && self.variant.pressed(input_state)
     }
 
     /// Returns true if the variant was released and input modifiers are matching.
     pub fn released(&self, input_state: impl Deref<Target = InputState>) -> bool {
-        input_state.modifiers.matches(self.modifiers) && self.variant.released(input_state)
+        input_state.modifiers.matches_exact(self.modifiers) && self.variant.released(input_state)
     }
 
     /// Returns true if the variant is down and input modifiers are matching.
     pub fn down(&self, input_state: impl Deref<Target = InputState>) -> bool {
-        input_state.modifiers.matches(self.modifiers) && self.variant.down(input_state)
+        input_state.modifiers.matches_exact(self.modifiers) && self.variant.down(input_state)
     }
 }
 

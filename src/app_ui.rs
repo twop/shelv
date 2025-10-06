@@ -257,7 +257,7 @@ pub fn render_app(
                             let byte_cursor = layout
                                 .galley
                                 .text()
-                                .byte_index_from_char_index(cursor.ccursor.index);
+                                .byte_index_from_char_index(cursor.index);
 
                             if let Some(interactive) =
                                 text_structure.find_interactive_text_part(byte_cursor)
@@ -404,14 +404,15 @@ fn render_editor(
         }
     }
 
-    let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-        let layout_cache_params = LayoutParams::new(text, wrap_width, ctx.pixels_per_point());
+    let mut layouter = |ui: &egui::Ui, text: &dyn TextBuffer, wrap_width: f32| {
+        let layout_cache_params =
+            LayoutParams::new(text.as_str(), wrap_width, ctx.pixels_per_point());
 
         let layout = match computed_layout.take() {
             Some(layout) if !layout.should_recompute(&layout_cache_params) => layout,
 
             _ => {
-                let structure = structure_wrapper.take().unwrap().recycle(text);
+                let structure = structure_wrapper.take().unwrap().recycle(text.as_str());
 
                 // println!("### updated structure w={avail_w} {layout_cache_params:#?}");
                 //println!("### rerender with {text}");
@@ -479,8 +480,7 @@ fn render_editor(
             //   shortcuts become avalable, such as copy block or run the bloc etc
             let is_cursor_inside_area = cursor_range.map_or(false, |range| {
                 use egui::TextBuffer;
-                let cursor_byte_pos =
-                    editor_text.byte_index_from_char_index(range.primary.ccursor.index);
+                let cursor_byte_pos = editor_text.byte_index_from_char_index(range.primary.index);
                 match text_structure.get_span_with_meta(area.code_block_span_index) {
                     Some((code_span, _)) => code_span.byte_pos.contains_pos(cursor_byte_pos),
                     None => false,
@@ -549,7 +549,7 @@ fn render_editor(
     // ------- SLASH PALETTE -------
     if let Some(palette) = slash_palette {
         let slash_char_pos = char_index_from_byte_index(editor_text, palette.slash_byte_pos);
-        let relative_slash_pos = galley.pos_from_ccursor(CCursor::new(slash_char_pos));
+        let relative_slash_pos = galley.pos_from_cursor(CCursor::new(slash_char_pos));
 
         let frame_width = theme.sizes.menu_width;
         let frame_height = theme.sizes.menu_height;
@@ -592,7 +592,7 @@ fn render_editor(
 
     let byte_cursor = cursor_range.map(|range| {
         let [start, end] = [range.secondary, range.primary]
-            .map(|c| editor_text.byte_index_from_char_index(c.ccursor.index));
+            .map(|c| editor_text.byte_index_from_char_index(c.index));
 
         UnOrderedByteSpan::new(start, end)
     });
@@ -626,7 +626,7 @@ fn render_inline_prompt(
     ]
     .map(|pos| {
         let char_pos = char_index_from_byte_index(editor_text, pos);
-        galley.pos_from_ccursor(CCursor::new(char_pos))
+        galley.pos_from_cursor(CCursor::new(char_pos))
     });
 
     let prompt_ui_rect = Rect::from_pos(pos2(

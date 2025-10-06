@@ -240,7 +240,7 @@ mod tests {
         let doc_str = r#"
         bind "Cmd K" {
             InsertText {
-                script "my_script_function"
+                callFunc "my_script_function"
             }
         }
         "#;
@@ -257,7 +257,8 @@ mod tests {
                     ))),
                     instructions: [CommandInstruction::InsertText(ForwardToChild(
                         TextSource::Script(ScriptCall {
-                            func_name: "my_script_function".to_string()
+                            func_name: "my_script_function".to_string(),
+                            arguments: SmallVec::new()
                         })
                     ))]
                     .into(),
