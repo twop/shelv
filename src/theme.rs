@@ -95,7 +95,7 @@ impl AppIcon {
             },
         );
 
-        WidgetText::LayoutJob(job)
+        WidgetText::LayoutJob(job.into())
     }
 
     pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> WidgetText {
@@ -139,7 +139,7 @@ impl AppIcon {
             },
         );
 
-        WidgetText::LayoutJob(job)
+        WidgetText::LayoutJob(job.into())
     }
 
     pub fn to_icon_str(&self) -> &'static str {
@@ -719,6 +719,7 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         },
     };
 
+    let default_dark = Visuals::dark();
     Visuals {
         dark_mode: true,
         override_text_color: None,
@@ -767,5 +768,10 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         window_highlight_topmost: true,
         handle_shape: egui::style::HandleShape::Circle,
         numeric_color_space: NumericColorSpace::GammaByte,
+        text_edit_bg_color: Some(code_bg_color),
+        text_alpha_from_coverage: default_dark.text_alpha_from_coverage,
+        weak_text_alpha: default_dark.weak_text_alpha,
+        weak_text_color: default_dark.weak_text_color,
+        disabled_alpha: default_dark.disabled_alpha,
     }
 }

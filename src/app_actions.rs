@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, io, path::PathBuf};
+use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc};
 
 use boa_engine::ast::operations::all_private_identifiers_valid;
 use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
@@ -493,8 +493,10 @@ pub fn process_app_action(
                                     println!("----response_text: {response_text:#?}");
                                 }
 
-                                let layout_job =
-                                    create_layout_job_from_text_diff(&diff_parts, &state.theme);
+                                let layout_job = Arc::new(create_layout_job_from_text_diff(
+                                    &diff_parts,
+                                    &state.theme,
+                                ));
 
                                 state.inline_llm_prompt = Some(InlineLLMPromptState {
                                     address,
@@ -565,11 +567,11 @@ pub fn process_app_action(
                                     prompt,
                                     address,
                                     diff_parts: vec![],
-                                    layout_job: create_error_text_layout_job(
+                                    layout_job: Arc::new(create_error_text_layout_job(
                                         "Failed",
                                         &err,
                                         &state.theme,
-                                    ),
+                                    )),
                                     status,
                                     fresh_response: true,
                                     parsed_response,
@@ -905,7 +907,7 @@ pub fn process_app_action(
                 address,
                 response_text: "".to_string(),
                 diff_parts: vec![],
-                layout_job: LayoutJob::default(),
+                layout_job: Arc::new(LayoutJob::default()),
                 prompt: "".to_string(),
                 status: InlinePromptStatus::NotStarted,
                 fresh_response: false,
@@ -932,7 +934,7 @@ pub fn process_app_action(
 
             prompt.response_text = "".to_string();
             prompt.parsed_response = ParsedPromptResponse::parse_stream("");
-            prompt.layout_job = LayoutJob::default();
+            prompt.layout_job = Arc::new(LayoutJob::default());
             prompt.status = InlinePromptStatus::Streaming {
                 prompt: prompt.prompt.clone(),
             };

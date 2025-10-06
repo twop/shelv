@@ -14,9 +14,9 @@ use eframe::{
 };
 use itertools::Itertools;
 use pulldown_cmark::HeadingLevel;
+use shared::Version;
 use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
-use shared::Version;
 
 use crate::{
     app_actions::{AppAction, FocusTarget},
@@ -77,7 +77,7 @@ pub struct InlineLLMPromptState {
     pub response_text: String,
     pub parsed_response: ParsedPromptResponse,
     pub diff_parts: Vec<TextDiffPart>,
-    pub layout_job: LayoutJob,
+    pub layout_job: Arc<LayoutJob>,
     pub status: InlinePromptStatus,
     pub fresh_response: bool,
 }
@@ -305,7 +305,7 @@ impl ComputedLayout {
             .map(|(byte_span, lang, index)| {
                 let [mut r_start, r_end] = [byte_span.start, byte_span.end].map(|byte_pos| {
                     let char_pos = char_index_from_byte_index(layout_params.text, byte_pos);
-                    galley.pos_from_ccursor(CCursor::new(char_pos))
+                    galley.pos_from_cursor(CCursor::new(char_pos))
                 });
 
                 // TODO make a prettier math

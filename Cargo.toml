@@ -34,11 +34,14 @@ description = "Note taking app optimized for capturing phase."
 #   "svg",
 # ] }
 
-eframe = { version = "0.31.0", default-features = false, features = [
+eframe = { version = "0.32.3", default-features = false, features = [
     "wgpu",
     "persistence",
 ] }
-egui_extras = { version = "0.31.0", features = ["svg"] }
+wgpu = { version = "25", default-features = false, features = ["metal"] }
+egui_extras = { version = "0.32.3", features = ["svg"] }
+# egui_ltreeview = "0.5.3"
+
 serde = { version = "1.0.197", features = ["derive"] }
 ron = "0.8"
 global-hotkey = "0.5.3"
@@ -49,9 +52,9 @@ syntect = { version = "5.0.0", default-features = false, features = [
 ] }
 smallvec = "1.10.0"
 tray-icon = "0.14.0"
-egui-phosphor = { version = "0.9.0", features = ["light"] }
+egui-phosphor = { version = "0.10.0", features = ["light"] }
 # tray-item = "0.7.1"
-winit = "0.30.9"
+winit = "0.30.12"
 linkify = "0.10.0"
 objc2 = "0.5.1"
 boa_engine = "0.20.0"
@@ -85,11 +88,12 @@ shared = { path = "shared" }
 miette = { version = "7.2.0", features = ["fancy"] }
 strip-ansi-escapes = "0.2.0"
 chrono = "0.4.40"
-egui_taffy = "0.7.0"
+egui_taffy = "0.9.0"
 reqwest = "0.12.23"
 
-[patch.crates-io]
-winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.9" }
+# TODO: update to 30.12 winit
+# [patch.crates-io]
+# winit = { git = 'https://github.com/mpasalic/winit-no-private-apis.git', branch = "private-apis-removed-for-0.30.9" }
 
 [package.metadata.bundle]
 name = "Shelv"
