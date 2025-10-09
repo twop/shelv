@@ -30,7 +30,7 @@ use crate::{
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
         CodeBlockAnnotation, ComputedLayout, FeedbackState, InlineLLMPromptState,
-        InlinePromptStatus, LayoutParams, RenderAction, SlashPalette, VersionState,
+        InlinePromptStatus, LayoutParams, NoteVersion, RenderAction, SlashPalette, VersionState,
     },
     byte_span::UnOrderedByteSpan,
     command::{
@@ -506,12 +506,14 @@ fn render_editor(
 
     let overlay_layer_width = galley.job.wrap.max_width - 2. * estimated_text_pos.x;
 
+    let note_version = NoteVersion {
+        note_file,
+        text_version: text_structure.opaque_version(),
+    };
+
     // ------- LLM PROMPT -------
     match inline_llm_prompt {
-        Some(inline_llm_prompt)
-            if inline_llm_prompt.address.note_file == note_file
-                && inline_llm_prompt.address.text_version == text_structure.opaque_version() =>
-        {
+        Some(inline_llm_prompt) if inline_llm_prompt.address.note_version == note_version => {
             // TODO wtf is that?
             let mut top_of_frame = Rect::from_pos(estimated_text_pos);
             top_of_frame.set_width(overlay_layer_width);

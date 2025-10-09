@@ -1,17 +1,18 @@
 use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc};
 
-use boa_engine::ast::operations::all_private_identifiers_valid;
 use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
 
 use serde_json::{Value, to_value};
 use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
+use winit::keyboard::Key;
 
 use crate::{
     app_state::{
         AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk,
-        InlinePromptStatus, MsgToApp, ParsedPromptResponse, RenderAction, SlashPalette,
-        TextSelectionAddress, UnsavedChange, VersionState, compute_editor_text_id,
+        InlinePromptStatus, MsgToApp, NoteVersion, ParsedPromptResponse, RenderAction,
+        SlashPalette, TextSelectionAddress, UnsavedChange, VersionState, WordJumpAddress,
+        compute_editor_text_id,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
@@ -55,6 +56,14 @@ pub enum SlashPaletteAction {
 }
 
 #[derive(Debug)]
+pub enum WordJumpAction {
+    SwitchToJumpingMode,
+    EnterKey(Key),
+    JumpTo(WordJumpAddress),
+    CancelJumpingMode,
+}
+
+#[derive(Debug)]
 pub enum AppAction {
     SwitchToNote {
         note_file: NoteFile,
@@ -88,6 +97,7 @@ pub enum AppAction {
     },
 
     SlashPalette(SlashPaletteAction),
+    WordJump(WordJumpAction),
     HideApp,
     CopyCodeBlock(NoteFile, SpanIndex),
     AppUpdateClicked,
@@ -236,12 +246,10 @@ pub fn process_app_action(
                 false => SmallVec::new(),
             }
         }
-
         AppAction::OpenLink(url) => {
             ctx.open_url(OpenUrl::new_tab(url));
             SmallVec::new()
         }
-
         AppAction::SetWindowPinned(is_pinned) => {
             state.is_pinned = is_pinned;
             state.add_unsaved_change(UnsavedChange::PinStateChanged);
@@ -290,14 +298,12 @@ pub fn process_app_action(
 
             SmallVec::from_iter(next_action.into_iter().chain(scroll_action))
         }
-
         AppAction::HideApp => {
             println!("Hide app via ui");
             state.hidden = true;
             app_io.hide_app(HideMode::HideApp);
             SmallVec::new()
         }
-
         AppAction::HandleMsgToApp(msg) => {
             match msg {
                 MsgToApp::ToggleVisibility => {
@@ -349,7 +355,7 @@ pub fn process_app_action(
                                     == state
                                         .inline_llm_prompt
                                         .as_ref()
-                                        .map(|prompt| prompt.address.note_file)
+                                        .map(|prompt| prompt.address.note_version.note_file)
                                 {
                                     // if we get an external text change for the note we currently have an inline prompt reset the prompt
                                     state.inline_llm_prompt = None;
@@ -467,8 +473,11 @@ pub fn process_app_action(
 
                                 diff_parts.clear();
 
-                                let selection = &state.notes.get(&address.note_file).unwrap().text
-                                    [address.span.range()];
+                                let selection = &state
+                                    .notes
+                                    .get(&address.note_version.note_file)
+                                    .unwrap()
+                                    .text[address.span.range()];
 
                                 if let Some(replacement) = &parsed_response.replacement {
                                     diff_parts.extend(
@@ -587,16 +596,16 @@ pub fn process_app_action(
                     }
                 },
                 MsgToApp::UpdateRequired(required_version) => {
-                    state.version_state = VersionState::RequiredUpdateAvailable(required_version);
+                    state.app_version_state =
+                        VersionState::RequiredUpdateAvailable(required_version);
                     SmallVec::new()
                 }
                 MsgToApp::UpdateAvailable(latest_version) => {
-                    state.version_state = VersionState::UpdateAvailable(latest_version);
+                    state.app_version_state = VersionState::UpdateAvailable(latest_version);
                     SmallVec::new()
                 }
             }
         }
-
         AppAction::EvalNote(note_file) => {
             let note = &mut state.notes.get_mut(&note_file).unwrap();
             let text_structure = &note.derived_state.structure;
@@ -699,7 +708,6 @@ pub fn process_app_action(
                 .map(|a| [a].into())
                 .unwrap_or_default()
         }
-
         AppAction::AskLLM(question) => {
             app_io.execute_llm_block(
                 question,
@@ -778,7 +786,6 @@ pub fn process_app_action(
             feedback.is_feedback_open = false;
             SmallVec::new()
         }
-
         AppAction::StartTutorial => {
             // Insert tutorial content into the first note only
             const TUTORIAL_CONTENT: &str = include_str!("default-notes/tutorial.md");
@@ -820,12 +827,10 @@ pub fn process_app_action(
                 )),
             ])
         }
-
         AppAction::DeferToPostRender(action) => {
             state.deferred_actions.push(*action);
             SmallVec::new()
         }
-
         AppAction::IssueRenderAction(render_action) => {
             println!(
                 "IssueRenderAction cursor={:?}",
@@ -834,7 +839,6 @@ pub fn process_app_action(
             state.render_actions.push(render_action);
             SmallVec::new()
         }
-
         AppAction::FocusRequest(target) => {
             // it is possible that text editing was out of focus
             // hence, refocus it again
@@ -855,14 +859,12 @@ pub fn process_app_action(
                 SmallVec::new()
             }
         }
-
         AppAction::OpenNotesInFinder => {
             if let Err(e) = app_io.open_shelv_folder() {
                 println!("Error opening shelv folder: {}", e);
             }
             SmallVec::new()
         }
-
         AppAction::RunCodeBlock(note_file, span_index) => {
             let note = state.notes.get(&note_file).unwrap();
             let text_structure = &note.derived_state.structure;
@@ -899,7 +901,6 @@ pub fn process_app_action(
                 _ => SmallVec::default(),
             }
         }
-
         AppAction::ShowPrompt(address) => {
             println!("Triggering inline prompt {address:#?}",);
 
@@ -920,7 +921,6 @@ pub fn process_app_action(
                 )),
             ))])
         }
-
         AppAction::ExecutePrompt => {
             let Some(prompt) = &mut state.inline_llm_prompt else {
                 return SmallVec::default();
@@ -940,7 +940,11 @@ pub fn process_app_action(
             };
 
             let prompt_span = prompt.address.span;
-            let note_text = &state.notes.get(&prompt.address.note_file).unwrap().text;
+            let note_text = &state
+                .notes
+                .get(&prompt.address.note_version.note_file)
+                .unwrap()
+                .text;
             let selection = note_text[prompt_span.range()].to_string();
             let before_selection = note_text[..prompt_span.start].to_string();
             let after_selection = note_text[prompt_span.end..].to_string();
@@ -961,7 +965,6 @@ pub fn process_app_action(
 
             SmallVec::new()
         }
-
         AppAction::AcceptPromptSuggestion { accept } => {
             let mut resulting_actions = SmallVec::from_buf([AppAction::DeferToPostRender(
                 Box::new(AppAction::FocusRequest(FocusTarget::CurrentNote)),
@@ -970,7 +973,10 @@ pub fn process_app_action(
             let Some(prompt) = state.inline_llm_prompt.take() else {
                 return resulting_actions;
             };
-            let target_note = state.notes.get_mut(&prompt.address.note_file).unwrap();
+            let target_note = state
+                .notes
+                .get_mut(&prompt.address.note_version.note_file)
+                .unwrap();
             let text_length = target_note.text.len();
             let ByteSpan { start, end, .. } = prompt.address.span;
             target_note.update_cursor(UnOrderedByteSpan::new(
@@ -985,7 +991,7 @@ pub fn process_app_action(
                 )];
 
                 resulting_actions.push(AppAction::ApplyTextChanges {
-                    target: prompt.address.note_file,
+                    target: prompt.address.note_version.note_file,
                     changes,
                     should_trigger_eval: true,
                 });
@@ -995,19 +1001,16 @@ pub fn process_app_action(
                 resulting_actions
             }
         }
-
         AppAction::OpenFeedbackWindow => {
             state.feedback = Some(FeedbackState::default());
             SmallVec::new()
         }
-
         AppAction::CloseFeedbackWindow => {
             if let Some(feedback) = state.feedback.as_mut() {
                 feedback.is_feedback_open = false;
             };
             SmallVec::new()
         }
-
         AppAction::SlashPalette(slash_pallete_actions) => {
             use SlashPaletteAction as SP;
             match slash_pallete_actions {
@@ -1130,7 +1133,6 @@ pub fn process_app_action(
                 }
             }
         }
-
         AppAction::CopyCodeBlock(note_file, span_index) => {
             let note = state.notes.get(&note_file).unwrap();
             let text_structure = &note.derived_state.structure;
@@ -1145,11 +1147,24 @@ pub fn process_app_action(
 
             SmallVec::new()
         }
-
         AppAction::AppUpdateClicked => {
             app_io.open_app_store_for_shelv_update();
             SmallVec::new()
         }
+        AppAction::WordJump(word_jump_action) => match word_jump_action {
+            WordJumpAction::SwitchToJumpingMode => {
+                let note = state.notes.get(&state.selected_note).unwrap();
+                let text_structure = &note.derived_state.structure;
+
+                let note_version =
+                    NoteVersion::new(state.selected_note, text_structure.opaque_version());
+
+                SmallVec::new()
+            }
+            WordJumpAction::EnterKey(key) => todo!(),
+            WordJumpAction::JumpTo(word_jump_address) => todo!(),
+            WordJumpAction::CancelJumpingMode => todo!(),
+        },
     }
 }
 

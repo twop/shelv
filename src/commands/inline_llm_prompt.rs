@@ -2,7 +2,7 @@ use eframe::egui::Id;
 
 use crate::{
     app_actions::AppAction,
-    app_state::TextSelectionAddress,
+    app_state::{NoteVersion, TextSelectionAddress},
     command::{CommandContext, EditorCommandOutput, try_extract_text_command_context},
 };
 
@@ -14,8 +14,10 @@ pub fn inline_llm_prompt_command_handler(
     Some(
         [AppAction::ShowPrompt(TextSelectionAddress {
             span: text_command_ctx.byte_cursor,
-            note_file: app_state.selected_note,
-            text_version: text_command_ctx.text_structure.opaque_version(),
+            note_version: NoteVersion::new(
+                app_state.selected_note,
+                text_command_ctx.text_structure.opaque_version(),
+            ),
         })]
         .into(),
     )

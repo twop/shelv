@@ -90,6 +90,7 @@ strip-ansi-escapes = "0.2.0"
 chrono = "0.4.40"
 egui_taffy = "0.9.0"
 reqwest = "0.12.23"
+regex = "1.11.3"
 
 # TODO: update to 30.12 winit
 # [patch.crates-io]

@@ -36,6 +36,7 @@ use eframe::{
 use crate::{app_state::UnsavedChange, persistent_state::extract_note_file};
 use shared::Version;
 
+mod actions;
 mod app_actions;
 mod app_io;
 mod app_state;
@@ -46,7 +47,7 @@ mod commands;
 mod effects;
 mod egui_hotkey;
 mod feedback;
-mod knus_test;
+// mod knus_test;
 mod nord;
 mod persistent_state;
 mod picker;
@@ -418,7 +419,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             render_actions: (app_state.render_actions.drain(..)).collect(),
             frame_hotkeys: &mut frame_hotkeys,
             feedback: (&mut app_state.feedback).as_mut(),
-            version_state: &app_state.version_state,
+            version_state: &app_state.app_version_state,
             code_block_annotations,
         };
 

@@ -19,6 +19,7 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
+    actions::word_jump::JumpLabel,
     app_actions::{AppAction, FocusTarget},
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
@@ -52,8 +53,22 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub struct TextSelectionAddress {
     pub span: ByteSpan,
+    pub note_version: NoteVersion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
+pub struct NoteVersion {
     pub note_file: NoteFile,
     pub text_version: TextHash,
+}
+
+impl NoteVersion {
+    pub fn new(note_file: NoteFile, text_version: TextHash) -> Self {
+        Self {
+            note_file,
+            text_version,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -80,6 +95,21 @@ pub struct InlineLLMPromptState {
     pub layout_job: Arc<LayoutJob>,
     pub status: InlinePromptStatus,
     pub fresh_response: bool,
+}
+
+type JumpCharSequence = SmallVec<[char; 3]>;
+
+#[derive(Copy, Debug, Clone)]
+pub struct WordJumpAddress {
+    pub span: UnOrderedByteSpan,
+    // TODO should it be always 2? or should 3 letters be allowed too?
+    pub label: JumpLabel,
+}
+
+pub struct WordJumpState {
+    current_key_strokes: JumpCharSequence,
+    note_version: NoteVersion,
+    jumps: Vec<WordJumpAddress>,
 }
 
 #[derive(Debug, Clone)]
@@ -207,13 +237,15 @@ pub struct AppState {
 
     pub inline_llm_prompt: Option<InlineLLMPromptState>,
     pub slash_palette: Option<SlashPalette>,
+    pub word_jump_state: Option<WordJumpState>,
 
     pub computed_layout: Option<ComputedLayout>,
     pub settings_scripts: Option<Scripts>,
     pub deferred_actions: Vec<AppAction>,
     pub render_actions: Vec<RenderAction>,
     pub feedback: Option<FeedbackState>,
-    pub version_state: VersionState,
+
+    pub app_version_state: VersionState,
 }
 
 impl AppState {
@@ -532,10 +564,11 @@ impl AppState {
             deferred_actions,
             inline_llm_prompt: None,
             slash_palette: None,
+            word_jump_state: None,
             settings_scripts: None,
             render_actions: vec![],
             feedback: None,
-            version_state: VersionState::UpToDate,
+            app_version_state: VersionState::UpToDate,
         }
     }
 
