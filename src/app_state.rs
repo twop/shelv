@@ -35,6 +35,7 @@ use crate::{
         run_llm::{CodeBlockAddress, prepare_to_run_llm_block},
         slash_pallete::show_slash_pallete,
         space_after_task_markers::on_space_after_task_markers,
+        start_word_jump::{self, start_jump_list_command_handler},
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
         toggle_code_block::toggle_code_block,
         toggle_md_headings::toggle_md_heading,
@@ -53,16 +54,16 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub struct TextSelectionAddress {
     pub span: ByteSpan,
-    pub note_version: NoteVersion,
+    pub note_version: NoteSignature,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
-pub struct NoteVersion {
+pub struct NoteSignature {
     pub note_file: NoteFile,
     pub text_version: TextHash,
 }
 
-impl NoteVersion {
+impl NoteSignature {
     pub fn new(note_file: NoteFile, text_version: TextHash) -> Self {
         Self {
             note_file,
@@ -108,7 +109,7 @@ pub struct WordJumpAddress {
 
 pub struct WordJumpState {
     current_key_strokes: JumpCharSequence,
-    note_version: NoteVersion,
+    note_version: NoteSignature,
     jumps: Vec<WordJumpAddress>,
 }
 
@@ -670,6 +671,8 @@ fn execute_instruction(
         // CI::RunLLMBlock => prepare_to_run_llm_block(ctx.app_state, CodeBlockAddress::NoteSelection)
         //     .unwrap_or_default(),
         CI::ShowPrompt => inline_llm_prompt_command_handler(ctx).unwrap_or_default(),
+
+        CI::StartWordJump => start_jump_list_command_handler(ctx).unwrap_or_default(),
 
         CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),
 

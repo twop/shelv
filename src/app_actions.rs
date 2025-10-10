@@ -10,7 +10,7 @@ use winit::keyboard::Key;
 use crate::{
     app_state::{
         AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk,
-        InlinePromptStatus, MsgToApp, NoteVersion, ParsedPromptResponse, RenderAction,
+        InlinePromptStatus, MsgToApp, NoteSignature, ParsedPromptResponse, RenderAction,
         SlashPalette, TextSelectionAddress, UnsavedChange, VersionState, WordJumpAddress,
         compute_editor_text_id,
     },
@@ -57,7 +57,7 @@ pub enum SlashPaletteAction {
 
 #[derive(Debug)]
 pub enum WordJumpAction {
-    SwitchToJumpingMode,
+    SwitchToJumpingMode(ByteSpan, NoteSignature),
     EnterKey(Key),
     JumpTo(WordJumpAddress),
     CancelJumpingMode,
@@ -1152,12 +1152,18 @@ pub fn process_app_action(
             SmallVec::new()
         }
         AppAction::WordJump(word_jump_action) => match word_jump_action {
-            WordJumpAction::SwitchToJumpingMode => {
+            WordJumpAction::SwitchToJumpingMode(
+                cursor,
+                NoteSignature {
+                    note_file,
+                    text_version,
+                },
+            ) => {
                 let note = state.notes.get(&state.selected_note).unwrap();
                 let text_structure = &note.derived_state.structure;
 
                 let note_version =
-                    NoteVersion::new(state.selected_note, text_structure.opaque_version());
+                    NoteSignature::new(state.selected_note, text_structure.opaque_version());
 
                 SmallVec::new()
             }

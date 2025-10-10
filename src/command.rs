@@ -257,13 +257,16 @@ pub enum CommandInstruction {
     #[knus(name = "ShowPrompt")]
     ShowPrompt,
 
+    #[knus(name = "StartWordJump")]
+    StartWordJump,
+
     // Script API
     #[knus(name = "InsertText")]
     InsertText(ForwardToChild<TextSource>),
 }
 
 /// Commands that we promote in UI
-pub const PROMOTED_COMMANDS: [CommandInstruction; 8] = const {
+pub const PROMOTED_COMMANDS: [CommandInstruction; 10] = const {
     [
         CommandInstruction::PinWindow,
         CommandInstruction::MarkdownBold,
@@ -274,6 +277,8 @@ pub const PROMOTED_COMMANDS: [CommandInstruction; 8] = const {
         CommandInstruction::MarkdownH1,
         CommandInstruction::MarkdownH2,
         CommandInstruction::MarkdownH3,
+        CommandInstruction::ShowPrompt,
+        CommandInstruction::StartWordJump,
     ]
 };
 
@@ -309,6 +314,7 @@ impl CommandInstruction {
             Self::HideApp => "Hide Window".into(),
             // Self::RunLLMBlock => "Execute AI Block".into(),
             CommandInstruction::ShowPrompt => "Show AI Prompt".into(),
+            CommandInstruction::StartWordJump => "Switch to 'word jump' mode".into(),
             CommandInstruction::EnterInsideKDL => "Auto indent KDL".into(),
             CommandInstruction::BracketAutoclosingInsideKDL => {
                 "Auto closing of '{' inside KDL".into()
@@ -343,12 +349,11 @@ impl CommandInstruction {
             C::SwitchToNote(1) => shortcut(Modifiers::COMMAND, Key::Num2),
             C::SwitchToNote(2) => shortcut(Modifiers::COMMAND, Key::Num3),
             C::SwitchToNote(3) => shortcut(Modifiers::COMMAND, Key::Num4),
-            // TODO figure out how to make it more bulletproof, option maybe?
             C::SwitchToNote(_) => shortcut(Modifiers::COMMAND, Key::Num0),
             C::SwitchToSettings => shortcut(Modifiers::COMMAND, Key::Comma),
             C::PinWindow => shortcut(Modifiers::COMMAND, Key::P),
-            // C::RunLLMBlock => shortcut(Modifiers::COMMAND, Key::Enter),
             C::ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
+            C::StartWordJump => shortcut(Modifiers::COMMAND, Key::J),
             C::EnterInsideKDL => shortcut(Modifiers::NONE, Key::Enter),
             C::BracketAutoclosingInsideKDL => shortcut(Modifiers::SHIFT, Key::OpenBracket),
             C::HideApp => shortcut(Modifiers::NONE, Key::Escape),
@@ -383,6 +388,7 @@ impl CommandInstruction {
             Self::HideApp => Some("HideApp;".into()),
             // Self::RunLLMBlock => Some("ExecutePrompt;".into()),
             Self::ShowPrompt => Some("ShowPrompt;".into()),
+            Self::StartWordJump => Some("StartWordJump;".into()),
             Self::InsertText(ForwardToChild(source)) => match source {
                 TextSource::Str(text) => {
                     Some(format!("InsertText {{\n\tas_is \"{}\"\n}}", text).into())

@@ -30,20 +30,20 @@ use crate::{
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
         CodeBlockAnnotation, ComputedLayout, FeedbackState, InlineLLMPromptState,
-        InlinePromptStatus, LayoutParams, NoteVersion, RenderAction, SlashPalette, VersionState,
+        InlinePromptStatus, LayoutParams, NoteSignature, RenderAction, SlashPalette, VersionState,
     },
     byte_span::UnOrderedByteSpan,
     command::{
         CommandInstruction, CommandList, EditorCommandOutput, FrameHotkeys, PROMOTED_COMMANDS,
         SlashPaletteCmd,
     },
-    commands::{inline_llm_prompt::compute_inline_prompt_text_input_id, run_llm::LLM_LANG},
+    commands::inline_llm_prompt::compute_inline_prompt_text_input_id,
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{StyleBuilder, flex_column, flex_row, style},
+    taffy_styles::{StyleBuilder, flex_column, flex_row},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
     ui_components::{IconButton, IconButtonSize, apply_icon_btn_styling, rich_text_tooltip},
@@ -506,7 +506,7 @@ fn render_editor(
 
     let overlay_layer_width = galley.job.wrap.max_width - 2. * estimated_text_pos.x;
 
-    let note_version = NoteVersion {
+    let note_version = NoteSignature {
         note_file,
         text_version: text_structure.opaque_version(),
     };
