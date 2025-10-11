@@ -5,6 +5,13 @@ use std::sync::LazyLock;
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct JumpLabel([char; 2]);
 
+impl JumpLabel {
+    // TODO: use SmolStr instead of String for better performance
+    pub fn to_string(&self) -> String {
+        format!("{}{}", self.0[0], self.0[1])
+    }
+}
+
 fn assign_label(symbols: &[char], seq_index: usize) -> Option<JumpLabel> {
     let total = symbols.len();
     if total * total - 1 < seq_index {

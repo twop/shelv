@@ -416,6 +416,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             computed_layout: app_state.computed_layout.take(),
             inline_llm_prompt: (&mut app_state.inline_llm_prompt).as_mut(),
             slash_palette: app_state.slash_palette.as_ref(),
+            word_jump_state: app_state.word_jump_state.as_ref(),
             render_actions: (app_state.render_actions.drain(..)).collect(),
             frame_hotkeys: &mut frame_hotkeys,
             feedback: (&mut app_state.feedback).as_mut(),

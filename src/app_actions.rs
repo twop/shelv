@@ -8,11 +8,12 @@ use smallvec::SmallVec;
 use winit::keyboard::Key;
 
 use crate::{
+    actions::word_jump::{self, create_jump_points},
     app_state::{
         AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk,
         InlinePromptStatus, MsgToApp, NoteSignature, ParsedPromptResponse, RenderAction,
         SlashPalette, TextSelectionAddress, UnsavedChange, VersionState, WordJumpAddress,
-        compute_editor_text_id,
+        WordJumpState, compute_editor_text_id,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{AppFocus, AppFocusState, CommandContext, CommandList},
@@ -1152,18 +1153,26 @@ pub fn process_app_action(
             SmallVec::new()
         }
         AppAction::WordJump(word_jump_action) => match word_jump_action {
-            WordJumpAction::SwitchToJumpingMode(
-                cursor,
-                NoteSignature {
-                    note_file,
-                    text_version,
-                },
-            ) => {
+            WordJumpAction::SwitchToJumpingMode(cursor, signature) => {
                 let note = state.notes.get(&state.selected_note).unwrap();
                 let text_structure = &note.derived_state.structure;
 
-                let note_version =
-                    NoteSignature::new(state.selected_note, text_structure.opaque_version());
+                if signature
+                    != NoteSignature::new(state.selected_note, text_structure.opaque_version())
+                {
+                    return SmallVec::new();
+                }
+
+                // Use hardcoded symbols for jump labels for now FIXME
+                let jump_symbols = ['a', 'b', 'c', 'd'];
+
+                // Create jump points using the current cursor position and note text
+                if let Some(jumps) =
+                    create_jump_points(&note.text, cursor.unordered(), &jump_symbols)
+                {
+                    // Create and set the word jump state
+                    state.word_jump_state = Some(WordJumpState::new(signature, jumps));
+                }
 
                 SmallVec::new()
             }

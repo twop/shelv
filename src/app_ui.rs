@@ -31,6 +31,7 @@ use crate::{
     app_state::{
         CodeBlockAnnotation, ComputedLayout, FeedbackState, InlineLLMPromptState,
         InlinePromptStatus, LayoutParams, NoteSignature, RenderAction, SlashPalette, VersionState,
+        WordJumpState,
     },
     byte_span::UnOrderedByteSpan,
     command::{
@@ -61,6 +62,7 @@ pub struct AppRenderData<'a> {
     pub computed_layout: Option<ComputedLayout>,
     pub inline_llm_prompt: Option<&'a mut InlineLLMPromptState>,
     pub slash_palette: Option<&'a SlashPalette>,
+    pub word_jump_state: Option<&'a WordJumpState>,
     pub is_window_pinned: bool,
     pub render_actions: SmallVec<[RenderAction; 2]>,
     pub feedback: Option<&'a mut FeedbackState>,
@@ -95,6 +97,7 @@ pub fn render_app(
         is_window_pinned,
         inline_llm_prompt,
         slash_palette,
+        word_jump_state,
         mut render_actions,
         feedback,
         frame_hotkeys,
@@ -217,6 +220,7 @@ pub fn render_app(
                             computed_layout,
                             inline_llm_prompt,
                             slash_palette,
+                            word_jump_state,
                             &mut render_actions,
                             theme,
                             syntax_set,
@@ -359,6 +363,7 @@ fn render_editor(
     mut computed_layout: Option<ComputedLayout>,
     inline_llm_prompt: Option<&mut InlineLLMPromptState>,
     slash_palette: Option<&SlashPalette>,
+    word_jump_state: Option<&WordJumpState>,
     render_actions: &mut SmallVec<[RenderAction; 2]>,
     theme: &AppTheme,
     syntax_set: &SyntaxSet,
@@ -470,6 +475,51 @@ fn render_editor(
     }
 
     let text_structure = structure_wrapper.unwrap();
+
+    // ------- WORD JUMP LABELS -------
+    if let Some(word_jump_state) = word_jump_state {
+        let painter = ui.painter();
+        for jump in word_jump_state.jumps() {
+            // Find word start position using the galley
+            let word_start_char_pos = char_index_from_byte_index(editor_text, jump.span.start);
+
+            let cursor_rect = galley.pos_from_cursor(egui::text::CCursor::new(word_start_char_pos));
+            let pos = cursor_rect.min + galley_pos.to_vec2();
+
+            let label_text = jump.label.to_string();
+
+            // Create small font for labels
+            let label_font = FontId::new(theme.fonts.size.small, FontFamily::Monospace);
+
+            // Draw label background
+            let label_galley = painter.layout_no_wrap(
+                label_text.clone(),
+                label_font.clone(),
+                theme.colors.normal_text_color,
+            );
+
+            let label_rect =
+                Rect::from_min_size(pos + vec2(-2.0, -2.0), label_galley.size() + vec2(4.0, 4.0));
+
+            painter.rect_filled(label_rect, 4.0, theme.colors.code_bg_color);
+
+            painter.rect_stroke(
+                label_rect,
+                4.0,
+                Stroke::new(1.0, theme.colors.subtle_text_color),
+                StrokeKind::Outside,
+            );
+
+            // Draw label text
+            painter.text(
+                pos,
+                Align2::LEFT_TOP,
+                label_text,
+                label_font,
+                theme.colors.normal_text_color,
+            );
+        }
+    }
 
     // ------- FLOATING BUTTONS -------
     if let Some(computed_layout) = &computed_layout {

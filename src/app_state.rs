@@ -113,6 +113,20 @@ pub struct WordJumpState {
     jumps: Vec<WordJumpAddress>,
 }
 
+impl WordJumpState {
+    pub fn new(note_version: NoteSignature, jumps: Vec<WordJumpAddress>) -> Self {
+        Self {
+            current_key_strokes: SmallVec::new(),
+            note_version,
+            jumps,
+        }
+    }
+
+    pub fn jumps(&self) -> &[WordJumpAddress] {
+        &self.jumps
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum VersionState {
     UpToDate,
@@ -468,6 +482,7 @@ impl AppState {
                 CommandInstruction::EnterInsideKDL,
                 // CommandInstruction::RunLLMBlock,
                 CommandInstruction::ShowPrompt,
+                CommandInstruction::StartWordJump,
                 CommandInstruction::ShowSlashPallete,
                 // CommandInstruction::HideSlashPallete,
                 // CommandInstruction::NextSlashPalleteCmd,
