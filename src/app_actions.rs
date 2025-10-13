@@ -1,14 +1,15 @@
 use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc};
 
-use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
+use eframe::egui::{Context, Id, Key, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
 
 use serde_json::{Value, to_value};
 use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
-use winit::keyboard::Key;
 
 use crate::{
-    actions::word_jump::{self, create_jump_points},
+    actions::word_jump::{
+        add_keystroke_to_sequence, create_jump_points, find_matching_jump, has_potential_matches,
+    },
     app_state::{
         AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk,
         InlinePromptStatus, MsgToApp, NoteSignature, ParsedPromptResponse, RenderAction,
@@ -59,7 +60,7 @@ pub enum SlashPaletteAction {
 #[derive(Debug)]
 pub enum WordJumpAction {
     SwitchToJumpingMode(ByteSpan, NoteSignature),
-    EnterKey(Key),
+    EnterKey(char),
     JumpTo(WordJumpAddress),
     CancelJumpingMode,
 }
@@ -1148,10 +1149,12 @@ pub fn process_app_action(
 
             SmallVec::new()
         }
+
         AppAction::AppUpdateClicked => {
             app_io.open_app_store_for_shelv_update();
             SmallVec::new()
         }
+
         AppAction::WordJump(word_jump_action) => match word_jump_action {
             WordJumpAction::SwitchToJumpingMode(cursor, signature) => {
                 let note = state.notes.get(&state.selected_note).unwrap();
@@ -1176,9 +1179,46 @@ pub fn process_app_action(
 
                 SmallVec::new()
             }
-            WordJumpAction::EnterKey(key) => todo!(),
-            WordJumpAction::JumpTo(word_jump_address) => todo!(),
-            WordJumpAction::CancelJumpingMode => todo!(),
+
+            WordJumpAction::EnterKey(input_char) => {
+                if let Some(word_jump_state) = &mut state.word_jump_state {
+                    let current_sequence = word_jump_state.current_key_strokes();
+                    let new_sequence = add_keystroke_to_sequence(current_sequence, input_char);
+
+                    word_jump_state.set_current_key_strokes(new_sequence.clone());
+
+                    if let Some(matching_jump) =
+                        find_matching_jump(word_jump_state.jumps(), &new_sequence)
+                    {
+                        return SmallVec::from([AppAction::WordJump(WordJumpAction::JumpTo(
+                            matching_jump,
+                        ))]);
+                    }
+
+                    if !has_potential_matches(word_jump_state.jumps(), &new_sequence) {
+                        // No more potential matches
+                        return SmallVec::from([AppAction::WordJump(
+                            WordJumpAction::CancelJumpingMode,
+                        )]);
+                    }
+                }
+                SmallVec::new()
+            }
+
+            WordJumpAction::JumpTo(word_jump_address) => {
+                if let Some(note) = state.notes.get_mut(&state.selected_note) {
+                    note.update_cursor(word_jump_address.span);
+                }
+
+                state.word_jump_state = None;
+
+                SmallVec::new()
+            }
+
+            WordJumpAction::CancelJumpingMode => {
+                state.word_jump_state = None;
+                SmallVec::new()
+            }
         },
     }
 }

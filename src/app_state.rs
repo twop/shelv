@@ -19,7 +19,7 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
-    actions::word_jump::JumpLabel,
+    actions::word_jump::{JumpCharSequence, JumpLabel},
     app_actions::{AppAction, FocusTarget},
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
@@ -98,8 +98,6 @@ pub struct InlineLLMPromptState {
     pub fresh_response: bool,
 }
 
-type JumpCharSequence = SmallVec<[char; 3]>;
-
 #[derive(Copy, Debug, Clone)]
 pub struct WordJumpAddress {
     pub span: UnOrderedByteSpan,
@@ -124,6 +122,15 @@ impl WordJumpState {
 
     pub fn jumps(&self) -> &[WordJumpAddress] {
         &self.jumps
+    }
+
+    pub fn current_key_strokes(&self) -> &[char] {
+        &self.current_key_strokes
+    }
+
+    pub fn set_current_key_strokes(&mut self, new_strokes: impl IntoIterator<Item = char>) {
+        self.current_key_strokes.clear();
+        self.current_key_strokes.extend(new_strokes.into_iter());
     }
 }
 

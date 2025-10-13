@@ -1,14 +1,48 @@
 use crate::{app_state::WordJumpAddress, byte_span::UnOrderedByteSpan};
 use regex::Regex;
+use smallvec::SmallVec;
 use std::sync::LazyLock;
+
+pub type JumpCharSequence = SmallVec<[char; 3]>;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct JumpLabel([char; 2]);
+
+#[derive(Debug, PartialEq)]
+pub enum JumpLabelMatchResult {
+    NoMatch,
+    Possible(usize), // Number of characters matched
+    FullMatch,
+}
 
 impl JumpLabel {
     // TODO: use SmolStr instead of String for better performance
     pub fn to_string(&self) -> String {
         format!("{}{}", self.0[0], self.0[1])
+    }
+
+    pub fn check_match(&self, input: &[char]) -> JumpLabelMatchResult {
+        if input.is_empty() {
+            return JumpLabelMatchResult::Possible(0);
+        }
+
+        let mut matched = 0;
+        for (i, &input_char) in input.iter().enumerate() {
+            if i >= 2 {
+                return JumpLabelMatchResult::NoMatch;
+            }
+            if self.0[i] == input_char {
+                matched += 1;
+            } else {
+                return JumpLabelMatchResult::NoMatch;
+            }
+        }
+
+        if matched == 2 {
+            JumpLabelMatchResult::FullMatch
+        } else {
+            JumpLabelMatchResult::Possible(matched)
+        }
     }
 }
 
@@ -337,4 +371,39 @@ mod create_jump_points_tests {
         let word_text = &text[jumps[0].span.start..jumps[0].span.end];
         assert_eq!(word_text, "hello");
     }
+}
+
+pub fn add_keystroke_to_sequence(current_sequence: &[char], new_key: char) -> JumpCharSequence {
+    let mut sequence = JumpCharSequence::from(current_sequence.to_vec());
+    if sequence.len() < 2 {
+        sequence.push(new_key);
+    }
+    sequence
+}
+
+/// Find a jump that matches the current keystroke sequence
+pub fn find_matching_jump(
+    jumps: &[WordJumpAddress],
+    current_sequence: &[char],
+) -> Option<WordJumpAddress> {
+    if current_sequence.len() == 2 {
+        jumps
+            .iter()
+            .find(|jump| {
+                jump.label.check_match(current_sequence) == JumpLabelMatchResult::FullMatch
+            })
+            .copied()
+    } else {
+        None
+    }
+}
+
+/// Check if any jumps could potentially match the current sequence
+pub fn has_potential_matches(jumps: &[WordJumpAddress], current_sequence: &[char]) -> bool {
+    jumps.iter().any(|jump| {
+        matches!(
+            jump.label.check_match(current_sequence),
+            JumpLabelMatchResult::Possible(_) | JumpLabelMatchResult::FullMatch
+        )
+    })
 }
