@@ -33,7 +33,12 @@ use eframe::{
     get_value,
 };
 
-use crate::{app_state::UnsavedChange, persistent_state::extract_note_file};
+use crate::{
+    actions::word_jump::process_word_jump_input,
+    app_actions::WordJumpAction,
+    app_state::{NoteSignature, UnsavedChange},
+    persistent_state::extract_note_file,
+};
 use shared::Version;
 
 mod actions;
@@ -259,14 +264,22 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             .unwrap_or_else(|| Scripts::new());
 
         // Note that it will consume the input event, so essentially WordJump acts as a modal
-        if app_state.word_jump_state.is_some() {
-            ctx.input_mut(|input| {
-                if let Some(word_jump_action) =
-                    crate::actions::word_jump::process_word_jump_input(input)
-                {
-                    action_list.push(AppAction::WordJump(word_jump_action));
-                }
-            });
+        if let Some(word_jump_state) = &app_state.word_jump_state {
+            let note = app_state.notes.get(&app_state.selected_note).unwrap();
+            if word_jump_state.signature()
+                == NoteSignature::new(
+                    app_state.selected_note,
+                    (&note.derived_state.structure).opaque_version(),
+                )
+            {
+                ctx.input_mut(|input| {
+                    if let Some(word_jump_action) = process_word_jump_input(input) {
+                        action_list.push(AppAction::WordJump(word_jump_action));
+                    }
+                });
+            } else {
+                action_list.push(AppAction::WordJump(WordJumpAction::CancelJumpingMode));
+            }
         }
 
         // handling commands

@@ -1215,7 +1215,10 @@ pub fn process_app_action(
 
                 state.word_jump_state = None;
 
-                SmallVec::new()
+                [AppAction::defer(AppAction::IssueRenderAction(
+                    RenderAction::ScrollToEditorCursorPos,
+                ))]
+                .into()
             }
 
             WordJumpAction::CancelJumpingMode => {

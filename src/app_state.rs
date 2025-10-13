@@ -127,6 +127,9 @@ impl WordJumpState {
     pub fn current_key_strokes(&self) -> &[char] {
         &self.current_key_strokes
     }
+    pub fn signature(&self) -> NoteSignature {
+        self.note_version
+    }
 
     pub fn set_current_key_strokes(&mut self, new_strokes: impl IntoIterator<Item = char>) {
         self.current_key_strokes.clear();

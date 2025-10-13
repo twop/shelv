@@ -492,7 +492,7 @@ fn render_editor(
             let word_start_char_pos = char_index_from_byte_index(editor_text, jump.span.start);
 
             let cursor_rect = galley.pos_from_cursor(egui::text::CCursor::new(word_start_char_pos));
-            let pos = cursor_rect.min + galley_pos.to_vec2();
+            let pos = cursor_rect.left_center() + galley_pos.to_vec2();
 
             // Render the label text
             render_word_jump_label(&painter, match_result, jump.label, pos, theme);
@@ -1836,7 +1836,7 @@ fn render_word_jump_label(
     painter: &Painter,
     match_result: JumpLabelMatchResult,
     label: JumpLabel,
-    pos: egui::Pos2,
+    left_center: egui::Pos2,
     theme: &AppTheme,
 ) {
     use JumpLabelMatchResult::*;
@@ -1851,10 +1851,12 @@ fn render_word_jump_label(
         theme.colors.normal_text_color,
     );
 
-    let label_rect =
-        Rect::from_min_size(pos + vec2(-1.0, 0.0), label_galley.size() + vec2(2.0, 0.0));
+    let label_rect = Rect::from_min_size(
+        left_center + vec2(-1.0, -label_galley.size().y / 2.0),
+        label_galley.size() + vec2(2.0, 0.0),
+    );
 
-    painter.rect_filled(label_rect, 2.0, theme.colors.code_bg_color);
+    painter.rect_filled(label_rect, 4.0, theme.colors.code_bg_color);
 
     // painter.rect_stroke(
     //     label_rect,
@@ -1878,7 +1880,7 @@ fn render_word_jump_label(
         ),
     };
 
-    let mut current_x = pos.x;
+    let mut current_x = left_center.x;
 
     for (i, (ch, char_color)) in completed_chars
         .into_iter()
@@ -1891,8 +1893,8 @@ fn render_word_jump_label(
         .enumerate()
     {
         let label_rect = painter.text(
-            egui::pos2(current_x, pos.y),
-            Align2::LEFT_TOP,
+            egui::pos2(current_x, left_center.y),
+            Align2::LEFT_CENTER,
             ch.to_string(),
             label_font.clone(),
             char_color,
