@@ -1856,7 +1856,7 @@ fn render_word_jump_label(
         label_galley.size() + vec2(2.0, 0.0),
     );
 
-    painter.rect_filled(label_rect, 4.0, theme.colors.code_bg_color);
+    painter.rect_filled(label_rect, 4.0, theme.colors.md_code);
 
     // painter.rect_stroke(
     //     label_rect,
@@ -1888,7 +1888,7 @@ fn render_word_jump_label(
         .chain(
             pending_chars
                 .into_iter()
-                .map(|ch| (ch, theme.colors.hyperlink_color)),
+                .map(|ch| (ch, theme.colors.code_bg_color)),
         )
         .enumerate()
     {
