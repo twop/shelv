@@ -1,4 +1,5 @@
 use crate::{app_state::WordJumpAddress, byte_span::UnOrderedByteSpan};
+use eframe::egui::Key;
 use regex::Regex;
 use smallvec::SmallVec;
 use std::sync::LazyLock;
@@ -173,11 +174,7 @@ pub fn process_word_jump_input(
     input: &mut eframe::egui::InputState,
 ) -> Option<crate::app_actions::WordJumpAction> {
     use crate::app_actions::WordJumpAction;
-    use eframe::egui::{Event, Key};
-
-    if input.consume_key(eframe::egui::Modifiers::NONE, Key::Escape) {
-        return Some(WordJumpAction::CancelJumpingMode);
-    }
+    use eframe::egui::Event;
 
     // TODO add backspace as an event too
 
@@ -194,6 +191,14 @@ pub fn process_word_jump_input(
                     }
                 }
                 true // Keep other text events
+            }
+            Event::Key {
+                key: Key::Escape,
+                pressed: true,
+                ..
+            } => {
+                action = Some(WordJumpAction::CancelJumpingMode);
+                false
             }
             _ => true, // Keep all other events
         }
