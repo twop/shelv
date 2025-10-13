@@ -132,6 +132,76 @@ pub fn iterate_over_words(text: &str) -> impl Iterator<Item = (&str, UnOrderedBy
         .map(|m| (m.as_str(), UnOrderedByteSpan::new(m.start(), m.end())))
 }
 
+pub fn add_keystroke_to_sequence(current_sequence: &[char], new_key: char) -> JumpCharSequence {
+    let mut sequence = JumpCharSequence::from(current_sequence.to_vec());
+    if sequence.len() < 2 {
+        sequence.push(new_key);
+    }
+    sequence
+}
+
+/// Find a jump that matches the current keystroke sequence
+pub fn find_matching_jump(
+    jumps: &[WordJumpAddress],
+    current_sequence: &[char],
+) -> Option<WordJumpAddress> {
+    if current_sequence.len() == 2 {
+        jumps
+            .iter()
+            .find(|jump| {
+                jump.label.check_match(current_sequence) == JumpLabelMatchResult::FullMatch
+            })
+            .copied()
+    } else {
+        None
+    }
+}
+
+/// Check if any jumps could potentially match the current sequence
+pub fn has_potential_matches(jumps: &[WordJumpAddress], current_sequence: &[char]) -> bool {
+    jumps.iter().any(|jump| {
+        matches!(
+            jump.label.check_match(current_sequence),
+            JumpLabelMatchResult::Possible(_) | JumpLabelMatchResult::FullMatch
+        )
+    })
+}
+
+/// Process egui input state during word jump mode and return appropriate action
+/// This function consumes relevant input events so they don't propagate to normal text editing
+pub fn process_word_jump_input(
+    input: &mut eframe::egui::InputState,
+) -> Option<crate::app_actions::WordJumpAction> {
+    use crate::app_actions::WordJumpAction;
+    use eframe::egui::{Event, Key};
+
+    if input.consume_key(eframe::egui::Modifiers::NONE, Key::Escape) {
+        return Some(WordJumpAction::CancelJumpingMode);
+    }
+
+    // TODO add backspace as an event too
+
+    let mut action = None;
+    input.events.retain(|event| {
+        match event {
+            Event::Text(text) => {
+                // Process each character in the text input
+                for ch in text.chars() {
+                    // Only process alphabetic characters for jump labels
+                    if ch.is_ascii_alphabetic() && action.is_none() {
+                        action = Some(WordJumpAction::EnterKey(ch.to_ascii_lowercase()));
+                        return false; // Remove this event from the queue
+                    }
+                }
+                true // Keep other text events
+            }
+            _ => true, // Keep all other events
+        }
+    });
+
+    action
+}
+
 #[cfg(test)]
 mod label_assigning_tests {
     use crate::actions::word_jump::{JumpLabel, assign_label};
@@ -371,39 +441,4 @@ mod create_jump_points_tests {
         let word_text = &text[jumps[0].span.start..jumps[0].span.end];
         assert_eq!(word_text, "hello");
     }
-}
-
-pub fn add_keystroke_to_sequence(current_sequence: &[char], new_key: char) -> JumpCharSequence {
-    let mut sequence = JumpCharSequence::from(current_sequence.to_vec());
-    if sequence.len() < 2 {
-        sequence.push(new_key);
-    }
-    sequence
-}
-
-/// Find a jump that matches the current keystroke sequence
-pub fn find_matching_jump(
-    jumps: &[WordJumpAddress],
-    current_sequence: &[char],
-) -> Option<WordJumpAddress> {
-    if current_sequence.len() == 2 {
-        jumps
-            .iter()
-            .find(|jump| {
-                jump.label.check_match(current_sequence) == JumpLabelMatchResult::FullMatch
-            })
-            .copied()
-    } else {
-        None
-    }
-}
-
-/// Check if any jumps could potentially match the current sequence
-pub fn has_potential_matches(jumps: &[WordJumpAddress], current_sequence: &[char]) -> bool {
-    jumps.iter().any(|jump| {
-        matches!(
-            jump.label.check_match(current_sequence),
-            JumpLabelMatchResult::Possible(_) | JumpLabelMatchResult::FullMatch
-        )
-    })
 }

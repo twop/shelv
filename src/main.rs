@@ -258,6 +258,17 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             .take()
             .unwrap_or_else(|| Scripts::new());
 
+        // Note that it will consume the input event, so essentially WordJump acts as a modal
+        if app_state.word_jump_state.is_some() {
+            ctx.input_mut(|input| {
+                if let Some(word_jump_action) =
+                    crate::actions::word_jump::process_word_jump_input(input)
+                {
+                    action_list.push(AppAction::WordJump(word_jump_action));
+                }
+            });
+        }
+
         // handling commands
         // sych as {tab, enter} inside a list
         let actions_from_keyboard_commands = ctx

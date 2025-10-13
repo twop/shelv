@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc};
 
-use eframe::egui::{Context, Id, Key, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
+use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
 
 use serde_json::{Value, to_value};
 use similar::{ChangeTag, TextDiff};
