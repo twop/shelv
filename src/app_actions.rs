@@ -1167,7 +1167,10 @@ pub fn process_app_action(
                 }
 
                 // Use hardcoded symbols for jump labels for now FIXME
-                let jump_symbols = ['a', 'b', 'c', 'd'];
+                let jump_symbols = [
+                    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+                    'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+                ];
 
                 // Create jump points using the current cursor position and note text
                 if let Some(jumps) =

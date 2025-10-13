@@ -27,6 +27,7 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
+    actions::word_jump::{JumpCharSequence, JumpLabel, JumpLabelMatchResult},
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
         CodeBlockAnnotation, ComputedLayout, FeedbackState, InlineLLMPromptState,
@@ -479,45 +480,22 @@ fn render_editor(
     // ------- WORD JUMP LABELS -------
     if let Some(word_jump_state) = word_jump_state {
         let painter = ui.painter();
+        let current_sequence = word_jump_state.current_key_strokes();
+
         for jump in word_jump_state.jumps() {
+            let match_result = jump.label.check_match(current_sequence);
+            if matches!(match_result, JumpLabelMatchResult::NoMatch) {
+                continue; // Skip labels that cannot match
+            }
+
             // Find word start position using the galley
             let word_start_char_pos = char_index_from_byte_index(editor_text, jump.span.start);
 
             let cursor_rect = galley.pos_from_cursor(egui::text::CCursor::new(word_start_char_pos));
             let pos = cursor_rect.min + galley_pos.to_vec2();
 
-            let label_text = jump.label.to_string();
-
-            // Create small font for labels
-            let label_font = FontId::new(theme.fonts.size.small, FontFamily::Monospace);
-
-            // Draw label background
-            let label_galley = painter.layout_no_wrap(
-                label_text.clone(),
-                label_font.clone(),
-                theme.colors.normal_text_color,
-            );
-
-            let label_rect =
-                Rect::from_min_size(pos + vec2(-2.0, -2.0), label_galley.size() + vec2(4.0, 4.0));
-
-            painter.rect_filled(label_rect, 4.0, theme.colors.code_bg_color);
-
-            painter.rect_stroke(
-                label_rect,
-                4.0,
-                Stroke::new(1.0, theme.colors.subtle_text_color),
-                StrokeKind::Outside,
-            );
-
-            // Draw label text
-            painter.text(
-                pos,
-                Align2::LEFT_TOP,
-                label_text,
-                label_font,
-                theme.colors.normal_text_color,
-            );
+            // Render the label text
+            render_word_jump_label(&painter, match_result, jump.label, pos, theme);
         }
     }
 
@@ -1851,4 +1829,75 @@ fn interpolate_color(from: Color32, to: Color32, progress: f32) -> Color32 {
         ((fb + tb) * 255.) as u8,
         ((fa + ta) * 255.) as u8,
     )
+}
+
+/// Renders a word jump label with appropriate styling based on match result
+fn render_word_jump_label(
+    painter: &Painter,
+    match_result: JumpLabelMatchResult,
+    label: JumpLabel,
+    pos: egui::Pos2,
+    theme: &AppTheme,
+) {
+    use JumpLabelMatchResult::*;
+
+    let label_text = label.to_string();
+
+    let label_font = FontId::new(theme.fonts.size.small, FontFamily::Monospace);
+
+    let label_galley = painter.layout_no_wrap(
+        label_text.clone(),
+        label_font.clone(),
+        theme.colors.normal_text_color,
+    );
+
+    let label_rect =
+        Rect::from_min_size(pos + vec2(-1.0, 0.0), label_galley.size() + vec2(2.0, 0.0));
+
+    painter.rect_filled(label_rect, 2.0, theme.colors.code_bg_color);
+
+    // painter.rect_stroke(
+    //     label_rect,
+    //     4.0,
+    //     Stroke::new(0.5, theme.colors.subtle_text_color),
+    //     StrokeKind::Outside,
+    // );
+
+    let (completed_chars, pending_chars) = match match_result {
+        NoMatch => {
+            // this should not happen, but for completeness
+            return;
+        }
+        Possible(matches) => (
+            JumpCharSequence::from_iter(label_text.chars().take(matches)),
+            JumpCharSequence::from_iter(label_text.chars().skip(matches)),
+        ),
+        FullMatch => (
+            JumpCharSequence::new(),
+            JumpCharSequence::from_iter(label_text.chars()),
+        ),
+    };
+
+    let mut current_x = pos.x;
+
+    for (i, (ch, char_color)) in completed_chars
+        .into_iter()
+        .map(|ch| (ch, theme.colors.subtle_text_color))
+        .chain(
+            pending_chars
+                .into_iter()
+                .map(|ch| (ch, theme.colors.hyperlink_color)),
+        )
+        .enumerate()
+    {
+        let label_rect = painter.text(
+            egui::pos2(current_x, pos.y),
+            Align2::LEFT_TOP,
+            ch.to_string(),
+            label_font.clone(),
+            char_color,
+        );
+
+        current_x += label_rect.size().x;
+    }
 }
