@@ -37,6 +37,16 @@ One of the core fetatures of Shelv is quick access to AI, try to select this lin
 *Tip: You can use it to ask for help with configuring settings or asking questions about current shortcuts.*
 
 
+## Word Jump Navigation
+Shelv has a cool word jumping feature that lets you quickly navigate to any word in your note using just a few keystrokes.
+
+- [ ] Try it out: Press `⌘ + J` to activate Word Jump mode. You'll see letter combinations appear next to words throughout this note.
+- [ ] Jump to the end of this sentence by typing the 2-character sequence that appears next to the word "sentence".
+- [ ] Practice: Use Word Jump to navigate to the "Links" section at the bottom of this note.
+
+*This feature is especially useful for quickly navigating long notes without reaching for your mouse!*
+
+
 ## Live JS code blocks
 You can do quick math or even write mini programs in shelv directly by making `js` code blocks to come "alive"
 

@@ -538,6 +538,7 @@ impl AppState {
                         CommandInstruction::MarkdownStrikethrough,
                         P::TEXT_STRIKETHROUGH,
                     ),
+                    ("jump", CommandInstruction::StartWordJump, P::CURSOR_CLICK),
                 ]
                 .into_iter()
                 .map(|(prefix, builtin, phosphor_icon)| {

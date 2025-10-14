@@ -251,6 +251,7 @@ for `bind` keyword
 - `PinWindow`
 - `RunLLMBlock`
 - `ShowPrompt`
+- `StartWordJump`
 - `SwitchToNote 1..4`
 - `SwitchToSettings`
 - `InsertText`

@@ -100,6 +100,9 @@ bind "Option Cmd 3" icon="text-h-three" alias="h3" description="Heading 3" { Mar
 // (⌃ Enter): Show AI Prompt
 bind "Ctrl Enter" icon="sparkle" alias="ai" description="Show AI Prompt" { ShowPrompt; }
 
+// (⌘ J): Activates word jump mode for quick navigation to any word using 2-character sequences
+bind "Cmd J" icon="cursor-click" alias="jump" description="Start Word Jump" { StartWordJump; }
+
 // (⌘ ,): Open Settings
 bind "Cmd Comma" { SwitchToSettings; }
 
@@ -121,6 +124,34 @@ bind "Cmd 3" { SwitchToNote 2; }
 // (⌘ 4): Shelf 4
 bind "Cmd 4" { SwitchToNote 3; }
 ```
+
+---
+
+## Word Jump Navigation
+
+Word Jump is a cool navigation feature that allows you to quickly jump to any word in your current note using 2-character keyboard sequences.
+
+Inspired by [Vimium](https://vimium.github.io/) and [Helix](https://helix-editor.com/)
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center"><strong>Before Activation</strong></td>
+      <td align="center"><strong>After Activation (⌘ J)</strong></td>
+    </tr>
+    <tr>
+      <td><img src="distribution/assets/for_readme/word_jump/word-jump-before.png" alt="Word Jump before activation" width="400"/></td>
+      <td><img src="distribution/assets/for_readme/word_jump/word-jump-after.png" alt="Word Jump after activation showing letter labels" width="400"/></td>
+    </tr>
+  </table>
+</div>
+
+### How to Use
+
+1. **Activate Word Jump**: Press `⌘ J` (or your custom keybinding)
+2. **See Jump Labels**: Letter combinations appear next to words throughout your note
+3. **Jump**: Type the 2-character sequence to instantly jump to that word
+4. **Cancel**: Press `Escape` or any invalid sequence to exit Word Jump mode
 
 ---
 
@@ -272,7 +303,7 @@ Example: `bind "Cmd T" icon="text-aa" alias="test" description="Insert test text
 - `MarkdownBold`, `MarkdownItalic`, , `MarkdownStrikethrough`
 - `MarkdownCodeBlock` or with optional language attribute `MarkdownCodeBlock lang="js"`
 - `MarkdownH1`, `MarkdownH2`, `MarkdownH3`
-- `PinWindow`, `RunLLMBlock`, `ShowPrompt`
+- `PinWindow`, `RunLLMBlock`, `ShowPrompt`, `StartWordJump`
 - `SwitchToNote 1..4`, `SwitchToSettings`
 - `InsertText`
   - Format:

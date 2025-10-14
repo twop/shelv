@@ -314,7 +314,7 @@ impl CommandInstruction {
             Self::HideApp => "Hide Window".into(),
             // Self::RunLLMBlock => "Execute AI Block".into(),
             CommandInstruction::ShowPrompt => "Show AI Prompt".into(),
-            CommandInstruction::StartWordJump => "Switch to 'word jump' mode".into(),
+            CommandInstruction::StartWordJump => "Activates word jump mode for quick navigation to any word using 2-character sequences".into(),
             CommandInstruction::EnterInsideKDL => "Auto indent KDL".into(),
             CommandInstruction::BracketAutoclosingInsideKDL => {
                 "Auto closing of '{' inside KDL".into()
