@@ -28,14 +28,21 @@ use std::{path::PathBuf, sync::mpsc::sync_channel};
 
 use eframe::{
     CreationContext,
-    egui::{self},
+    egui::{self, Key},
     epaint::vec2,
     get_value,
 };
 
-use crate::{app_state::UnsavedChange, persistent_state::extract_note_file};
+use crate::{
+    actions::word_jump::process_word_jump_input,
+    app_actions::WordJumpAction,
+    app_state::{NoteSignature, UnsavedChange},
+    command::AppFocus,
+    persistent_state::extract_note_file,
+};
 use shared::Version;
 
+mod actions;
 mod app_actions;
 mod app_io;
 mod app_state;
@@ -46,7 +53,7 @@ mod commands;
 mod effects;
 mod egui_hotkey;
 mod feedback;
-mod knus_test;
+// mod knus_test;
 mod nord;
 mod persistent_state;
 mod picker;
@@ -250,12 +257,40 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         );
 
         let app_focus = self.app_focus_state.clone();
-        let focused_id = ctx.memory(|m| m.focused());
 
         let mut scripts = app_state
             .settings_scripts
             .take()
             .unwrap_or_else(|| Scripts::new());
+
+        let mut frame_hotkeys = app_state.commands.prepare_frame_hotkeys();
+
+        // Note that it will consume the input event, so essentially WordJump acts as a modal
+        if let Some(word_jump_state) = &app_state.word_jump_state {
+            let note = app_state.notes.get(&app_state.selected_note).unwrap();
+            let current_note_signature = NoteSignature::new(
+                app_state.selected_note,
+                (&note.derived_state.structure).opaque_version(),
+            );
+
+            if word_jump_state.signature() == current_note_signature
+                && app_focus.internal_focus == Some(AppFocus::NoteEditor)
+            {
+                ctx.input_mut(|input| {
+                    if let Some(word_jump_action) = process_word_jump_input(input) {
+                        action_list.push(AppAction::WordJump(word_jump_action));
+                    }
+                });
+
+                // frame_hotkeys.add_key(Key::Escape, |_| {
+                //     [AppAction::WordJump(WordJumpAction::CancelJumpingMode)].into()
+                // });
+            } else {
+                action_list.push(AppAction::WordJump(WordJumpAction::CancelJumpingMode));
+            }
+        }
+
+        let focused_id = ctx.memory(|m| m.focused());
 
         // handling commands
         // sych as {tab, enter} inside a list
@@ -401,8 +436,6 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         let editor_text = &mut edited_note.text;
         let code_block_annotations = &mut edited_note.derived_state.code_block_annotations;
 
-        let mut frame_hotkeys = app_state.commands.prepare_frame_hotkeys();
-
         let vis_state = AppRenderData {
             selected_note: app_state.selected_note,
             is_window_pinned: app_state.is_pinned,
@@ -415,10 +448,11 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             computed_layout: app_state.computed_layout.take(),
             inline_llm_prompt: (&mut app_state.inline_llm_prompt).as_mut(),
             slash_palette: app_state.slash_palette.as_ref(),
+            word_jump_state: app_state.word_jump_state.as_ref(),
             render_actions: (app_state.render_actions.drain(..)).collect(),
             frame_hotkeys: &mut frame_hotkeys,
             feedback: (&mut app_state.feedback).as_mut(),
-            version_state: &app_state.version_state,
+            version_state: &app_state.app_version_state,
             code_block_annotations,
         };
 

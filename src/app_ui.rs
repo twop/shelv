@@ -27,23 +27,25 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
+    actions::word_jump::{JumpCharSequence, JumpLabel, JumpLabelMatchResult},
     app_actions::{AppAction, FocusTarget, SlashPaletteAction},
     app_state::{
         CodeBlockAnnotation, ComputedLayout, FeedbackState, InlineLLMPromptState,
-        InlinePromptStatus, LayoutParams, RenderAction, SlashPalette, VersionState,
+        InlinePromptStatus, LayoutParams, NoteSignature, RenderAction, SlashPalette, VersionState,
+        WordJumpState,
     },
     byte_span::UnOrderedByteSpan,
     command::{
         CommandInstruction, CommandList, EditorCommandOutput, FrameHotkeys, PROMOTED_COMMANDS,
         SlashPaletteCmd,
     },
-    commands::{inline_llm_prompt::compute_inline_prompt_text_input_id, run_llm::LLM_LANG},
+    commands::inline_llm_prompt::compute_inline_prompt_text_input_id,
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
     persistent_state::NoteFile,
     picker::{Picker, PickerItem, PickerItemKind},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{StyleBuilder, flex_column, flex_row, style},
+    taffy_styles::{StyleBuilder, flex_column, flex_row},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
     ui_components::{IconButton, IconButtonSize, apply_icon_btn_styling, rich_text_tooltip},
@@ -61,6 +63,7 @@ pub struct AppRenderData<'a> {
     pub computed_layout: Option<ComputedLayout>,
     pub inline_llm_prompt: Option<&'a mut InlineLLMPromptState>,
     pub slash_palette: Option<&'a SlashPalette>,
+    pub word_jump_state: Option<&'a WordJumpState>,
     pub is_window_pinned: bool,
     pub render_actions: SmallVec<[RenderAction; 2]>,
     pub feedback: Option<&'a mut FeedbackState>,
@@ -95,6 +98,7 @@ pub fn render_app(
         is_window_pinned,
         inline_llm_prompt,
         slash_palette,
+        word_jump_state,
         mut render_actions,
         feedback,
         frame_hotkeys,
@@ -217,6 +221,7 @@ pub fn render_app(
                             computed_layout,
                             inline_llm_prompt,
                             slash_palette,
+                            word_jump_state,
                             &mut render_actions,
                             theme,
                             syntax_set,
@@ -359,6 +364,7 @@ fn render_editor(
     mut computed_layout: Option<ComputedLayout>,
     inline_llm_prompt: Option<&mut InlineLLMPromptState>,
     slash_palette: Option<&SlashPalette>,
+    word_jump_state: Option<&WordJumpState>,
     render_actions: &mut SmallVec<[RenderAction; 2]>,
     theme: &AppTheme,
     syntax_set: &SyntaxSet,
@@ -471,6 +477,28 @@ fn render_editor(
 
     let text_structure = structure_wrapper.unwrap();
 
+    // ------- WORD JUMP LABELS -------
+    if let Some(word_jump_state) = word_jump_state {
+        let painter = ui.painter();
+        let current_sequence = word_jump_state.current_key_strokes();
+
+        for jump in word_jump_state.jumps() {
+            let match_result = jump.label.check_match(current_sequence);
+            if matches!(match_result, JumpLabelMatchResult::NoMatch) {
+                continue; // Skip labels that cannot match
+            }
+
+            // Find word start position using the galley
+            let word_start_char_pos = char_index_from_byte_index(editor_text, jump.span.start);
+
+            let cursor_rect = galley.pos_from_cursor(egui::text::CCursor::new(word_start_char_pos));
+            let pos = cursor_rect.left_center() + galley_pos.to_vec2();
+
+            // Render the label text
+            render_word_jump_label(&painter, match_result, jump.label, pos, theme);
+        }
+    }
+
     // ------- FLOATING BUTTONS -------
     if let Some(computed_layout) = &computed_layout {
         for area in computed_layout.code_areas.iter() {
@@ -506,12 +534,14 @@ fn render_editor(
 
     let overlay_layer_width = galley.job.wrap.max_width - 2. * estimated_text_pos.x;
 
+    let note_version = NoteSignature {
+        note_file,
+        text_version: text_structure.opaque_version(),
+    };
+
     // ------- LLM PROMPT -------
     match inline_llm_prompt {
-        Some(inline_llm_prompt)
-            if inline_llm_prompt.address.note_file == note_file
-                && inline_llm_prompt.address.text_version == text_structure.opaque_version() =>
-        {
+        Some(inline_llm_prompt) if inline_llm_prompt.address.note_version == note_version => {
             // TODO wtf is that?
             let mut top_of_frame = Rect::from_pos(estimated_text_pos);
             top_of_frame.set_width(overlay_layer_width);
@@ -1799,4 +1829,77 @@ fn interpolate_color(from: Color32, to: Color32, progress: f32) -> Color32 {
         ((fb + tb) * 255.) as u8,
         ((fa + ta) * 255.) as u8,
     )
+}
+
+/// Renders a word jump label with appropriate styling based on match result
+fn render_word_jump_label(
+    painter: &Painter,
+    match_result: JumpLabelMatchResult,
+    label: JumpLabel,
+    left_center: egui::Pos2,
+    theme: &AppTheme,
+) {
+    use JumpLabelMatchResult::*;
+
+    let label_text = label.to_string();
+
+    let label_font = FontId::new(theme.fonts.size.small, FontFamily::Monospace);
+
+    let label_galley = painter.layout_no_wrap(
+        label_text.clone(),
+        label_font.clone(),
+        theme.colors.normal_text_color,
+    );
+
+    let label_rect = Rect::from_min_size(
+        left_center + vec2(-1.0, -label_galley.size().y / 2.0),
+        label_galley.size() + vec2(2.0, 0.0),
+    );
+
+    painter.rect_filled(label_rect, 4.0, theme.colors.md_code);
+
+    // painter.rect_stroke(
+    //     label_rect,
+    //     4.0,
+    //     Stroke::new(0.5, theme.colors.subtle_text_color),
+    //     StrokeKind::Outside,
+    // );
+
+    let (completed_chars, pending_chars) = match match_result {
+        NoMatch => {
+            // this should not happen, but for completeness
+            return;
+        }
+        Possible(matches) => (
+            JumpCharSequence::from_iter(label_text.chars().take(matches)),
+            JumpCharSequence::from_iter(label_text.chars().skip(matches)),
+        ),
+        FullMatch => (
+            JumpCharSequence::new(),
+            JumpCharSequence::from_iter(label_text.chars()),
+        ),
+    };
+
+    let mut current_x = left_center.x;
+
+    for (i, (ch, char_color)) in completed_chars
+        .into_iter()
+        .map(|ch| (ch, theme.colors.subtle_text_color))
+        .chain(
+            pending_chars
+                .into_iter()
+                .map(|ch| (ch, theme.colors.code_bg_color)),
+        )
+        .enumerate()
+    {
+        let label_rect = painter.text(
+            egui::pos2(current_x, left_center.y),
+            Align2::LEFT_CENTER,
+            ch.to_string(),
+            label_font.clone(),
+            char_color,
+        );
+
+        current_x += label_rect.size().x;
+    }
 }

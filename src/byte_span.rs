@@ -104,6 +104,10 @@ impl UnOrderedByteSpan {
         }
     }
 
+    pub fn point(pos: usize) -> Self {
+        Self::new(pos, pos)
+    }
+
     pub fn ordered(&self) -> ByteSpan {
         ByteSpan::new(self.start, self.end)
     }

@@ -19,6 +19,7 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
+    actions::word_jump::{JumpCharSequence, JumpLabel},
     app_actions::{AppAction, FocusTarget},
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
@@ -34,6 +35,7 @@ use crate::{
         run_llm::{CodeBlockAddress, prepare_to_run_llm_block},
         slash_pallete::show_slash_pallete,
         space_after_task_markers::on_space_after_task_markers,
+        start_word_jump::{self, start_jump_list_command_handler},
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
         toggle_code_block::toggle_code_block,
         toggle_md_headings::toggle_md_heading,
@@ -52,8 +54,22 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub struct TextSelectionAddress {
     pub span: ByteSpan,
+    pub note_version: NoteSignature,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
+pub struct NoteSignature {
     pub note_file: NoteFile,
     pub text_version: TextHash,
+}
+
+impl NoteSignature {
+    pub fn new(note_file: NoteFile, text_version: TextHash) -> Self {
+        Self {
+            note_file,
+            text_version,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -80,6 +96,45 @@ pub struct InlineLLMPromptState {
     pub layout_job: Arc<LayoutJob>,
     pub status: InlinePromptStatus,
     pub fresh_response: bool,
+}
+
+#[derive(Copy, Debug, Clone)]
+pub struct WordJumpAddress {
+    pub span: UnOrderedByteSpan,
+    // TODO should it be always 2? or should 3 letters be allowed too?
+    pub label: JumpLabel,
+}
+
+pub struct WordJumpState {
+    current_key_strokes: JumpCharSequence,
+    note_version: NoteSignature,
+    jumps: Vec<WordJumpAddress>,
+}
+
+impl WordJumpState {
+    pub fn new(note_version: NoteSignature, jumps: Vec<WordJumpAddress>) -> Self {
+        Self {
+            current_key_strokes: SmallVec::new(),
+            note_version,
+            jumps,
+        }
+    }
+
+    pub fn jumps(&self) -> &[WordJumpAddress] {
+        &self.jumps
+    }
+
+    pub fn current_key_strokes(&self) -> &[char] {
+        &self.current_key_strokes
+    }
+    pub fn signature(&self) -> NoteSignature {
+        self.note_version
+    }
+
+    pub fn set_current_key_strokes(&mut self, new_strokes: impl IntoIterator<Item = char>) {
+        self.current_key_strokes.clear();
+        self.current_key_strokes.extend(new_strokes.into_iter());
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -207,13 +262,15 @@ pub struct AppState {
 
     pub inline_llm_prompt: Option<InlineLLMPromptState>,
     pub slash_palette: Option<SlashPalette>,
+    pub word_jump_state: Option<WordJumpState>,
 
     pub computed_layout: Option<ComputedLayout>,
     pub settings_scripts: Option<Scripts>,
     pub deferred_actions: Vec<AppAction>,
     pub render_actions: Vec<RenderAction>,
     pub feedback: Option<FeedbackState>,
-    pub version_state: VersionState,
+
+    pub app_version_state: VersionState,
 }
 
 impl AppState {
@@ -435,6 +492,7 @@ impl AppState {
                 CommandInstruction::EnterInsideKDL,
                 // CommandInstruction::RunLLMBlock,
                 CommandInstruction::ShowPrompt,
+                CommandInstruction::StartWordJump,
                 CommandInstruction::ShowSlashPallete,
                 // CommandInstruction::HideSlashPallete,
                 // CommandInstruction::NextSlashPalleteCmd,
@@ -480,6 +538,7 @@ impl AppState {
                         CommandInstruction::MarkdownStrikethrough,
                         P::TEXT_STRIKETHROUGH,
                     ),
+                    ("jump", CommandInstruction::StartWordJump, P::CURSOR_CLICK),
                 ]
                 .into_iter()
                 .map(|(prefix, builtin, phosphor_icon)| {
@@ -532,10 +591,11 @@ impl AppState {
             deferred_actions,
             inline_llm_prompt: None,
             slash_palette: None,
+            word_jump_state: None,
             settings_scripts: None,
             render_actions: vec![],
             feedback: None,
-            version_state: VersionState::UpToDate,
+            app_version_state: VersionState::UpToDate,
         }
     }
 
@@ -637,6 +697,8 @@ fn execute_instruction(
         // CI::RunLLMBlock => prepare_to_run_llm_block(ctx.app_state, CodeBlockAddress::NoteSelection)
         //     .unwrap_or_default(),
         CI::ShowPrompt => inline_llm_prompt_command_handler(ctx).unwrap_or_default(),
+
+        CI::StartWordJump => start_jump_list_command_handler(ctx).unwrap_or_default(),
 
         CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),
 

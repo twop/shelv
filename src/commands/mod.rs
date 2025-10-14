@@ -5,6 +5,7 @@ pub mod kdl_lang;
 pub mod run_llm;
 pub mod slash_pallete;
 pub mod space_after_task_markers;
+pub mod start_word_jump;
 pub mod tabbing_in_list;
 pub mod toggle_code_block;
 pub mod toggle_md_headings;
