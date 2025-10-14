@@ -134,16 +134,9 @@ Word Jump is a cool navigation feature that allows you to quickly jump to any wo
 Inspired by [Vimium](https://vimium.github.io/) and [Helix](https://helix-editor.com/)
 
 <div align="center">
-  <table>
-    <tr>
-      <td align="center"><strong>Before Activation</strong></td>
-      <td align="center"><strong>After Activation (⌘ J)</strong></td>
-    </tr>
-    <tr>
-      <td><img src="distribution/assets/for_readme/word_jump/word-jump-before.png" alt="Word Jump before activation" width="400"/></td>
-      <td><img src="distribution/assets/for_readme/word_jump/word-jump-after.png" alt="Word Jump after activation showing letter labels" width="400"/></td>
-    </tr>
-  </table>
+      <img src="distribution/assets/for_readme/word_jump/word-jump-before.png" alt="Word Jump before activation" width="400"/>
+      <span>Press `  ⌘ J  `</span>
+      <img src="distribution/assets/for_readme/word_jump/word-jump-after.png" alt="Word Jump after activation showing letter labels" width="400"/>
 </div>
 
 ### How to Use
