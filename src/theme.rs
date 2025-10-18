@@ -38,6 +38,7 @@ pub enum AppIcon {
     Error,
     Copy,
     Download,
+    Bug,
 }
 
 impl AppIcon {
@@ -170,6 +171,7 @@ impl AppIcon {
             AppIcon::Error => P::WARNING,
             AppIcon::Copy => P::COPY_SIMPLE,
             AppIcon::Download => P::DOWNLOAD_SIMPLE,
+            AppIcon::Bug => P::BUG,
         }
     }
 }

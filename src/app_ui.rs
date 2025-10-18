@@ -34,6 +34,7 @@ use crate::{
         InlinePromptStatus, LayoutParams, NoteSignature, RenderAction, SlashPalette, VersionState,
         WordJumpState,
     },
+    dev_tools::DevToolsState,
     byte_span::UnOrderedByteSpan,
     command::{
         CommandInstruction, CommandList, EditorCommandOutput, FrameHotkeys, PROMOTED_COMMANDS,
@@ -69,6 +70,7 @@ pub struct AppRenderData<'a> {
     pub feedback: Option<&'a mut FeedbackState>,
     pub frame_hotkeys: &'a mut FrameHotkeys,
     pub version_state: &'a VersionState,
+    pub dev_tools_show: bool,
 }
 
 pub struct RenderAppResult {
@@ -104,6 +106,7 @@ pub fn render_app(
         frame_hotkeys,
         code_block_annotations,
         version_state,
+        dev_tools_show,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
@@ -119,6 +122,7 @@ pub fn render_app(
         is_window_pinned,
         feedback.as_ref().map(|f| f.is_sent).unwrap_or(false),
         version_state,
+        dev_tools_show,
     );
     output_actions.extend(header_actions);
 
@@ -1479,6 +1483,7 @@ fn render_header_panel(
     is_window_pinned: bool,
     feedback_sent: bool,
     version_state: &VersionState,
+    dev_tools_show: bool,
 ) -> SmallVec<[AppAction; 1]> {
     TopBottomPanel::top("top_panel")
         .show_separator_line(false)
@@ -1588,6 +1593,25 @@ fn render_header_panel(
                             .clicked()
                             {
                                 resulting_actions.push(AppAction::OpenFeedbackWindow);
+                            }
+
+                            // Dev tools button
+                            if t.ui_add(
+                                IconButton::new(AppIcon::Bug, theme)
+                                    .size(IconButtonSize::Large)
+                                    .toggled(dev_tools_show)
+                                    .tooltip(
+                                        if dev_tools_show {
+                                            "Hide dev tools"
+                                        } else {
+                                            "Show dev tools"
+                                        },
+                                        None,
+                                    ),
+                            )
+                            .clicked()
+                            {
+                                resulting_actions.push(AppAction::ToggleDevTools);
                             }
 
                             // Pin button with tooltip and keyboard shortcut

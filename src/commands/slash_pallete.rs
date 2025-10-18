@@ -23,6 +23,7 @@ pub fn show_slash_pallete(
             viewport_focused: true,
             is_menu_opened: false,
             internal_focus: Some(AppFocus::NoteEditor),
+            ..
         }
     );
 

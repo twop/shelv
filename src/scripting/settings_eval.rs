@@ -11,8 +11,8 @@ use crate::{
     app_actions::AppIO,
     app_state::{CodeBlockAnnotation, MsgToApp},
     command::{
-        AppFocus, CommandInstance, CommandInstruction, CommandList, CommandScope, ForwardToChild,
-        ScriptCall, SlashPaletteCmd, TextSource,
+        AppFocus, CommandInstance, CommandInstruction, CommandList, ForwardToChild, ScriptCall,
+        SlashPaletteCmd, TextSource,
     },
     settings_parsing::{
         GlobalBinding, GlobalCommand, LlmSettings, LocalBinding, parse_top_level_settings_block,
@@ -275,6 +275,7 @@ fn eval_settings_block<IO: AppIO>(
 
         println!("applying global {shortcut:?} to {command:?}");
         match command {
+            // FIXME unregiester the prev one or don't do anything if it is the same keybinding
             GlobalCommand::ShowHideApp => {
                 match eval_ctx
                     .app_io

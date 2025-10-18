@@ -50,6 +50,7 @@ mod app_ui;
 mod byte_span;
 mod command;
 mod commands;
+mod dev_tools;
 mod effects;
 mod egui_hotkey;
 mod feedback;
@@ -227,6 +228,7 @@ impl MyApp<RealAppIO> {
                 is_menu_opened: false,
                 internal_focus: None,
                 viewport_focused: false,
+                focus_id: None,
             },
             persistence_folder,
             hotwatch,
@@ -248,6 +250,37 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
         let text_edit_id = compute_editor_text_id(selected_note_file);
 
+        let app_focus = self.app_focus_state.clone(); // Render dev tools if enabled
+
+        ctx.input(|input| {
+            app_state.dev_tools.dump_input_events(input);
+        });
+
+        if app_state.dev_tools.show_dev_tools {
+            use eframe::egui::{ViewportBuilder, ViewportId};
+
+            let viewport_id = ViewportId::from_hash_of("dev_tools");
+
+            ctx.show_viewport_immediate(
+                viewport_id,
+                ViewportBuilder::default()
+                    .with_title("Shelv Debug Tools")
+                    .with_inner_size([800.0, 600.0])
+                    .with_resizable(true),
+                |ctx, _class| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        app_state
+                            .dev_tools
+                            .show(ui, Some(app_focus), &app_state.theme);
+                    });
+
+                    if ctx.input(|i| i.viewport().close_requested()) {
+                        app_state.dev_tools.show_dev_tools = false;
+                    }
+                },
+            );
+        }
+
         // handling message queue
         let mut action_list = EditorCommandOutput::from_iter(
             app_state
@@ -255,8 +288,6 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                 .try_iter()
                 .map(AppAction::HandleMsgToApp),
         );
-
-        let app_focus = self.app_focus_state.clone();
 
         let mut scripts = app_state
             .settings_scripts
@@ -367,9 +398,17 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                 _ => println!("---processing action = {action:#?}"),
             }
 
-            let mut action_buffer: SmallVec<[AppAction; 4]> = SmallVec::from_iter([action]);
+            let mut action_buffer: SmallVec<[(AppAction, usize); 4]> =
+                SmallVec::from_iter([(action, 0)]);
 
-            while let Some(to_process) = action_buffer.pop() {
+            while let Some((to_process, depth)) = action_buffer.pop() {
+                // Log the action before processing
+                app_state.dev_tools.log_action(
+                    to_process.clone(),
+                    depth,
+                    crate::dev_tools::ActionPhase::PreRender,
+                );
+
                 let new_actions = process_app_action(
                     to_process,
                     ctx,
@@ -405,7 +444,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                     }
                 }
 
-                action_buffer.extend(new_actions);
+                action_buffer.extend(new_actions.into_iter().map(|a| (a, depth + 1)));
             }
         }
 
@@ -422,7 +461,10 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             let is_frame_actually_focused = ctx.input(|i| i.viewport().focused.unwrap_or(false));
 
             // handling focus lost
-            if app_state.prev_focused != is_frame_actually_focused && !is_frame_actually_focused {
+            if app_state.prev_focused != is_frame_actually_focused
+                && !is_frame_actually_focused
+                && !app_state.dev_tools.show_dev_tools
+            {
                 println!("lost focus");
                 app_state.hidden = true;
                 self.app_io.hide_app(HideMode::HideApp);
@@ -454,6 +496,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             feedback: (&mut app_state.feedback).as_mut(),
             version_state: &app_state.app_version_state,
             code_block_annotations,
+            dev_tools_show: app_state.dev_tools.show_dev_tools,
         };
 
         let RenderAppResult {
@@ -499,9 +542,17 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
         // post render processing
         for action in actions {
-            let mut action_buffer: SmallVec<[AppAction; 4]> = SmallVec::from_iter([action]);
+            let mut action_buffer: SmallVec<[(AppAction, usize); 4]> =
+                SmallVec::from_iter([(action, 0)]);
 
-            while let Some(to_proccess) = action_buffer.pop() {
+            while let Some((to_proccess, depth)) = action_buffer.pop() {
+                // Log the action before processing
+                app_state.dev_tools.log_action(
+                    to_proccess.clone(),
+                    depth,
+                    crate::dev_tools::ActionPhase::PostRender,
+                );
+
                 let new_actions = process_app_action(
                     to_proccess,
                     ctx,
@@ -510,7 +561,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                     text_edit_id,
                     &mut self.app_io,
                 );
-                action_buffer.extend(new_actions);
+                action_buffer.extend(new_actions.into_iter().map(|a| (a, depth + 1)));
             }
         }
     }

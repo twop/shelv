@@ -40,6 +40,7 @@ eframe = { version = "0.32.3", default-features = false, features = [
 ] }
 wgpu = { version = "25", default-features = false, features = ["metal"] }
 egui_extras = { version = "0.32.3", features = ["svg"] }
+egui_tiles = "0.13.0"
 # egui_ltreeview = "0.5.3"
 
 serde = { version = "1.0.197", features = ["derive"] }

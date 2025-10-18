@@ -24,8 +24,8 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        AppFocus, CommandContext, CommandInstruction, CommandList, CommandScope,
-        EditorCommandOutput, SlashPaletteCmd, UiState, call_with_text_ctx,
+        AppFocus, CommandCondition, CommandContext, CommandInstruction, CommandList, CommandPhase,
+        EditorCommandOutput, SlashPaletteCmd, UiState, UiStateAttribute, call_with_text_ctx,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
@@ -41,6 +41,7 @@ use crate::{
         toggle_md_headings::toggle_md_heading,
         toggle_simple_md_annotations::toggle_simple_md_annotations,
     },
+    dev_tools::DevToolsState,
     feedback::FeedbackData,
     persistent_state::{DataToSave, LoadKind, NoteFile, RestoredData},
     scripting::settings_eval::Scripts,
@@ -223,12 +224,12 @@ pub enum UnsavedChange {
 }
 
 /// Actions specific to a render update, that is, what needs to happen during this render
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RenderAction {
     ScrollToEditorCursorPos,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SlashPalette {
     pub note_file: NoteFile,
     pub slash_byte_pos: usize,
@@ -271,6 +272,7 @@ pub struct AppState {
     pub feedback: Option<FeedbackState>,
 
     pub app_version_state: VersionState,
+    pub dev_tools: DevToolsState,
 }
 
 impl AppState {
@@ -391,21 +393,21 @@ impl ComputedLayout {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LLMBlockResponseChunk {
     pub chunk: String,
     pub address: String,
     pub note_id: NoteFile,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum InlineLLMResponseChunk {
     ResponseError(String),
     Chunk(String),
     End,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MsgToApp {
     ToggleVisibility,
     NoteFileChanged(NoteFile, PathBuf),
@@ -476,46 +478,74 @@ impl AppState {
         let selected_note = saved_state.selected;
         let is_window_pinned = saved_state.is_pinned;
 
-        let keybord_instructions: Vec<(CommandInstruction, CommandScope)> = Vec::from_iter(
-            [
-                CommandInstruction::ExpandTaskMarker,
-                CommandInstruction::IndentListItem,
-                CommandInstruction::UnindentListItem,
-                CommandInstruction::SplitListItem,
-                CommandInstruction::MarkdownCodeBlock(None),
-                CommandInstruction::MarkdownBold,
-                CommandInstruction::MarkdownItalic,
-                CommandInstruction::MarkdownStrikethrough,
-                CommandInstruction::MarkdownH1,
-                CommandInstruction::MarkdownH2,
-                CommandInstruction::MarkdownH3,
-                CommandInstruction::EnterInsideKDL,
-                // CommandInstruction::RunLLMBlock,
-                CommandInstruction::ShowPrompt,
-                CommandInstruction::StartWordJump,
-                CommandInstruction::ShowSlashPallete,
-                // CommandInstruction::HideSlashPallete,
-                // CommandInstruction::NextSlashPalleteCmd,
-                // CommandInstruction::PrevSlashPalleteCmd,
-                // CommandInstruction::ExecuteSlashPalleteCmd,
-            ]
-            .map(|instructuin| (instructuin, CommandScope::Focus(AppFocus::NoteEditor)))
-            .into_iter()
-            .chain([
-                (
-                    CommandInstruction::SwitchToSettings,
-                    CommandScope::UiState(UiState::Editing),
-                ),
-                (CommandInstruction::PinWindow, CommandScope::Global),
-                (CommandInstruction::HideApp, CommandScope::Global),
-            ])
-            .chain((0..shelf_count).map(|note_index| {
-                (
-                    CommandInstruction::SwitchToNote(note_index as u8),
-                    CommandScope::UiState(UiState::Editing),
-                )
-            })),
-        );
+        let keybord_instructions: Vec<(CommandInstruction, CommandPhase, CommandCondition)> =
+            Vec::from_iter(
+                [
+                    CommandInstruction::ExpandTaskMarker,
+                    CommandInstruction::IndentListItem,
+                    CommandInstruction::UnindentListItem,
+                    CommandInstruction::SplitListItem,
+                    CommandInstruction::MarkdownCodeBlock(None),
+                    CommandInstruction::MarkdownBold,
+                    CommandInstruction::MarkdownItalic,
+                    CommandInstruction::MarkdownStrikethrough,
+                    CommandInstruction::MarkdownH1,
+                    CommandInstruction::MarkdownH2,
+                    CommandInstruction::MarkdownH3,
+                    CommandInstruction::EnterInsideKDL,
+                    // CommandInstruction::RunLLMBlock,
+                    CommandInstruction::ShowPrompt,
+                    CommandInstruction::StartWordJump,
+                    CommandInstruction::ShowSlashPallete,
+                    // CommandInstruction::HideSlashPallete,
+                    // CommandInstruction::NextSlashPalleteCmd,
+                    // CommandInstruction::PrevSlashPalleteCmd,
+                    // CommandInstruction::ExecuteSlashPalleteCmd,
+                ]
+                .map(|instructuin| {
+                    (
+                        instructuin,
+                        CommandPhase::InsideRender,
+                        CommandCondition::exact_match([
+                            UiStateAttribute::Idle,
+                            UiStateAttribute::Focus(AppFocus::NoteEditor),
+                        ]),
+                    )
+                })
+                .into_iter()
+                .chain([
+                    (
+                        CommandInstruction::SwitchToSettings,
+                        CommandPhase::InsideRender,
+                        CommandCondition::loose_match([UiStateAttribute::Idle]),
+                    ),
+                    (
+                        CommandInstruction::PinWindow,
+                        CommandPhase::InsideRender,
+                        CommandCondition::loose_match([UiStateAttribute::Idle]),
+                    ),
+                    (
+                        CommandInstruction::HideApp,
+                        CommandPhase::InsideRender,
+                        CommandCondition::exact_match([
+                            UiStateAttribute::Idle,
+                            UiStateAttribute::Focus(AppFocus::NoteEditor),
+                        ])
+                        .or(CommandCondition::exact_match([UiStateAttribute::Idle])),
+                    ),
+                ])
+                .chain((0..shelf_count).map(|note_index| {
+                    (
+                        CommandInstruction::SwitchToNote(note_index as u8),
+                        CommandPhase::InsideRender,
+                        CommandCondition::exact_match([
+                            UiStateAttribute::Idle,
+                            UiStateAttribute::Focus(AppFocus::NoteEditor),
+                        ])
+                        .or(CommandCondition::exact_match([UiStateAttribute::Idle])),
+                    )
+                })),
+            );
 
         use egui_phosphor::light as P;
         let slash_palette_commands = []
@@ -546,7 +576,10 @@ impl AppState {
                     SlashPaletteCmd::from_instruction(
                         prefix,
                         builtin,
-                        CommandScope::Focus(AppFocus::NoteEditor),
+                        CommandCondition::exact_match([
+                            UiStateAttribute::Idle,
+                            UiStateAttribute::Focus(AppFocus::NoteEditor),
+                        ]),
                     )
                     .icon(phosphor_icon.to_string())
                     .shortcut(shortcut)
@@ -596,6 +629,7 @@ impl AppState {
             render_actions: vec![],
             feedback: None,
             app_version_state: VersionState::UpToDate,
+            dev_tools: DevToolsState::default(),
         }
     }
 
@@ -623,7 +657,7 @@ impl AppState {
 
     pub fn to_ui_state(&self) -> UiState {
         match &self.feedback {
-            Some(feedback) if feedback.is_feedback_open => UiState::ProvidingFeedback,
+            Some(feedback) if feedback.is_feedback_open => UiState::FeedbackOpened,
             _ => UiState::Editing,
         }
     }

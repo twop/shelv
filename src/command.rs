@@ -1,6 +1,6 @@
 use std::{fmt::Debug, ops::Deref, rc::Rc};
 
-use eframe::egui::{Key, KeyboardShortcut, Modifiers};
+use eframe::egui::{self, Id, Key, KeyboardShortcut, Modifiers};
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
 use smallvec::SmallVec;
@@ -27,6 +27,7 @@ pub struct TextCommandContext<'a> {
 pub enum AppFocus {
     NoteEditor,
     InlinePropmptEditor,
+    Other(Id)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -34,6 +35,7 @@ pub struct AppFocusState {
     pub is_menu_opened: bool,
     pub viewport_focused: bool,
     pub internal_focus: Option<AppFocus>,
+    pub focus_id: Option<egui::Id>
 }
 
 // #[derive(Clone, Copy)]
@@ -60,7 +62,8 @@ pub type EditorCommandOutput = SmallVec<[AppAction; 1]>;
 pub struct CommandInstance {
     pub shortcut: Option<KeyboardShortcut>,
     pub instruction: CommandInstruction,
-    pub scope: CommandScope,
+    pub phase: CommandPhase,
+    pub cond: CommandCondition
     // pub handler: CommandHandler,
 }
 
@@ -73,23 +76,32 @@ impl Debug for CommandInstance {
 }
 
 impl CommandInstance {
-    pub fn built_in(instruction: CommandInstruction, scope: CommandScope) -> Self {
+    pub fn built_in(instruction: CommandInstruction, cond: CommandCondition ) -> Self {
         Self {
             shortcut: instruction.default_keybinding(),
             instruction,
-            scope,
+            cond,
+            phase: CommandPhase::InsideRender,
         }
     }
 
     pub fn user_defined(
         instruction: CommandInstruction,
         shortcut: Option<KeyboardShortcut>,
-        scope: CommandScope,
+        cond: CommandCondition,
     ) -> Self {
         Self {
             shortcut,
             instruction,
-            scope,
+            cond,
+            phase: CommandPhase::InsideRender,
+        }
+    }
+
+    pub fn phase(self, phase: CommandPhase) -> Self {
+        Self {
+            phase,
+             ..self
         }
     }
 }
@@ -179,17 +191,57 @@ where
     }
 }
 
-#[derive(PartialEq, Hash, knus::Decode, Copy, Debug, Clone)]
-pub enum UiState {
-    Editing,
-    ProvidingFeedback,
+#[derive(PartialEq, Hash, Debug, Clone)]
+pub struct UiState(SmallVec<[UiStateAttribute; 6]>);
+
+impl UiState {
+    pub fn new(attributes: impl IntoIterator<Item = UiStateAttribute>) -> Self {
+        Self(SmallVec::from_iter(attributes.into_iter()))
+    }
+}
+
+#[derive(PartialEq, Hash, Debug, Clone)]
+pub enum UiStateAttribute {
+    Idle,
+    FeedbackOpened,
+    JumpMode,
+    SlahMenu,
+    Focus(AppFocus),
 }
 
 #[derive(Debug, PartialEq, Hash, Copy, Clone)]
-pub enum CommandScope {
-    Global,
-    Focus(AppFocus),
-    UiState(UiState),
+pub enum CommandPhase {
+    InsideRender,
+    RawInputHook,
+}
+
+#[derive(PartialEq, Clone, Hash, Debug)]
+pub enum CommandCondition {
+    Not(Box<CommandCondition>),
+    And(Box<CommandCondition>),
+    Any(Vec<CommandCondition>),
+    LooseMatch(UiState),
+    ExactMatch(UiState)
+}
+
+impl CommandCondition {
+    fn eval(&self, state: &UiState) -> bool {
+        todo!()
+    }
+
+    pub fn loose_match( attributes : impl IntoIterator<Item = UiStateAttribute> ) -> Self {
+        Self::LooseMatch(UiState::new(attributes.into_iter()))
+    }
+
+    pub fn exact_match( attributes : impl IntoIterator<Item = UiStateAttribute> ) -> Self {
+        Self::ExactMatch(UiState::new(attributes.into_iter()))
+    }
+
+    pub fn or(self, other: Self) -> Self {
+        Self::Any(Vec::from([self, other]))
+    }
+
+    
 }
 
 #[derive(PartialEq, Hash, knus::Decode, Debug, Clone)]
@@ -459,13 +511,14 @@ impl SlashPaletteCmd {
     pub fn from_instruction(
         prefix: impl Into<String>,
         instruction: CommandInstruction,
-        scope: CommandScope,
+        cond: CommandCondition,
     ) -> Self {
         Self {
             phosphor_icon: None,
+            
             prefix: prefix.into(),
             description: instruction.human_description().to_string(),
-            instance: CommandInstance::built_in(instruction, scope),
+            instance: CommandInstance::built_in(instruction, cond),
         }
     }
     pub fn icon(mut self, icon: String) -> Self {
@@ -577,12 +630,12 @@ impl CommandList {
         Handler: 'static + Fn(&CommandInstruction, CommandContext) -> EditorCommandOutput,
     >(
         execute: Handler,
-        default_keyboard_instructions: Vec<(CommandInstruction, CommandScope)>,
+        default_keyboard_instructions: Vec<(CommandInstruction, CommandPhase, CommandCondition)>,
         slash_palette_commands: Vec<SlashPaletteCmd>,
     ) -> Self {
         let keyboard_commands: Vec<_> = default_keyboard_instructions
             .into_iter()
-            .map(|(instruction, scope)| CommandInstance::built_in(instruction, scope))
+            .map(|(instruction, phase, cond)| CommandInstance::built_in(instruction, cond).phase(phase))
             .collect();
 
         let defaults = (keyboard_commands.clone(), slash_palette_commands.clone());
@@ -671,20 +724,13 @@ impl CommandList {
     pub fn run(
         &self,
         target_instruction: &CommandInstruction,
-        command_scope: CommandScope,
+        cond: &CommandCondition,
         ctx: CommandContext,
     ) -> EditorCommandOutput {
-        let scope_matches = match command_scope {
-            CommandScope::Global => true,
-            CommandScope::Focus(app_focus) if Some(app_focus) == ctx.app_focus.internal_focus => {
-                true
-            }
-            CommandScope::UiState(ui_state) if ui_state == ctx.ui_state => true,
-            _ => false,
-        };
-        if scope_matches {
+        if cond.eval(&ctx.ui_state){
             (self.execute_instruction)(target_instruction, ctx)
-        } else {
+        }
+        else {
             SmallVec::new()
         }
     }
@@ -785,14 +831,14 @@ fn test_keybindings_documentation_generation() {
     let cmd_list = CommandList::new(
         |_, _| SmallVec::new(),
         vec![
-            (CommandInstruction::MarkdownBold, CommandScope::Global),
-            (CommandInstruction::MarkdownItalic, CommandScope::Global),
+            (CommandInstruction::MarkdownBold, CommandPhase::InsideRender, CommandCondition::LooseMatch(UiState::new([UiStateAttribute::Idle]))),
+            (CommandInstruction::MarkdownItalic, CommandPhase::InsideRender, CommandCondition::LooseMatch(UiState::new([UiStateAttribute::Idle]))),
         ],
         vec![
             SlashPaletteCmd::from_instruction(
                 "bold",
                 CommandInstruction::MarkdownBold,
-                CommandScope::Global,
+                CommandCondition::LooseMatch(UiState::new([UiStateAttribute::Idle])),
             )
             .icon(egui_phosphor::light::USER_CIRCLE_GEAR.to_string())
             .shortcut(Some(kbd_shortcut1))
