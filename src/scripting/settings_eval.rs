@@ -350,29 +350,25 @@ fn eval_settings_block<IO: AppIO>(
         };
 
         if let Some(prefix) = slash_alias {
-            let cmd = SlashPaletteCmd::from_instruction(
-                prefix,
-                validated_instruction.clone(),
-                CommandScope::Focus(AppFocus::NoteEditor),
-            )
-            .icon(
-                phosphor_icon.unwrap_or_else(|| egui_phosphor::light::USER_CIRCLE_GEAR.to_string()),
-            )
-            .description(
-                description
-                    .unwrap_or_else(|| validated_instruction.human_description().to_string()),
-            )
-            .shortcut(shortcut.as_ref().map(|v| v.value()));
+            let cmd = SlashPaletteCmd::from_instruction(prefix, validated_instruction.clone())
+                .icon(
+                    phosphor_icon
+                        .unwrap_or_else(|| egui_phosphor::light::USER_CIRCLE_GEAR.to_string()),
+                )
+                .description(
+                    description
+                        .unwrap_or_else(|| validated_instruction.human_description().to_string()),
+                )
+                .shortcut(shortcut.as_ref().map(|v| v.value()));
 
             eval_ctx.cmd_list.add_slash_command(cmd);
         }
 
         eval_ctx
             .cmd_list
-            .add_editor_cmd(CommandInstance::user_defined(
+            .add_editor_cmd(CommandInstance::new_with_shortcut(
                 validated_instruction.clone(),
                 shortcut.map(|s| s.value()),
-                CommandScope::Focus(AppFocus::NoteEditor),
             ));
     }
 

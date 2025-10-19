@@ -24,8 +24,9 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        AppFocus, CommandCondition, CommandContext, CommandInstruction, CommandList, CommandPhase,
-        EditorCommandOutput, SlashPaletteCmd, UiState, UiStateAttribute, call_with_text_ctx,
+        AppFocus, AppFocusState, CommandCondition, CommandContext, CommandInstruction, CommandList,
+        CommandPhase, EditorCommandOutput, SlashPaletteCmd, UiState, UiStateAttribute,
+        call_with_text_ctx,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
@@ -478,74 +479,38 @@ impl AppState {
         let selected_note = saved_state.selected;
         let is_window_pinned = saved_state.is_pinned;
 
-        let keybord_instructions: Vec<(CommandInstruction, CommandPhase, CommandCondition)> =
-            Vec::from_iter(
-                [
-                    CommandInstruction::ExpandTaskMarker,
-                    CommandInstruction::IndentListItem,
-                    CommandInstruction::UnindentListItem,
-                    CommandInstruction::SplitListItem,
-                    CommandInstruction::MarkdownCodeBlock(None),
-                    CommandInstruction::MarkdownBold,
-                    CommandInstruction::MarkdownItalic,
-                    CommandInstruction::MarkdownStrikethrough,
-                    CommandInstruction::MarkdownH1,
-                    CommandInstruction::MarkdownH2,
-                    CommandInstruction::MarkdownH3,
-                    CommandInstruction::EnterInsideKDL,
-                    // CommandInstruction::RunLLMBlock,
-                    CommandInstruction::ShowPrompt,
-                    CommandInstruction::StartWordJump,
-                    CommandInstruction::ShowSlashPallete,
-                    // CommandInstruction::HideSlashPallete,
-                    // CommandInstruction::NextSlashPalleteCmd,
-                    // CommandInstruction::PrevSlashPalleteCmd,
-                    // CommandInstruction::ExecuteSlashPalleteCmd,
-                ]
-                .map(|instructuin| {
-                    (
-                        instructuin,
-                        CommandPhase::InsideRender,
-                        CommandCondition::exact_match([
-                            UiStateAttribute::Idle,
-                            UiStateAttribute::Focus(AppFocus::NoteEditor),
-                        ]),
-                    )
-                })
-                .into_iter()
-                .chain([
-                    (
-                        CommandInstruction::SwitchToSettings,
-                        CommandPhase::InsideRender,
-                        CommandCondition::loose_match([UiStateAttribute::Idle]),
-                    ),
-                    (
-                        CommandInstruction::PinWindow,
-                        CommandPhase::InsideRender,
-                        CommandCondition::loose_match([UiStateAttribute::Idle]),
-                    ),
-                    (
-                        CommandInstruction::HideApp,
-                        CommandPhase::InsideRender,
-                        CommandCondition::exact_match([
-                            UiStateAttribute::Idle,
-                            UiStateAttribute::Focus(AppFocus::NoteEditor),
-                        ])
-                        .or(CommandCondition::exact_match([UiStateAttribute::Idle])),
-                    ),
-                ])
-                .chain((0..shelf_count).map(|note_index| {
-                    (
-                        CommandInstruction::SwitchToNote(note_index as u8),
-                        CommandPhase::InsideRender,
-                        CommandCondition::exact_match([
-                            UiStateAttribute::Idle,
-                            UiStateAttribute::Focus(AppFocus::NoteEditor),
-                        ])
-                        .or(CommandCondition::exact_match([UiStateAttribute::Idle])),
-                    )
-                })),
-            );
+        let keybord_instructions: Vec<CommandInstruction> = Vec::from_iter(
+            [
+                CommandInstruction::ExpandTaskMarker,
+                CommandInstruction::IndentListItem,
+                CommandInstruction::UnindentListItem,
+                CommandInstruction::SplitListItem,
+                CommandInstruction::MarkdownCodeBlock(None),
+                CommandInstruction::MarkdownBold,
+                CommandInstruction::MarkdownItalic,
+                CommandInstruction::MarkdownStrikethrough,
+                CommandInstruction::MarkdownH1,
+                CommandInstruction::MarkdownH2,
+                CommandInstruction::MarkdownH3,
+                CommandInstruction::EnterInsideKDL,
+                // CommandInstruction::RunLLMBlock,
+                CommandInstruction::ShowPrompt,
+                CommandInstruction::StartWordJump,
+                CommandInstruction::ShowSlashPallete,
+                // CommandInstruction::HideSlashPallete,
+                // CommandInstruction::NextSlashPalleteCmd,
+                // CommandInstruction::PrevSlashPalleteCmd,
+                // CommandInstruction::ExecuteSlashPalleteCmd,
+                CommandInstruction::SwitchToSettings,
+                CommandInstruction::PinWindow,
+                CommandInstruction::HideApp,
+            ]
+            .into_iter()
+            .chain(
+                (0..shelf_count)
+                    .map(|note_index| CommandInstruction::SwitchToNote(note_index as u8)),
+            ),
+        );
 
         use egui_phosphor::light as P;
         let slash_palette_commands = []
@@ -573,16 +538,9 @@ impl AppState {
                 .into_iter()
                 .map(|(prefix, builtin, phosphor_icon)| {
                     let shortcut = builtin.default_keybinding();
-                    SlashPaletteCmd::from_instruction(
-                        prefix,
-                        builtin,
-                        CommandCondition::exact_match([
-                            UiStateAttribute::Idle,
-                            UiStateAttribute::Focus(AppFocus::NoteEditor),
-                        ]),
-                    )
-                    .icon(phosphor_icon.to_string())
-                    .shortcut(shortcut)
+                    SlashPaletteCmd::from_instruction(prefix, builtin)
+                        .icon(phosphor_icon.to_string())
+                        .shortcut(shortcut)
                 }),
             )
             .collect();
@@ -655,11 +613,37 @@ impl AppState {
         }
     }
 
-    pub fn to_ui_state(&self) -> UiState {
-        match &self.feedback {
-            Some(feedback) if feedback.is_feedback_open => UiState::FeedbackOpened,
-            _ => UiState::Editing,
+    pub fn to_ui_state(&self, app_focus: AppFocusState) -> UiState {
+        let mut attributes: SmallVec<[_; 6]> = SmallVec::new();
+
+        // Check if we're in feedback mode
+        if let Some(feedback) = &self.feedback {
+            if feedback.is_feedback_open {
+                attributes.push(UiStateAttribute::FeedbackOpened);
+            }
         }
+
+        // Check if we're in word jump mode
+        if self.word_jump_state.is_some() {
+            attributes.push(UiStateAttribute::JumpMode);
+        }
+
+        // Check if slash palette is open
+        if self.slash_palette.is_some() {
+            attributes.push(UiStateAttribute::SlashMenu);
+        }
+
+        // If no special states are active, we're idle
+        if attributes.is_empty() {
+            attributes.push(UiStateAttribute::Idle);
+        }
+
+        // Add focus state if available
+        if let Some(focus) = app_focus.internal_focus {
+            attributes.push(UiStateAttribute::Focus(focus));
+        }
+
+        UiState::new(attributes)
     }
 }
 
@@ -717,16 +701,7 @@ fn execute_instruction(
 
         CI::PinWindow => [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
 
-        CI::HideApp => match (
-            ctx.app_focus.is_menu_opened,
-            &ctx.app_state.slash_palette,
-            ctx.app_focus.internal_focus,
-        ) {
-            (false, None, None | Some(AppFocus::NoteEditor)) => {
-                [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
-            }
-            _ => SmallVec::new(),
-        },
+        CI::HideApp => [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into(),
 
         // CI::RunLLMBlock => prepare_to_run_llm_block(ctx.app_state, CodeBlockAddress::NoteSelection)
         //     .unwrap_or_default(),

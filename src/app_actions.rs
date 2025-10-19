@@ -1106,10 +1106,10 @@ pub fn process_app_action(
                         .take()
                         .unwrap_or_else(|| Scripts::new());
 
+                    let app_focus = compute_app_focus(ctx, state);
                     let cmd_context = CommandContext {
                         app_state: state,
-                        ui_state: state.to_ui_state(),
-                        app_focus: compute_app_focus(ctx, state),
+                        ui_state: state.to_ui_state(app_focus),
                         scripts: &mut scripts,
                     };
 

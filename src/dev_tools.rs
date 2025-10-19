@@ -7,7 +7,7 @@ use egui_tiles::{Behavior, TileId, Tiles, Tree, UiResponse};
 
 use crate::{
     app_actions::AppAction,
-    command::{AppFocus, AppFocusState},
+    command::{AppFocus, AppFocusState, UiState},
     theme::AppTheme,
 };
 
@@ -124,7 +124,7 @@ impl DevToolsState {
         }
     }
 
-    pub fn show(&mut self, ui: &mut Ui, app_focus: Option<AppFocusState>, theme: &AppTheme) {
+    pub fn show(&mut self, ui: &mut Ui, app_focus: Option<AppFocusState>, ui_state: &UiState, theme: &AppTheme) {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Shelv Debug Tools").size(theme.fonts.size.h4));
             ui.separator();
@@ -138,6 +138,7 @@ impl DevToolsState {
 
         let mut behavior = DevToolsBehavior {
             app_focus,
+            ui_state,
             theme,
             action_history: &self.action_history,
             input_event_history: &self.input_event_history,
@@ -150,6 +151,7 @@ impl DevToolsState {
 
 struct DevToolsBehavior<'a> {
     app_focus: Option<AppFocusState>,
+    ui_state: &'a UiState,
     theme: &'a AppTheme,
     action_history: &'a VecDeque<ActionLogEntry>,
     input_event_history: &'a VecDeque<InputEventEntry>,
@@ -162,7 +164,7 @@ impl<'a> Behavior<DevToolPane> for DevToolsBehavior<'a> {
             .inner_margin(Margin::same(2))
             .show(ui, |ui| match pane {
                 DevToolPane::FocusState => {
-                    render_focus_state_pane(self.app_focus.as_ref(), ui);
+                    render_focus_state_pane(self.app_focus.as_ref(), self.ui_state, ui);
                 }
                 DevToolPane::InputEvents => {
                     render_input_events_pane(
@@ -190,7 +192,7 @@ impl<'a> Behavior<DevToolPane> for DevToolsBehavior<'a> {
     }
 }
 
-fn render_focus_state_pane(app_focus: Option<&AppFocusState>, ui: &mut Ui) {
+fn render_focus_state_pane(app_focus: Option<&AppFocusState>, ui_state: &UiState, ui: &mut Ui) {
     if let Some(focus_state) = app_focus {
         ui.horizontal(|ui| {
             ui.label("Menu Opened:");
@@ -205,6 +207,7 @@ fn render_focus_state_pane(app_focus: Option<&AppFocusState>, ui: &mut Ui) {
             match focus_state.internal_focus {
                 Some(AppFocus::NoteEditor) => ui.label("Note Editor"),
                 Some(AppFocus::InlinePropmptEditor) => ui.label("Inline Prompt Editor"),
+                Some(AppFocus::Other(id)) => ui.label(format!("Other({:?})", id)),
                 None => ui.label("None"),
             };
         });
@@ -214,6 +217,16 @@ fn render_focus_state_pane(app_focus: Option<&AppFocusState>, ui: &mut Ui) {
         });
     } else {
         ui.label("No focus state available");
+    }
+    
+    ui.separator();
+    
+    ui.label("UI State Attributes:");
+    for (i, attr) in ui_state.attributes().iter().enumerate() {
+        ui.horizontal(|ui| {
+            ui.label(format!("[{}]", i));
+            ui.label(format!("{:?}", attr));
+        });
     }
 }
 

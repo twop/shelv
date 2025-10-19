@@ -269,9 +269,10 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                     .with_resizable(true),
                 |ctx, _class| {
                     egui::CentralPanel::default().show(ctx, |ui| {
+                        let ui_state = app_state.to_ui_state(app_focus);
                         app_state
                             .dev_tools
-                            .show(ui, Some(app_focus), &app_state.theme);
+                            .show(ui, Some(app_focus), &ui_state, &app_state.theme);
                     });
 
                     if ctx.input(|i| i.viewport().close_requested()) {
@@ -293,8 +294,6 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             .settings_scripts
             .take()
             .unwrap_or_else(|| Scripts::new());
-
-        let mut frame_hotkeys = app_state.commands.prepare_frame_hotkeys();
 
         // Note that it will consume the input event, so essentially WordJump acts as a modal
         if let Some(word_jump_state) = &app_state.word_jump_state {
@@ -321,7 +320,9 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             }
         }
 
-        let focused_id = ctx.memory(|m| m.focused());
+        let focused_id = app_focus.focus_id;
+
+        let mut frame_hotkeys = app_state.commands.prepare_frame_hotkeys();
 
         // handling commands
         // sych as {tab, enter} inside a list
@@ -339,8 +340,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
                             let ctx = CommandContext {
                                 app_state,
-                                app_focus,
-                                ui_state: app_state.to_ui_state(),
+                                ui_state: app_state.to_ui_state(app_focus),
                                 scripts: &mut scripts,
                             };
                             let res = match keyboard_binding {
@@ -351,7 +351,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                                     );
                                     app_state.commands.run(
                                         &editor_command.instruction,
-                                        editor_command.scope,
+                                        &editor_command.cond,
                                         ctx,
                                     )
                                 }
