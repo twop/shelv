@@ -3,7 +3,7 @@ use app_actions::{
 };
 use app_io::RealAppIO;
 use app_state::{AppInitData, AppState, MsgToApp, compute_editor_text_id};
-use app_ui::{AppRenderData, RenderAppResult, is_shortcut_match, render_app};
+use app_ui::{AppRenderData, RenderAppResult, render_app};
 use command::{AppFocusState, CommandContext, EditorCommandOutput};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 
@@ -28,7 +28,7 @@ use std::{path::PathBuf, sync::mpsc::sync_channel};
 
 use eframe::{
     CreationContext,
-    egui::{self, Key},
+    egui::{self, Key, KeyboardShortcut},
     epaint::vec2,
     get_value,
 };
@@ -237,8 +237,79 @@ impl MyApp<RealAppIO> {
 }
 
 impl<IO: AppIO> eframe::App for MyApp<IO> {
-    fn raw_input_hook(&mut self, ctx: &egui::Context, _raw_input: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         self.app_focus_state = compute_app_focus(ctx, &self.state);
+
+        let app_focus = self.app_focus_state.clone();
+        let app_state = &mut self.state;
+
+        let mut scripts = app_state
+            .settings_scripts
+            .take()
+            .unwrap_or_else(|| Scripts::new());
+
+        let actions_from_raw_input_commands = app_state
+            .commands
+            .available_keyboard_commands_for_phase(command::CommandPhase::RawInputHook)
+            .find_map(|(keyboard_shortcut, keyboard_binding)| {
+                if is_shortcut_match(raw_input.events.iter(), &keyboard_shortcut) {
+                    let ctx = CommandContext {
+                        app_state,
+                        ui_state: app_state.to_ui_state(app_focus),
+                        scripts: &mut scripts,
+                    };
+
+                    let res = match keyboard_binding {
+                        command::KeyboardBinding::CommandInstance(editor_command) => {
+                            println!(
+                                "---Found RawInputHook match for {:?}, focus = {app_focus:#?}",
+                                editor_command.instruction.human_description()
+                            );
+                            app_state.commands.run(
+                                &editor_command.instruction,
+                                &editor_command.cond,
+                                ctx,
+                            )
+                        }
+                        command::KeyboardBinding::FrameBinding(frame_hotkey) => {
+                            (frame_hotkey.run)(ctx)
+                        }
+                    };
+
+                    if !res.is_empty() {
+                        // Remove the matching key events from raw input
+                        raw_input.events.retain(|event| {
+                            if let egui::Event::Key {
+                                key,
+                                pressed: true,
+                                modifiers,
+                                ..
+                            } = event
+                            {
+                                !(*key == keyboard_shortcut.logical_key
+                                    && *modifiers == keyboard_shortcut.modifiers)
+                            } else {
+                                true
+                            }
+                        });
+                        Some(res)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
+        app_state.settings_scripts = Some(scripts);
+
+        // Process any actions that were generated
+        if !actions_from_raw_input_commands.is_empty() {
+            app_state
+                .deferred_actions
+                .extend(actions_from_raw_input_commands.into_iter());
+        }
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -265,7 +336,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                 viewport_id,
                 ViewportBuilder::default()
                     .with_title("Shelv Debug Tools")
-                    .with_inner_size([800.0, 600.0])
+                    .with_inner_size([1000.0, 800.0])
                     .with_resizable(true),
                 |ctx, _class| {
                     egui::CentralPanel::default().show(ctx, |ui| {
@@ -311,10 +382,6 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                         action_list.push(AppAction::WordJump(word_jump_action));
                     }
                 });
-
-                // frame_hotkeys.add_key(Key::Escape, |_| {
-                //     [AppAction::WordJump(WordJumpAction::CancelJumpingMode)].into()
-                // });
             } else {
                 action_list.push(AppAction::WordJump(WordJumpAction::CancelJumpingMode));
             }
@@ -334,9 +401,9 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
                 // only one command can be handled at a time
 
-                app_state.commands.available_keyboard_commands().find_map(
+                app_state.commands.available_keyboard_commands_for_phase(command::CommandPhase::InsideRender).find_map(
                     |(keyboard_shortcut, keyboard_binding)| {
-                        if is_shortcut_match(input, &keyboard_shortcut) {
+                        if is_shortcut_match(input.events.iter(), &keyboard_shortcut) {
 
                             let ctx = CommandContext {
                                 app_state,
@@ -598,6 +665,31 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             };
         }
     }
+}
+
+/// Count presses of a key. If non-zero, the presses are consumed, so that this will only return non-zero once.
+///
+/// Includes key-repeat events.
+pub fn is_shortcut_match<'a>(
+    input: impl IntoIterator<Item = &'a egui::Event>,
+    shortcut: &KeyboardShortcut,
+) -> bool {
+    let KeyboardShortcut {
+        modifiers,
+        logical_key,
+    } = shortcut.clone();
+
+    input.into_iter().any(|event| {
+        matches!(
+            event,
+            egui::Event::Key {
+                key: ev_key,
+                modifiers: ev_mods,
+                pressed: true,
+                ..
+            } if *ev_key == logical_key && ev_mods.matches_exact(modifiers)
+        )
+    })
 }
 
 fn main() {

@@ -3,16 +3,17 @@ use eframe::egui::{
     TextEdit, Ui,
 };
 use egui_taffy::{
+    TuiBuilderLogic,
     taffy::{AlignContent, AlignItems},
-    tui, TuiBuilderLogic,
+    tui,
 };
 use smallvec::SmallVec;
 
 use crate::{
     app_actions::{AppAction, FocusTarget},
-    command::{FrameHotkey, FrameHotkeyLayer, FrameHotkeys},
+    command::{CommandCondition, CommandPhase, FrameHotkey, FrameHotkeys, UiStateAttribute},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
+    taffy_styles::{StyleBuilder, flex_column, flex_row, style},
     theme::{AppIcon, AppTheme},
     ui_components::{IconButton, IconButtonSize},
 };
@@ -81,30 +82,25 @@ impl<'a> Feedback<'a> {
             family: fonts.family.italic.clone(),
         };
 
-        frame_hotkeys.add_with_layer(
-            FrameHotkey::new(
-                KeyboardShortcut::new(Modifiers::COMMAND, Key::Enter),
-                |_ctx| {
-                    SmallVec::from_iter([
-                        AppAction::SubmitFeedback,
-                        AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
-                    ])
-                },
-            ),
-            FrameHotkeyLayer::Modal,
+        // CommandCondition::loose_match([UiStateAttribute::FeedbackOpened]),
+        frame_hotkeys.add_key(
+            FrameHotkey::new((Modifiers::COMMAND, Key::Enter), |_ctx| {
+                SmallVec::from_iter([
+                    AppAction::SubmitFeedback,
+                    AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
+                ])
+            })
+            .phase(CommandPhase::RawInputHook),
         );
 
-        frame_hotkeys.add_with_layer(
-            FrameHotkey::new(
-                KeyboardShortcut::new(Modifiers::NONE, Key::Escape),
-                |_ctx| {
-                    SmallVec::from_iter([
-                        AppAction::CloseFeedbackWindow,
-                        AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
-                    ])
-                },
-            ),
-            FrameHotkeyLayer::Modal,
+        frame_hotkeys.add_key(
+            FrameHotkey::new(Key::Escape, |_ctx| {
+                SmallVec::from_iter([
+                    AppAction::CloseFeedbackWindow,
+                    AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
+                ])
+            })
+            .phase(CommandPhase::RawInputHook),
         );
 
         let hint_keyboard_text = format!(

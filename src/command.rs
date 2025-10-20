@@ -619,27 +619,60 @@ pub enum GlobalCommandKind {
     ShowHideApp,
 }
 
-#[derive(PartialEq, Debug)]
-pub enum FrameHotkeyLayer {
-    Normal,
-    Modal,
+pub struct InnerHotkey(KeyboardShortcut);
+
+impl From<Key> for InnerHotkey {
+    fn from(logical_key: Key) -> Self {
+        InnerHotkey(KeyboardShortcut::new(Modifiers::NONE , logical_key))
+    }
+}
+
+impl From<(Modifiers, Key)> for InnerHotkey {
+    fn from(( modifiers, logical_key): (Modifiers, Key)) -> Self {
+        InnerHotkey(KeyboardShortcut::new(modifiers , logical_key))
+    }
 }
 
 pub struct FrameHotkey {
-    layer: FrameHotkeyLayer,
+    phase: CommandPhase,
+    condition: CommandCondition,
     shortcut: KeyboardShortcut,
     pub run: Box<dyn for<'a> Fn(CommandContext<'a>) -> EditorCommandOutput>,
 }
 
 impl FrameHotkey {
     pub fn new(
-        shortcut: KeyboardShortcut,
+        shortcut: impl Into<InnerHotkey>,
+        // condition: CommandCondition,
         run: impl Fn(CommandContext) -> EditorCommandOutput + 'static,
     ) -> Self {
+        let InnerHotkey(shortcut) = shortcut.into();
         Self {
-            layer: FrameHotkeyLayer::Normal,
+            phase: CommandPhase::InsideRender,
+            condition: CommandCondition::loose_match([]),
             shortcut,
             run: Box::new(run),
+        }
+    }
+
+    pub fn raw_input(
+        shortcut: impl Into<InnerHotkey>,
+        // condition: CommandCondition,
+        run: impl Fn(CommandContext) -> EditorCommandOutput + 'static,
+    ) -> Self {
+        let InnerHotkey(shortcut) = shortcut.into();
+        Self {
+            phase: CommandPhase::RawInputHook,
+            condition: CommandCondition::loose_match([]),
+            shortcut,
+            run: Box::new(run),
+        }
+    }
+
+    pub fn phase(self, phase: CommandPhase) -> Self {
+        Self {
+            phase,
+            ..self
         }
     }
 }
@@ -652,27 +685,8 @@ pub struct FrameHotkeys(Vec<FrameHotkey>);
 impl FrameHotkeys {
     pub fn add_key(
         &mut self,
-        key: Key,
-        run: impl for<'a> Fn(CommandContext<'a>) -> EditorCommandOutput + 'static,
+        frame_hotkey: FrameHotkey
     ) {
-        self.0.push(FrameHotkey::new(
-            KeyboardShortcut::new(Modifiers::NONE, key),
-            run,
-        ));
-    }
-
-    pub fn add_key_with_modifier(
-        &mut self,
-        modifier: Modifiers,
-        key: Key,
-        run: impl for<'a> Fn(CommandContext<'a>) -> EditorCommandOutput + 'static,
-    ) {
-        self.0
-            .push(FrameHotkey::new(KeyboardShortcut::new(modifier, key), run));
-    }
-
-    pub fn add_with_layer(&mut self, mut frame_hotkey: FrameHotkey, layer: FrameHotkeyLayer) {
-        frame_hotkey.layer = layer;
         self.0.push(frame_hotkey);
     }
 }
@@ -725,25 +739,21 @@ impl CommandList {
         }
     }
 
-    pub fn available_keyboard_commands(
+    pub fn available_keyboard_commands_for_phase(
         &self,
+        phase: CommandPhase,
     ) -> impl Iterator<Item = (KeyboardShortcut, KeyboardBinding)> {
         self.frame_hotkeys
             .iter()
             .rev()
-            .filter(|h| h.layer == FrameHotkeyLayer::Modal)
-            .chain(
-                self.frame_hotkeys
-                    .iter()
-                    .rev()
-                    .filter(|h| h.layer != FrameHotkeyLayer::Modal),
-            )
+            .filter(move |h| h.phase == phase)
             .map(|hotkey| (hotkey.shortcut, KeyboardBinding::FrameBinding(hotkey)))
-            .chain(self.keyboard_commands.iter().flat_map(|cmd| {
+            .chain(self.keyboard_commands.iter().filter(move |cmd| cmd.phase == phase).flat_map(|cmd| {
                 cmd.shortcut
                     .zip(Some(KeyboardBinding::CommandInstance(cmd)))
             }))
     }
+
     pub fn prepare_frame_hotkeys(&mut self) -> FrameHotkeys {
         self.frame_hotkeys.clear();
         FrameHotkeys(std::mem::take(&mut self.frame_hotkeys))
@@ -854,7 +864,7 @@ pub fn create_ai_keybindings_documentation(cmd_list: &CommandList) -> String {
     let global_shortcut = KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::S);
 
     let current_commands_help = cmd_list
-        .available_keyboard_commands()
+        .available_keyboard_commands_for_phase(CommandPhase::InsideRender)
         .filter_map(|(shortcut, cmd)| {
             match cmd{
                 KeyboardBinding::CommandInstance(cmd) => cmd.instruction.serialize_to_kdl().map(|kdl| {

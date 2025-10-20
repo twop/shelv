@@ -28,19 +28,20 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     actions::word_jump::{JumpCharSequence, JumpLabel, JumpLabelMatchResult},
-    app_actions::{AppAction, FocusTarget, SlashPaletteAction},
+    app_actions::{AppAction, FocusTarget, SlashPaletteAction, WordJumpAction},
     app_state::{
         CodeBlockAnnotation, ComputedLayout, FeedbackState, InlineLLMPromptState,
         InlinePromptStatus, LayoutParams, NoteSignature, RenderAction, SlashPalette, VersionState,
         WordJumpState,
     },
-    dev_tools::DevToolsState,
     byte_span::UnOrderedByteSpan,
     command::{
-        CommandInstruction, CommandList, EditorCommandOutput, FrameHotkeys, PROMOTED_COMMANDS,
-        SlashPaletteCmd,
+        AppFocus, CommandCondition, CommandInstruction, CommandList, CommandPhase,
+        EditorCommandOutput, FrameHotkey, FrameHotkeys, PROMOTED_COMMANDS, SlashPaletteCmd,
+        UiStateAttribute,
     },
     commands::inline_llm_prompt::compute_inline_prompt_text_input_id,
+    dev_tools::DevToolsState,
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
     persistent_state::NoteFile,
@@ -501,6 +502,13 @@ fn render_editor(
             // Render the label text
             render_word_jump_label(&painter, match_result, jump.label, pos, theme);
         }
+
+        frame_hotkeys.add_key(
+            FrameHotkey::new(Key::Escape, |_| {
+                [AppAction::WordJump(WordJumpAction::CancelJumpingMode)].into()
+            })
+            .phase(CommandPhase::RawInputHook),
+        );
     }
 
     // ------- FLOATING BUTTONS -------
@@ -704,53 +712,71 @@ fn render_inline_prompt(
 
             let is_focused = ctx.memory(|m| m.focused()) == Some(prompt_text_id);
 
+            // CommandCondition::loose_match([UiStateAttribute::Focus(
+            //                         AppFocus::InlinePropmptEditor,
+            //                     )])
             // TODO move that into a command instead
             if is_focused {
-                frame_hotkeys.add_key(Key::Enter, |ctx| {
-                    let action = ctx
-                        .app_state
-                        .inline_llm_prompt
-                        .as_ref()
-                        .map(|inline_prompt| {
-                            match &inline_prompt.status {
-                                InlinePromptStatus::NotStarted => {
-                                    if inline_prompt.prompt.is_empty() {
-                                        // that will hide the UI
-                                        AppAction::AcceptPromptSuggestion { accept: false }
-                                    } else {
-                                        AppAction::ExecutePrompt
+                frame_hotkeys.add_key(
+                    FrameHotkey::new(Key::Enter, |ctx| {
+                        let action =
+                            ctx.app_state
+                                .inline_llm_prompt
+                                .as_ref()
+                                .map(|inline_prompt| {
+                                    match &inline_prompt.status {
+                                        InlinePromptStatus::NotStarted => {
+                                            if inline_prompt.prompt.is_empty() {
+                                                // that will hide the UI
+                                                AppAction::AcceptPromptSuggestion { accept: false }
+                                            } else {
+                                                AppAction::ExecutePrompt
+                                            }
+                                        }
+                                        InlinePromptStatus::Streaming { .. } => {
+                                            AppAction::AcceptPromptSuggestion { accept: false }
+                                        }
+                                        InlinePromptStatus::Done { prompt } => {
+                                            if prompt == &inline_prompt.prompt {
+                                                AppAction::AcceptPromptSuggestion { accept: true }
+                                            } else {
+                                                AppAction::ExecutePrompt
+                                            }
+                                        }
                                     }
-                                }
-                                InlinePromptStatus::Streaming { .. } => {
-                                    AppAction::AcceptPromptSuggestion { accept: false }
-                                }
-                                InlinePromptStatus::Done { prompt } => {
-                                    if prompt == &inline_prompt.prompt {
-                                        AppAction::AcceptPromptSuggestion { accept: true }
-                                    } else {
-                                        AppAction::ExecutePrompt
-                                    }
-                                }
-                            }
-                        });
+                                });
 
-                    action
-                        .map(|action| SmallVec::from([action]))
-                        .unwrap_or_default()
-                });
+                        action
+                            .map(|action| SmallVec::from([action]))
+                            .unwrap_or_default()
+                    })
+                    // enter needs to be overriden if focus is on the text field
+                    .phase(CommandPhase::RawInputHook),
+                );
 
                 // Esc otherwise will just close the input prompt
-                frame_hotkeys.add_key(Key::Escape, move |_| {
-                    [AppAction::AcceptPromptSuggestion { accept: false }].into()
-                });
+                frame_hotkeys.add_key(
+                    FrameHotkey::new(Key::Escape, move |_| {
+                        [AppAction::AcceptPromptSuggestion { accept: false }].into()
+                    })
+                    // Note that this should override the default focus behavior,
+                    // hence it is processed before egui has a chance to hanlde esc
+                    .phase(CommandPhase::RawInputHook),
+                );
             } else {
                 // if the inline prompt is open, esc will refocus it back to the input field
-                frame_hotkeys.add_key(Key::Escape, move |_| {
-                    [AppAction::FocusRequest(FocusTarget::SpecificId(
-                        prompt_text_id,
-                    ))]
-                    .into()
-                });
+                frame_hotkeys.add_key(
+                    FrameHotkey::new(Key::Escape, move |_| {
+                        [AppAction::FocusRequest(FocusTarget::SpecificId(
+                            prompt_text_id,
+                        ))]
+                        .into()
+                    })
+                    .phase(CommandPhase::RawInputHook),
+                );
+                // CommandCondition::loose_match([UiStateAttribute::Focus(
+                //     AppFocus::InlinePropmptEditor,
+                // )]),
             }
 
             let prompt_input_resp = TextEdit::multiline(&mut inline_llm_prompt.prompt)
@@ -947,27 +973,46 @@ fn render_slash_palette(
                             RichText::new("No command matches found")
                                 .color(theme.colors.subtle_text_color)
                         });
-                        frame_hotkeys.add_key(Key::Escape, |_ctx| {
-                            [AppAction::SlashPalette(SlashPaletteAction::Hide)].into()
-                        });
+                        // CommandCondition::loose_match([
+                        //     UiStateAttribute::Focus(AppFocus::NoteEditor),
+                        //     UiStateAttribute::SlashMenu,
+                        // ]),
+                        frame_hotkeys.add_key(
+                            FrameHotkey::new(Key::Escape, |_ctx| {
+                                [AppAction::SlashPalette(SlashPaletteAction::Hide)].into()
+                            })
+                            .phase(CommandPhase::RawInputHook),
+                        );
                     } else {
-                        frame_hotkeys.add_key(Key::ArrowDown, |_ctx| {
-                            [AppAction::SlashPalette(SlashPaletteAction::NextCommand)].into()
-                        });
-                        frame_hotkeys.add_key(Key::ArrowUp, |_ctx| {
-                            [AppAction::SlashPalette(SlashPaletteAction::PrevCommand)].into()
-                        });
-                        frame_hotkeys.add_key(Key::Escape, |_ctx| {
-                            [AppAction::SlashPalette(SlashPaletteAction::Hide)].into()
-                        });
+                        frame_hotkeys.add_key(
+                            FrameHotkey::new(Key::ArrowDown, |_ctx| {
+                                [AppAction::SlashPalette(SlashPaletteAction::NextCommand)].into()
+                            })
+                            .phase(CommandPhase::RawInputHook),
+                        );
+                        frame_hotkeys.add_key(
+                            FrameHotkey::new(Key::ArrowUp, |_ctx| {
+                                [AppAction::SlashPalette(SlashPaletteAction::PrevCommand)].into()
+                            })
+                            .phase(CommandPhase::RawInputHook),
+                        );
+                        frame_hotkeys.add_key(
+                            FrameHotkey::new(Key::Escape, |_ctx| {
+                                [AppAction::SlashPalette(SlashPaletteAction::Hide)].into()
+                            })
+                            .phase(CommandPhase::RawInputHook),
+                        );
 
                         let selected = slash_palette.selected;
-                        frame_hotkeys.add_key(Key::Enter, move |_ctx| {
-                            [AppAction::SlashPalette(SlashPaletteAction::ExecuteCommand(
-                                selected,
-                            ))]
-                            .into()
-                        });
+                        frame_hotkeys.add_key(
+                            FrameHotkey::new(Key::Enter, move |_ctx| {
+                                [AppAction::SlashPalette(SlashPaletteAction::ExecuteCommand(
+                                    selected,
+                                ))]
+                                .into()
+                            })
+                            .phase(CommandPhase::RawInputHook),
+                        );
 
                         // ui.set_min_width(prompt_ui_rect.width());
                         // ui.label("here is a long long long long label");
@@ -1177,12 +1222,16 @@ fn render_code_actions(
                 CodeBlockAnnotation::RunButton => {
                     if is_cursor_inside {
                         // TODO: add a setting setup of that
-                        frame_hotkeys.add_key_with_modifier(
-                            run_hotkey.modifiers,
-                            run_hotkey.logical_key,
-                            move |_| {
-                                SmallVec::from_buf([AppAction::RunCodeBlock(note_file, span_index)])
-                            },
+                        frame_hotkeys.add_key(
+                            FrameHotkey::new(
+                                (run_hotkey.modifiers, run_hotkey.logical_key),
+                                move |_| {
+                                    SmallVec::from_buf([AppAction::RunCodeBlock(
+                                        note_file, span_index,
+                                    )])
+                                },
+                            )
+                            .phase(CommandPhase::RawInputHook),
                         );
                     }
 
@@ -1806,28 +1855,6 @@ fn render_hints(
         }
         _ => (),
     };
-}
-
-/// Count presses of a key. If non-zero, the presses are consumed, so that this will only return non-zero once.
-///
-/// Includes key-repeat events.
-pub fn is_shortcut_match(input: &egui::InputState, shortcut: &KeyboardShortcut) -> bool {
-    let KeyboardShortcut {
-        modifiers,
-        logical_key,
-    } = shortcut.clone();
-
-    input.events.iter().any(|event| {
-        matches!(
-            event,
-            egui::Event::Key {
-                key: ev_key,
-                modifiers: ev_mods,
-                pressed: true,
-                ..
-            } if *ev_key == logical_key && ev_mods.matches_exact(modifiers)
-        )
-    })
 }
 
 pub fn char_index_from_byte_index(s: &str, byte_index: usize) -> usize {
