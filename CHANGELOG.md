@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Accessible via keyboard shortcut (`⌘ J` by default) and slash palette (`/jump`)
 
 ### Changed
+- **Command System Rework**: Overhaul of the application's command system ([#187](https://github.com/twop/shelv/pull/187))
+  - After egui update to 32 my hacky hotkey system stopped working, hence needed to pay the debt there
+  - Added conditions to commands using bool algebra and attribute checking
+  - Introduced raw input hook phase to handle keybinding conflicts
+  - Made frame hotkeys more ergonomic and unified with Commands system
+  - Built debugger UI for inspecting current state and action logs
 - Updated system prompt to include Word Jump command documentation
 - Added tutorial for Word Jump Navigation
 - Improved README with dedicated Word Jump section and usage examples
