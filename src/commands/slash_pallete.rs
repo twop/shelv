@@ -11,25 +11,8 @@ use crate::{
 };
 
 pub fn show_slash_pallete(
-    CommandContext {
-        app_state,
-        app_focus,
-        ..
-    }: CommandContext,
+    CommandContext { app_state, .. }: CommandContext,
 ) -> Option<EditorCommandOutput> {
-    let is_focused_on_editor = matches!(
-        app_focus,
-        AppFocusState {
-            viewport_focused: true,
-            is_menu_opened: false,
-            internal_focus: Some(AppFocus::NoteEditor),
-        }
-    );
-
-    if !is_focused_on_editor {
-        return None;
-    }
-
     let TextCommandContext {
         byte_cursor,
         text_structure,

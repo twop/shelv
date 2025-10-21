@@ -192,14 +192,7 @@ pub fn process_word_jump_input(
                 }
                 true // Keep other text events
             }
-            Event::Key {
-                key: Key::Escape,
-                pressed: true,
-                ..
-            } => {
-                action = Some(WordJumpAction::CancelJumpingMode);
-                false
-            }
+
             _ => true, // Keep all other events
         }
     });

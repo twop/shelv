@@ -45,7 +45,7 @@ pub enum FocusTarget {
     SpecificId(Id),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SlashPaletteAction {
     // Slash Palette
     Show(SlashPalette),
@@ -57,7 +57,7 @@ pub enum SlashPaletteAction {
     ExecuteCommand(usize),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum WordJumpAction {
     SwitchToJumpingMode(ByteSpan, NoteSignature),
     EnterKey(char),
@@ -65,7 +65,7 @@ pub enum WordJumpAction {
     CancelJumpingMode,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AppAction {
     SwitchToNote {
         note_file: NoteFile,
@@ -103,6 +103,7 @@ pub enum AppAction {
     HideApp,
     CopyCodeBlock(NoteFile, SpanIndex),
     AppUpdateClicked,
+    ToggleDevTools,
 }
 
 impl AppAction {
@@ -119,19 +120,19 @@ impl AppAction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ConversationPart {
     Markdown(String),
     Question(String),
     Answer(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Conversation {
     pub parts: Vec<ConversationPart>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LLMBlockRequest {
     pub conversation: Conversation,
     pub output_code_block_address: String,
@@ -1105,16 +1106,16 @@ pub fn process_app_action(
                         .take()
                         .unwrap_or_else(|| Scripts::new());
 
+                    let app_focus = compute_app_focus(ctx, state);
                     let cmd_context = CommandContext {
                         app_state: state,
-                        ui_state: state.to_ui_state(),
-                        app_focus: compute_app_focus(ctx, state),
+                        ui_state: state.to_ui_state(app_focus),
                         scripts: &mut scripts,
                     };
 
                     let actions_from_cmd = state.commands.run(
                         &cmd.instance.instruction,
-                        cmd.instance.scope,
+                        &cmd.instance.cond,
                         cmd_context,
                     );
 
@@ -1152,6 +1153,11 @@ pub fn process_app_action(
 
         AppAction::AppUpdateClicked => {
             app_io.open_app_store_for_shelv_update();
+            SmallVec::new()
+        }
+
+        AppAction::ToggleDevTools => {
+            state.dev_tools.show_dev_tools = !state.dev_tools.show_dev_tools;
             SmallVec::new()
         }
 
@@ -1329,7 +1335,10 @@ pub fn compute_app_focus(ctx: &Context, app_state: &AppState) -> AppFocusState {
                 Some(AppFocus::NoteEditor)
             }
 
+            Some(id) => Some(AppFocus::Other(id)),
+
             _ => None,
         },
+        focus_id: m.focused(),
     })
 }

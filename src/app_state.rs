@@ -24,8 +24,9 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        AppFocus, CommandContext, CommandInstruction, CommandList, CommandScope,
-        EditorCommandOutput, SlashPaletteCmd, UiState, call_with_text_ctx,
+        AppFocus, AppFocusState, CommandCondition, CommandContext, CommandInstruction, CommandList,
+        CommandPhase, EditorCommandOutput, SlashPaletteCmd, UiState, UiStateAttribute,
+        call_with_text_ctx,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
@@ -41,6 +42,7 @@ use crate::{
         toggle_md_headings::toggle_md_heading,
         toggle_simple_md_annotations::toggle_simple_md_annotations,
     },
+    dev_tools::DevToolsState,
     feedback::FeedbackData,
     persistent_state::{DataToSave, LoadKind, NoteFile, RestoredData},
     scripting::settings_eval::Scripts,
@@ -223,12 +225,12 @@ pub enum UnsavedChange {
 }
 
 /// Actions specific to a render update, that is, what needs to happen during this render
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RenderAction {
     ScrollToEditorCursorPos,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SlashPalette {
     pub note_file: NoteFile,
     pub slash_byte_pos: usize,
@@ -271,6 +273,7 @@ pub struct AppState {
     pub feedback: Option<FeedbackState>,
 
     pub app_version_state: VersionState,
+    pub dev_tools: DevToolsState,
 }
 
 impl AppState {
@@ -391,21 +394,21 @@ impl ComputedLayout {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LLMBlockResponseChunk {
     pub chunk: String,
     pub address: String,
     pub note_id: NoteFile,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum InlineLLMResponseChunk {
     ResponseError(String),
     Chunk(String),
     End,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MsgToApp {
     ToggleVisibility,
     NoteFileChanged(NoteFile, PathBuf),
@@ -476,7 +479,7 @@ impl AppState {
         let selected_note = saved_state.selected;
         let is_window_pinned = saved_state.is_pinned;
 
-        let keybord_instructions: Vec<(CommandInstruction, CommandScope)> = Vec::from_iter(
+        let keybord_instructions: Vec<CommandInstruction> = Vec::from_iter(
             [
                 CommandInstruction::ExpandTaskMarker,
                 CommandInstruction::IndentListItem,
@@ -498,23 +501,15 @@ impl AppState {
                 // CommandInstruction::NextSlashPalleteCmd,
                 // CommandInstruction::PrevSlashPalleteCmd,
                 // CommandInstruction::ExecuteSlashPalleteCmd,
+                CommandInstruction::SwitchToSettings,
+                CommandInstruction::PinWindow,
+                CommandInstruction::HideApp,
             ]
-            .map(|instructuin| (instructuin, CommandScope::Focus(AppFocus::NoteEditor)))
             .into_iter()
-            .chain([
-                (
-                    CommandInstruction::SwitchToSettings,
-                    CommandScope::UiState(UiState::Editing),
-                ),
-                (CommandInstruction::PinWindow, CommandScope::Global),
-                (CommandInstruction::HideApp, CommandScope::Global),
-            ])
-            .chain((0..shelf_count).map(|note_index| {
-                (
-                    CommandInstruction::SwitchToNote(note_index as u8),
-                    CommandScope::UiState(UiState::Editing),
-                )
-            })),
+            .chain(
+                (0..shelf_count)
+                    .map(|note_index| CommandInstruction::SwitchToNote(note_index as u8)),
+            ),
         );
 
         use egui_phosphor::light as P;
@@ -543,13 +538,9 @@ impl AppState {
                 .into_iter()
                 .map(|(prefix, builtin, phosphor_icon)| {
                     let shortcut = builtin.default_keybinding();
-                    SlashPaletteCmd::from_instruction(
-                        prefix,
-                        builtin,
-                        CommandScope::Focus(AppFocus::NoteEditor),
-                    )
-                    .icon(phosphor_icon.to_string())
-                    .shortcut(shortcut)
+                    SlashPaletteCmd::from_instruction(prefix, builtin)
+                        .icon(phosphor_icon.to_string())
+                        .shortcut(shortcut)
                 }),
             )
             .collect();
@@ -596,6 +587,7 @@ impl AppState {
             render_actions: vec![],
             feedback: None,
             app_version_state: VersionState::UpToDate,
+            dev_tools: DevToolsState::default(),
         }
     }
 
@@ -621,11 +613,53 @@ impl AppState {
         }
     }
 
-    pub fn to_ui_state(&self) -> UiState {
-        match &self.feedback {
-            Some(feedback) if feedback.is_feedback_open => UiState::ProvidingFeedback,
-            _ => UiState::Editing,
+    pub fn to_ui_state(&self, app_focus: AppFocusState) -> UiState {
+        let exhastive_helper_attr = UiStateAttribute::Idle;
+
+        // this is meant to give a compiler error if the Attibutes enum has changed
+        // due to it being the primary place where it is computed
+        let _ = match exhastive_helper_attr {
+            UiStateAttribute::Idle => "This means no special UI opened, orthogonal to focus",
+            UiStateAttribute::FeedbackOpened => "Modal to give feedback is opened",
+            UiStateAttribute::JumpMode => {
+                "Jump mode is activiated, means that we are editing focused on note"
+            }
+            UiStateAttribute::SlashMenu => "Slash menu is visible",
+            UiStateAttribute::Focus(_app_focus) => {
+                "Indicates where we have our app focus, note that lack of attribute means nothing is focused"
+            }
+        };
+
+        let mut attributes: SmallVec<[_; 6]> = SmallVec::new();
+
+        // Check if we're in feedback mode
+        if let Some(feedback) = &self.feedback {
+            if feedback.is_feedback_open {
+                attributes.push(UiStateAttribute::FeedbackOpened);
+            }
         }
+
+        // Check if we're in word jump mode
+        if self.word_jump_state.is_some() {
+            attributes.push(UiStateAttribute::JumpMode);
+        }
+
+        // Check if slash palette is open
+        if self.slash_palette.is_some() {
+            attributes.push(UiStateAttribute::SlashMenu);
+        }
+
+        // If no special states are active, we're idle
+        if attributes.is_empty() {
+            attributes.push(UiStateAttribute::Idle);
+        }
+
+        // Add focus state if available
+        if let Some(focus) = app_focus.internal_focus {
+            attributes.push(UiStateAttribute::Focus(focus));
+        }
+
+        UiState::new(attributes)
     }
 }
 
@@ -683,16 +717,7 @@ fn execute_instruction(
 
         CI::PinWindow => [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
 
-        CI::HideApp => match (
-            ctx.app_focus.is_menu_opened,
-            &ctx.app_state.slash_palette,
-            ctx.app_focus.internal_focus,
-        ) {
-            (false, None, None | Some(AppFocus::NoteEditor)) => {
-                [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into()
-            }
-            _ => SmallVec::new(),
-        },
+        CI::HideApp => [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into(),
 
         // CI::RunLLMBlock => prepare_to_run_llm_block(ctx.app_state, CodeBlockAddress::NoteSelection)
         //     .unwrap_or_default(),

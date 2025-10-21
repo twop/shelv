@@ -2,7 +2,7 @@ use smallvec::SmallVec;
 
 use crate::byte_span::{ByteSpan, RangeRelation, UnOrderedByteSpan};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TextChange {
     // Delete(ByteRange),
     Insert(ByteSpan, String),

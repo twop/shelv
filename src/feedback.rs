@@ -3,16 +3,17 @@ use eframe::egui::{
     TextEdit, Ui,
 };
 use egui_taffy::{
+    TuiBuilderLogic,
     taffy::{AlignContent, AlignItems},
-    tui, TuiBuilderLogic,
+    tui,
 };
 use smallvec::SmallVec;
 
 use crate::{
     app_actions::{AppAction, FocusTarget},
-    command::{FrameHotkey, FrameHotkeyLayer, FrameHotkeys},
+    command::{CommandCondition, CommandPhase, FrameHotkey, FrameHotkeys, UiStateAttribute},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{flex_column, flex_row, style, StyleBuilder},
+    taffy_styles::{StyleBuilder, flex_column, flex_row, style},
     theme::{AppIcon, AppTheme},
     ui_components::{IconButton, IconButtonSize},
 };
@@ -81,41 +82,29 @@ impl<'a> Feedback<'a> {
             family: fonts.family.italic.clone(),
         };
 
-        frame_hotkeys.add_with_layer(
-            FrameHotkey::new(
-                KeyboardShortcut::new(Modifiers::COMMAND, Key::Enter),
-                |_ctx| {
-                    SmallVec::from_iter([
-                        AppAction::SubmitFeedback,
-                        AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
-                    ])
-                },
-            ),
-            FrameHotkeyLayer::Modal,
-        );
+        // CommandCondition::loose_match([UiStateAttribute::FeedbackOpened]),
+        frame_hotkeys.add_key(FrameHotkey::raw_input(
+            (Modifiers::COMMAND, Key::Enter),
+            [
+                AppAction::SubmitFeedback,
+                AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
+            ],
+        ));
 
-        frame_hotkeys.add_with_layer(
-            FrameHotkey::new(
-                KeyboardShortcut::new(Modifiers::NONE, Key::Escape),
-                |_ctx| {
-                    SmallVec::from_iter([
-                        AppAction::CloseFeedbackWindow,
-                        AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
-                    ])
-                },
-            ),
-            FrameHotkeyLayer::Modal,
-        );
+        frame_hotkeys.add_key(FrameHotkey::raw_input(
+            Key::Escape,
+            [
+                AppAction::CloseFeedbackWindow,
+                AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
+            ],
+        ));
 
         let hint_keyboard_text = format!(
             "Hint: '{}' to send, '{}' to cancel",
             format_mac_shortcut_with_symbols(
                 KeyboardShortcut::new(Modifiers::COMMAND, Key::Enter,)
             ),
-            format_mac_shortcut_with_symbols(KeyboardShortcut::new(
-                Modifiers::COMMAND,
-                Key::Escape,
-            ))
+            format_mac_shortcut_with_symbols(KeyboardShortcut::new(Modifiers::NONE, Key::Escape,))
         );
 
         let id = Id::new("feedback form");
