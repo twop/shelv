@@ -83,35 +83,28 @@ impl<'a> Feedback<'a> {
         };
 
         // CommandCondition::loose_match([UiStateAttribute::FeedbackOpened]),
-        frame_hotkeys.add_key(
-            FrameHotkey::new((Modifiers::COMMAND, Key::Enter), |_ctx| {
-                SmallVec::from_iter([
-                    AppAction::SubmitFeedback,
-                    AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
-                ])
-            })
-            .phase(CommandPhase::RawInputHook),
-        );
+        frame_hotkeys.add_key(FrameHotkey::raw_input(
+            (Modifiers::COMMAND, Key::Enter),
+            [
+                AppAction::SubmitFeedback,
+                AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
+            ],
+        ));
 
-        frame_hotkeys.add_key(
-            FrameHotkey::new(Key::Escape, |_ctx| {
-                SmallVec::from_iter([
-                    AppAction::CloseFeedbackWindow,
-                    AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
-                ])
-            })
-            .phase(CommandPhase::RawInputHook),
-        );
+        frame_hotkeys.add_key(FrameHotkey::raw_input(
+            Key::Escape,
+            [
+                AppAction::CloseFeedbackWindow,
+                AppAction::defer(AppAction::FocusRequest(FocusTarget::CurrentNote)),
+            ],
+        ));
 
         let hint_keyboard_text = format!(
             "Hint: '{}' to send, '{}' to cancel",
             format_mac_shortcut_with_symbols(
                 KeyboardShortcut::new(Modifiers::COMMAND, Key::Enter,)
             ),
-            format_mac_shortcut_with_symbols(KeyboardShortcut::new(
-                Modifiers::COMMAND,
-                Key::Escape,
-            ))
+            format_mac_shortcut_with_symbols(KeyboardShortcut::new(Modifiers::NONE, Key::Escape,))
         );
 
         let id = Id::new("feedback form");

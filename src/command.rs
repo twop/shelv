@@ -633,47 +633,71 @@ impl From<(Modifiers, Key)> for InnerHotkey {
     }
 }
 
+pub struct InnerFrameHotkeyHandler(Box<dyn for<'a> Fn(CommandContext<'a>) -> EditorCommandOutput>);
+
+
+impl From<AppAction> for InnerFrameHotkeyHandler {
+    fn from(value: AppAction) -> Self {
+        let as_collection = EditorCommandOutput::from_iter([value]);
+        Self(Box::new(move |_ctx|as_collection.clone()))
+    }
+}
+
+impl<const N: usize> From<[AppAction; N]> for InnerFrameHotkeyHandler   {
+    fn from(value: [AppAction; N]) -> Self {
+        let as_collection = EditorCommandOutput::from_iter(value);
+        Self(Box::new(move |_ctx|as_collection.clone()))
+    }
+}
+
+impl<T> From<T> for InnerFrameHotkeyHandler where T:  Fn(CommandContext) -> EditorCommandOutput + 'static{
+    fn from(value: T) -> Self {
+        Self(Box::new(value))
+    }
+}
+
 pub struct FrameHotkey {
     phase: CommandPhase,
     condition: CommandCondition,
     shortcut: KeyboardShortcut,
-    pub run: Box<dyn for<'a> Fn(CommandContext<'a>) -> EditorCommandOutput>,
+    handler: InnerFrameHotkeyHandler,
 }
 
 impl FrameHotkey {
     pub fn new(
         shortcut: impl Into<InnerHotkey>,
+        handler: impl Into<InnerFrameHotkeyHandler>,
         // condition: CommandCondition,
-        run: impl Fn(CommandContext) -> EditorCommandOutput + 'static,
     ) -> Self {
         let InnerHotkey(shortcut) = shortcut.into();
         Self {
             phase: CommandPhase::InsideRender,
             condition: CommandCondition::loose_match([]),
             shortcut,
-            run: Box::new(run),
+            handler: handler.into(),
         }
     }
 
     pub fn raw_input(
         shortcut: impl Into<InnerHotkey>,
         // condition: CommandCondition,
-        run: impl Fn(CommandContext) -> EditorCommandOutput + 'static,
+        handler: impl Into<InnerFrameHotkeyHandler>,
     ) -> Self {
-        let InnerHotkey(shortcut) = shortcut.into();
         Self {
             phase: CommandPhase::RawInputHook,
-            condition: CommandCondition::loose_match([]),
-            shortcut,
-            run: Box::new(run),
+            ..Self::new(shortcut, handler)
         }
     }
 
-    pub fn phase(self, phase: CommandPhase) -> Self {
-        Self {
-            phase,
-            ..self
-        }
+    // pub fn phase(self, phase: CommandPhase) -> Self {
+    //     Self {
+    //         phase,
+    //         ..self
+    //     }
+    // }
+
+    pub fn run<'a >(&self, ctx: CommandContext<'a>) -> EditorCommandOutput{
+        (self.handler.0)(ctx)
     }
 }
 

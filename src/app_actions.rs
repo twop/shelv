@@ -725,6 +725,11 @@ pub fn process_app_action(
             let Some(feedback) = state.feedback.as_mut() else {
                 return SmallVec::new();
             };
+            // FIXME
+            println!("feeback submitted");
+            feedback.is_sent = true;
+            feedback.is_feedback_open = false;
+            return SmallVec::new();
 
             let result = app_io.capture_sentry_message(
                 format!("Feedback: {:?}", feedback.feedback_data.feedback_text).as_str(),
@@ -1334,6 +1339,8 @@ pub fn compute_app_focus(ctx: &Context, app_state: &AppState) -> AppFocusState {
             Some(id) if compute_editor_text_id(app_state.selected_note) == id => {
                 Some(AppFocus::NoteEditor)
             }
+
+            Some(id) => Some(AppFocus::Other(id)),
 
             _ => None,
         },

@@ -614,6 +614,22 @@ impl AppState {
     }
 
     pub fn to_ui_state(&self, app_focus: AppFocusState) -> UiState {
+        let exhastive_helper_attr = UiStateAttribute::Idle;
+
+        // this is meant to give a compiler error if the Attibutes enum has changed
+        // due to it being the primary place where it is computed
+        let _ = match exhastive_helper_attr {
+            UiStateAttribute::Idle => "This means no special UI opened, orthogonal to focus",
+            UiStateAttribute::FeedbackOpened => "Modal to give feedback is opened",
+            UiStateAttribute::JumpMode => {
+                "Jump mode is activiated, means that we are editing focused on note"
+            }
+            UiStateAttribute::SlashMenu => "Slash menu is visible",
+            UiStateAttribute::Focus(_app_focus) => {
+                "Indicates where we have our app focus, note that lack of attribute means nothing is focused"
+            }
+        };
+
         let mut attributes: SmallVec<[_; 6]> = SmallVec::new();
 
         // Check if we're in feedback mode

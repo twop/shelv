@@ -272,7 +272,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                             )
                         }
                         command::KeyboardBinding::FrameBinding(frame_hotkey) => {
-                            (frame_hotkey.run)(ctx)
+                            frame_hotkey.run(ctx)
                         }
                     };
 
@@ -423,7 +423,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                                     )
                                 }
                                 command::KeyboardBinding::FrameBinding(frame_hotkey) => {
-                                    (frame_hotkey.run)(ctx)
+                                    frame_hotkey.run(ctx)
                                 }
                             };
 
