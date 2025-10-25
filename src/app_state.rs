@@ -7,7 +7,7 @@ use std::{
 
 use eframe::{
     egui::{
-        Id, Rect, Ui,
+        Color32, Id, Rect, Ui,
         text::{CCursor, LayoutJob},
     },
     epaint::Galley,
@@ -20,23 +20,21 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     actions::word_jump::{JumpCharSequence, JumpLabel},
-    app_actions::{AppAction, FocusTarget},
+    app_actions::{AppAction, AppNotification, FocusTarget},
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        AppFocus, AppFocusState, CommandCondition, CommandContext, CommandInstruction, CommandList,
-        CommandPhase, EditorCommandOutput, SlashPaletteCmd, UiState, UiStateAttribute,
-        call_with_text_ctx,
+        AppFocusState, CommandContext, CommandInstruction, CommandList, EditorCommandOutput,
+        SlashPaletteCmd, UiState, UiStateAttribute, call_with_text_ctx,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
         inline_llm_prompt::inline_llm_prompt_command_handler,
         insert_text::call_replace_text,
         kdl_lang::on_enter_inside_kdl_block,
-        run_llm::{CodeBlockAddress, prepare_to_run_llm_block},
         slash_pallete::show_slash_pallete,
         space_after_task_markers::on_space_after_task_markers,
-        start_word_jump::{self, start_jump_list_command_handler},
+        start_word_jump::start_jump_list_command_handler,
         tabbing_in_list::{on_shift_tab_inside_list, on_tab_inside_list},
         toggle_code_block::toggle_code_block,
         toggle_md_headings::toggle_md_heading,
@@ -50,7 +48,8 @@ use crate::{
     text_structure::{
         CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextHash, TextStructure,
     },
-    theme::AppTheme,
+    theme::{AppIcon, AppTheme},
+    ui::{NotificationId, Notifications},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
@@ -274,6 +273,9 @@ pub struct AppState {
 
     pub app_version_state: VersionState,
     pub dev_tools: DevToolsState,
+
+    pub active_notifications: Vec<AppNotification>,
+    pub notifications: Notifications<AppNotification>,
 }
 
 impl AppState {
@@ -563,6 +565,29 @@ impl AppState {
             deferred_actions.push(AppAction::StartTutorial);
         }
 
+        // Add test notification
+        let test_notification = AppNotification {
+            id: NotificationId::new(42),
+            title: Some((
+                Color32::GREEN,
+                AppIcon::Check,
+                "Test notification".to_string(),
+            )),
+            message: "Notification system is working!".to_string(),
+            action: Some(crate::app_actions::AppNotificationAction {
+                button_text: "Open Settings".to_string(),
+                icon: Some(crate::theme::AppIcon::Settings),
+                handler: Box::new(
+                    [AppAction::SwitchToNote {
+                        note_file: crate::persistent_state::NoteFile::Settings,
+                        via_shortcut: false,
+                    }]
+                    .into(),
+                ),
+            }),
+        };
+        deferred_actions.push(AppAction::ShowNotification(test_notification));
+
         Self {
             is_pinned: is_window_pinned,
             unsaved_changes: Default::default(),
@@ -588,6 +613,8 @@ impl AppState {
             feedback: None,
             app_version_state: VersionState::UpToDate,
             dev_tools: DevToolsState::default(),
+            active_notifications: Vec::new(),
+            notifications: Notifications::new(),
         }
     }
 

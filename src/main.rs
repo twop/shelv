@@ -63,6 +63,7 @@ mod settings_parsing;
 mod taffy_styles;
 mod text_structure;
 mod theme;
+mod ui;
 mod ui_components;
 
 pub struct MyApp<IO: AppIO> {
@@ -564,6 +565,8 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             version_state: &app_state.app_version_state,
             code_block_annotations,
             dev_tools_show: app_state.dev_tools.show_dev_tools,
+            active_notifications: &app_state.active_notifications,
+            notifications: &mut app_state.notifications,
         };
 
         let RenderAppResult {
