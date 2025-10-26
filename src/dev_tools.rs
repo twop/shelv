@@ -1,14 +1,15 @@
 use std::collections::VecDeque;
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, Utc};
 use eframe::egui::{self, Id, InputState, Margin, RichText, ScrollArea, Ui, containers::Frame};
 use egui_extras::TableBuilder;
 use egui_tiles::{Behavior, TileId, Tiles, Tree, UiResponse};
 
 use crate::{
-    app_actions::AppAction,
-    command::{AppFocus, AppFocusState, UiState},
-    theme::AppTheme,
+    app_actions::{AppAction, AppNotification, AppNotificationAction},
+    command::{AppFocus, AppFocusState, EditorCommandOutput, UiState},
+    theme::{AppIcon, AppTheme},
+    ui::{NotificationId, Notifications},
 };
 
 const MAX_ACTION_HISTORY: usize = 1000;
@@ -25,6 +26,7 @@ enum DevToolPane {
     FocusState,
     InputEvents,
     Actions,
+    Notifications,
 }
 
 #[derive(Debug, Clone)]
@@ -59,8 +61,14 @@ impl Default for DevToolsState {
         let focus_tile = tiles.insert_pane(DevToolPane::FocusState);
         let input_events_tile = tiles.insert_pane(DevToolPane::InputEvents);
         let actions_tile = tiles.insert_pane(DevToolPane::Actions);
+        let notifications_tile = tiles.insert_pane(DevToolPane::Notifications);
 
-        let root = tiles.insert_tab_tile(vec![focus_tile, input_events_tile, actions_tile]);
+        let root = tiles.insert_tab_tile(vec![
+            focus_tile,
+            input_events_tile,
+            actions_tile,
+            notifications_tile,
+        ]);
         let tree = Tree::new("dev_tools_tree", root, tiles);
 
         Self {
@@ -124,7 +132,14 @@ impl DevToolsState {
         }
     }
 
-    pub fn show(&mut self, ui: &mut Ui, app_focus: Option<AppFocusState>, ui_state: &UiState, theme: &AppTheme) {
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        app_focus: Option<AppFocusState>,
+        ui_state: &UiState,
+        theme: &AppTheme,
+        notifications: &Notifications<AppNotification>,
+    ) -> EditorCommandOutput {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Shelv Debug Tools").size(theme.fonts.size.h4));
             ui.separator();
@@ -143,9 +158,12 @@ impl DevToolsState {
             action_history: &self.action_history,
             input_event_history: &self.input_event_history,
             show_pointer_events: &mut self.show_pointer_events,
+            notifications,
+            result_actions: EditorCommandOutput::default(),
         };
 
-        self.tree.ui(&mut behavior, ui);
+        let _ui_response = self.tree.ui(&mut behavior, ui);
+        behavior.result_actions
     }
 }
 
@@ -156,6 +174,8 @@ struct DevToolsBehavior<'a> {
     action_history: &'a VecDeque<ActionLogEntry>,
     input_event_history: &'a VecDeque<InputEventEntry>,
     show_pointer_events: &'a mut bool,
+    notifications: &'a Notifications<AppNotification>,
+    result_actions: EditorCommandOutput,
 }
 
 impl<'a> Behavior<DevToolPane> for DevToolsBehavior<'a> {
@@ -177,6 +197,13 @@ impl<'a> Behavior<DevToolPane> for DevToolsBehavior<'a> {
                 DevToolPane::Actions => {
                     render_actions_pane(self.action_history.iter().rev(), ui);
                 }
+                DevToolPane::Notifications => {
+                    if let Some(actions) =
+                        render_notifications_pane(self.notifications, ui, self.theme)
+                    {
+                        self.result_actions.extend(actions);
+                    }
+                }
             });
         UiResponse::None
     }
@@ -188,6 +215,9 @@ impl<'a> Behavior<DevToolPane> for DevToolsBehavior<'a> {
                 format!("Input Events ({})", self.input_event_history.len()).into()
             }
             DevToolPane::Actions => format!("Actions ({})", self.action_history.len()).into(),
+            DevToolPane::Notifications => {
+                format!("Notifications ({})", self.notifications.count()).into()
+            }
         }
     }
 }
@@ -218,9 +248,9 @@ fn render_focus_state_pane(app_focus: Option<&AppFocusState>, ui_state: &UiState
     } else {
         ui.label("No focus state available");
     }
-    
+
     ui.separator();
-    
+
     ui.label("UI State Attributes:");
     for (i, attr) in ui_state.attributes().iter().enumerate() {
         ui.horizontal(|ui| {
@@ -319,6 +349,114 @@ fn render_actions_pane<'a>(action_history: impl Iterator<Item = &'a ActionLogEnt
                 });
             }
         });
+}
+
+fn render_notifications_pane(
+    notifications: &Notifications<AppNotification>,
+    ui: &mut Ui,
+    theme: &AppTheme,
+) -> Option<EditorCommandOutput> {
+    let mut actions = EditorCommandOutput::default();
+
+    // Buttons to create different notification types
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Create Test Notifications:").size(theme.fonts.size.h4));
+    });
+
+    ui.horizontal_wrapped(|ui| {
+        // Simple message notification
+        if ui.button("Simple Message").clicked() {
+            let notification = AppNotification {
+                id: NotificationId::new(chrono::Utc::now().timestamp_millis() as u64),
+                title: None,
+                message: "This is a simple notification message.".to_string(),
+                action: None,
+            };
+            actions.push(AppAction::ShowNotification(notification));
+        }
+
+        // Notification with title and icon
+        if ui.button("With Title & Icon").clicked() {
+            let notification = AppNotification {
+                id: NotificationId::new(chrono::Utc::now().timestamp_millis() as u64 + 1),
+                title: Some((
+                    eframe::epaint::Color32::from_rgb(255, 165, 0),
+                    AppIcon::Bug,
+                    "Warning".to_string(),
+                )),
+                message: "This notification has a title with an icon and color.".to_string(),
+                action: None,
+            };
+            actions.push(AppAction::ShowNotification(notification));
+        }
+
+        // Notification with action button
+        if ui.button("With Action Button").clicked() {
+            let notification = AppNotification {
+                id: NotificationId::new(chrono::Utc::now().timestamp_millis() as u64 + 2),
+                title: Some((
+                    eframe::epaint::Color32::from_rgb(0, 255, 0),
+                    AppIcon::Check,
+                    "Success".to_string(),
+                )),
+                message: "This notification has an action button.".to_string(),
+                action: Some(AppNotificationAction {
+                    button_text: "Do Something".to_string(),
+                    icon: Some(AppIcon::Play),
+                    handler: Box::new(EditorCommandOutput::from([AppAction::StartTutorial])),
+                }),
+            };
+            actions.push(AppAction::ShowNotification(notification));
+        }
+
+        // Error notification
+        if ui.button("Error Notification").clicked() {
+            let notification = AppNotification {
+                id: NotificationId::new(chrono::Utc::now().timestamp_millis() as u64 + 3),
+                title: Some((
+                    eframe::epaint::Color32::from_rgb(255, 0, 0),
+                    AppIcon::Error,
+                    "Error".to_string(),
+                )),
+                message: "Something went wrong! This is an error notification.".to_string(),
+                action: Some(AppNotificationAction {
+                    button_text: "Retry".to_string(),
+                    icon: Some(AppIcon::Play),
+                    handler: Box::new(EditorCommandOutput::from([AppAction::ToggleDevTools])),
+                }),
+            };
+            actions.push(AppAction::ShowNotification(notification));
+        }
+    });
+
+    ui.separator();
+
+    // Display current notification state
+    ui.label(RichText::new("Current Notification State:").size(theme.fonts.size.h4));
+
+    ScrollArea::vertical()
+        .auto_shrink([false, false])
+        // .max_height(300.0)
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new(format!("Total notifications: {}", notifications.count()))
+                    .size(theme.fonts.size.small),
+            );
+            ui.separator();
+
+            ui.label(RichText::new("Notifications Debug Info:").size(theme.fonts.size.small));
+            ui.label(
+                RichText::new(format!("{:#?}", notifications))
+                    .family(eframe::epaint::FontFamily::Monospace)
+                    .size(theme.fonts.size.small),
+            );
+        });
+
+    if actions.is_empty() {
+        None
+    } else {
+        Some(actions)
+    }
 }
 
 fn event_summary(event: &egui::Event) -> String {

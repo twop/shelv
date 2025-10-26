@@ -342,9 +342,12 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                 |ctx, _class| {
                     egui::CentralPanel::default().show(ctx, |ui| {
                         let ui_state = app_state.to_ui_state(app_focus);
-                        app_state
+                        let dev_actions = app_state
                             .dev_tools
-                            .show(ui, Some(app_focus), &ui_state, &app_state.theme);
+                            .show(ui, Some(app_focus), &ui_state, &app_state.theme, &app_state.notifications);
+                        
+                        // Add dev tool actions to deferred actions
+                        app_state.deferred_actions.extend(dev_actions);
                     });
 
                     if ctx.input(|i| i.viewport().close_requested()) {
@@ -565,7 +568,6 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             version_state: &app_state.app_version_state,
             code_block_annotations,
             dev_tools_show: app_state.dev_tools.show_dev_tools,
-            active_notifications: &app_state.active_notifications,
             notifications: &mut app_state.notifications,
         };
 

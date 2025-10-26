@@ -1,21 +1,12 @@
 use eframe::{
-    egui::{self, Align2, Area, Context, Frame, Id, Shadow, Stroke, WidgetText},
+    egui::{self, Align2, Area, Context, Frame, Id},
     emath::{self, TSTransform},
-    epaint::{Color32, vec2},
+    epaint::vec2,
 };
 
-use egui_taffy::{
-    Tui, TuiBuilderLogic,
-    taffy::{AlignItems, JustifyContent},
-    tui,
-};
 use smallvec::SmallVec;
 
-use crate::{
-    taffy_styles::{StyleBuilder, flex_column, flex_row},
-    theme::{AppIcon, AppTheme},
-    ui_components::IconButton,
-};
+use crate::theme::AppTheme;
 
 // NOTE that implementation is inspired by egui-notify
 // but it lacked custom UI and custom UI output
@@ -96,6 +87,7 @@ impl<T> NotificationData<T> {
 }
 
 /// Configuration for notification animations and appearance
+#[derive(Debug)]
 pub struct NotificationsConfig {
     /// Width of notification windows
     pub width: f32,
@@ -123,12 +115,12 @@ impl NotificationsConfig {
 
 pub trait NotificationItem {
     type Output: Send + Sync + Clone + 'static;
-    fn title(&self, app_theme: &AppTheme) -> WidgetText;
-    fn render(&self, tui: &Tui, app_theme: &AppTheme) -> Option<Self::Output>;
+    fn render(&self, ui: &mut egui::Ui, app_theme: &AppTheme) -> Option<Self::Output>;
 }
 
 /// Main notifications system that tracks and renders notifications
 /// T: The logical notification type (e.g., AppNotification)  
+#[derive(Debug)]
 pub struct Notifications<T> {
     notifications: Vec<NotificationData<T>>,
     config: NotificationsConfig,
@@ -160,7 +152,7 @@ impl<T: Clone> Notifications<T> {
     /// Manually dismiss a notification
     pub fn dismiss(&mut self, id: NotificationId) {
         if let Some(data) = self.notifications.iter_mut().find(|n| n.id == id) {
-            data.state = NotificationState::Disappeared;
+            data.state = NotificationState::Disappearing;
         }
     }
 
@@ -233,57 +225,13 @@ impl<T: Clone> Notifications<T> {
                     let frame = Frame::window(ui.style()).inner_margin(8.0);
 
                     frame.show(ui, |ui| {
-                        // Create taffy layout for title + close button + content
-                        let tui_id = notification_id.with("content");
+                        // // Create taffy layout for title + close button + content
+                        // let tui_id = notification_id.with("content");
 
                         // Use taffy for the layout
-                        tui(ui, tui_id)
-                            .style(
-                                flex_column()
-                                    .width(self.config.width - 32.0) // Account for frame margins
-                                    .auto_height()
-                                    .gap(4.0),
-                            )
-                            .show(|t| {
-                                t.style(
-                                    flex_row()
-                                        .justify_content(JustifyContent::SpaceBetween)
-                                        .align_items(AlignItems::Center)
-                                        .width(self.config.width - 48.0) // Account for margins
-                                        .auto_height(),
-                                )
-                                .add(|t| {
-                                    // Title
-                                    let title_text = data.notification.title(theme);
-                                    t.ui_add(egui::Label::new(title_text));
-
-                                    if t.ui_add(
-                                        IconButton::new(AppIcon::Close, theme)
-                                            .tooltip("Disimiss", None),
-                                    )
-                                    .clicked()
-                                    {
-                                        data.state = NotificationState::Disappearing;
-                                    }
-                                });
-
-                                t.style(
-                                    flex_column()
-                                        .width(self.config.width - 48.0) // Account for margins
-                                        .auto_height(),
-                                )
-                                .add(|t| {
-                                    if let Some(output) = data.notification.render(t, theme) {
-                                        // // Store output for later collection
-                                        // ui.ctx().data_mut(|d| {
-                                        //     d.insert_temp(
-                                        //         notification_id.with("output"),
-                                        //         output,
-                                        //     )
-                                        // });
-                                    }
-                                });
-                            });
+                        if let Some(output) = data.notification.render(ui, theme) {
+                            outputs.push(output);
+                        }
                     });
                 });
 

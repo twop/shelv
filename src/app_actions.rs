@@ -1188,15 +1188,11 @@ pub fn process_app_action(
         }
 
         AppAction::ShowNotification(notification) => {
-            state.active_notifications.push(notification.clone());
             state.notifications.add(notification.id, &notification);
             SmallVec::new()
         }
 
         AppAction::CloseNotification(notification_id) => {
-            state
-                .active_notifications
-                .retain(|n| n.id != notification_id);
             state.notifications.dismiss(notification_id);
             SmallVec::new()
         }

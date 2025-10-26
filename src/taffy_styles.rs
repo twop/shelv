@@ -1,5 +1,6 @@
 use egui_taffy::taffy::{
-    AlignContent, AlignItems, FlexDirection, JustifyContent, LengthPercentage, Size, Style,
+    AlignContent, AlignItems, Dimension, FlexDirection, JustifyContent, LengthPercentage, Size,
+    Style,
     prelude::{auto, length},
 };
 
@@ -18,6 +19,8 @@ pub trait StyleBuilder {
     fn height(self, height: f32) -> Self;
     /// Sets the height to auto
     fn auto_height(self) -> Self;
+    /// Sets the width to auto
+    fn auto_width(self) -> Self;
     /// Sets how much the flex item will grow relative to other flex items
     fn grow(self, grow: f32) -> Self;
     /// Sets the initial main size of the flex item
@@ -74,6 +77,12 @@ impl StyleBuilder for Style {
     /// Sets height to automatic sizing
     fn auto_height(mut self) -> Self {
         self.size.height = auto();
+        self
+    }
+
+    /// Sets width to automatic sizing
+    fn auto_width(mut self) -> Self {
+        self.size.width = Dimension::Auto;
         self
     }
 

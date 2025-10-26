@@ -274,7 +274,6 @@ pub struct AppState {
     pub app_version_state: VersionState,
     pub dev_tools: DevToolsState,
 
-    pub active_notifications: Vec<AppNotification>,
     pub notifications: Notifications<AppNotification>,
 }
 
@@ -565,29 +564,6 @@ impl AppState {
             deferred_actions.push(AppAction::StartTutorial);
         }
 
-        // Add test notification
-        let test_notification = AppNotification {
-            id: NotificationId::new(42),
-            title: Some((
-                Color32::GREEN,
-                AppIcon::Check,
-                "Test notification".to_string(),
-            )),
-            message: "Notification system is working!".to_string(),
-            action: Some(crate::app_actions::AppNotificationAction {
-                button_text: "Open Settings".to_string(),
-                icon: Some(crate::theme::AppIcon::Settings),
-                handler: Box::new(
-                    [AppAction::SwitchToNote {
-                        note_file: crate::persistent_state::NoteFile::Settings,
-                        via_shortcut: false,
-                    }]
-                    .into(),
-                ),
-            }),
-        };
-        deferred_actions.push(AppAction::ShowNotification(test_notification));
-
         Self {
             is_pinned: is_window_pinned,
             unsaved_changes: Default::default(),
@@ -613,7 +589,6 @@ impl AppState {
             feedback: None,
             app_version_state: VersionState::UpToDate,
             dev_tools: DevToolsState::default(),
-            active_notifications: Vec::new(),
             notifications: Notifications::new(),
         }
     }
