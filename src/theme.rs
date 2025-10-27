@@ -11,6 +11,7 @@ use eframe::{
 
 use crate::nord::Nord;
 
+#[derive(Clone, Debug)]
 pub enum AppIcon {
     More,
     Settings,
@@ -99,7 +100,12 @@ impl AppIcon {
         WidgetText::LayoutJob(job.into())
     }
 
-    pub fn render_with_text(&self, size: f32, color: Color32, text: &str) -> WidgetText {
+    pub fn render_with_text(
+        &self,
+        (icon_color, text_color): (Color32, Color32),
+        text: &str,
+        size: f32,
+    ) -> WidgetText {
         use egui::{FontId, TextFormat, text::LayoutJob};
 
         let mut job = LayoutJob::default();
@@ -110,7 +116,7 @@ impl AppIcon {
             0.0,
             TextFormat {
                 font_id: FontId::new(size, FontFamily::Name("phosphor".into())),
-                color,
+                color: icon_color,
                 valign: egui::Align::Center,
                 ..Default::default()
             },
@@ -123,7 +129,7 @@ impl AppIcon {
             TextFormat {
                 font_id: FontId::new(size, FontFamily::Name("inter".into())),
                 valign: egui::Align::Center,
-                color,
+                color: Color32::default(),
                 ..Default::default()
             },
         );
@@ -135,7 +141,7 @@ impl AppIcon {
             TextFormat {
                 font_id: FontId::new(size, FontFamily::Name("inter".into())),
                 valign: egui::Align::Center,
-                color,
+                color: text_color,
                 ..Default::default()
             },
         );

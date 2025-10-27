@@ -1,6 +1,11 @@
 use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc};
 
-use eframe::egui::{Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob};
+use smol_str::SmolStr;
+
+use eframe::egui::{
+    Color32, Context, Id, KeyboardShortcut, OpenUrl, ViewportCommand, text::LayoutJob,
+};
+use egui_taffy::Tui;
 
 use serde_json::{Value, to_value};
 use similar::{ChangeTag, TextDiff};
@@ -17,7 +22,7 @@ use crate::{
         WordJumpState, compute_editor_text_id,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
-    command::{AppFocus, AppFocusState, CommandContext, CommandList},
+    command::{AppFocus, AppFocusState, CommandContext, CommandList, EditorCommandOutput},
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
         run_llm::{CodeBlockAddress, LLM_LANG, prepare_to_run_llm_block},
@@ -37,6 +42,8 @@ use crate::{
         CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, create_error_text_layout_job,
         create_layout_job_from_text_diff,
     },
+    theme::AppIcon,
+    ui::notifications::{NotificationId, NotificationItem},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -63,6 +70,23 @@ pub enum WordJumpAction {
     EnterKey(char),
     JumpTo(WordJumpAddress),
     CancelJumpingMode,
+}
+
+// NotificationId is now imported from ui::notifications
+
+#[derive(Debug, Clone)]
+pub struct AppNotificationAction {
+    pub button_text: String,
+    pub icon: Option<AppIcon>,
+    pub handler: Box<EditorCommandOutput>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppNotification {
+    pub id: NotificationId,
+    pub title: Option<(Color32, AppIcon, String)>,
+    pub message: String,
+    pub action: Option<AppNotificationAction>,
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +128,8 @@ pub enum AppAction {
     CopyCodeBlock(NoteFile, SpanIndex),
     AppUpdateClicked,
     ToggleDevTools,
+    ShowNotification(AppNotification),
+    CloseNotification(NotificationId),
 }
 
 impl AppAction {
@@ -1158,6 +1184,16 @@ pub fn process_app_action(
 
         AppAction::ToggleDevTools => {
             state.dev_tools.show_dev_tools = !state.dev_tools.show_dev_tools;
+            SmallVec::new()
+        }
+
+        AppAction::ShowNotification(notification) => {
+            state.notifications.add(notification.id, &notification);
+            SmallVec::new()
+        }
+
+        AppAction::CloseNotification(notification_id) => {
+            state.notifications.dismiss(notification_id);
             SmallVec::new()
         }
 

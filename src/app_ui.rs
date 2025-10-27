@@ -1,10 +1,9 @@
 use eframe::{
     egui::{
         self, Context, CursorIcon, FontFamily, FontSelection, Frame, Id, Key, KeyboardShortcut,
-        Label, LayerId, Layout, Margin, Modal, Modifiers, Order, Painter, Response, RichText,
-        ScrollArea, Sense, Shadow, StrokeKind, TextEdit, TextFormat, TextStyle, TextWrapMode,
-        TopBottomPanel, Ui, UiBuilder, UiStackInfo, Vec2, WidgetText,
-        debug_text::print,
+        Label, Layout, Margin, Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense,
+        Shadow, TextEdit, TextFormat, TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder,
+        UiKind, UiStackInfo, Vec2, WidgetText,
         scroll_area::ScrollBarVisibility,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
@@ -14,11 +13,10 @@ use eframe::{
     epaint::{Color32, FontId, Rect, Stroke, pos2, vec2},
 };
 use egui_taffy::{
-    TuiBuilderLogic,
+    Tui, TuiBuilderLogic,
     taffy::{AlignContent, AlignItems, FlexDirection, JustifyContent},
     tui,
 };
-use hotwatch::blocking::Hotwatch;
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
 // use itertools::Itertools;
@@ -28,7 +26,10 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     actions::word_jump::{JumpCharSequence, JumpLabel, JumpLabelMatchResult},
-    app_actions::{AppAction, FocusTarget, SlashPaletteAction, WordJumpAction},
+    app_actions::{
+        AppAction, AppNotification, AppNotificationAction, FocusTarget, SlashPaletteAction,
+        WordJumpAction,
+    },
     app_state::{
         CodeBlockAnnotation, ComputedLayout, FeedbackState, InlineLLMPromptState,
         InlinePromptStatus, LayoutParams, NoteSignature, RenderAction, SlashPalette, VersionState,
@@ -36,12 +37,10 @@ use crate::{
     },
     byte_span::UnOrderedByteSpan,
     command::{
-        AppFocus, CommandCondition, CommandContext, CommandInstruction, CommandList, CommandPhase,
-        EditorCommandOutput, FrameHotkey, FrameHotkeys, PROMOTED_COMMANDS, SlashPaletteCmd,
-        UiStateAttribute,
+        CommandContext, CommandInstruction, CommandList, EditorCommandOutput, FrameHotkey,
+        FrameHotkeys, PROMOTED_COMMANDS, SlashPaletteCmd,
     },
     commands::inline_llm_prompt::compute_inline_prompt_text_input_id,
-    dev_tools::DevToolsState,
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
     persistent_state::NoteFile,
@@ -50,6 +49,7 @@ use crate::{
     taffy_styles::{StyleBuilder, flex_column, flex_row},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
+    ui::{NotificationId, Notifications, notifications::NotificationItem},
     ui_components::{IconButton, IconButtonSize, apply_icon_btn_styling, rich_text_tooltip},
 };
 
@@ -72,6 +72,7 @@ pub struct AppRenderData<'a> {
     pub frame_hotkeys: &'a mut FrameHotkeys,
     pub version_state: &'a VersionState,
     pub dev_tools_show: bool,
+    pub notifications: &'a mut Notifications<AppNotification>,
 }
 
 pub struct RenderAppResult {
@@ -108,6 +109,7 @@ pub fn render_app(
         code_block_annotations,
         version_state,
         dev_tools_show,
+        notifications,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
@@ -353,6 +355,10 @@ pub fn render_app(
             .inner;
 
     output_actions.extend(editor_actions);
+
+    let notification_actions = notifications.show(ctx, theme);
+    output_actions.extend(notification_actions.into_iter().flatten());
+
     RenderAppResult {
         requested_actions: output_actions,
         updated_text_structure: text_structure,
@@ -508,6 +514,29 @@ fn render_editor(
             AppAction::WordJump(WordJumpAction::CancelJumpingMode),
         ));
     }
+
+    // Test notification keybinding (Cmd+Shift+T)
+    // Use current time as ID
+    // let test_notification_id = NotificationId::new(ctx.input(|i| i.time as u64));
+    // frame_hotkeys.add_key(FrameHotkey::raw_input(
+    //     (Modifiers::COMMAND | Modifiers::SHIFT, Key::T),
+    //     AppAction::ShowNotification(AppNotification {
+    //         id: test_notification_id,
+    //         title: Some((Color32::RED, AppIcon::Bug, "Test title".to_string())),
+    //         message: "Test notification triggered with Cmd+Shift+T!".to_string(),
+    //         action: Some(AppNotificationAction {
+    //             button_text: "Test Action".to_string(),
+    //             icon: Some(AppIcon::Check),
+    //             handler: Box::new(SmallVec::from_iter([
+    //                 AppAction::SwitchToNote {
+    //                     note_file: NoteFile::Settings,
+    //                     via_shortcut: false,
+    //                 },
+    //                 AppAction::CloseNotification(test_notification_id),
+    //             ])),
+    //         }),
+    //     }),
+    // ));
 
     // ------- FLOATING BUTTONS -------
     if let Some(computed_layout) = &computed_layout {
@@ -790,9 +819,12 @@ fn render_inline_prompt(
             ui.add_space(theme.sizes.s);
             let render_btn = |ui: &mut Ui, icon: AppIcon, text| {
                 ui.button(icon.render_with_text(
-                    theme.fonts.size.normal,
-                    theme.colors.normal_text_color,
+                    (
+                        theme.colors.normal_text_color,
+                        theme.colors.normal_text_color,
+                    ),
                     text,
+                    theme.fonts.size.normal,
                 ))
             };
 
@@ -1524,7 +1556,6 @@ fn render_header_panel(
 
             let header_ui_id = ui.id().with("header");
 
-            // Handle feedback sent animation outside taffy context
             let tooltip_animation_id = header_ui_id.with("feedback_sent_tooltip");
             let tooltip_value =
                 ctx.animate_bool_with_time(tooltip_animation_id, feedback_sent, 2.0);
@@ -1677,13 +1708,13 @@ fn render_header_panel(
 
                                             if ui
                                                 .button(AppIcon::Tutorial.render_with_text(
-                                                    theme.fonts.size.normal,
-                                                    theme.colors.normal_text_color,
+                                                    (theme.colors.normal_text_color, theme.colors.normal_text_color),
                                                     "Start tutorial",
+                                                    theme.fonts.size.normal,
                                                 ))
                                                 .clicked()
                                             {
-                                                ui.close_menu();
+                                                ui.close_kind(UiKind::Menu);
                                                 resulting_actions.push(AppAction::StartTutorial);
                                             }
 
@@ -1709,9 +1740,9 @@ fn render_header_panel(
                                             ] {
                                                 if ui
                                                     .button(icon.render_with_text(
-                                                        theme.fonts.size.normal,
-                                                        theme.colors.normal_text_color,
+                                                        (theme.colors.normal_text_color, theme.colors.normal_text_color),
                                                         text,
+                                                        theme.fonts.size.normal,
                                                     ))
                                                     .clicked()
                                                 {
@@ -1726,9 +1757,9 @@ fn render_header_panel(
 
                                             if ui
                                                 .button(AppIcon::Folder.render_with_text(
-                                                    theme.fonts.size.normal,
-                                                    theme.colors.normal_text_color,
+                                                    (theme.colors.normal_text_color, theme.colors.normal_text_color),
                                                     "Open notes folder",
+                                                    theme.fonts.size.normal,
                                                 ))
                                                 .clicked()
                                             {
@@ -1924,5 +1955,82 @@ fn render_word_jump_label(
         );
 
         current_x += label_rect.size().x;
+    }
+}
+
+impl NotificationItem for AppNotification {
+    type Output = EditorCommandOutput;
+
+    fn render(&self, ui: &mut egui::Ui, theme: &AppTheme) -> Option<Self::Output> {
+        let tui_id = ui.id().with("notification_content");
+        let mut result_action = None;
+
+        tui(ui, tui_id)
+            .style(flex_column().auto_height().gap(theme.sizes.s))
+            .show(|t| {
+                t.style(
+                    flex_row()
+                        .justify_content(JustifyContent::SpaceBetween)
+                        .align_items(AlignItems::Center)
+                        .auto_width()
+                        .auto_height(),
+                )
+                .add(|t| {
+                    let title_text = match &self.title {
+                        Some((color, icon, title)) => icon.render_with_text(
+                            (*color, theme.colors.normal_text_color),
+                            title,
+                            theme.fonts.size.normal,
+                        ),
+                        None => RichText::new(&self.message)
+                            .color(theme.colors.normal_text_color)
+                            .size(theme.fonts.size.normal)
+                            .into(),
+                    };
+                    t.ui_add(egui::Label::new(title_text));
+
+                    if t.ui_add(IconButton::new(AppIcon::Close, theme).tooltip("Dismiss", None))
+                        .clicked()
+                    {
+                        result_action =
+                            Some(EditorCommandOutput::from([AppAction::CloseNotification(
+                                self.id,
+                            )]));
+                    }
+                });
+
+                if self.title.is_some() {
+                    t.style(flex_column().auto_width().auto_height()).add(|t| {
+                        t.ui_add(egui::Label::new(&self.message));
+                    });
+                }
+
+                if let Some(action) = &self.action {
+                    t.style(
+                        flex_row()
+                            .auto_width()
+                            .auto_height()
+                            .justify_content(JustifyContent::End),
+                    )
+                    .add(|t| {
+                        let button_icon = match &action.icon {
+                            Some(icon) => icon.clone(),
+                            None => AppIcon::Check,
+                        };
+
+                        let button = IconButton::new(button_icon, theme)
+                            .text(&action.button_text)
+                            .color(theme.colors.hyperlink_color);
+
+                        if t.ui_add(button).clicked() {
+                            if !action.handler.is_empty() {
+                                result_action = Some(*action.handler.clone());
+                            }
+                        }
+                    });
+                }
+            });
+
+        result_action
     }
 }

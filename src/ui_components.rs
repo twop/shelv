@@ -142,7 +142,6 @@ impl<'theme> TuiWidget for IconButton<'theme> {
                 theme.colors.subtle_text_color
             };
 
-            // Apply fade animation using gamma_multiply and lerp_to_gamma pattern
             let icon_color = theme
                 .colors
                 .subtle_text_color

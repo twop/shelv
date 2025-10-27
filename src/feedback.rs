@@ -235,9 +235,9 @@ impl<'a> Feedback<'a> {
                     t.style(flex_row().gap(sizes.s)).add(|t| {
                         let send_btn_res = t.style(style().padding(sizes.xs)).button(|t| {
                             t.label(AppIcon::Send.render_with_text(
-                                fonts.size.normal,
-                                colors.md_body,
+                                (colors.md_body, colors.md_body),
                                 "Send Feedback",
+                                fonts.size.normal,
                             ));
                         });
                         if send_btn_res.clicked() {
@@ -246,9 +246,9 @@ impl<'a> Feedback<'a> {
 
                         let cancel_btn_res = t.style(style().padding(sizes.xs)).button(|t| {
                             t.label(AppIcon::Close.render_with_text(
-                                fonts.size.normal,
-                                colors.md_body,
+                                (colors.md_body, colors.md_body),
                                 "Cancel",
+                                fonts.size.normal,
                             ));
                         });
 
