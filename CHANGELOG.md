@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Visual letter combinations appear next to words throughout the note
   - Type 2-character sequences to instantly jump to any word
   - Accessible via keyboard shortcut (`⌘ J` by default) and slash palette (`/jump`)
+- **Notification System**: Notification framework with custom content rendering ([#189](https://github.com/twop/shelv/pull/189))
+  - Programmatic creation with title, icon, color, message support and action button 
+  - Trait-based custom content rendering system
+  - Animation effects for appearance and disappearance
+  - Developer tools for testing notifications
 
 ### Changed
 - **Command System Rework**: Overhaul of the application's command system ([#187](https://github.com/twop/shelv/pull/187))
