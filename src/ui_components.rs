@@ -1,4 +1,4 @@
-use eframe::egui::{Color32, KeyboardShortcut, RichText, Stroke};
+use eframe::egui::{Color32, KeyboardShortcut, RichText, Stroke, TextWrapMode};
 use egui_taffy::{AsTuiBuilder, Tui, TuiBuilder, TuiBuilderLogic, TuiInnerResponse, TuiWidget};
 
 use crate::{
@@ -48,6 +48,7 @@ pub fn apply_icon_btn_styling(style: &mut eframe::egui::Style) {
     style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
     style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
+    style.wrap_mode = Some(TextWrapMode::Extend);
 }
 
 /// IconButton widget that implements TuiWidget trait with builder pattern and fade animation
