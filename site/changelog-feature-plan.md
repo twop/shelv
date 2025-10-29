@@ -100,12 +100,22 @@
 - Active update is highlighted with "[ACTIVE]" text marker
 - Raw markdown displayed in `<pre>` tags for now
 
-### Phase 4: Test Content
-- [ ] Create test update entry for version 1.4.0:
-  - [ ] Create folder: `1.4.0-{optional-name}`
-  - [ ] Add markdown file with frontmatter
-  - [ ] Add test image asset
-  - [ ] Verify file structure works
+### Phase 4: Test Content ✅
+- [x] Create test update entry for version 1.4.0:
+  - [x] Create folder: `1.4.0-word-jump-mode`
+  - [x] Add markdown file with frontmatter (based on unreleased CHANGELOG.md)
+  - [x] Add test image asset (screenshot.png)
+  - [x] Verify file structure works
+- [x] Create additional test entry for version 1.3.9:
+  - [x] Create folder: `1.3.9-selection-support`
+  - [x] Add markdown file with frontmatter (based on 1.3.9 CHANGELOG.md)
+  - [x] Add test image asset
+
+**Implementation Notes:**
+- Created two test entries with real content from CHANGELOG.md
+- Both entries include proper frontmatter (date, title)
+- Images copied from site/assets/media/ folder
+- Structure follows the required pattern: `version-name/version.md`
 
 ### Phase 5: Markdown to HTML Conversion
 - [ ] Implement markdown to HTML conversion using `pulldown-cmark`
