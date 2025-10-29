@@ -18,6 +18,7 @@ use crate::rate_limiting::ApiCallRecord;
 
 mod proxy;
 mod rate_limiting;
+mod updates;
 
 // Constants from original dioxus site
 const UP_WAVE_PATH: &str = concat!(
@@ -224,6 +225,12 @@ pub enum Route {
     #[get("/privacy")]
     Privacy,
 
+    #[get("/updates")]
+    UpdatesList,
+
+    #[get("/updates/:version")]
+    UpdateDetail { version: String },
+
     // note that this is how the client will see construct url using genai
     // note that messages are coming from anthropic api url pattern
     #[post("/api/llm-claude/v1/messages")]
@@ -254,6 +261,14 @@ async fn privacy() -> &'static str {
     let privacy_content = include_str!("../../assets/privacy-policy.md");
 
     privacy_content
+}
+
+async fn updates_list() -> Html<String> {
+    Html("<h1>Updates List</h1>".to_string())
+}
+
+async fn update_detail(version: String) -> Html<String> {
+    Html(format!("<h1>Update {}</h1>", version))
 }
 
 async fn proxy_anthropic_post(
@@ -301,7 +316,7 @@ fn home_page() -> Element {
                 block_layout(
                     // Animated GIF: Demo showing:
                     // 1. Quick prompt to create a "day" insert feature
-                    // 2. Triggering the new feature via keyboard shortcut  
+                    // 2. Triggering the new feature via keyboard shortcut
                     // 3. Using the same feature via slash menu
                     // Alt Text: "Creating and using a custom 'day' command via shortcuts and slash menu"
                     // TODO: Record this demo GIF
@@ -497,7 +512,7 @@ fn video_component(
         r#"<video class="rounded-(--media-radius) w-full h-full shadow-underglow border-1 {border_class}" width="{width}" height="{height}" autoplay muted loop playsinline>
             {sources}
             Your browser does not support the video tag.
-        </video>"# 
+        </video>"#
     )))).class("py-6 lg:py-0 w-full h-full flex justify-center")
 }
 
@@ -703,9 +718,9 @@ fn faq_items() -> Vec<(&'static str, Element)> {
             "How do you make money?",
             p((
                 strip_out_newlines(r#"
-                    I don't. I worked on Shelv for over 2 years, and I had a dream to start company (still do), 
-                    but as of now, it's a labor of love. In the future, there may be a way to purchase AI tokens. 
-                    Currently, Shelv uses my personal token with a cap, but you can always configure your own provider (including 
+                    I don't. I worked on Shelv for over 2 years, and I had a dream to start company (still do),
+                    but as of now, it's a labor of love. In the future, there may be a way to purchase AI tokens.
+                    Currently, Shelv uses my personal token with a cap, but you can always configure your own provider (including
                 "#),
                 " ",
                 link_to("https://ollama.com/", "Ollama"),
@@ -719,7 +734,7 @@ fn faq_items() -> Vec<(&'static str, Element)> {
                 link_to("https://github.com/automerge/automerge", "Automerge"),
                 " ",
                 strip_out_newlines(r#"
-                    since forever, ideally with e2e encryption with a pure Rust server. This is something that's being worked on right now, 
+                    since forever, ideally with e2e encryption with a pure Rust server. This is something that's being worked on right now,
                     but e2e encrypted scalable sync ain't easy both technically and from a product perspective.
                 "#)
             )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
@@ -738,7 +753,7 @@ fn faq_items() -> Vec<(&'static str, Element)> {
                 p("Summary:").class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Default, "font-semibold")),
                 ul(vec![
                     "You can fork Shelv for the intended purpose of contributing features upstream or for non-commercial use only",
-                    "You can use the Mac App Store version for personal use at work or home freely", 
+                    "You can use the Mac App Store version for personal use at work or home freely",
                     "In the future, there might be a team license available for purchase separately"
                 ].into_iter().map(|item| {
                     li(item.to_string()).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
@@ -763,11 +778,11 @@ fn faq_items() -> Vec<(&'static str, Element)> {
                 " ",
                 strip_out_newlines(r#"
                     user myself, but markdown and text are a bit different from code.
-                    That said, I would love to support modal editing in the future. Perhaps some features 
-                    can be added for "insert" mode (which is the only mode at the moment) that can 
-                    enhance editing, for example: jump to a word, press any buttons with a label(vimium style), 
-                    expand + shrink semantic selection etc. I need to work on Shelv full-time to justify 
-                    adding vim or helix motions to egui TextEdit, vote with your money I guess, 
+                    That said, I would love to support modal editing in the future. Perhaps some features
+                    can be added for "insert" mode (which is the only mode at the moment) that can
+                    enhance editing, for example: jump to a word, press any buttons with a label(vimium style),
+                    expand + shrink semantic selection etc. I need to work on Shelv full-time to justify
+                    adding vim or helix motions to egui TextEdit, vote with your money I guess,
                     oh wait, I don't have a way to actually recieve money...
                 "#)
             )).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
@@ -775,11 +790,11 @@ fn faq_items() -> Vec<(&'static str, Element)> {
         (
             "Are you collecting any analytics?",
             p(strip_out_newlines(r#"
-                Not at the moment (besides crash reporting), but I'm not fundamentally opposed 
-                to collecting statistics, because it is hard to know if a feature is even used 
-                without some observability. I do think it can be done with privacy in mind 
-                (at least anonymizing and being mindful of where the data is stored). 
-                Probably in the future, however, when and if I add monetization, 
+                Not at the moment (besides crash reporting), but I'm not fundamentally opposed
+                to collecting statistics, because it is hard to know if a feature is even used
+                without some observability. I do think it can be done with privacy in mind
+                (at least anonymizing and being mindful of where the data is stored).
+                Probably in the future, however, when and if I add monetization,
                 I'll likely start collecting emails associated with a purchase and/or install
             "#)).class(&tw_join!(TextStyle::SmallGeneralText, TextColor::Subtle))
         )
@@ -914,7 +929,7 @@ fn roadmap_item(
     li((
         // Timeline circle with icon
         span(roadmap_icon(completed))
-            .class(&format!("absolute flex items-center justify-center w-6 h-6 {} rounded-full -start-3 ring-8 ring-nord0-dark", 
+            .class(&format!("absolute flex items-center justify-center w-6 h-6 {} rounded-full -start-3 ring-8 ring-nord0-dark",
                 if completed { "bg-nord14" } else { "bg-nord3" })),
 
         // Content
