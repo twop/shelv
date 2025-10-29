@@ -71,9 +71,9 @@
   - [x] Sort entries by version (newest first)
   - [x] Store raw markdown in memory
 - [x] Write comprehensive tests (14 tests, all passing)
-- [ ] Wire up startup function in `site/main.rs` to load updates at server start
-- [ ] Store loaded updates in application state
-- [ ] Update route handlers to use loaded data
+- [x] Wire up startup function in `site/main.rs` to load updates at server start
+- [x] Store loaded updates in application state
+- [x] Update route handlers to use loaded data
 
 **Implementation Notes:**
 - Virtual file system allows testing without disk I/O

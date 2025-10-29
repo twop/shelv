@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use shared::{Version, VersionResponse};
 use std::{
     net::SocketAddr,
+    path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -15,6 +16,7 @@ use tailwind_fuse::*;
 use tower_http::services::ServeDir;
 
 use crate::rate_limiting::ApiCallRecord;
+use crate::updates::{FileSystem, RealFileSystem, UpdateEntry, load_updates};
 
 mod proxy;
 mod rate_limiting;
@@ -38,6 +40,13 @@ const VID_HACK_SETTINGS_PATH: &str = "assets/media/hack_settings_1126x1244.mov";
 
 const IMG_MARKDOWN_PATH: &str = "assets/media/markdown_and_slash_palette_1132x1376.png";
 const SIZE_IMG_MARKDOWN: (usize, usize) = (1132, 1376);
+
+// Application state that includes updates
+pub struct AppState {
+    proxy_config: proxy::Config,
+    rate_limiter: Mutex<rate_limiting::RateLimiter>,
+    updates: Vec<UpdateEntry>,
+}
 
 // Semantic color variants using tailwind_fuse
 #[derive(TwVariant)]
@@ -215,7 +224,7 @@ pub struct ButtonStyle {
 }
 
 // Enum router definition
-#[router(Arc<(proxy::Config, Mutex<rate_limiting::RateLimiter>)>)]
+#[router(Arc<AppState>)]
 pub enum Route {
     #[get("/")]
     Root,
@@ -263,22 +272,67 @@ async fn privacy() -> &'static str {
     privacy_content
 }
 
-async fn updates_list() -> Html<String> {
-    Html("<h1>Updates List</h1>".to_string())
+async fn updates_list(State(state): State<Arc<AppState>>) -> Html<String> {
+    let updates = &state.updates;
+
+    if updates.is_empty() {
+        return Html("<h1>No updates available</h1>".to_string());
+    }
+
+    let updates_html = updates
+        .iter()
+        .map(|update| {
+            format!(
+                "<li><a href='/updates/{}'>{} {}</a></li>",
+                update.version.to_route_format(),
+                update.version.to_file_format(),
+                update
+                    .optional_name
+                    .as_ref()
+                    .map(|n| format!("- {}", n))
+                    .unwrap_or_default()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Html(format!("<h1>Updates List</h1><ul>{}</ul>", updates_html))
 }
 
-async fn update_detail(version: String) -> Html<String> {
-    Html(format!("<h1>Update {}</h1>", version))
+async fn update_detail(
+    State(state): State<Arc<AppState>>,
+    version: String,
+) -> Result<Html<String>, StatusCode> {
+    // Parse the version from route format (1_3_9) to Version
+    let version = updates::Version::parse(&version).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    // Find the update entry
+    let update = state
+        .updates
+        .iter()
+        .find(|u| u.version == version)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // For now, just display the raw markdown
+    Ok(Html(format!(
+        "<h1>Update {} {}</h1><pre>{}</pre>",
+        update.version.to_file_format(),
+        update
+            .optional_name
+            .as_ref()
+            .map(|n| format!("- {}", n))
+            .unwrap_or_default(),
+        update.markdown_content
+    )))
 }
 
 async fn proxy_anthropic_post(
-    State(state): State<Arc<(proxy::Config, Mutex<rate_limiting::RateLimiter>)>>,
+    State(state): State<Arc<AppState>>,
     req: axum::extract::Request,
 ) -> Result<axum::response::Response, (axum::http::StatusCode, String)> {
     // Rate limiting check
-    let (config, rate_limiter) = &*state;
     {
-        let mut limiter = rate_limiter.lock().unwrap();
+        let mut limiter = state.rate_limiter.lock().unwrap();
         if !limiter.try_add_call_record(ApiCallRecord::new(chrono::Local::now())) {
             println!("EXIT: Rate limit exceeded");
             return Err((
@@ -288,7 +342,7 @@ async fn proxy_anthropic_post(
         }
     }
 
-    proxy::proxy_anthropic(&config, req).await
+    proxy::proxy_anthropic(&state.proxy_config, req).await
 }
 
 fn home_page() -> Element {
@@ -1063,6 +1117,25 @@ async fn main() {
 
     let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY").ok();
 
+    // Load updates at startup
+    let fs = RealFileSystem;
+    let updates_path = PathBuf::from("updates");
+    let updates = if let Some(updates_dir) = fs.as_dir(&updates_path) {
+        match load_updates(&fs, &updates_dir) {
+            Ok(updates) => {
+                println!("Loaded {} update entries", updates.len());
+                updates
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to load updates: {}", e);
+                Vec::new()
+            }
+        }
+    } else {
+        eprintln!("Warning: Updates directory not found at {:?}", updates_path);
+        Vec::new()
+    };
+
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
@@ -1074,13 +1147,18 @@ async fn main() {
             .map(|k| &k[((k.len() as isize - 5).max(0) as usize)..])
     );
 
-    let config = proxy::Config {
+    let proxy_config = proxy::Config {
         shelv_magic_token,
         anthropic_api_key,
     };
 
     let rate_limiter = rate_limiting::RateLimiter::new(20, Duration::from_secs(60));
-    let state = Arc::new((config, Mutex::new(rate_limiter)));
+
+    let state = Arc::new(AppState {
+        proxy_config,
+        rate_limiter: Mutex::new(rate_limiter),
+        updates,
+    });
 
     // Create the main router with enum_router
     let app_router = Route::router();
