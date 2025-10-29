@@ -272,31 +272,21 @@ async fn privacy() -> &'static str {
     privacy_content
 }
 
-async fn updates_list(State(state): State<Arc<AppState>>) -> Html<String> {
+async fn updates_list(
+    State(state): State<Arc<AppState>>,
+) -> Result<axum::response::Redirect, StatusCode> {
     let updates = &state.updates;
 
     if updates.is_empty() {
-        return Html("<h1>No updates available</h1>".to_string());
+        return Err(StatusCode::NOT_FOUND);
     }
 
-    let updates_html = updates
-        .iter()
-        .map(|update| {
-            format!(
-                "<li><a href='/updates/{}'>{} {}</a></li>",
-                update.version.to_route_format(),
-                update.version.to_file_format(),
-                update
-                    .optional_name
-                    .as_ref()
-                    .map(|n| format!("- {}", n))
-                    .unwrap_or_default()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    Html(format!("<h1>Updates List</h1><ul>{}</ul>", updates_html))
+    // Redirect to the latest update (first in the list, since sorted newest first)
+    let latest = &updates[0];
+    Ok(axum::response::Redirect::to(&format!(
+        "/updates/{}",
+        latest.version.to_route_format()
+    )))
 }
 
 async fn update_detail(
@@ -313,9 +303,44 @@ async fn update_detail(
         .find(|u| u.version == version)
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    // For now, just display the raw markdown
-    Ok(Html(format!(
-        "<h1>Update {} {}</h1><pre>{}</pre>",
+    // Build the updates list for the sidebar
+    let updates_list_html = state
+        .updates
+        .iter()
+        .map(|u| {
+            let is_active = u.version == version;
+            let active_marker = if is_active { " [ACTIVE]" } else { "" };
+            format!(
+                "<li><a href='/updates/{}'>{}{}{}</a></li>",
+                u.version.to_route_format(),
+                u.version.to_file_format(),
+                u.optional_name
+                    .as_ref()
+                    .map(|n| format!(" - {}", n))
+                    .unwrap_or_default(),
+                active_marker
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Create two-column layout
+    let html = format!(
+        r#"
+        <div style="display: flex;">
+            <div style="width: 300px; border-right: 1px solid #ccc; padding: 20px;">
+                <h2>Updates</h2>
+                <ul>
+                    {}
+                </ul>
+            </div>
+            <div style="flex: 1; padding: 20px;">
+                <h1>Update {} {}</h1>
+                <pre>{}</pre>
+            </div>
+        </div>
+        "#,
+        updates_list_html,
         update.version.to_file_format(),
         update
             .optional_name
@@ -323,7 +348,9 @@ async fn update_detail(
             .map(|n| format!("- {}", n))
             .unwrap_or_default(),
         update.markdown_content
-    )))
+    );
+
+    Ok(Html(html))
 }
 
 async fn proxy_anthropic_post(

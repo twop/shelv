@@ -81,10 +81,24 @@
 - DSL makes test setup clean and readable
 - `Version` struct implements `Ord` for proper semantic versioning sort
 
-### Phase 3: Bare Bones Rendering
-- [ ] Implement completely unstyled rendering for both routes
-- [ ] For content: dump raw markdown (no HTML parsing yet)
-- [ ] Verify routing and data loading works
+### Phase 3: Bare Bones Rendering ✅
+- [x] Implement redirect from `/updates` to latest update (e.g., `/updates/1_4_0`)
+- [x] Create updates page layout with two-column design:
+  - [x] Left sidebar: list of all updates (links)
+  - [x] Right/main area: current update content
+- [x] Render updates list in left sidebar:
+  - [x] Each update as a clickable link to `/updates/{version}`
+  - [x] Display version number and optional name
+  - [x] Highlight the currently active/selected update (using "[ACTIVE]" marker)
+- [x] Display raw markdown content in main area (no HTML parsing yet)
+- [x] Completely unstyled for now (bare bones HTML with inline styles)
+- [x] Verify routing, redirects, and data loading works
+
+**Implementation Notes:**
+- `/updates` route now redirects to latest update instead of rendering a separate list page
+- Two-column layout uses flexbox with fixed-width sidebar (300px)
+- Active update is highlighted with "[ACTIVE]" text marker
+- Raw markdown displayed in `<pre>` tags for now
 
 ### Phase 4: Test Content
 - [ ] Create test update entry for version 1.4.0:
