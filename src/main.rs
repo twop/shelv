@@ -12,11 +12,12 @@ use hotwatch::{
     notify::event::{DataChange, ModifyKind},
 };
 use image::ImageFormat;
-use persistent_state::{load_and_migrate, try_save, v1};
+use persistent_state::{UpdateStatus, load_and_migrate, try_save, v1};
 use scripting::settings_eval::Scripts;
 use smallvec::SmallVec;
 use theme::{configure_styles, get_font_definitions};
 use tokio::runtime::Runtime;
+use update_messages::get_update_notification;
 
 use tray_icon::{
     Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
@@ -65,6 +66,7 @@ mod text_structure;
 mod theme;
 mod ui;
 mod ui_components;
+mod update_messages;
 
 pub struct MyApp<IO: AppIO> {
     state: AppState,
@@ -175,7 +177,7 @@ impl MyApp<RealAppIO> {
             cc.storage.and_then(|s| get_value(s, "persistent_state"));
 
         let number_of_notes = 4;
-        let (persistent_state, load_kind) =
+        let (persistent_state, load_kind, update_status) =
             load_and_migrate(number_of_notes, v1_save, &persistence_folder);
 
         let sender = msg_queue_tx.clone();
@@ -211,13 +213,22 @@ impl MyApp<RealAppIO> {
 
         let last_saved = persistent_state.state.last_saved;
 
-        let state = AppState::new(AppInitData {
+        let mut state = AppState::new(AppInitData {
             theme,
             msg_queue: msg_queue_rx,
             persistent_state,
             last_saved,
             load_kind,
         });
+
+        if let UpdateStatus::Updated(new_version) = &update_status {
+            // Add update notification if we updated to a new version, AND we have a message at the ready for it
+            if let Some(notification) = get_update_notification(new_version, &state.theme) {
+                state
+                    .deferred_actions
+                    .push(AppAction::ShowNotification(notification));
+            }
+        }
 
         app_io.start_update_checker();
 
@@ -342,10 +353,14 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                 |ctx, _class| {
                     egui::CentralPanel::default().show(ctx, |ui| {
                         let ui_state = app_state.to_ui_state(app_focus);
-                        let dev_actions = app_state
-                            .dev_tools
-                            .show(ui, Some(app_focus), &ui_state, &app_state.theme, &app_state.notifications);
-                        
+                        let dev_actions = app_state.dev_tools.show(
+                            ui,
+                            Some(app_focus),
+                            &ui_state,
+                            &app_state.theme,
+                            &app_state.notifications,
+                        );
+
                         // Add dev tool actions to deferred actions
                         app_state.deferred_actions.extend(dev_actions);
                     });

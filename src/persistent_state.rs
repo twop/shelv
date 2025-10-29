@@ -3,7 +3,24 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+
 const CURRENT_VERSION: i32 = 2;
+
+fn get_current_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+fn check_version_update(data: &RestoredData) -> UpdateStatus {
+    let current_version = get_current_app_version();
+
+    if !data.state.app_version.is_empty() && data.state.app_version != current_version
+        || data.state.app_version.is_empty()
+    {
+        UpdateStatus::Updated(current_version)
+    } else {
+        UpdateStatus::NoUpdate
+    }
+}
 
 use serde::{Deserialize, Serialize};
 
@@ -13,9 +30,12 @@ pub enum NoteFile {
     Settings,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SaveState {
     version: i32,
+
+    #[serde(default)]
+    pub app_version: String,
 
     #[serde(default = "default_window_pinned_value")]
     pub is_pinned: bool,
@@ -27,6 +47,7 @@ fn default_window_pinned_value() -> bool {
     true
 }
 
+#[derive(Clone)]
 pub struct RestoredData {
     pub state: SaveState,
     pub notes: Vec<String>,
@@ -70,26 +91,49 @@ pub enum LoadKind {
     Normal,
 }
 
+#[derive(Debug)]
+pub enum UpdateStatus {
+    NoUpdate,
+    Updated(String), // Contains the new version
+}
+
 pub fn load_and_migrate<'s>(
     number_of_notes: u32,
     v1_save: Option<v1::PersistentState>,
     folder: &PathBuf,
-) -> (RestoredData, LoadKind) {
+) -> (RestoredData, LoadKind, UpdateStatus) {
     let load_result = try_hydrate(number_of_notes, &folder);
 
     match (load_result, v1_save) {
-        (Ok(HydrationResult::Success(data)), _) => (data, LoadKind::Normal),
+        (Ok(HydrationResult::Success(data)), _) => {
+            let update_status = check_version_update(&data);
+            if let UpdateStatus::Updated(new_version) = &update_status {
+                // Save with updated app version
+                let mut updated_data = data.clone();
+                updated_data.state.app_version = new_version.clone();
+                let data_to_save = DataToSave {
+                    files: vec![], // Only updating state
+                    selected: updated_data.state.selected,
+                    is_pinned: updated_data.state.is_pinned,
+                };
+                let _ = try_save(data_to_save, folder);
+                (updated_data, LoadKind::Normal, update_status)
+            } else {
+                (data, LoadKind::Normal, update_status)
+            }
+        }
         (Ok(HydrationResult::FolderIsMissing) | Err(_), v1_save) => {
             let ((to_save, data), load_kind) = match &v1_save {
                 Some(v1_save) => (fn_migrate_from_v1(&v1_save), LoadKind::Migrated),
                 None => (bootstrap(number_of_notes), LoadKind::FreshInstall),
             };
             try_save(to_save, &folder).unwrap();
-            (data, load_kind)
+            (data, load_kind, UpdateStatus::NoUpdate)
         }
         (Ok(HydrationResult::Partial(data, to_save)), _) => {
+            let update_status = check_version_update(&data);
             try_save(to_save, &folder).unwrap();
-            (data, LoadKind::Normal)
+            (data, LoadKind::Normal, update_status)
         }
     }
 }
@@ -155,6 +199,7 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
         is_pinned: true,
         last_saved: get_current_utc_timestamp(),
         selected: NoteFile::Note(0),
+        app_version: get_current_app_version(),
     });
 
     let selected = state.selected;
@@ -212,6 +257,7 @@ pub fn try_save<'a>(data: DataToSave<'a>, folder: &PathBuf) -> Result<SaveState,
 
     let state = SaveState {
         version: CURRENT_VERSION,
+        app_version: get_current_app_version(),
         is_pinned,
         last_saved: get_current_utc_timestamp(),
         selected,
@@ -271,6 +317,7 @@ pub fn fn_migrate_from_v1<'s>(
             last_saved: get_current_utc_timestamp(),
             is_pinned: true,
             selected,
+            app_version: get_current_app_version(),
         },
         notes: old_state.notes.iter().map(|s| s.to_string()).collect(),
         settings: get_default_note_content(NoteFile::Settings).to_string(),
@@ -298,6 +345,7 @@ pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
             version: CURRENT_VERSION,
             last_saved: get_current_utc_timestamp(),
             selected,
+            app_version: get_current_app_version(),
         },
         notes: (0..number_of_notes)
             .into_iter()

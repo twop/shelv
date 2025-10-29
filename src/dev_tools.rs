@@ -409,6 +409,25 @@ fn render_notifications_pane(
             actions.push(AppAction::ShowNotification(notification));
         }
 
+        // Notification with action button
+        if ui.button("Long one").clicked() {
+            let notification = AppNotification {
+                id: NotificationId::new(chrono::Utc::now().timestamp_millis() as u64 + 2),
+                title: Some((
+                    eframe::epaint::Color32::from_rgb(0, 255, 0),
+                    AppIcon::Check,
+                    "Success".to_string(),
+                )),
+                message: "This is a long one, should be wrapped".repeat(5),
+                action: Some(AppNotificationAction {
+                    button_text: "Do Something".to_string(),
+                    icon: Some(AppIcon::Play),
+                    handler: Box::new(EditorCommandOutput::from([AppAction::StartTutorial])),
+                }),
+            };
+            actions.push(AppAction::ShowNotification(notification));
+        }
+
         // Error notification
         if ui.button("Error Notification").clicked() {
             let notification = AppNotification {

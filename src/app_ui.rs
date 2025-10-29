@@ -1966,13 +1966,22 @@ impl NotificationItem for AppNotification {
         let mut result_action = None;
 
         tui(ui, tui_id)
-            .style(flex_column().auto_height().gap(theme.sizes.s))
+            .style(
+                flex_column()
+                    .auto_height()
+                    // .max_width(theme.sizes.menu_width)
+                    .min_width(theme.sizes.menu_width)
+                    // .width(100.)
+                    // .grow(1.0)
+                    .gap(theme.sizes.s),
+            )
             .show(|t| {
                 t.style(
                     flex_row()
                         .justify_content(JustifyContent::SpaceBetween)
                         .align_items(AlignItems::Center)
                         .auto_width()
+                        .min_width(theme.sizes.menu_width)
                         .auto_height(),
                 )
                 .add(|t| {
@@ -1987,7 +1996,7 @@ impl NotificationItem for AppNotification {
                             .size(theme.fonts.size.normal)
                             .into(),
                     };
-                    t.ui_add(egui::Label::new(title_text));
+                    t.ui_add(egui::Label::new(title_text).wrap_mode(TextWrapMode::Extend));
 
                     if t.ui_add(IconButton::new(AppIcon::Close, theme).tooltip("Dismiss", None))
                         .clicked()
@@ -2000,7 +2009,13 @@ impl NotificationItem for AppNotification {
                 });
 
                 if self.title.is_some() {
-                    t.style(flex_column().auto_width().auto_height()).add(|t| {
+                    t.style(
+                        flex_column()
+                            .auto_width()
+                            .min_width(theme.sizes.menu_width)
+                            .auto_height(),
+                    )
+                    .add(|t| {
                         t.ui_add(egui::Label::new(&self.message));
                     });
                 }
@@ -2010,6 +2025,7 @@ impl NotificationItem for AppNotification {
                         flex_row()
                             .auto_width()
                             .auto_height()
+                            .min_width(theme.sizes.menu_width)
                             .justify_content(JustifyContent::End),
                     )
                     .add(|t| {

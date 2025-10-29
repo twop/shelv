@@ -194,7 +194,7 @@ impl<T: Clone> Notifications<T> {
                 .movable(false)
                 .interactable(true)
                 .show(ctx, |ui| {
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    // ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     ui.set_max_width(self.config.width);
 
                     let vis_anim_value = ctx.animate_bool_with_time_and_easing(
@@ -222,12 +222,9 @@ impl<T: Clone> Notifications<T> {
                     );
                     data.state = data.transition_animation_state(vis_anim_value);
 
-                    let frame = Frame::window(ui.style()).inner_margin(8.0);
+                    let frame = Frame::window(ui.style()).inner_margin(theme.sizes.s);
 
                     frame.show(ui, |ui| {
-                        // // Create taffy layout for title + close button + content
-                        // let tui_id = notification_id.with("content");
-
                         // Use taffy for the layout
                         if let Some(output) = data.notification.render(ui, theme) {
                             outputs.push(output);

@@ -21,6 +21,10 @@ pub trait StyleBuilder {
     fn auto_height(self) -> Self;
     /// Sets the width to auto
     fn auto_width(self) -> Self;
+    /// Sets max width for a given element
+    fn max_width(self, width: f32) -> Self;
+    /// Sets min width for a given element
+    fn min_width(self, width: f32) -> Self;
     /// Sets how much the flex item will grow relative to other flex items
     fn grow(self, grow: f32) -> Self;
     /// Sets the initial main size of the flex item
@@ -83,6 +87,18 @@ impl StyleBuilder for Style {
     /// Sets width to automatic sizing
     fn auto_width(mut self) -> Self {
         self.size.width = Dimension::Auto;
+        self
+    }
+
+    /// Sets max width for a given element
+    fn max_width(mut self, width: f32) -> Self {
+        self.max_size.width = Dimension::Length(width);
+        self
+    }
+
+    /// Sets min width for a given element
+    fn min_width(mut self, width: f32) -> Self {
+        self.min_size.width = Dimension::Length(width);
         self
     }
 
