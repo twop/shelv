@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Trait-based custom content rendering system
   - Animation effects for appearance and disappearance
   - Developer tools for testing notifications
+- **Update Notifications**: Automatic notifications when app updates to new version ([#190](https://github.com/twop/shelv/issues/190))
+  - Version-specific update messages with custom content 
+  - Used the notification system described above
+  - The app version is stored in `state.json`
 
 ### Changed
 - **Command System Rework**: Overhaul of the application's command system ([#187](https://github.com/twop/shelv/pull/187))
