@@ -117,12 +117,19 @@
 - Images copied from site/assets/media/ folder
 - Structure follows the required pattern: `version-name/version.md`
 
-### Phase 5: Markdown to HTML Conversion
-- [ ] Implement markdown to HTML conversion using `pulldown-cmark`
-- [ ] Handle image resource loading:
-  - [ ] Resolve relative paths to markdown file location
-  - [ ] Ensure images load correctly in rendered HTML
-- [ ] Keep unstyled for now
+### Phase 5: Markdown to HTML Conversion ✅
+- [x] Implement markdown to HTML conversion using `pulldown-cmark`
+- [x] Handle image resource loading:
+  - [x] Resolve relative paths to markdown file location
+  - [x] Ensure images load correctly in rendered HTML
+- [x] Keep unstyled for now
+
+**Implementation Notes:**
+- Created `markdown_to_html.rs` with custom event processor
+- Intercepts image tags and transforms relative paths to absolute web paths
+- Added static file serving for `/update-log` directory
+- Image path resolution: `screenshot.png` → `/update-log/1.4.0-word-jump-mode/screenshot.png`
+- All tests passing (21 tests including 3 new image path resolution tests)
 
 ### Phase 6: Styling
 - [ ] Style HTML output using current theme
