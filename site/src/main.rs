@@ -17,7 +17,7 @@ use tailwind_fuse::*;
 use tower_http::services::ServeDir;
 
 use crate::rate_limiting::ApiCallRecord;
-use crate::updates::{FileSystem, RealFileSystem, UpdateEntry, load_updates, markdown_to_html};
+use crate::updates::{FileSystem, RealFileSystem, UpdateEntry, load_updates, update_page};
 
 mod footer;
 mod home;
@@ -26,17 +26,12 @@ mod rate_limiting;
 mod ui_components;
 mod updates;
 
-// Import UI components
-use ui_components::{ThemeColor, WaveDirection, content, space, theme, wave};
-
-// Application state that includes updates
 pub struct AppState {
     proxy_config: proxy::Config,
     rate_limiter: Mutex<rate_limiting::RateLimiter>,
     updates: Vec<UpdateEntry>,
 }
 
-// Semantic color variants using tailwind_fuse
 #[derive(TwVariant)]
 pub enum TextColor {
     #[tw(default, class = "text-nord5")]
@@ -256,62 +251,16 @@ async fn update_detail(
     // Parse the version from route format (1_3_9) to Version
     let version = updates::Version::parse(&version).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    // Find the update entry
+    // if not found just take the latest
     let update = state
         .updates
         .iter()
         .find(|u| u.version == version)
+        .or(state.updates.iter().next())
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    // Build the updates list for the sidebar
-    let updates_list_items: Vec<Element> = state
-        .updates
-        .iter()
-        .map(|u| {
-            let is_active = u.version == version;
-            let link_class = if is_active {
-                tw_join!(
-                    TextStyle::SmallGeneralText,
-                    TextColor::Primary,
-                    "font-semibold"
-                )
-            } else {
-                tw_join!(
-                    TextStyle::SmallGeneralText,
-                    LinkStyle {
-                        color: TextColor::Subtle,
-                        hover: HoverState::ColorChange
-                    }
-                    .to_class()
-                )
-            };
-
-            let display_text = format!(
-                "{}{}",
-                u.version.to_file_format(),
-                u.optional_name
-                    .as_ref()
-                    .map(|n| format!(" - {}", n))
-                    .unwrap_or_default()
-            );
-
-            li(a(display_text)
-                .href(&format!("/updates/{}", u.version.to_route_format()))
-                .class(&link_class))
-            .class("mb-2")
-        })
-        .collect();
-
-    // Convert markdown to HTML with image path resolution
-    let html_content = markdown_to_html(&update.markdown_content, update.folder_path.path());
-
     // Build the page with the theme
-    let page = update_page(
-        updates_list_items,
-        &update.version,
-        &update.optional_name,
-        html_content,
-    );
+    let page = update_page(&state.updates, update);
 
     Ok(Html(render_to_string(page)))
 }
@@ -333,115 +282,6 @@ async fn proxy_anthropic_post(
     }
 
     proxy::proxy_anthropic(&state.proxy_config, req).await
-}
-
-fn update_page(
-    updates_list: Vec<Element>,
-    current_version: &updates::Version,
-    optional_name: &Option<String>,
-    markdown_html: String,
-) -> Element {
-    div((
-        theme(
-            ThemeColor::Dark,
-            content((page_header(), space(SpacingSize::Small))),
-        ),
-        wave(WaveDirection::Up, ThemeColor::Dark, SpacingSize::Medium),
-        theme(
-            ThemeColor::Light,
-            content((
-                space(SpacingSize::Small),
-                // Two-column layout
-                div((
-                    // Sidebar with updates list
-                    div((
-                        h2("Updates").class(&tw_join!(
-                            TextStyle::SubHeader,
-                            TextColor::SubHeader,
-                            "mb-4"
-                        )),
-                        ul(updates_list).class("space-y-1"),
-                    ))
-                    .class("w-full md:w-64 mb-8 md:mb-0 md:pr-8 md:border-r border-nord3"),
-                    // Main content area
-                    div((
-                        h1(format!(
-                            "Update {}{}",
-                            current_version.to_file_format(),
-                            optional_name
-                                .as_ref()
-                                .map(|n| format!(" - {}", n))
-                                .unwrap_or_default()
-                        ))
-                        .class(&tw_join!(
-                            TextStyle::MainHeader,
-                            TextColor::MainHeader,
-                            "mb-6"
-                        )),
-                        // Markdown content container - styled container only, no markdown styling
-                        div(danger(&markdown_html)).class(&tw_join!(
-                            TextStyle::LargeGeneralText,
-                            TextColor::Default,
-                            "prose prose-nord max-w-none"
-                        )),
-                    ))
-                    .class("flex-1 md:pl-8"),
-                ))
-                .class("flex flex-col md:flex-row"),
-                space(SpacingSize::Large),
-            )),
-        ),
-        // Footer section
-        footer::footer_section(),
-    ))
-    .class(&tw_join!(
-        "flex flex-col",
-        BackgroundColor::Default.as_class()
-    ))
-}
-
-fn page_header() -> Element {
-    div((
-        div(
-            a(shelv_logo())
-                .href("/")
-                .class("inline-flex items-center space-x-2 leading-6 font-medium transition ease-in-out duration-150"),
-        ),
-        // Desktop navigation - visible on md screens and up
-        div(Vec::from([("Updates", "/updates")])
-            .into_iter()
-            .map(|(name, link_to)| {
-                a(name).href(link_to).class(&tw_join!(
-                    TextStyle::NavMenu,
-                    LinkStyle {
-                        color: TextColor::Subtle,
-                        hover: HoverState::ColorChange
-                    }
-                    .to_class()
-                ))
-            })
-            .collect::<Vec<_>>())
-        .class("hidden md:flex gap-x-8"),
-        // Discord icon - always visible
-        div(a(discord_icon(IconSize::Default))
-            .href(include_str!("../../distribution/discord_invite.txt").trim())
-            .class(&tw_join!(
-                ButtonVariant::SecondaryTextOnly,
-                TextColor::Subtle
-            ))),
-    ))
-    .class("flex justify-between items-center py-6")
-}
-
-fn shelv_logo() -> impl Render {
-    let svg_content = include_str!("../assets/icons/shelv-logo.svg");
-    danger(svg_content.replace("<class>", "shelv-logo"))
-}
-
-fn discord_icon(size: IconSize) -> impl Render {
-    let svg_content = include_str!("../assets/icons/discord.svg");
-    let classes = tw_join!(size, "fill-current inline");
-    danger(svg_content.replace("<class>", &classes))
 }
 
 // HTML rendering helper

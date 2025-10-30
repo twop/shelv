@@ -1,7 +1,7 @@
 use hyped::*;
 use tailwind_fuse::*;
 
-use crate::{BackgroundColor, SpacingSize, TextColor};
+use crate::{BackgroundColor, HoverState, LinkStyle, SpacingSize, TextColor, TextStyle};
 
 // Constants for wave paths (moved from main.rs)
 const UP_WAVE_PATH: &str = concat!(
@@ -98,4 +98,61 @@ pub fn space(size: SpacingSize) -> Element {
 /// Complete page shell with theme and content wrapping
 pub fn page_shell(theme_color: ThemeColor, children: impl Render + 'static) -> Element {
     theme(theme_color, content(children))
+}
+
+/// Navigation element with name and path
+#[derive(Clone)]
+pub struct NavElement {
+    pub name: String,
+    pub path: String,
+}
+
+impl NavElement {
+    pub fn new(name: impl Into<String>, path: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            path: path.into(),
+        }
+    }
+}
+
+/// Reusable page header with logo, navigation, and discord link
+pub fn page_header(nav_items: &[NavElement]) -> Element {
+    div((
+        div(
+            a(shelv_logo())
+                .href("/")
+                .class("inline-flex items-center space-x-2 leading-6 font-medium transition ease-in-out duration-150"),
+        ),
+        // Desktop navigation - visible on md screens and up
+        div(nav_items
+            .iter()
+            .map(|nav| {
+                a(nav.name.clone()).href(&nav.path).class(&tw_join!(
+                    TextStyle::NavMenu,
+                    LinkStyle {
+                        color: TextColor::Subtle,
+                        hover: HoverState::ColorChange
+                    }
+                    .to_class()
+                ))
+            })
+            .collect::<Vec<_>>())
+        .class("hidden md:flex gap-x-8"),
+        // Discord icon - always visible
+        div(a(discord_icon())
+            .href(include_str!("../../distribution/discord_invite.txt").trim())
+            .class("text-nord4-darker")),
+    ))
+    .class("flex justify-between items-center py-6")
+}
+
+fn shelv_logo() -> impl Render {
+    let svg_content = include_str!("../assets/icons/shelv-logo.svg");
+    danger(svg_content.replace("<class>", "shelv-logo"))
+}
+
+fn discord_icon() -> impl Render {
+    let svg_content = include_str!("../assets/icons/discord.svg");
+    danger(svg_content.replace("<class>", "size-5 fill-current inline"))
 }

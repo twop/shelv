@@ -1,5 +1,14 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+use hyped::*;
+use tailwind_fuse::*;
+
+use crate::footer::footer_section;
+use crate::ui_components::{
+    NavElement, ThemeColor, WaveDirection, content, page_header, space, theme, wave,
+};
+use crate::updates::markdown_to_html;
+use crate::{BackgroundColor, HoverState, LinkStyle, SpacingSize, TextColor, TextStyle};
 
 /// A file path wrapper for type safety
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -29,26 +38,11 @@ pub enum FsEntry {
 }
 
 impl FsEntry {
-    pub fn as_file(&self) -> Option<&FsFile> {
-        match self {
-            FsEntry::File(f) => Some(f),
-            _ => None,
-        }
-    }
-
     pub fn as_dir(&self) -> Option<&FsDir> {
         match self {
             FsEntry::Dir(d) => Some(d),
             _ => None,
         }
-    }
-
-    pub fn is_dir(&self) -> bool {
-        matches!(self, FsEntry::Dir(_))
-    }
-
-    pub fn is_file(&self) -> bool {
-        matches!(self, FsEntry::File(_))
     }
 }
 
@@ -94,190 +88,6 @@ impl FileSystem for RealFileSystem {
         } else {
             None
         }
-    }
-}
-
-/// In-memory file system implementation for testing
-#[derive(Debug, Clone)]
-pub struct InMemoryFileSystem {
-    files: HashMap<PathBuf, String>,
-}
-
-impl InMemoryFileSystem {
-    pub fn new() -> Self {
-        Self {
-            files: HashMap::new(),
-        }
-    }
-
-    /// Add a file to the in-memory file system
-    pub fn add_file(&mut self, path: impl Into<PathBuf>, content: String) {
-        self.files.insert(path.into(), content);
-    }
-
-    /// Create a file system from a virtual directory structure
-    pub fn from_structure(structure: VDir) -> Self {
-        let mut fs = Self::new();
-        fs.add_structure(PathBuf::new(), structure);
-        fs
-    }
-
-    fn add_structure(&mut self, base_path: PathBuf, dir: VDir) {
-        for item in dir.items {
-            match item {
-                VItem::File(vfile) => {
-                    let file_path = base_path.join(&vfile.name);
-                    self.add_file(file_path, vfile.content);
-                }
-                VItem::Dir(vdir) => {
-                    let dir_path = base_path.join(&vdir.name);
-                    self.add_structure(dir_path, vdir);
-                }
-            }
-        }
-    }
-
-    /// Check if a path is a directory in the in-memory file system
-    fn is_dir(&self, path: &Path) -> bool {
-        // A path is a directory if it has child files
-        self.files.keys().any(|file_path| {
-            if let Some(parent) = file_path.parent() {
-                parent == path || parent.starts_with(path)
-            } else {
-                false
-            }
-        })
-    }
-}
-
-impl FileSystem for InMemoryFileSystem {
-    fn list_dir(&self, dir: &FsDir) -> Result<Vec<FsEntry>, std::io::Error> {
-        let path = dir.path();
-
-        // Find all paths that are direct children of the given path
-        let mut files: Vec<PathBuf> = self
-            .files
-            .keys()
-            .filter(|file_path| {
-                if let Some(parent) = file_path.parent() {
-                    parent == path
-                } else {
-                    false
-                }
-            })
-            .cloned()
-            .collect();
-
-        // Also find directories (paths that have children)
-        let mut dirs: Vec<PathBuf> = self
-            .files
-            .keys()
-            .filter_map(|file_path| {
-                // Get all ancestors
-                let mut ancestors = vec![];
-                let mut current = file_path.as_path();
-                while let Some(parent) = current.parent() {
-                    if parent == Path::new("") {
-                        break;
-                    }
-                    ancestors.push(parent.to_path_buf());
-                    current = parent;
-                }
-
-                // Find direct children of path
-                ancestors.into_iter().find(|ancestor| {
-                    if let Some(parent) = ancestor.parent() {
-                        parent == path
-                    } else {
-                        false
-                    }
-                })
-            })
-            .collect();
-
-        // Remove duplicates
-        dirs.sort();
-        dirs.dedup();
-
-        if files.is_empty() && dirs.is_empty() && !self.files.keys().any(|p| p.starts_with(path)) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Directory not found: {:?}", path),
-            ));
-        }
-
-        let mut entries: Vec<FsEntry> = Vec::new();
-        entries.extend(dirs.into_iter().map(|p| FsEntry::Dir(FsDir(p))));
-        entries.extend(files.into_iter().map(|p| FsEntry::File(FsFile(p))));
-        entries.sort_by_key(|e| match e {
-            FsEntry::File(f) => f.path().to_path_buf(),
-            FsEntry::Dir(d) => d.path().to_path_buf(),
-        });
-
-        Ok(entries)
-    }
-
-    fn read_file(&self, file: &FsFile) -> Result<String, std::io::Error> {
-        self.files.get(file.path()).cloned().ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("File not found: {:?}", file.path()),
-            )
-        })
-    }
-
-    fn as_dir(&self, path: impl Into<PathBuf>) -> Option<FsDir> {
-        let path_buf = path.into();
-        if self.is_dir(&path_buf) {
-            Some(FsDir(path_buf))
-        } else {
-            None
-        }
-    }
-}
-
-/// Virtual file for DSL
-#[derive(Debug, Clone)]
-pub struct VFile {
-    name: String,
-    content: String,
-}
-
-/// Virtual directory for DSL
-#[derive(Debug, Clone)]
-pub struct VDir {
-    name: String,
-    items: Vec<VItem>,
-}
-
-/// Virtual item (file or directory)
-#[derive(Debug, Clone)]
-pub enum VItem {
-    File(VFile),
-    Dir(VDir),
-}
-
-/// Create a virtual file
-pub fn file(name: impl Into<String>, content: impl Into<String>) -> VItem {
-    VItem::File(VFile {
-        name: name.into(),
-        content: content.into(),
-    })
-}
-
-/// Create a virtual directory
-pub fn dir(name: impl Into<String>, items: impl IntoIterator<Item = VItem>) -> VItem {
-    VItem::Dir(VDir {
-        name: name.into(),
-        items: items.into_iter().collect(),
-    })
-}
-
-/// Create a root virtual directory (unnamed)
-pub fn root(items: impl IntoIterator<Item = VItem>) -> VDir {
-    VDir {
-        name: String::new(),
-        items: items.into_iter().collect(),
     }
 }
 
@@ -412,9 +222,297 @@ pub fn load_updates<FS: FileSystem>(
     Ok(updates)
 }
 
+/// Render the update page with sidebar and markdown content
+pub fn update_page(updates: &[UpdateEntry], selected: &UpdateEntry) -> Element {
+    let html_content = markdown_to_html(&selected.markdown_content, selected.folder_path.path());
+    let updates_list_items: Vec<Element> = updates
+        .iter()
+        .map(|u| {
+            let is_active = u.version == selected.version;
+            let link_class = if is_active {
+                tw_join!(
+                    TextStyle::SmallGeneralText,
+                    TextColor::Primary,
+                    "font-semibold"
+                )
+            } else {
+                tw_join!(
+                    TextStyle::SmallGeneralText,
+                    LinkStyle {
+                        color: TextColor::Subtle,
+                        hover: HoverState::ColorChange
+                    }
+                    .to_class()
+                )
+            };
+
+            let display_text = format!(
+                "{}{}",
+                u.version.to_file_format(),
+                u.optional_name
+                    .as_ref()
+                    .map(|n| format!(" - {}", n))
+                    .unwrap_or_default()
+            );
+
+            li(a(display_text)
+                .href(&format!("/updates/{}", u.version.to_route_format()))
+                .class(&link_class))
+            .class("mb-2")
+        })
+        .collect();
+
+    let nav_items = vec![];
+    // let nav_items = vec![NavElement::new(
+    //     format!("{}", selected.version.to_route_format()),
+    //     format!("/updates/{}", selected.version.to_route_format()),
+    // )];
+
+    div((
+        theme(
+            ThemeColor::Dark,
+            content((page_header(&nav_items), space(SpacingSize::Small))),
+        ),
+        wave(WaveDirection::Up, ThemeColor::Dark, SpacingSize::Medium),
+        theme(
+            ThemeColor::Light,
+            content((
+                space(SpacingSize::Small),
+                // Two-column layout
+                div((
+                    // Main content area
+                    div((
+                        h1(format!(
+                            "{}: {}",
+                            selected.version.to_file_format(),
+                            "Update name"
+                        ))
+                        .class(&tw_join!(
+                            TextStyle::MainHeader,
+                            TextColor::MainHeader,
+                            "mb-6"
+                        )),
+                        div(danger(&html_content)).class("markdown-content"),
+                    ))
+                    .class("flex-1 md:pl-8"),
+                    // Sidebar with updates list
+                    div((
+                        // h3("Updates").class(&tw_join!(
+                        //     TextStyle::SubHeader,
+                        //     TextColor::SubHeader,
+                        //     "mb-4"
+                        // )),
+                        ul(updates_list_items).class("space-y-1"),
+                    ))
+                    .class("w-full md:-mr-4 md:w-64 mb-8 md:mb-0 md:pl-4"),
+                ))
+                .class("flex flex-col md:flex-row"),
+                space(SpacingSize::Large),
+            )),
+        ),
+        // Footer section
+        footer_section(),
+    ))
+    .class(&tw_join!(
+        "flex flex-col",
+        BackgroundColor::Default.as_class()
+    ))
+}
+
+#[cfg(test)]
+mod virtual_fs {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    /// Virtual file for DSL
+    #[derive(Debug, Clone)]
+    pub struct VFile {
+        pub name: String,
+        pub content: String,
+    }
+
+    /// Virtual directory for DSL
+    #[derive(Debug, Clone)]
+    pub struct VDir {
+        pub name: String,
+        pub items: Vec<VItem>,
+    }
+
+    /// Virtual item (file or directory)
+    #[derive(Debug, Clone)]
+    pub enum VItem {
+        File(VFile),
+        Dir(VDir),
+    }
+
+    /// Create a virtual file
+    pub fn file(name: impl Into<String>, content: impl Into<String>) -> VItem {
+        VItem::File(VFile {
+            name: name.into(),
+            content: content.into(),
+        })
+    }
+
+    /// Create a virtual directory
+    pub fn dir(name: impl Into<String>, items: impl IntoIterator<Item = VItem>) -> VItem {
+        VItem::Dir(VDir {
+            name: name.into(),
+            items: items.into_iter().collect(),
+        })
+    }
+
+    /// Create a root virtual directory (unnamed)
+    pub fn root(items: impl IntoIterator<Item = VItem>) -> VDir {
+        VDir {
+            name: String::new(),
+            items: items.into_iter().collect(),
+        }
+    }
+
+    /// In-memory file system implementation for testing
+    #[allow(dead_code)]
+    #[derive(Debug, Clone)]
+    pub struct InMemoryFileSystem {
+        files: HashMap<PathBuf, String>,
+    }
+
+    impl InMemoryFileSystem {
+        /// Create a file system from a virtual directory structure
+        pub fn from_structure(structure: VDir) -> Self {
+            let mut fs = Self {
+                files: Default::default(),
+            };
+            fs.add_structure(PathBuf::new(), structure);
+            fs
+        }
+
+        fn add_structure(&mut self, base_path: PathBuf, dir: VDir) {
+            for item in dir.items {
+                match item {
+                    VItem::File(vfile) => {
+                        let file_path = base_path.join(&vfile.name);
+                        {
+                            let this = &mut *self;
+                            let content = vfile.content;
+                            this.files.insert(file_path.into(), content);
+                        };
+                    }
+                    VItem::Dir(vdir) => {
+                        let dir_path = base_path.join(&vdir.name);
+                        self.add_structure(dir_path, vdir);
+                    }
+                }
+            }
+        }
+
+        /// Check if a path is a directory in the in-memory file system
+        fn is_dir(&self, path: &Path) -> bool {
+            // A path is a directory if it has child files
+            self.files.keys().any(|file_path| {
+                if let Some(parent) = file_path.parent() {
+                    parent == path || parent.starts_with(path)
+                } else {
+                    false
+                }
+            })
+        }
+    }
+
+    impl FileSystem for InMemoryFileSystem {
+        fn list_dir(&self, dir: &FsDir) -> Result<Vec<FsEntry>, std::io::Error> {
+            let path = dir.path();
+
+            // Find all paths that are direct children of the given path
+            let files: Vec<PathBuf> = self
+                .files
+                .keys()
+                .filter(|file_path| {
+                    if let Some(parent) = file_path.parent() {
+                        parent == path
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect();
+
+            // Also find directories (paths that have children)
+            let mut dirs: Vec<PathBuf> = self
+                .files
+                .keys()
+                .filter_map(|file_path| {
+                    // Get all ancestors
+                    let mut ancestors = vec![];
+                    let mut current = file_path.as_path();
+                    while let Some(parent) = current.parent() {
+                        if parent == Path::new("") {
+                            break;
+                        }
+                        ancestors.push(parent.to_path_buf());
+                        current = parent;
+                    }
+
+                    // Find direct children of path
+                    ancestors.into_iter().find(|ancestor| {
+                        if let Some(parent) = ancestor.parent() {
+                            parent == path
+                        } else {
+                            false
+                        }
+                    })
+                })
+                .collect();
+
+            // Remove duplicates
+            dirs.sort();
+            dirs.dedup();
+
+            if files.is_empty()
+                && dirs.is_empty()
+                && !self.files.keys().any(|p| p.starts_with(path))
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Directory not found: {:?}", path),
+                ));
+            }
+
+            let mut entries: Vec<FsEntry> = Vec::new();
+            entries.extend(dirs.into_iter().map(|p| FsEntry::Dir(FsDir(p))));
+            entries.extend(files.into_iter().map(|p| FsEntry::File(FsFile(p))));
+            entries.sort_by_key(|e| match e {
+                FsEntry::File(f) => f.path().to_path_buf(),
+                FsEntry::Dir(d) => d.path().to_path_buf(),
+            });
+
+            Ok(entries)
+        }
+
+        fn read_file(&self, file: &FsFile) -> Result<String, std::io::Error> {
+            self.files.get(file.path()).cloned().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("File not found: {:?}", file.path()),
+                )
+            })
+        }
+
+        fn as_dir(&self, path: impl Into<PathBuf>) -> Option<FsDir> {
+            let path_buf = path.into();
+            if self.is_dir(&path_buf) {
+                Some(FsDir(path_buf))
+            } else {
+                None
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use virtual_fs::*;
 
     #[test]
     fn test_version_parse() {
@@ -497,19 +595,6 @@ mod tests {
     }
 
     #[test]
-    fn test_fs_entry() {
-        let file_entry = FsEntry::File(FsFile(PathBuf::from("test.txt")));
-        assert!(file_entry.is_file());
-        assert!(!file_entry.is_dir());
-        assert_eq!(file_entry.as_file().unwrap().path(), Path::new("test.txt"));
-
-        let dir_entry = FsEntry::Dir(FsDir(PathBuf::from("test_dir")));
-        assert!(dir_entry.is_dir());
-        assert!(!dir_entry.is_file());
-        assert_eq!(dir_entry.as_dir().unwrap().path(), Path::new("test_dir"));
-    }
-
-    #[test]
     fn test_as_dir() {
         let structure = root([dir(
             "updates",
@@ -551,7 +636,7 @@ mod tests {
         let dir = fs.as_dir("updates").unwrap();
         let entries = fs.list_dir(&dir).unwrap();
         assert_eq!(entries.len(), 1);
-        assert!(entries[0].is_dir());
+        assert!(matches!(entries[0], FsEntry::Dir(_)));
         assert_eq!(
             entries[0].as_dir().unwrap().path(),
             Path::new("updates/1.3.9-test")

@@ -2,7 +2,9 @@ use hyped::*;
 use tailwind_fuse::*;
 
 use crate::footer::footer_section;
-use crate::ui_components::{ThemeColor, WaveDirection, content, space, theme, wave};
+use crate::ui_components::{
+    NavElement, ThemeColor, WaveDirection, content, page_header, space, theme, wave,
+};
 use crate::{
     BackgroundColor, BorderStyle, ButtonHeight, ButtonStyle, ButtonVariant, HoverState, IconSize,
     LinkStyle, SpacingSize, StyledText, TextColor, TextStyle,
@@ -41,12 +43,19 @@ fn strip_out_newlines(text: &str) -> String {
 
 /// Main home page layout
 pub fn home_page() -> Element {
+    let nav_items = vec![
+        NavElement::new("Features", "#features"),
+        NavElement::new("FAQ", "#faq"),
+        NavElement::new("Roadmap", "#roadmap"),
+        NavElement::new("Updates", "/updates"),
+    ];
+
     div((
         // First section with hero content
         theme(
             ThemeColor::Dark,
             content((
-                page_header(),
+                page_header(&nav_items),
                 space(SpacingSize::Small),
                 block_layout(
                     slogan_and_mac_store_link(),
@@ -217,49 +226,6 @@ fn video_component(
     .class("py-6 lg:py-0 w-full h-full flex justify-center")
 }
 
-fn page_header() -> Element {
-    div((
-        div(
-            a(shelv_logo())
-                .href("/")
-                .class("inline-flex items-center space-x-2 leading-6 font-medium transition ease-in-out duration-150"),
-        ),
-        // Desktop navigation - visible on md screens and up
-        div(Vec::from([
-            ("Features", "#features"),
-            ("FAQ", "#faq"),
-            ("Roadmap", "#roadmap"),
-            ("Updates", "/updates"),
-        ])
-        .into_iter()
-        .map(|(name, link_to)| {
-            a(name).href(link_to).class(&tw_join!(
-                TextStyle::NavMenu,
-                LinkStyle {
-                    color: TextColor::Subtle,
-                    hover: HoverState::ColorChange
-                }
-                .to_class()
-            ))
-        })
-        .collect::<Vec<_>>())
-        .class("hidden md:flex gap-x-8"),
-        // Discord icon - always visible
-        div(a(discord_icon(IconSize::Default))
-            .href(include_str!("../../distribution/discord_invite.txt").trim())
-            .class(&tw_join!(
-                ButtonVariant::SecondaryTextOnly,
-                TextColor::Subtle
-            ))),
-    ))
-    .class("flex justify-between items-center py-6")
-}
-
-fn shelv_logo() -> impl Render {
-    let svg_content = include_str!("../assets/icons/shelv-logo.svg");
-    danger(svg_content.replace("<class>", "shelv-logo"))
-}
-
 fn link_to(to: &str, text: &str) -> Element {
     let link_style = LinkStyle {
         color: TextColor::Primary,
@@ -347,12 +313,6 @@ fn github_link() -> Element {
 
 fn github_icon(size: IconSize) -> impl Render {
     let svg_content = include_str!("../assets/icons/github.svg");
-    let classes = tw_join!(size, "fill-current inline");
-    danger(svg_content.replace("<class>", &classes))
-}
-
-fn discord_icon(size: IconSize) -> impl Render {
-    let svg_content = include_str!("../assets/icons/discord.svg");
     let classes = tw_join!(size, "fill-current inline");
     danger(svg_content.replace("<class>", &classes))
 }
