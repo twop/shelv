@@ -16,7 +16,7 @@ use tailwind_fuse::*;
 use tower_http::services::ServeDir;
 
 use crate::rate_limiting::ApiCallRecord;
-use crate::updates::{FileSystem, RealFileSystem, UpdateEntry, load_updates};
+use crate::updates::{FileSystem, RealFileSystem, UpdateEntry, load_updates, markdown_to_html};
 
 mod proxy;
 mod rate_limiting;
@@ -324,6 +324,9 @@ async fn update_detail(
         .collect::<Vec<_>>()
         .join("\n");
 
+    // Convert markdown to HTML with image path resolution
+    let html_content = markdown_to_html(&update.markdown_content, update.folder_path.path());
+
     // Create two-column layout
     let html = format!(
         r#"
@@ -336,7 +339,7 @@ async fn update_detail(
             </div>
             <div style="flex: 1; padding: 20px;">
                 <h1>Update {} {}</h1>
-                <pre>{}</pre>
+                {}
             </div>
         </div>
         "#,
@@ -347,7 +350,7 @@ async fn update_detail(
             .as_ref()
             .map(|n| format!("- {}", n))
             .unwrap_or_default(),
-        update.markdown_content
+        html_content
     );
 
     Ok(Html(html))
@@ -1146,7 +1149,7 @@ async fn main() {
 
     // Load updates at startup
     let fs = RealFileSystem;
-    let updates_path = PathBuf::from("updates");
+    let updates_path = PathBuf::from("update-log");
     let updates = if let Some(updates_dir) = fs.as_dir(&updates_path) {
         match load_updates(&fs, &updates_dir) {
             Ok(updates) => {
@@ -1190,9 +1193,10 @@ async fn main() {
     // Create the main router with enum_router
     let app_router = Route::router();
 
-    // Add static file serving for assets and state
+    // Add static file serving for assets and update-log
     let router = app_router
         .nest_service("/assets", ServeDir::new("assets"))
+        .nest_service("/update-log", ServeDir::new("update-log"))
         .with_state(state);
 
     axum::serve(listener, router).await.unwrap();

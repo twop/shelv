@@ -4901,6 +4901,7 @@ dependencies = [
  "futures",
  "http",
  "hyped",
+ "pulldown-cmark",
  "reqwest",
  "serde",
  "serde_json",
