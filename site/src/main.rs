@@ -1,6 +1,8 @@
 use axum::{
     Json,
-    {extract::State, http::StatusCode, response::Html},
+    extract::{Path, State},
+    http::StatusCode,
+    response::Html,
 };
 use enum_router::router;
 use hyped::*;
@@ -237,7 +239,7 @@ pub enum Route {
     #[get("/updates")]
     UpdatesList,
 
-    #[get("/updates/:version")]
+    #[get("/updates/{version}")]
     UpdateDetail { version: String },
 
     // note that this is how the client will see construct url using genai
@@ -291,7 +293,7 @@ async fn updates_list(
 
 async fn update_detail(
     State(state): State<Arc<AppState>>,
-    version: String,
+    Path(version): Path<String>,
 ) -> Result<Html<String>, StatusCode> {
     // Parse the version from route format (1_3_9) to Version
     let version = updates::Version::parse(&version).map_err(|_| StatusCode::BAD_REQUEST)?;
