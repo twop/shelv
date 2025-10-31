@@ -1,16 +1,20 @@
 # Changelog Website Feature
 
+## Status: ✅ COMPLETED
+
+All phases completed successfully. The updates/changelog feature is fully functional with styling matching the main site.
+
 ## Requirements
 
 ### File System Structure
-- [ ] File system based entries for updates
-- [ ] File pattern: `1.3.9-{optional name}` folder format
-- [ ] Each folder contains:
-  - [ ] Markdown file with matching version name (e.g., `1.3.9.md` inside `1.3.9-{optional-name}/`)
-  - [ ] Optional media resources (screenshots, videos) in the same folder
-- [ ] Updates log entries location: `/site/updates` folder
-- [ ] Markdown files include frontmatter with creation date
-- [ ] Example structure:
+- [x] File system based entries for updates
+- [x] File pattern: `1.3.9-{optional name}` folder format
+- [x] Each folder contains:
+  - [x] Markdown file with matching version name (e.g., `1.3.9.md` inside `1.3.9-{optional-name}/`)
+  - [x] Optional media resources (screenshots, videos) in the same folder
+- [x] Updates log entries location: `/site/updates` folder
+- [x] Markdown files include frontmatter with creation date
+- [x] Example structure:
   ```
   /site/updates/
     1.3.9-bug-fixes/
@@ -22,26 +26,26 @@
   ```
 
 ### Routing
-- [ ] New route for specific update: `updates/{version}` (e.g., `updates/1_3_9`)
+- [x] New route for specific update: `updates/{version}` (e.g., `updates/1_3_9`)
   - Note: Only version number passed to match route, underscores replace dots
-- [ ] New route for updates list: `/updates` (renders latest by default)
+- [x] New route for updates list: `/updates` (renders latest by default)
 
 ### UI Components
-- [ ] Updates list on the left side
-- [ ] Markdown content converted to HTML on the right side
-- [ ] Extract reusable components from main page (overall shell)
-- [ ] Server-side rendering only (no client interactivity needed)
-- [ ] Style markdown-to-HTML output appropriately
+- [x] Updates list on the left side
+- [x] Markdown content converted to HTML on the right side
+- [x] Extract reusable components from main page (overall shell)
+- [x] Server-side rendering only (no client interactivity needed)
+- [x] Style markdown-to-HTML output appropriately
 
 ### Technical Details
-- [ ] Use existing `pulldown-cmark` library for:
+- [x] Use existing `pulldown-cmark` library for:
   - Markdown parsing
   - HTML rendering
-- [ ] At site startup (`site/main.rs`):
-  - [ ] Scan for all update entries
-  - [ ] Structure entries in list sorted by version
-  - [ ] Keep raw markdown in memory
-- [ ] Resolve relative image paths in markdown (relative to markdown file)
+- [x] At site startup (`site/main.rs`):
+  - [x] Scan for all update entries
+  - [x] Structure entries in list sorted by version
+  - [x] Keep raw markdown in memory
+- [x] Resolve relative image paths in markdown (relative to markdown file)
 
 ## Execution Plan
 
@@ -131,10 +135,33 @@
 - Image path resolution: `screenshot.png` → `/update-log/1.4.0-word-jump-mode/screenshot.png`
 - All tests passing (21 tests including 3 new image path resolution tests)
 
-### Phase 6: Styling
-- [ ] Style HTML output using current theme
-- [ ] Apply consistent styling with main page
-- [ ] Style markdown elements (headings, lists, code blocks, etc.)
+### Phase 6: Styling ✅
+- [x] Style HTML output using current theme
+- [x] Apply consistent styling with main page
+- [x] Style markdown elements (headings, lists, code blocks, etc.)
+
+**Implementation Notes:**
+- Added comprehensive CSS styling in `app.css` using `@layer components`
+- Created scoped `.markdown-content` class for all markdown elements
+- Matched typography from home page: smaller text (`text-sm`), darker color (`nord4-darker`)
+- Headers remain bright (`nord6`) for proper visual hierarchy
+- Styled all elements: headings, paragraphs, lists, code blocks, links, images, blockquotes, tables
+- Used Nord color palette and Tailwind CSS variables for consistency
+- Responsive line heights: `leading-6` on mobile, `leading-7` on desktop
+
+### Phase 7: Code Refactoring ✅
+- [x] Move `update_page()` render function from `main.rs` to `updates.rs`
+- [x] Refactor route handler to pass data slices instead of HTML elements
+- [x] Extract reusable `page_header` component to `ui_components.rs`
+- [x] Create `NavElement` struct for flexible navigation
+- [x] Update both `home.rs` and `updates.rs` to use shared components
+- [x] Remove duplicate header/logo/icon functions
+
+**Implementation Notes:**
+- Better separation of concerns: route handlers fetch data, render functions build UI
+- Single source of truth for page header across all pages
+- Each page can specify its own navigation items via `NavElement` slice
+- Removed ~150 lines of duplicate code
 
 ## Notes
 - Pure server-side rendering
