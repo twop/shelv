@@ -21,3 +21,4 @@ const-dotenvy = { workspace = true }
 dotenvy = "0.15"
 shared = { path = "../shared" }
 pulldown-cmark = { workspace = true }
+serde_yaml_ng = "0.10"

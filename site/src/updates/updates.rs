@@ -224,7 +224,8 @@ pub fn load_updates<FS: FileSystem>(
 
 /// Render the update page with sidebar and markdown content
 pub fn update_page(updates: &[UpdateEntry], selected: &UpdateEntry) -> Element {
-    let html_content = markdown_to_html(&selected.markdown_content, selected.folder_path.path());
+    let (html_content, metadata) =
+        markdown_to_html(&selected.markdown_content, selected.folder_path.path());
     let updates_list_items: Vec<Element> = updates
         .iter()
         .map(|u| {
@@ -282,15 +283,30 @@ pub fn update_page(updates: &[UpdateEntry], selected: &UpdateEntry) -> Element {
                 div((
                     // Main content area
                     div((
-                        h1(format!(
-                            "{}: {}",
-                            selected.version.to_file_format(),
-                            "Update name"
-                        ))
-                        .class(&tw_join!(
-                            TextStyle::MainHeader,
-                            TextColor::MainHeader,
-                            "mb-6"
+                        div((
+                            h1(format!(
+                                "{}{}",
+                                selected.version.to_file_format(),
+                                metadata
+                                    .as_ref()
+                                    .map(|meta| format!(" - {}", meta.title.as_str()))
+                                    .unwrap_or_default()
+                            ))
+                            .class(&tw_join!(
+                                TextStyle::MainHeader,
+                                TextColor::MainHeader,
+                                "mb-1"
+                            )),
+                            // Display date if metadata is available
+                            if let Some(ref meta) = metadata {
+                                div(meta.date.clone()).class(&tw_join!(
+                                    "text-xs",
+                                    TextColor::VerySubtle,
+                                    "mb-6"
+                                ))
+                            } else {
+                                space(SpacingSize::Large)
+                            },
                         )),
                         div(danger(&html_content)).class("markdown-content"),
                     ))
