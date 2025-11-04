@@ -521,7 +521,8 @@ impl TextStructure {
 
         let md_parser_options = pulldown_cmark::Options::ENABLE_STRIKETHROUGH
             | pulldown_cmark::Options::ENABLE_TASKLISTS
-            | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION;
+            | pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION
+            | pulldown_cmark::Options::ENABLE_YAML_STYLE_METADATA_BLOCKS;
 
         let parser = pulldown_cmark::Parser::new_ext(&text, md_parser_options);
         // println!("Parser output:\n{:?}", parser);

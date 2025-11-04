@@ -226,6 +226,7 @@ pub fn load_updates<FS: FileSystem>(
 pub fn update_page(updates: &[UpdateEntry], selected: &UpdateEntry) -> Element {
     let (html_content, metadata) =
         markdown_to_html(&selected.markdown_content, selected.folder_path.path());
+
     let updates_list_items: Vec<Element> = updates
         .iter()
         .map(|u| {
@@ -269,6 +270,47 @@ pub fn update_page(updates: &[UpdateEntry], selected: &UpdateEntry) -> Element {
     //     format!("/updates/{}", selected.version.to_route_format()),
     // )];
 
+    let main_content_area = div((
+        div((
+            h1(format!(
+                "{}{}",
+                selected.version.to_file_format(),
+                metadata
+                    .as_ref()
+                    .map(|meta| format!(" - {}", meta.title.as_str()))
+                    .unwrap_or_default()
+            ))
+            .class(&tw_join!(
+                TextStyle::MainHeader,
+                TextColor::MainHeader,
+                "mb-1"
+            )),
+            // Display date if metadata is available
+            if let Some(ref meta) = metadata {
+                div(meta.date.clone()).class(&tw_join!(
+                    "text-xs",
+                    TextColor::VerySubtle,
+                    "mb-6",
+                    "mt-4"
+                ))
+            } else {
+                space(SpacingSize::Large)
+            },
+        )),
+        div(danger(&html_content)).class("markdown-content"),
+    ))
+    .class("flex-1 min-w-0");
+
+    let side_bar_list = div((
+        // h3("Updates").class(&tw_join!(
+        //     TextStyle::SubHeader,
+        //     TextColor::SubHeader,
+        //     "mb-4"
+        // )),
+        ul(updates_list_items).class("space-y-1"),
+    ))
+    .class("w-full md:flex-shrink-0 md:w-64 mb-8 md:mb-0");
+
     div((
         theme(
             ThemeColor::Dark,
@@ -282,47 +324,11 @@ pub fn update_page(updates: &[UpdateEntry], selected: &UpdateEntry) -> Element {
                 // Two-column layout
                 div((
                     // Main content area
-                    div((
-                        div((
-                            h1(format!(
-                                "{}{}",
-                                selected.version.to_file_format(),
-                                metadata
-                                    .as_ref()
-                                    .map(|meta| format!(" - {}", meta.title.as_str()))
-                                    .unwrap_or_default()
-                            ))
-                            .class(&tw_join!(
-                                TextStyle::MainHeader,
-                                TextColor::MainHeader,
-                                "mb-1"
-                            )),
-                            // Display date if metadata is available
-                            if let Some(ref meta) = metadata {
-                                div(meta.date.clone()).class(&tw_join!(
-                                    "text-xs",
-                                    TextColor::VerySubtle,
-                                    "mb-6"
-                                ))
-                            } else {
-                                space(SpacingSize::Large)
-                            },
-                        )),
-                        div(danger(&html_content)).class("markdown-content"),
-                    ))
-                    .class("flex-1 md:pl-8"),
+                    main_content_area,
                     // Sidebar with updates list
-                    div((
-                        // h3("Updates").class(&tw_join!(
-                        //     TextStyle::SubHeader,
-                        //     TextColor::SubHeader,
-                        //     "mb-4"
-                        // )),
-                        ul(updates_list_items).class("space-y-1"),
-                    ))
-                    .class("w-full md:-mr-4 md:w-64 mb-8 md:mb-0 md:pl-4"),
+                    side_bar_list,
                 ))
-                .class("flex flex-col md:flex-row"),
+                .class("flex gap-6 flex-col md:flex-row md:items-start"),
                 space(SpacingSize::Large),
             )),
         ),

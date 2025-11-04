@@ -53,7 +53,7 @@ pub fn theme(color: ThemeColor, children: impl Render + 'static) -> Element {
 
 /// Content wrapper with max width and padding
 pub fn content(children: impl Render + 'static) -> Element {
-    div(children).class("mx-auto px-4 sm:px-6 max-w-4xl")
+    div(children).class("mx-auto flex flex-col px-4 sm:px-6 max-w-4xl")
 }
 
 /// Wave divider between sections

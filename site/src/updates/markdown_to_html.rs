@@ -57,12 +57,25 @@ pub fn markdown_to_html(markdown: &str, base_path: &Path) -> (String, Option<Met
             id,
         }) => {
             let resolved_url = resolve_image_path(&dest_url, base_path);
-            Event::Start(Tag::Image {
-                link_type,
-                dest_url: resolved_url,
-                title,
-                id,
-            })
+            
+            // FIXME: video needs to be processed separately, due to the name inside [{name]}]({link}) is being captured as a separate tag
+            // so we need to capture all events inside the image tag 
+            if is_video_file(&dest_url) {
+                // Create video HTML event
+                let video_html = format!(
+                    "<video controls autoplay loop muted>\n  <source src=\"{}\" type=\"{}\">\n  Your browser does not support the video tag.\n</video>",
+                    resolved_url,
+                    get_video_mime_type(&dest_url)
+                );
+                Event::Html(video_html.into())
+            } else {
+                Event::Start(Tag::Image {
+                    link_type,
+                    dest_url: resolved_url,
+                    title,
+                    id,
+                })
+            }
         }
         _ => event,
     });
@@ -91,6 +104,27 @@ fn resolve_image_path(url: &str, base_path: &Path) -> CowStr<'static> {
         // Convert base_path to string and combine with relative URL
         let web_path = format!("/{}/{}", base_path.display(), url);
         web_path.into()
+    }
+}
+
+/// Checks if the given URL points to a video file based on its extension
+fn is_video_file(url: &str) -> bool {
+    let video_extensions = [".mp4", ".webm", ".ogg", ".mov", ".avi", ".mkv"];
+    let url_lower = url.to_lowercase();
+    video_extensions.iter().any(|ext| url_lower.ends_with(ext))
+}
+
+/// Returns the appropriate MIME type for a video file based on its extension
+fn get_video_mime_type(url: &str) -> &'static str {
+    let url_lower = url.to_lowercase();
+    match url_lower {
+        _ if url_lower.ends_with(".mp4") => "video/mp4",
+        _ if url_lower.ends_with(".webm") => "video/webm",
+        _ if url_lower.ends_with(".ogg") => "video/ogg",
+        _ if url_lower.ends_with(".mov") => "video/quicktime",
+        _ if url_lower.ends_with(".avi") => "video/x-msvideo",
+        _ if url_lower.ends_with(".mkv") => "video/x-matroska",
+        _ => "video/mp4", // Default fallback
     }
 }
 

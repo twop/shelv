@@ -205,6 +205,17 @@
         height: auto;
     }
 
+    /* Videos */
+    .markdown-content video {
+        border-radius: var(--radius-lg);
+        border: 2px solid var(--color-nord2);
+        margin-bottom: calc(var(--spacing) * 4);
+        margin-top: calc(var(--spacing) * 4);
+        max-width: 100%;
+        height: auto;
+        background-color: var(--color-nord0);
+    }
+
     /* Blockquotes */
     .markdown-content blockquote {
         border-left: 4px solid var(--color-nord7);
