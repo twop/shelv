@@ -37,6 +37,10 @@ pub fn get_update_notification(version: &str, theme: &AppTheme) -> Option<AppNot
                     icon: Some(AppIcon::HomeSite),
                     handler: Box::new(EditorCommandOutput::from_iter([
                         AppAction::CloseNotification(notification_id),
+                        AppAction::defer(AppAction::OpenLink(
+                            // "http://127.0.0.1:8080/updates/1_4_0".to_string(),
+                            "https://shelv.app/updates/1_4_0".to_string(),
+                        )),
                     ])),
                 }),
             })

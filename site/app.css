@@ -1,57 +1,289 @@
 @import "tailwindcss";
 
 :root {
-    font-family: 'Inter', sans-serif;
+    font-family: "Inter", sans-serif;
     --media-radius: 10px;
 }
 
-
-
 .shadow-underglow {
-    box-shadow: 4px 4px 16px color-mix(in srgb, var(--color-nord13) 30%, transparent);
+    box-shadow: 4px 4px 16px
+        color-mix(in srgb, var(--color-nord13) 30%, transparent);
 }
 
 @supports (font-variation-settings: normal) {
     :root {
-        font-family: 'InterVariable', sans-serif;
+        font-family: "InterVariable", sans-serif;
     }
 }
 
 @theme {
+    /* Font Configuration */
+    --font-body: Inter, sans-serif;
 
-  /* Font Configuration */
-  --font-body: Inter, sans-serif;
+    /* Nord Color Palette */
+    --color-*: initial;
 
-  /* Nord Color Palette */
-  --color-*: initial;
-  
-  /* Polar Night - Dark Backgrounds */
-  --color-nord0-darker: #1e222a;
-  --color-nord0-dark: #242933;
-  --color-nord0: #2e3440;
-  --color-nord1: #3b4252;
-  --color-nord2: #434c5e;
-  --color-nord3: #4c566a;
-  
-  /* Snow Storm - Light Foregrounds */
-  --color-nord4-darker: #9ba3b0;
-  --color-nord4: #d8dee9;
-  --color-nord5: #e5e9f0;
-  --color-nord6: #eceff4;
-  
-  /* Frost - Blue Accents */
-  --color-nord7: #8fbcbb;
-  --color-nord8: #88c0d0;
-  --color-nord9: #81a1c1;
-  --color-nord10: #5e81ac;
-  
-  /* Aurora - Colorful Accents */
-  --color-nord11: #bf616a; /* Red */
-  --color-nord12: #d08770; /* Orange */
-  --color-nord13: #ebcb8b; /* Yellow */
-  --color-nord14: #a3be8c; /* Green */
-  --color-nord15: #b48ead; /* Purple */
-  
-  /* Transparent */
-  --color-transparent: transparent;
+    /* Polar Night - Dark Backgrounds */
+    --color-nord0-darker: #1e222a;
+    --color-nord0-dark: #242933;
+    --color-nord0: #2e3440;
+    --color-nord1: #3b4252;
+    --color-nord2: #434c5e;
+    --color-nord3: #4c566a;
+
+    /* Snow Storm - Light Foregrounds */
+    --color-nord4-darker: #9ba3b0;
+    --color-nord4: #d8dee9;
+    --color-nord5: #e5e9f0;
+    --color-nord6: #eceff4;
+
+    /* Frost - Blue Accents */
+    --color-nord7: #8fbcbb;
+    --color-nord8: #88c0d0;
+    --color-nord9: #81a1c1;
+    --color-nord10: #5e81ac;
+
+    /* Aurora - Colorful Accents */
+    --color-nord11: #bf616a; /* Red */
+    --color-nord12: #d08770; /* Orange */
+    --color-nord13: #ebcb8b; /* Yellow */
+    --color-nord14: #a3be8c; /* Green */
+    --color-nord15: #b48ead; /* Purple */
+
+    /* Transparent */
+    --color-transparent: transparent;
+}
+
+@layer components {
+    /* Markdown content styles - scoped to .markdown-content container */
+
+    /* Headings */
+    .markdown-content h1 {
+        font-size: var(--text-4xl);
+        line-height: var(--text-4xl--line-height);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-nord6);
+        margin-bottom: calc(var(--spacing) * 6);
+        margin-top: calc(var(--spacing) * 12);
+    }
+
+    .markdown-content h1:first-child {
+        margin-top: 0;
+    }
+
+    .markdown-content h2 {
+        font-size: var(--text-3xl);
+        line-height: var(--text-3xl--line-height);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-nord6);
+        margin-bottom: calc(var(--spacing) * 4);
+        margin-top: calc(var(--spacing) * 10);
+    }
+
+    .markdown-content h3 {
+        font-size: var(--text-2xl);
+        line-height: var(--text-2xl--line-height);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-nord6);
+        margin-bottom: calc(var(--spacing) * 3);
+        margin-top: calc(var(--spacing) * 8);
+    }
+
+    .markdown-content h4 {
+        font-size: var(--text-lg);
+        line-height: var(--text-lg--line-height);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-nord6);
+        margin-bottom: calc(var(--spacing) * 2);
+        margin-top: calc(var(--spacing) * 6);
+    }
+
+    /* Paragraphs */
+    .markdown-content p {
+        font-size: var(--text-sm);
+        line-height: calc(var(--spacing) * 6);
+        color: var(--color-nord4-darker);
+        margin-bottom: calc(var(--spacing) * 4);
+    }
+
+    @media (width >= 40rem) {
+        .markdown-content p {
+            line-height: calc(var(--spacing) * 7);
+        }
+    }
+
+    /* Lists */
+    .markdown-content ul {
+        list-style-type: disc;
+        list-style-position: inside;
+        margin-bottom: calc(var(--spacing) * 4);
+        color: var(--color-nord4-darker);
+        font-size: var(--text-sm);
+    }
+
+    .markdown-content ol {
+        list-style-type: decimal;
+        list-style-position: inside;
+        margin-bottom: calc(var(--spacing) * 4);
+        color: var(--color-nord4-darker);
+        font-size: var(--text-sm);
+    }
+
+    .markdown-content li {
+        margin-bottom: calc(var(--spacing) * 2);
+        line-height: calc(var(--spacing) * 6);
+    }
+
+    @media (width >= 40rem) {
+        .markdown-content li {
+            line-height: calc(var(--spacing) * 7);
+        }
+    }
+
+    .markdown-content li > p {
+        display: inline;
+        margin-bottom: 0;
+    }
+
+    /* Nested lists */
+    .markdown-content ul ul,
+    .markdown-content ol ol,
+    .markdown-content ul ol,
+    .markdown-content ol ul {
+        margin-top: calc(var(--spacing) * 2);
+        margin-bottom: calc(var(--spacing) * 2);
+        padding-left: calc(var(--spacing) * 4);
+    }
+
+    /* Inline code */
+    .markdown-content code {
+        background-color: var(--color-nord3);
+        color: var(--color-nord13);
+        padding: calc(var(--spacing) * 0.5) calc(var(--spacing) * 2);
+        border-radius: calc(var(--spacing) * 1);
+        font-size: var(--text-sm);
+        font-family: var(--default-mono-font-family);
+    }
+
+    /* Code blocks */
+    .markdown-content pre {
+        background-color: var(--color-nord0-darker);
+        border: 1px solid var(--color-nord3);
+        border-radius: var(--radius-lg);
+        padding: calc(var(--spacing) * 4);
+        margin-bottom: calc(var(--spacing) * 4);
+        overflow-x: auto;
+    }
+
+    .markdown-content pre code {
+        background-color: transparent;
+        color: var(--color-nord4-darker);
+        padding: 0;
+        font-size: var(--text-sm);
+        line-height: calc(var(--spacing) * 6);
+    }
+
+    /* Links */
+    .markdown-content a {
+        color: var(--color-nord8);
+        text-decoration: underline;
+        transition: color var(--default-transition-duration)
+            var(--default-transition-timing-function);
+    }
+
+    .markdown-content a:hover {
+        color: var(--color-nord7);
+    }
+
+    /* Images */
+    .markdown-content img {
+        border-radius: var(--radius-lg);
+        border: 2px solid var(--color-nord2);
+        margin-bottom: calc(var(--spacing) * 4);
+        margin-top: calc(var(--spacing) * 4);
+        max-width: 100%;
+        height: auto;
+    }
+
+    /* Videos */
+    .markdown-content video {
+        border-radius: var(--radius-lg);
+        border: 2px solid var(--color-nord2);
+        margin-bottom: calc(var(--spacing) * 4);
+        margin-top: calc(var(--spacing) * 4);
+        max-width: 100%;
+        height: auto;
+        background-color: var(--color-nord0);
+    }
+
+    /* Blockquotes */
+    .markdown-content blockquote {
+        border-left: 4px solid var(--color-nord7);
+        padding-left: calc(var(--spacing) * 4);
+        font-style: italic;
+        color: var(--color-nord4-darker);
+        font-size: var(--text-sm);
+        margin-bottom: calc(var(--spacing) * 4);
+    }
+
+    .markdown-content blockquote p:last-child {
+        margin-bottom: 0;
+    }
+
+    /* Horizontal rules */
+    .markdown-content hr {
+        border: none;
+        border-top: 1px solid var(--color-nord3);
+        margin-top: calc(var(--spacing) * 6);
+        margin-bottom: calc(var(--spacing) * 6);
+    }
+
+    /* Tables */
+    .markdown-content table {
+        width: 100%;
+        margin-bottom: calc(var(--spacing) * 4);
+        border: 1px solid var(--color-nord3);
+        border-collapse: collapse;
+    }
+
+    .markdown-content th {
+        background-color: var(--color-nord3);
+        color: var(--color-nord5);
+        font-weight: var(--font-weight-semibold);
+        padding: calc(var(--spacing) * 3);
+        text-align: left;
+        border: 1px solid var(--color-nord3);
+        font-size: var(--text-sm);
+    }
+
+    .markdown-content td {
+        border: 1px solid var(--color-nord3);
+        padding: calc(var(--spacing) * 3);
+        color: var(--color-nord4-darker);
+        font-size: var(--text-sm);
+    }
+
+    .markdown-content tbody tr:nth-child(even) {
+        background-color: color-mix(
+            in srgb,
+            var(--color-nord3) 20%,
+            transparent
+        );
+    }
+
+    /* Strong and emphasis */
+    .markdown-content strong {
+        font-weight: var(--font-weight-bold);
+        color: var(--color-nord5);
+    }
+
+    .markdown-content em {
+        font-style: italic;
+        color: var(--color-nord4-darker);
+    }
+
+    /* Task lists (if supported) */
+    .markdown-content input[type="checkbox"] {
+        margin-right: calc(var(--spacing) * 2);
+    }
 }

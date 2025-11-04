@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Version-specific update messages with custom content 
   - Used the notification system described above
   - The app version is stored in `state.json`
+- **Website Update Log System**: Web-based changelog and update documentation ([#193](https://github.com/twop/shelv/pull/193))
+  - Web UI for viewing release notes and updates at `/updates` route
+  - Markdown-based update entries with YAML frontmatter support for metadata (title and date)
+  - Version-specific URLs (`/updates/{version}`) for direct linking to releases
+  - Support for rich media content (images, videos), with relative path imports
+  - Docs on how to add a new entry can be found here: /site/src/updates/update-log-docs.md
 
 ### Changed
 - **Command System Rework**: Overhaul of the application's command system ([#187](https://github.com/twop/shelv/pull/187))
