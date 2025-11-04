@@ -19,8 +19,8 @@ pub fn notification_id_from_string(s: &str) -> NotificationId {
 /// Get update notification for a specific version
 pub fn get_update_notification(version: &str, theme: &AppTheme) -> Option<AppNotification> {
     match version {
-        "1.3.9" => {
-            // "1.4.0" => {
+        // "1.3.9" => {
+        "1.4.0" => {
             let notification_id = notification_id_from_string(&format!("update-{}", version));
             Some(AppNotification {
                 id: notification_id,
@@ -37,6 +37,10 @@ pub fn get_update_notification(version: &str, theme: &AppTheme) -> Option<AppNot
                     icon: Some(AppIcon::HomeSite),
                     handler: Box::new(EditorCommandOutput::from_iter([
                         AppAction::CloseNotification(notification_id),
+                        AppAction::defer(AppAction::OpenLink(
+                            // "http://127.0.0.1:8080/updates/1_4_0".to_string(),
+                            "https://shelv.app/updates/1_4_0".to_string(),
+                        )),
                     ])),
                 }),
             })
