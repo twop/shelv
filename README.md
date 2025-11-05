@@ -129,7 +129,12 @@ bind "Cmd 4" { SwitchToNote 3; }
 
 ## Word Jump Navigation
 
-Word Jump is a cool navigation feature that allows you to quickly jump to any word in your current note using 2-character keyboard sequences.
+**Introduced in 1.4.0**
+
+Word Jump is a cool navigation feature that allows you to quickly jump to any word in your current note using 2-character keyboard sequences, 
+so you don't have to touch your mouse or trackpad for large cursor moves.
+
+Read more on the website [here](https://shelv.app/updates/1_4_0)
 
 Inspired by [Vimium](https://vimium.github.io/) and [Helix](https://helix-editor.com/)
 
@@ -141,7 +146,7 @@ Inspired by [Vimium](https://vimium.github.io/) and [Helix](https://helix-editor
 
 ### How to Use
 
-1. **Activate Word Jump**: Press `⌘ J` (or your custom keybinding)
+1. **Activate Word Jump**: Press `⌘ J` (or your custom keybinding), or by `/jump` slash command
 2. **See Jump Labels**: Letter combinations appear next to words throughout your note
 3. **Jump**: Type the 2-character sequence to instantly jump to that word
 4. **Cancel**: Press `Escape` or any invalid sequence to exit Word Jump mode
