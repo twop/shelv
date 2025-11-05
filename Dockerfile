@@ -22,6 +22,8 @@ RUN apt-get update && apt-get install -y openssl ca-certificates
 COPY --from=builder /app/target/release/site /usr/local/bin
 # Copy assets folder for static files (CSS, icons, media)
 COPY --from=builder /app/site/assets ./assets
+# Copy update-log folder to serve /updates route
+COPY --from=builder /app/site/update-log ./update-log 
 # Copy .env file for environment configuration
 COPY --from=builder /app/.env ./.env
 ENTRYPOINT ["/usr/local/bin/site"]

@@ -497,6 +497,7 @@ impl AppState {
                 // CommandInstruction::RunLLMBlock,
                 CommandInstruction::ShowPrompt,
                 CommandInstruction::StartWordJump,
+                CommandInstruction::ToggleDebugTools,
                 CommandInstruction::ShowSlashPallete,
                 // CommandInstruction::HideSlashPallete,
                 // CommandInstruction::NextSlashPalleteCmd,
@@ -726,6 +727,8 @@ fn execute_instruction(
         CI::ShowPrompt => inline_llm_prompt_command_handler(ctx).unwrap_or_default(),
 
         CI::StartWordJump => start_jump_list_command_handler(ctx).unwrap_or_default(),
+
+        CI::ToggleDebugTools => [AppAction::ToggleDevTools].into(),
 
         CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),
 

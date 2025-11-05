@@ -1647,7 +1647,8 @@ fn render_header_panel(
                                 resulting_actions.push(AppAction::OpenFeedbackWindow);
                             }
 
-                            // Dev tools button
+                            // Dev tools button (debug builds only)
+                            #[cfg(debug_assertions)]
                             if t.ui_add(
                                 IconButton::new(AppIcon::Bug, theme)
                                     .size(IconButtonSize::Large)
