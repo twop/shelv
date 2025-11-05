@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2025-11-04
+
 ### Added
 - **Word Jump Navigation**: New quick navigation feature inspired by Vim/Helix editors
   - Press `⌘ J` to activate Word Jump mode
@@ -28,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Version-specific URLs (`/updates/{version}`) for direct linking to releases
   - Support for rich media content (images, videos), with relative path imports
   - Docs on how to add a new entry can be found here: /site/src/updates/update-log-docs.md
+- **Debug Tools Hotkey**: Debug tools can now be toggled via keyboard shortcut
+  - Added `⌥ ⇧ ⌃ D` (MEH + D) hotkey to toggle debug tools window
+  - Debug tools icon is now only visible in debug builds
 
 ### Changed
 - **Command System Rework**: Overhaul of the application's command system ([#187](https://github.com/twop/shelv/pull/187))

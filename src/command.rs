@@ -343,6 +343,9 @@ pub enum CommandInstruction {
     #[knus(name = "StartWordJump")]
     StartWordJump,
 
+    #[knus(name = "ToggleDebugTools")]
+    ToggleDebugTools,
+
     // Script API
     #[knus(name = "InsertText")]
     InsertText(ForwardToChild<TextSource>),
@@ -397,7 +400,8 @@ impl CommandInstruction {
             Self::HideApp => "Hide Window".into(),
             // Self::RunLLMBlock => "Execute AI Block".into(),
             CommandInstruction::ShowPrompt => "Show AI Prompt".into(),
-            CommandInstruction::StartWordJump => "Activates word jump mode for quick navigation to any word using 2-character sequences".into(),
+            CommandInstruction::StartWordJump => "Activate Word Jump".into(),
+            CommandInstruction::ToggleDebugTools => "Toggle Debug Tools".into(),
             CommandInstruction::EnterInsideKDL => "Auto indent KDL".into(),
             CommandInstruction::BracketAutoclosingInsideKDL => {
                 "Auto closing of '{' inside KDL".into()
@@ -437,6 +441,7 @@ impl CommandInstruction {
             C::PinWindow => shortcut(Modifiers::COMMAND, Key::P),
             C::ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
             C::StartWordJump => shortcut(Modifiers::COMMAND, Key::J),
+            C::ToggleDebugTools => shortcut(Modifiers::ALT.plus(Modifiers::SHIFT).plus(Modifiers::CTRL), Key::D),
             C::EnterInsideKDL => shortcut(Modifiers::NONE, Key::Enter),
             C::BracketAutoclosingInsideKDL => shortcut(Modifiers::SHIFT, Key::OpenBracket),
             C::HideApp => shortcut(Modifiers::NONE, Key::Escape),
@@ -475,7 +480,8 @@ impl CommandInstruction {
 
             // Global commands that work in any context
             C::SwitchToSettings
-            | C::PinWindow => (
+            | C::PinWindow
+            | C::ToggleDebugTools => (
                 CommandPhase::InsideRender,
                 CommandCondition::loose_match([UiStateAttribute::Idle])
             ),
@@ -520,6 +526,7 @@ impl CommandInstruction {
             // Self::RunLLMBlock => Some("ExecutePrompt;".into()),
             Self::ShowPrompt => Some("ShowPrompt;".into()),
             Self::StartWordJump => Some("StartWordJump;".into()),
+            Self::ToggleDebugTools => Some("ToggleDebugTools;".into()),
             Self::InsertText(ForwardToChild(source)) => match source {
                 TextSource::Str(text) => {
                     Some(format!("InsertText {{\n\tas_is \"{}\"\n}}", text).into())
