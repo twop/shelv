@@ -28,6 +28,7 @@ pub fn markdown_to_html(markdown: &str, base_path: &Path) -> (String, Option<Met
     let mut events = Vec::new();
 
     let mut inside_yaml_meta = false;
+    let mut video_dest_url = None;
     // Collect events and extract metadata
     for event in parser {
         match event {
@@ -43,45 +44,56 @@ pub fn markdown_to_html(markdown: &str, base_path: &Path) -> (String, Option<Met
                 }
                 // Don't include metadata text in events
             }
+
+            Event::Text(_) if video_dest_url.is_some() => {
+                // we can't meaningfully do anything about the name of the video, due to <video> element's lack of `alt` attribute
+            }
+
+            Event::Start(Tag::Image {
+                link_type: _,
+                dest_url,
+                title: _,
+                id: _,
+            }) if is_video_file(&dest_url) => {
+                video_dest_url = Some(dest_url.to_string());
+            }
+
+            Event::End(TagEnd::Image) if video_dest_url.is_some() => {
+                if let Some(dest_url) = video_dest_url.take() {
+                    // note that it will always be successful, but still don't want to  unwrap here
+                    let resolved_url = resolve_image_path(&dest_url, base_path);
+
+                    let video_html = format!(
+                        "<video controls autoplay loop muted>\n  <source src=\"{}\" type=\"{}\">\n  Your browser does not support the video tag.\n</video>",
+                        resolved_url,
+                        get_video_mime_type(&dest_url)
+                    );
+
+                    events.push(Event::Html(video_html.into()));
+                }
+            }
+
+            Event::Start(Tag::Image {
+                link_type,
+                dest_url,
+                title,
+                id,
+            }) => {
+                events.push(Event::Start(Tag::Image {
+                    link_type,
+                    dest_url: resolve_image_path(&dest_url, base_path),
+                    title,
+                    id,
+                }));
+            }
             _ => {
                 events.push(event);
             }
         }
     }
 
-    let events = events.into_iter().map(|event| match event {
-        Event::Start(Tag::Image {
-            link_type,
-            dest_url,
-            title,
-            id,
-        }) => {
-            let resolved_url = resolve_image_path(&dest_url, base_path);
-            
-            // FIXME: video needs to be processed separately, due to the name inside [{name]}]({link}) is being captured as a separate tag
-            // so we need to capture all events inside the image tag 
-            if is_video_file(&dest_url) {
-                // Create video HTML event
-                let video_html = format!(
-                    "<video controls autoplay loop muted>\n  <source src=\"{}\" type=\"{}\">\n  Your browser does not support the video tag.\n</video>",
-                    resolved_url,
-                    get_video_mime_type(&dest_url)
-                );
-                Event::Html(video_html.into())
-            } else {
-                Event::Start(Tag::Image {
-                    link_type,
-                    dest_url: resolved_url,
-                    title,
-                    id,
-                })
-            }
-        }
-        _ => event,
-    });
-
     let mut html_output = String::new();
-    html::push_html(&mut html_output, events);
+    html::push_html(&mut html_output, events.into_iter());
 
     (html_output, metadata)
 }
