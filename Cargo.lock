@@ -1149,6 +1149,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f25c0e292a7ca6d6498557ff1df68f32c99850012b6ea401cf8daf771f22ff53"
 
 [[package]]
+name = "dpi"
+version = "0.1.1"
+source = "git+https://github.com/twop/winit-no-private-api?branch=removed-private-api-v30-12#c0237454553ccb9ec967b930172bb75831f8d61c"
+
+[[package]]
 name = "ecolor"
 version = "0.32.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3103,7 +3108,7 @@ checksum = "86b959f97c97044e4c96e32e1db292a7d594449546a3c6b77ae613dc3a5b5145"
 dependencies = [
  "cocoa",
  "crossbeam-channel",
- "dpi",
+ "dpi 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "gtk",
  "keyboard-types",
  "libxdo",
@@ -6642,8 +6647,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "winit"
 version = "0.30.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c66d4b9ed69c4009f6321f762d6e61ad8a2389cd431b97cb1e146812e9e6c732"
+source = "git+https://github.com/twop/winit-no-private-api?branch=removed-private-api-v30-12#c0237454553ccb9ec967b930172bb75831f8d61c"
 dependencies = [
  "ahash",
  "android-activity",
@@ -6657,7 +6661,7 @@ dependencies = [
  "core-foundation 0.9.4",
  "core-graphics",
  "cursor-icon",
- "dpi",
+ "dpi 0.1.1 (git+https://github.com/twop/winit-no-private-api?branch=removed-private-api-v30-12)",
  "js-sys",
  "libc",
  "memmap2",
