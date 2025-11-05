@@ -174,12 +174,12 @@ mod tests {
             (
                 "Simple split",
                 r#"
-```settings
+```kdl
 global "Cmd Ctrl Option Shift S" {{||}ShowHideApp;}
 ```"#,
                 Some(
                     r#"
-```settings
+```kdl
 global "Cmd Ctrl Option Shift S" {
 	{||}ShowHideApp;
 }
@@ -189,7 +189,7 @@ global "Cmd Ctrl Option Shift S" {
             (
                 "Cursor is just outside '}' should not trigger",
                 r#"
-```settings
+```kdl
 block {
     child
 }{||}
@@ -198,14 +198,14 @@ block {
             ),
             (
                 "preserve indentation",
-                "```settings\nnode {\n\tchild {||}\n}\n```",
-                Some("```settings\nnode {\n\tchild \n\t{||}\n}\n```"),
+                "```kdl\nnode {\n\tchild {||}\n}\n```",
+                Some("```kdl\nnode {\n\tchild \n\t{||}\n}\n```"),
             ),
-            ("No indentation needed", "```settings\nnode{||}\n```", None),
+            ("No indentation needed", "```kdl\nnode{||}\n```", None),
             (
                 "Multiple levels of indentation",
-                "```settings\nnode {\n\tchild {\n\t\tgrandchild {||}\n\t}\n}\n```",
-                Some("```settings\nnode {\n\tchild {\n\t\tgrandchild \n\t\t{||}\n\t}\n}\n```"),
+                "```kdl\nnode {\n\tchild {\n\t\tgrandchild {||}\n\t}\n}\n```",
+                Some("```kdl\nnode {\n\tchild {\n\t\tgrandchild \n\t\t{||}\n\t}\n}\n```"),
             ),
         ];
 
@@ -222,7 +222,9 @@ block {
             ));
 
             if let Some(expected_result) = expected {
-                let changes = changes.expect("Expected changes, but got None");
+                let changes = changes.expect(
+                    format!("Test case: {} - Expected changes, but got None", desc).as_str(),
+                );
                 let cursor =
                     apply_text_changes(&mut text, Some(cursor.unordered()), changes).unwrap();
                 let res = TextChange::encode_cursor(&text, cursor.unwrap());
@@ -261,12 +263,12 @@ block {
             (
                 "Simple autoclose",
                 r#"
-```settings
+```kdl
 node {||}
 ```"#,
                 Some(
                     r#"
-```settings
+```kdl
 node {{||}}
 ```"#,
                 ),
@@ -274,12 +276,12 @@ node {{||}}
             (
                 "Autoclose with selection",
                 r#"
-```settings
+```kdl
 {|}selection{|}
 ```"#,
                 Some(
                     r#"
-```settings
+```kdl
 {|}{selection}{|}
 ```"#,
                 ),
@@ -287,7 +289,7 @@ node {{||}}
             (
                 "No autoclose outside settings block",
                 r#"Some text {||}
-```settings
+```kdl
 node
 ```"#,
                 None,

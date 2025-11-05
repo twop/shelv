@@ -1033,7 +1033,7 @@ mod command_condition_tests {
         assert!(!not_matching.eval(&state));
 
         let double_negative = C::Not(Box::new(not_matching));
-        assert!(!double_negative.eval(&state));
+        assert_eq!(double_negative.eval(&state), true);
     }
 
     #[test]
