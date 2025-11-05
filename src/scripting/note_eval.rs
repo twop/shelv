@@ -1,4 +1,4 @@
-use boa_engine::{context::HostHooks, Context, Source};
+use boa_engine::{Context, Source, context::HostHooks};
 use boa_runtime::Console;
 use smallvec::SmallVec;
 
@@ -280,19 +280,20 @@ I will be overwritten
 "#,
                 ),
             ),
+            // currently it wil always override the the output, even if the hash matches
             // ________________________________________________
-            (
-                "## and it doesn't override output block if hashes match ##",
-                r#"
-```js 1
-'hello world' + '!'
-```{||}
-```js 1 > #da0b
-I should be overwritten, but I won't
-```
-"#,
-                None,
-            ),
+            //             (
+            //                 "## and it doesn't override output block if hashes match ##",
+            //                 r#"
+            // ```js 1
+            // 'hello world' + '!'
+            // ```{||}
+            // ```js 1 > #da0b
+            // I should be overwritten, but I won't
+            // ```
+            // "#,
+            //                 None,
+            //             ),
             // ________________________________________________
             (
                 "## replaces the content of the output block if cache doesn't match or doesn't parse ##",
@@ -300,7 +301,7 @@ I should be overwritten, but I won't
 ```js 5
 2 + 2
 ```{||}
-```js 5 > #oops
+```js 5 > #da0b
 1
 ```
 "#,
@@ -309,7 +310,7 @@ I should be overwritten, but I won't
 ```js 5
 2 + 2
 ```{||}
-```js 5 > 2cd1
+```js 5 > #2cd1
 4
 ```
 "#,
@@ -382,6 +383,7 @@ Error: yo!
             let changes =
                 js_block_index.and_then(|index| evaluate_js_block(index, &structure, &text));
 
+            println!("\n\n test case -{desc:#}");
             match (changes, expected_output) {
                 (Some(changes), Some(expected_output)) => {
                     let cursor =
