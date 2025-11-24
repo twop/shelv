@@ -22,6 +22,7 @@ use pulldown_cmark::CowStr;
 // use itertools::Itertools;
 use shared::Version;
 use smallvec::SmallVec;
+use smol_str::ToSmolStr;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
@@ -44,7 +45,7 @@ use crate::{
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
     persistent_state::NoteFile,
-    picker::{Picker, PickerItem, PickerItemKind},
+    picker::{Picker, PickerItem, PickerItemKind, PickerVisualStyle},
     settings_parsing::format_mac_shortcut_with_symbols,
     taffy_styles::{StyleBuilder, flex_column, flex_row},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
@@ -1449,6 +1450,11 @@ fn render_footer_panel(
                         .enumerate()
                         .map(|(index, tooltip)| PickerItem {
                             tooltip,
+                            // kind: PickerItemKind::ItemName(
+                            //     // FIXME don't allocate
+                            //     format!("note-{index}").to_smolstr(),
+                            //     FontId::new(theme.fonts.size.normal, FontFamily::Proportional),
+                            // ),
                             kind: PickerItemKind::FontIcon(
                                 match index {
                                     0 => AppIcon::One,
@@ -1458,32 +1464,45 @@ fn render_footer_panel(
                                     // should not be reachable
                                     _ => AppIcon::More,
                                 }
-                                .to_icon_str(),
-                                FontFamily::Proportional,
+                                .to_icon_str()
+                                .to_smolstr(),
+                                FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
                             ),
                             data: NoteFile::Note(index as u32),
                         })
-                        .chain([PickerItem {
-                            tooltip: {
-                                let tooltip_text = "Settings";
-                                command_list
-                                    .find(CommandInstruction::SwitchToSettings)
-                                    .and_then(|cmd| cmd.shortcut)
-                                    .map(|shortcut| {
-                                        format!(
-                                            "{} {}",
-                                            tooltip_text,
-                                            ctx.format_shortcut(&shortcut)
-                                        )
-                                    })
-                                    .unwrap_or_else(|| tooltip_text.to_string())
+                        .chain([
+                            // PickerItem {
+                            //     tooltip: "Note 1 example".to_string(),
+                            //     kind: PickerItemKind::ItemName("note-1", FontFamily::Monospace),
+                            //     data: NoteFile::Note(10),
+                            // },
+                            // PickerItem {
+                            //     tooltip: "Note 2 example".to_string(),
+                            //     kind: PickerItemKind::ItemName("note-2", FontFamily::Monospace),
+                            //     data: NoteFile::Note(11),
+                            // },
+                            PickerItem {
+                                tooltip: {
+                                    let tooltip_text = "Settings";
+                                    command_list
+                                        .find(CommandInstruction::SwitchToSettings)
+                                        .and_then(|cmd| cmd.shortcut)
+                                        .map(|shortcut| {
+                                            format!(
+                                                "{} {}",
+                                                tooltip_text,
+                                                ctx.format_shortcut(&shortcut)
+                                            )
+                                        })
+                                        .unwrap_or_else(|| tooltip_text.to_string())
+                                },
+                                kind: PickerItemKind::FontIcon(
+                                    AppIcon::Settings.to_icon_str().to_smolstr(),
+                                    FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
+                                ),
+                                data: NoteFile::Settings,
                             },
-                            kind: PickerItemKind::FontIcon(
-                                AppIcon::Settings.to_icon_str(),
-                                FontFamily::Proportional,
-                            ),
-                            data: NoteFile::Settings,
-                        }])
+                        ])
                         .collect::<Vec<_>>();
 
                     let picker = Picker {
@@ -1492,16 +1511,17 @@ fn render_footer_panel(
                             NoteFile::Settings => note_count,
                         },
                         items: &items,
-                        gap: sizes.s,
-                        // TODO why the button icons are rendered with h3 font size?
-                        item_size: theme.sizes.toolbar_icon,
-                        inactive_color: theme.colors.subtle_text_color,
-                        hover_color: theme.colors.button_hover_fg,
-                        pressed_color: theme.colors.button_pressed_fg,
-                        selected_stroke_color: theme.colors.button_pressed_fg,
-                        selected_fill_color: theme.colors.button_pressed_fg,
-                        outline: Stroke::new(1.0, theme.colors.outline_fg),
-                        tooltip_text_color: theme.colors.subtle_text_color,
+                        gap: sizes.xs,
+                        bottom_rounding: sizes.s,
+                        style: PickerVisualStyle {
+                            inactive_color: theme.colors.subtle_text_color,
+                            hover_color: theme.colors.button_hover_fg,
+                            pressed_color: theme.colors.button_pressed_fg,
+                            selected_stroke_color: theme.colors.button_pressed_fg,
+                            selected_fill_color: theme.colors.button_pressed_fg,
+                            outline: Stroke::new(1.0, theme.colors.outline_fg),
+                            tooltip_text_color: theme.colors.subtle_text_color,
+                        },
                     };
 
                     if let Some(&note_file) = picker.show(ui).inner {
