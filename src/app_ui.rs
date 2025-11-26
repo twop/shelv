@@ -44,7 +44,7 @@ use crate::{
     commands::inline_llm_prompt::compute_inline_prompt_text_input_id,
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
-    persistent_state::NoteFile,
+    persistent_state::NoteId,
     picker::{Picker, PickerItem, PickerItemKind, PickerVisualStyle},
     settings_parsing::format_mac_shortcut_with_symbols,
     taffy_styles::{StyleBuilder, flex_column, flex_row},
@@ -55,7 +55,7 @@ use crate::{
 };
 
 pub struct AppRenderData<'a> {
-    pub selected_note: NoteFile,
+    pub selected_note: NoteId,
     pub code_block_annotations: &'a [(SpanIndex, CodeBlockAnnotation)],
     pub note_count: usize,
     pub text_edit_id: Id,
@@ -305,31 +305,31 @@ pub fn render_app(
                                                 let action = match parts.as_slice() {
                                                     ["shelv", "note1", ..] => {
                                                         AppAction::SwitchToNote {
-                                                            note_file: NoteFile::Note(0),
+                                                            note_file: NoteId::Note(0),
                                                             via_shortcut: true,
                                                         }
                                                     }
                                                     ["shelv", "note2", ..] => {
                                                         AppAction::SwitchToNote {
-                                                            note_file: NoteFile::Note(1),
+                                                            note_file: NoteId::Note(1),
                                                             via_shortcut: true,
                                                         }
                                                     }
                                                     ["shelv", "note3", ..] => {
                                                         AppAction::SwitchToNote {
-                                                            note_file: NoteFile::Note(2),
+                                                            note_file: NoteId::Note(2),
                                                             via_shortcut: true,
                                                         }
                                                     }
                                                     ["shelv", "note4", ..] => {
                                                         AppAction::SwitchToNote {
-                                                            note_file: NoteFile::Note(3),
+                                                            note_file: NoteId::Note(3),
                                                             via_shortcut: true,
                                                         }
                                                     }
                                                     ["shelv", "settings", ..] => {
                                                         AppAction::SwitchToNote {
-                                                            note_file: NoteFile::Settings,
+                                                            note_file: NoteId::Settings,
                                                             via_shortcut: true,
                                                         }
                                                     }
@@ -382,7 +382,7 @@ fn render_editor(
     syntax_set: &SyntaxSet,
     theme_set: &ThemeSet,
     text_edit_id: Id,
-    note_file: NoteFile,
+    note_file: NoteId,
     command_list: &CommandList,
     frame_hotkeys: &mut FrameHotkeys,
     code_block_annotations: &[(SpanIndex, CodeBlockAnnotation)],
@@ -1106,7 +1106,7 @@ fn render_code_actions(
     code_area: Rect,
     annotation: Option<&CodeBlockAnnotation>,
     span_index: SpanIndex,
-    note_file: NoteFile,
+    note_file: NoteId,
     frame_hotkeys: &mut FrameHotkeys,
     is_cursor_inside: bool,
 ) -> EditorCommandOutput {
@@ -1418,7 +1418,7 @@ fn restore_cursor_from_note_state(
 }
 
 fn render_footer_panel(
-    selected: NoteFile,
+    selected: NoteId,
     note_count: usize,
     command_list: &CommandList,
     ctx: &Context,
@@ -1468,7 +1468,7 @@ fn render_footer_panel(
                                 .to_smolstr(),
                                 FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
                             ),
-                            data: NoteFile::Note(index as u32),
+                            data: NoteId::Note(index as u32),
                         })
                         .chain([
                             // PickerItem {
@@ -1500,16 +1500,13 @@ fn render_footer_panel(
                                     AppIcon::Settings.to_icon_str().to_smolstr(),
                                     FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
                                 ),
-                                data: NoteFile::Settings,
+                                data: NoteId::Settings,
                             },
                         ])
                         .collect::<Vec<_>>();
 
                     let picker = Picker {
-                        current: match selected {
-                            NoteFile::Note(i) => i as usize,
-                            NoteFile::Settings => note_count,
-                        },
+                        current: selected,
                         items: &items,
                         gap: sizes.xs,
                         bottom_rounding: sizes.s,
@@ -1552,7 +1549,7 @@ fn render_header_panel(
     ctx: &egui::Context,
     theme: &AppTheme,
     command_list: &CommandList,
-    selected_note: NoteFile,
+    selected_note: NoteId,
     is_window_pinned: bool,
     feedback_sent: bool,
     version_state: &VersionState,
@@ -1610,8 +1607,9 @@ fn render_header_panel(
                                     RichText::new(format!(
                                         "Shelv - {}",
                                         match selected_note {
-                                            NoteFile::Note(index) => format!("note {}", index + 1),
-                                            NoteFile::Settings => "settings".to_string(),
+                                            NoteId::Note(index)=>format!("note {}",index+1),
+                                            NoteId::Settings=>"settings".to_string(),
+                                            NoteId::ExternalFileId(external_file_id) => format!("TODO: external {:?}",external_file_id),
                                         }
                                     ))
                                     .color(theme.colors.subtle_text_color)

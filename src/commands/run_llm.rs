@@ -7,10 +7,10 @@ use crate::{
     app_state::AppState,
     byte_span::ByteSpan,
     command::{
-        try_extract_text_command_context, CommandContext, EditorCommandOutput, TextCommandContext,
+        CommandContext, EditorCommandOutput, TextCommandContext, try_extract_text_command_context,
     },
     effects::text_change_effect::TextChange,
-    persistent_state::NoteFile,
+    persistent_state::NoteId,
     scripting::note_eval_context::SourceHash,
     text_structure::{CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextStructure},
 };
@@ -18,7 +18,7 @@ use crate::{
 #[derive(Clone, Copy)]
 pub enum CodeBlockAddress {
     NoteSelection,
-    TargetBlock(NoteFile, SpanIndex),
+    TargetBlock(NoteId, SpanIndex),
 }
 
 pub(crate) const LLM_LANG: &str = "ai";

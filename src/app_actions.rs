@@ -29,7 +29,7 @@ use crate::{
     },
     effects::text_change_effect::{TextChange, apply_text_changes},
     feedback::FeedbackType,
-    persistent_state::NoteFile,
+    persistent_state::NoteId,
     scripting::{
         note_eval::{JSBlockLang, evaluate_all_live_js_blocks, evaluate_js_block},
         settings_eval::{
@@ -92,7 +92,7 @@ pub struct AppNotification {
 #[derive(Debug, Clone)]
 pub enum AppAction {
     SwitchToNote {
-        note_file: NoteFile,
+        note_file: NoteId,
         via_shortcut: bool,
     },
     // HideApp,
@@ -100,14 +100,14 @@ pub enum AppAction {
     OpenLink(String),
     SetWindowPinned(bool),
     ApplyTextChanges {
-        target: NoteFile,
+        target: NoteId,
         changes: Vec<TextChange>,
         should_trigger_eval: bool,
     },
     HandleMsgToApp(MsgToApp),
-    EvalNote(NoteFile),
+    EvalNote(NoteId),
     AskLLM(LLMBlockRequest),
-    RunCodeBlock(NoteFile, SpanIndex),
+    RunCodeBlock(NoteId, SpanIndex),
     SubmitFeedback,
     OpenFeedbackWindow,
     CloseFeedbackWindow,
@@ -125,7 +125,7 @@ pub enum AppAction {
     SlashPalette(SlashPaletteAction),
     WordJump(WordJumpAction),
     HideApp,
-    CopyCodeBlock(NoteFile, SpanIndex),
+    CopyCodeBlock(NoteId, SpanIndex),
     AppUpdateClicked,
     ToggleDevTools,
     ShowNotification(AppNotification),
@@ -133,7 +133,7 @@ pub enum AppAction {
 }
 
 impl AppAction {
-    pub fn apply_text_changes(target: NoteFile, changes: Vec<TextChange>) -> Self {
+    pub fn apply_text_changes(target: NoteId, changes: Vec<TextChange>) -> Self {
         Self::ApplyTextChanges {
             target,
             changes,
@@ -162,7 +162,7 @@ pub struct Conversation {
 pub struct LLMBlockRequest {
     pub conversation: Conversation,
     pub output_code_block_address: String,
-    pub note_id: NoteFile,
+    pub note_id: NoteId,
 }
 
 #[derive(Debug)]
@@ -636,7 +636,7 @@ pub fn process_app_action(
             }
         }
         AppAction::EvalNote(note_file) => {
-            let note = &mut state.notes.get_mut(&note_file).unwrap();
+            let note = state.notes.get_mut(&note_file).unwrap();
             let text_structure = &note.derived_state.structure;
             let text = &mut note.text;
 
@@ -669,7 +669,7 @@ pub fn process_app_action(
             }
 
             let requested_changes = match note_file {
-                NoteFile::Note(_) => {
+                NoteId::Note(_) | NoteId::ExternalFileId(_) => {
                     let run_button_annotations = text_structure
                         .filter_map_codeblocks(|lang| {
                             if let Some(JSBlockLang::Source(link_id)) = JSBlockLang::parse(lang) {
@@ -703,7 +703,7 @@ pub fn process_app_action(
                     evaluate_all_live_js_blocks(text_structure, text)
                 }
 
-                NoteFile::Settings => {
+                NoteId::Settings => {
                     println!("####### eval settings");
 
                     let (settings_scripts, block_annotations) =
@@ -819,7 +819,7 @@ pub fn process_app_action(
             // Insert tutorial content into the first note only
             const TUTORIAL_CONTENT: &str = include_str!("default-notes/tutorial.md");
 
-            let first_note_id = NoteFile::Note(0);
+            let first_note_id = NoteId::Note(0);
             let is_empty = state
                 .notes
                 .get(&first_note_id)

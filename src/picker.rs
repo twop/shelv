@@ -55,7 +55,7 @@ pub struct PickerItem<Item: PartialEq> {
 }
 
 pub struct Picker<'a, Item: PartialEq> {
-    pub current: usize,
+    pub current: Item,
     pub items: &'a [PickerItem<Item>],
     pub gap: f32,
     pub bottom_rounding: f32,
@@ -140,27 +140,27 @@ impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
 
         response.widget_info(|| WidgetInfo::selected(WidgetType::RadioButton, true, true, ""));
 
-        if ui.is_rect_visible(rect) {
-            render_picker_items(&layout, &mut current, ui, &style);
-        }
+        let newly_selected = ui
+            .is_rect_visible(rect)
+            .then(|| render_picker_items(&layout, &mut current, ui, &style))
+            .flatten();
 
-        if current != original_current {
-            *result = items.get(current).map(|item| &item.data);
-        }
+        *result = newly_selected;
 
         response
     }
 }
 
-fn render_picker_items<Item: PartialEq>(
-    layout: &PickerLayout<Item>,
-    current: &mut usize,
+fn render_picker_items<'items, Item: PartialEq>(
+    layout: &PickerLayout<'items, Item>,
+    current: &Item,
     ui: &mut Ui,
     style: &PickerVisualStyle,
-) {
+) -> Option<&'items Item> {
     let ctx = ui.ctx();
     let painter = ui.painter();
     let animation_duration = 0.2;
+    let mut newly_selected = None;
 
     let picker_id = ui.id().with("picker");
     for (i, item_layout) in layout.items.iter().enumerate() {
@@ -178,11 +178,11 @@ fn render_picker_items<Item: PartialEq>(
             Sense::click(),
         );
 
-        if point_response.clicked() {
-            *current = i;
+        let is_selected = &item_layout.item.data == current;
+        if point_response.clicked() && !is_selected {
+            // that means that the selection changed
+            newly_selected = Some(&item_layout.item.data);
         }
-
-        let is_selected = i == *current;
 
         if !is_selected {
             let tooltip_ui = |ui: &mut egui::Ui| {
@@ -301,6 +301,7 @@ fn render_picker_items<Item: PartialEq>(
             );
         }
     }
+    newly_selected
 }
 
 fn measure_text_size(painter: &egui::Painter, text: &str, font_id: FontId) -> Vec2 {
