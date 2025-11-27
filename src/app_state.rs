@@ -197,6 +197,15 @@ pub struct Note {
 }
 
 impl Note {
+    pub fn new(text: String, derived_state: NoteDerivedState) -> Self {
+        Self {
+            text,
+            cursor: None,
+            last_cursor: None,
+            derived_state,
+        }
+    }
+
     pub fn reset_cursor(&mut self) {
         self.cursor = None;
     }
@@ -477,7 +486,7 @@ impl AppState {
             }])
             .collect();
 
-        let selected_note = saved_state.selected;
+        let mut selected_note = saved_state.selected;
         let is_window_pinned = saved_state.is_pinned;
 
         let keybord_instructions: Vec<CommandInstruction> = Vec::from_iter(
@@ -563,6 +572,10 @@ impl AppState {
         // Add tutorial action for fresh installs
         if matches!(load_kind, LoadKind::FreshInstall) {
             deferred_actions.push(AppAction::StartTutorial);
+        }
+
+        if !notes.contains_key(&selected_note) {
+            selected_note = NoteId::Note(0);
         }
 
         Self {

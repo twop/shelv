@@ -535,7 +535,8 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         }
 
         // note that we have a settings note amoung them
-        let note_count = app_state.notes.len() - 1;
+        // TODO FIXME this is wrong, there needs to be a more robust way to count the predefined notes
+        let note_count = 5;
 
         let note = app_state.notes.get_mut(&app_state.selected_note).unwrap();
         let text_structure = std::mem::take(&mut note.derived_state.structure);
@@ -559,6 +560,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             app_state.prev_focused = is_frame_actually_focused;
         }
 
+        let opened_files = SmallVec::from_iter(app_state.notes.keys().cloned());
         let edited_note = app_state.notes.get_mut(&app_state.selected_note).unwrap();
 
         let editor_text = &mut edited_note.text;
@@ -566,8 +568,9 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
         let vis_state = AppRenderData {
             selected_note: app_state.selected_note,
+            opened_files,
             is_window_pinned: app_state.is_pinned,
-            note_count,
+            external_files: &app_state.external_files,
             text_edit_id,
             command_list: &app_state.commands,
             byte_cursor: cursor,

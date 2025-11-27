@@ -86,6 +86,10 @@ impl AppIO for RealAppIO {
         try_read_note_if_newer(path, last_saved)
     }
 
+    fn read_file(&self, path: &PathBuf) -> Result<String, io::Error> {
+        std::fs::read_to_string(path)
+    }
+
     fn try_map_hotkey(&self, hotkey_id: u32) -> Option<MsgToApp> {
         self.registered_hotkeys
             .get(&hotkey_id)

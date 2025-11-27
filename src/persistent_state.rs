@@ -27,6 +27,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Hash, Clone, PartialEq, Ord, PartialOrd, Eq, Copy, Deserialize, Serialize)]
 pub struct ExternalFileId(u64);
 
+impl ExternalFileId {
+    pub fn from_pathbuf(path: &PathBuf) -> Self {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        path.hash(&mut hasher);
+        ExternalFileId(hasher.finish())
+    }
+}
+
 // #[derive(Debug, Hash, Clone, PartialEq, Ord, PartialOrd, Eq, Copy, Deserialize, Serialize)]
 #[derive(Debug)]
 pub struct ExternalFile {

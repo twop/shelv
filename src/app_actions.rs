@@ -29,7 +29,7 @@ use crate::{
     },
     effects::text_change_effect::{TextChange, apply_text_changes},
     feedback::FeedbackType,
-    persistent_state::NoteId,
+    persistent_state::{ExternalFileId, NoteId},
     scripting::{
         note_eval::{JSBlockLang, evaluate_all_live_js_blocks, evaluate_js_block},
         settings_eval::{
@@ -130,6 +130,8 @@ pub enum AppAction {
     ToggleDevTools,
     ShowNotification(AppNotification),
     CloseNotification(NotificationId),
+    OpenExternalFile(PathBuf),
+    CloseExternalFile(ExternalFileId),
 }
 
 impl AppAction {
@@ -193,6 +195,8 @@ pub trait AppIO {
         path: &PathBuf,
         last_saved: u128,
     ) -> Result<Option<String>, io::Error>;
+
+    fn read_file(&self, path: &PathBuf) -> Result<String, io::Error>;
 
     fn cleanup_all_global_hotkeys(&mut self) -> Result<(), String>;
 
@@ -1195,6 +1199,14 @@ pub fn process_app_action(
         AppAction::CloseNotification(notification_id) => {
             state.notifications.dismiss(notification_id);
             SmallVec::new()
+        }
+
+        AppAction::OpenExternalFile(path) => {
+            crate::actions::external_files::open_external_file(path, state, app_io)
+        }
+
+        AppAction::CloseExternalFile(file_id) => {
+            crate::actions::external_files::close_external_file(file_id, state)
         }
 
         AppAction::WordJump(word_jump_action) => match word_jump_action {
