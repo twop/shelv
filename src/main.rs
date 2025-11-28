@@ -70,7 +70,6 @@ mod update_messages;
 
 pub struct MyApp<IO: AppIO> {
     state: AppState,
-    hotwatch: Hotwatch,
     tray: TrayIcon,
     persistence_folder: PathBuf,
     app_io: IO,
@@ -106,28 +105,64 @@ impl MyApp<RealAppIO> {
 
         let current_version = env!("CARGO_PKG_VERSION");
 
-        let app_io = RealAppIO {
-            hotkeys_manager: GlobalHotKeyManager::new().unwrap(),
-            registered_hotkeys: Default::default(),
-            egui_ctx: cc.egui_ctx.clone(),
-            msg_queue: msg_queue_tx.clone(),
-            shelv_folder: persistence_folder.clone(),
-            shelv_api_server: shelv_api_server.to_string(),
-            shelv_magic_token: shelv_magic_token.to_string(),
-            debug_chat_prompts: debug_chat_prompts,
-            current_version: Version(current_version.to_string()),
-        };
+        let hotkeys_manager =
+            GlobalHotKeyManager::new().expect("Failed to initialize global hotkey manager");
 
-        // let open_hotkey = global_open_hotkey.clone();
-        let ctx = cc.egui_ctx.clone();
+        {
+            let sender = msg_queue_tx.clone();
+            let ctx = cc.egui_ctx.clone();
+
+            GlobalHotKeyEvent::set_event_handler(Some(move |ev: GlobalHotKeyEvent| {
+                if ev.state() == HotKeyState::Pressed {
+                    sender.send(MsgToApp::GlobalHotkey(ev.id())).unwrap();
+                    ctx.request_repaint();
+                }
+            }));
+        }
+
+        // Create and setup hotwatch for persistence folder
         let sender = msg_queue_tx.clone();
+        let ctx = cc.egui_ctx.clone();
+        let mut hotwatch = Hotwatch::new().expect("hotwatch failed to initialize!");
+        hotwatch
+            .watch(&persistence_folder, move |event: Event| {
+                // println!("\nhotwatch event\n{:#?}\n", event);
+                if let EventKind::Modify(ModifyKind::Data(DataChange::Content)) = event.kind {
+                    let filter_map: SmallVec<[_; 4]> = event
+                        .paths
+                        .iter()
+                        .filter_map(|p| {
+                            p.file_name()
+                                .and_then(|f| f.to_str())
+                                .and_then(extract_note_file)
+                                .map(|(note_file, _)| (note_file, p))
+                        })
+                        .collect();
 
-        GlobalHotKeyEvent::set_event_handler(Some(move |ev: GlobalHotKeyEvent| {
-            if ev.state() == HotKeyState::Pressed {
-                sender.send(MsgToApp::GlobalHotkey(ev.id())).unwrap();
-                ctx.request_repaint();
-            }
-        }));
+                    let has_updates = !filter_map.is_empty();
+                    for (note_file, path) in filter_map {
+                        sender
+                            .send(MsgToApp::NoteFileChanged(note_file, path.clone()))
+                            .unwrap();
+                    }
+                    if has_updates {
+                        ctx.request_repaint();
+                    }
+                }
+            })
+            .expect("failed to watch file!");
+
+        let app_io = RealAppIO::new(
+            hotkeys_manager,
+            hotwatch,
+            cc.egui_ctx.clone(),
+            msg_queue_tx.clone(),
+            persistence_folder.clone(),
+            shelv_api_server.to_string(),
+            shelv_magic_token.to_string(),
+            debug_chat_prompts,
+            Version(current_version.to_string()),
+        );
 
         let ctx = cc.egui_ctx.clone();
         let sender = msg_queue_tx.clone();
@@ -180,37 +215,6 @@ impl MyApp<RealAppIO> {
         let (persistent_state, load_kind, update_status) =
             load_and_migrate(number_of_notes, v1_save, &persistence_folder);
 
-        let sender = msg_queue_tx.clone();
-        let ctx = cc.egui_ctx.clone();
-        let mut hotwatch = Hotwatch::new().expect("hotwatch failed to initialize!");
-        hotwatch
-            .watch(&persistence_folder, move |event: Event| {
-                // println!("\nhotwatch event\n{:#?}\n", event);
-                if let EventKind::Modify(ModifyKind::Data(DataChange::Content)) = event.kind {
-                    let filter_map: SmallVec<[_; 4]> = event
-                        .paths
-                        .iter()
-                        .filter_map(|p| {
-                            p.file_name()
-                                .and_then(|f| f.to_str())
-                                .and_then(extract_note_file)
-                                .map(|(note_file, _)| (note_file, p))
-                        })
-                        .collect();
-
-                    let has_updates = !filter_map.is_empty();
-                    for (note_file, path) in filter_map {
-                        sender
-                            .send(MsgToApp::NoteFileChanged(note_file, path.clone()))
-                            .unwrap();
-                    }
-                    if has_updates {
-                        ctx.request_repaint();
-                    }
-                }
-            })
-            .expect("failed to watch file!");
-
         let last_saved = persistent_state.state.last_saved;
 
         let mut state = AppState::new(AppInitData {
@@ -243,7 +247,6 @@ impl MyApp<RealAppIO> {
                 focus_id: None,
             },
             persistence_folder,
-            hotwatch,
         }
     }
 }
@@ -533,10 +536,6 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                 action_buffer.extend(new_actions.into_iter().map(|a| (a, depth + 1)));
             }
         }
-
-        // note that we have a settings note amoung them
-        // TODO FIXME this is wrong, there needs to be a more robust way to count the predefined notes
-        let note_count = 5;
 
         let note = app_state.notes.get_mut(&app_state.selected_note).unwrap();
         let text_structure = std::mem::take(&mut note.derived_state.structure);

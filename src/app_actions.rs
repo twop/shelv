@@ -12,8 +12,12 @@ use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
 
 use crate::{
-    actions::word_jump::{
-        add_keystroke_to_sequence, create_jump_points, find_matching_jump, has_potential_matches,
+    actions::{
+        self,
+        word_jump::{
+            add_keystroke_to_sequence, create_jump_points, find_matching_jump,
+            has_potential_matches,
+        },
     },
     app_state::{
         AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk,
@@ -29,7 +33,7 @@ use crate::{
     },
     effects::text_change_effect::{TextChange, apply_text_changes},
     feedback::FeedbackType,
-    persistent_state::{ExternalFileId, NoteId},
+    persistent_state::{ExternalFile, ExternalFileId, NoteId},
     scripting::{
         note_eval::{JSBlockLang, evaluate_all_live_js_blocks, evaluate_js_block},
         settings_eval::{
@@ -225,6 +229,9 @@ pub trait AppIO {
     fn start_update_checker(&self);
 
     fn open_app_store_for_shelv_update(&self);
+
+    fn watch_external_file(&mut self, external_file: &ExternalFile) -> Result<(), String>;
+    fn unwatch_external_file(&mut self, external_file_id: ExternalFileId) -> Result<(), String>;
 }
 
 pub fn process_app_action(
@@ -628,6 +635,12 @@ pub fn process_app_action(
                         SmallVec::new()
                     }
                 },
+                MsgToApp::ExternalFileDeletedOrRenamed(file_id) => {
+                    // Close the external file when it's deleted or renamed for now
+                    // In the future it might make sense to rename the ExternalFile directly
+                    // but one thing at a time...
+                    [AppAction::CloseExternalFile(file_id)].into()
+                }
                 MsgToApp::UpdateRequired(required_version) => {
                     state.app_version_state =
                         VersionState::RequiredUpdateAvailable(required_version);
@@ -640,7 +653,10 @@ pub fn process_app_action(
             }
         }
         AppAction::EvalNote(note_file) => {
-            let note = state.notes.get_mut(&note_file).unwrap();
+            let Some(note) = state.notes.get_mut(&note_file) else {
+                return SmallVec::new();
+            };
+
             let text_structure = &note.derived_state.structure;
             let text = &mut note.text;
 
@@ -1202,11 +1218,11 @@ pub fn process_app_action(
         }
 
         AppAction::OpenExternalFile(path) => {
-            crate::actions::external_files::open_external_file(path, state, app_io)
+            actions::external_files::open_external_file(path, state, app_io)
         }
 
         AppAction::CloseExternalFile(file_id) => {
-            crate::actions::external_files::close_external_file(file_id, state)
+            actions::external_files::close_external_file(file_id, state, app_io)
         }
 
         AppAction::WordJump(word_jump_action) => match word_jump_action {

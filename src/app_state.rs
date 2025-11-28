@@ -42,7 +42,9 @@ use crate::{
     },
     dev_tools::DevToolsState,
     feedback::FeedbackData,
-    persistent_state::{DataToSave, ExternalFile, FileAddress, LoadKind, NoteId, RestoredData},
+    persistent_state::{
+        DataToSave, ExternalFile, ExternalFileId, FileAddress, LoadKind, NoteId, RestoredData,
+    },
     scripting::settings_eval::Scripts,
     settings_parsing::LlmSettings,
     text_structure::{
@@ -422,6 +424,7 @@ pub enum InlineLLMResponseChunk {
 pub enum MsgToApp {
     ToggleVisibility,
     NoteFileChanged(NoteId, PathBuf),
+    ExternalFileDeletedOrRenamed(ExternalFileId),
     GlobalHotkey(u32),
     LLMBlockResponseChunk(LLMBlockResponseChunk),
 

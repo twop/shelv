@@ -39,7 +39,7 @@ impl ExternalFileId {
 }
 
 // #[derive(Debug, Hash, Clone, PartialEq, Ord, PartialOrd, Eq, Copy, Deserialize, Serialize)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExternalFile {
     pub id: ExternalFileId,
     pub path: PathBuf,

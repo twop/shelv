@@ -1453,9 +1453,12 @@ fn render_footer_panel(
                         .filter_map(|note_id| match note_id {
                             NoteId::Note(index) => {
                                 let index = *index;
-                                let cmd = command_list.find(CommandInstruction::SwitchToNote(index as u8));
+                                let cmd = command_list
+                                    .find(CommandInstruction::SwitchToNote(index as u8));
                                 let tooltip = match cmd.and_then(|cmd| cmd.shortcut) {
-                                    Some(shortcut) => format!("Shelf {}", ctx.format_shortcut(&shortcut)),
+                                    Some(shortcut) => {
+                                        format!("Shelf {}", ctx.format_shortcut(&shortcut))
+                                    }
                                     None => format!("Shelf {}", index + 1),
                                 };
 
@@ -1471,13 +1474,16 @@ fn render_footer_panel(
                                         }
                                         .to_icon_str()
                                         .to_smolstr(),
-                                        FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
+                                        FontId::new(
+                                            theme.sizes.toolbar_icon,
+                                            FontFamily::Proportional,
+                                        ),
                                     ),
                                     data: *note_id,
                                 })
                             }
                             NoteId::ExternalFileId(_) => None, // We'll add external files separately
-                            NoteId::Settings => None, // We'll add settings separately
+                            NoteId::Settings => None,          // We'll add settings separately
                         })
                         .chain(external_files.iter().map(|ext_file| {
                             let file_name = ext_file
@@ -1669,13 +1675,13 @@ fn render_header_panel(
                             if t.ui_add(
                                 IconButton::new(AppIcon::Folder, theme)
                                     .size(IconButtonSize::Large)
-                                    .tooltip("TEST: Open README.md", None),
+                                    .tooltip("TEST: Open test.md", None),
                             )
                             .clicked()
                             {
                                 use std::path::PathBuf;
                                 let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-                                let readme_path = PathBuf::from(home).join("work/shelv/README.md");
+                                let readme_path = PathBuf::from(home).join("work/shelv/test.md");
                                 resulting_actions.push(AppAction::OpenExternalFile(readme_path));
                             }
 

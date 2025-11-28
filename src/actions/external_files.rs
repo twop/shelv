@@ -13,7 +13,7 @@ use crate::{
 pub fn open_external_file(
     path: PathBuf,
     state: &mut AppState,
-    app_io: &impl AppIO,
+    app_io: &mut impl AppIO,
 ) -> SmallVec<[AppAction; 1]> {
     // Check if this file is already open
     let already_open = state.external_files.iter().find(|f| f.path == path);
@@ -38,6 +38,9 @@ pub fn open_external_file(
                     id: file_id,
                     path: path.clone(),
                 };
+
+                // FIXME show a notification that failed was failed to be watched
+                let _ = app_io.watch_external_file(&external_file);
 
                 state.external_files.push(external_file);
 
@@ -67,6 +70,7 @@ pub fn open_external_file(
 pub fn close_external_file(
     file_id: ExternalFileId,
     state: &mut AppState,
+    app_io: &mut impl AppIO,
 ) -> SmallVec<[AppAction; 1]> {
     let note_id = NoteId::ExternalFileId(file_id);
 
@@ -75,6 +79,8 @@ pub fn close_external_file(
 
     // Remove from external files list
     state.external_files.retain(|f| f.id != file_id);
+
+    let _ = app_io.unwatch_external_file(file_id);
 
     // If this was the selected note, switch to the first note
     if state.selected_note == note_id {
