@@ -1527,8 +1527,12 @@ fn render_footer_panel(
                     let picker = Picker {
                         current: selected,
                         items: &items,
-                        gap: sizes.xs,
-                        bottom_rounding: sizes.s,
+                        layout_params: crate::picker::PickerLayoutParams {
+                            outline_margin: (sizes.xs, sizes.xs / 2.0),
+                            gap: sizes.xs,
+                            bottom_rounding: sizes.s,
+                            top_rounding: sizes.s,
+                        },
                         style: PickerVisualStyle {
                             inactive_color: theme.colors.subtle_text_color,
                             hover_color: theme.colors.button_hover_fg,
