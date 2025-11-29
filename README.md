@@ -369,6 +369,7 @@ Yes and no, Shelv is licensed under the [Komorebi License](https://github.com/LG
 This limits you from compiling Shelv for work or repackaging it to a new app, but you can fork it for non-commercial personal use or with the intention of contributing changes back.
 However you can (and hopefully always) just use the version from the app store, which grants **personal** commercial use (such as using it at work for productivity). 
 
+
 Read more [below](#License)
 
 </details>

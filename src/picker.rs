@@ -24,9 +24,7 @@ struct PickerItemLayout<'a, Item: PartialEq> {
 struct PickerLayout<'a, Item: PartialEq> {
     items: SmallVec<[PickerItemLayout<'a, Item>; PREALLOCATED_PICKER_ITEMS]>,
     total_width: f32,
-    gap: f32,
-    bottom_rounding: f32,
-    top_rounding: f32,
+    layout_params: PickerLayoutParams,
     available_rect: Rect,
 }
 
@@ -54,12 +52,19 @@ pub struct PickerItem<Item: PartialEq> {
     pub data: Item,
 }
 
-pub struct Picker<'a, Item: PartialEq> {
-    pub current: usize,
-    pub items: &'a [PickerItem<Item>],
+#[derive(Debug, Clone)]
+pub struct PickerLayoutParams {
     pub gap: f32,
     pub bottom_rounding: f32,
+    pub top_rounding: f32,
+    pub outline_margin: (f32, f32),
+}
+
+pub struct Picker<'a, Item: PartialEq> {
+    pub current: Item,
+    pub items: &'a [PickerItem<Item>],
     pub style: PickerVisualStyle,
+    pub layout_params: PickerLayoutParams,
 }
 
 impl<'a, Item: PartialEq> Picker<'a, Item> {
@@ -74,15 +79,14 @@ struct PickerResultWrapper<'a, 'b, Item: PartialEq>(&'b mut Option<&'a Item>, Pi
 
 fn calculate_picker_layout<'a, Item: PartialEq>(
     items: &'a [PickerItem<Item>],
-    gap: f32,
-    bottom_rounding: f32,
+    layout_params: PickerLayoutParams,
     painter: &egui::Painter,
     available_rect: Rect,
 ) -> PickerLayout<'a, Item> {
     let mut layout_items = SmallVec::new();
     // just have some safe space
     // the idea is that the top arc should just end at relative x:0
-    let mut offset = bottom_rounding + gap / 2.0;
+    let mut offset = layout_params.bottom_rounding + layout_params.gap / 2.0;
 
     for item in items {
         let item_size = match &item.kind {
@@ -99,17 +103,15 @@ fn calculate_picker_layout<'a, Item: PartialEq>(
             size: item_size,
         });
 
-        offset += item_size.x + gap;
+        offset += item_size.x + layout_params.gap;
     }
 
-    let total_width = offset - gap; // Remove the last gap
+    let total_width = offset - layout_params.gap; // Remove the last gap
 
     PickerLayout {
         items: layout_items,
+        layout_params,
         total_width,
-        gap,
-        bottom_rounding,
-        top_rounding: bottom_rounding,
         available_rect,
     }
 }
@@ -120,19 +122,17 @@ impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
             result,
             Picker {
                 items,
-                gap,
-                bottom_rounding,
+                layout_params,
                 current: original_current,
                 style,
             },
         ) = self;
 
         let mut current = original_current;
-        let radius = bottom_rounding;
+        let radius = layout_params.bottom_rounding;
         let available_rect = ui.available_rect_before_wrap();
 
-        let layout =
-            calculate_picker_layout(items, gap, bottom_rounding, &ui.painter(), available_rect);
+        let layout = calculate_picker_layout(items, layout_params, &ui.painter(), available_rect);
 
         let desired_size = vec2(layout.total_width, radius * 2.);
         ui.add_space(radius * 2.);
@@ -140,27 +140,27 @@ impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
 
         response.widget_info(|| WidgetInfo::selected(WidgetType::RadioButton, true, true, ""));
 
-        if ui.is_rect_visible(rect) {
-            render_picker_items(&layout, &mut current, ui, &style);
-        }
+        let newly_selected = ui
+            .is_rect_visible(rect)
+            .then(|| render_picker_items(&layout, &mut current, ui, &style))
+            .flatten();
 
-        if current != original_current {
-            *result = items.get(current).map(|item| &item.data);
-        }
+        *result = newly_selected;
 
         response
     }
 }
 
-fn render_picker_items<Item: PartialEq>(
-    layout: &PickerLayout<Item>,
-    current: &mut usize,
+fn render_picker_items<'items, Item: PartialEq>(
+    layout: &PickerLayout<'items, Item>,
+    current: &Item,
     ui: &mut Ui,
     style: &PickerVisualStyle,
-) {
+) -> Option<&'items Item> {
     let ctx = ui.ctx();
     let painter = ui.painter();
     let animation_duration = 0.2;
+    let mut newly_selected = None;
 
     let picker_id = ui.id().with("picker");
     for (i, item_layout) in layout.items.iter().enumerate() {
@@ -178,11 +178,11 @@ fn render_picker_items<Item: PartialEq>(
             Sense::click(),
         );
 
-        if point_response.clicked() {
-            *current = i;
+        let is_selected = &item_layout.item.data == current;
+        if point_response.clicked() && !is_selected {
+            // that means that the selection changed
+            newly_selected = Some(&item_layout.item.data);
         }
-
-        let is_selected = i == *current;
 
         if !is_selected {
             let tooltip_ui = |ui: &mut egui::Ui| {
@@ -213,7 +213,7 @@ fn render_picker_items<Item: PartialEq>(
             _ => Stroke::new(1.0, style.inactive_color),
         };
 
-        let selection_y_jump = layout.gap / 2.0;
+        let selection_y_jump = layout.layout_params.gap / 1.0;
 
         let animated_text_center = pos2(center.x, center.y - selection_progress * selection_y_jump);
 
@@ -245,8 +245,6 @@ fn render_picker_items<Item: PartialEq>(
                 animation_duration,
             );
 
-            let margin = layout.gap / 2.0;
-
             let animated_height = ctx.animate_value_with_time(
                 picker_id.with("height"),
                 center.y + item_layout.size.y / 2.0
@@ -257,11 +255,11 @@ fn render_picker_items<Item: PartialEq>(
 
             let mut drop_shape = Shape::Path(PathShape {
                 points: selection_outline(SelectionOutlineDesc {
-                    bottom_radius: layout.bottom_rounding,
-                    top_radious: layout.top_rounding,
+                    bottom_radius: layout.layout_params.bottom_rounding,
+                    top_radious: layout.layout_params.top_rounding,
                     item_width: animated_item_width,
                     item_height: animated_height,
-                    margin,
+                    margin: layout.layout_params.outline_margin,
                 }),
                 closed: false,
                 fill: Color32::TRANSPARENT,
@@ -277,7 +275,11 @@ fn render_picker_items<Item: PartialEq>(
             drop_shape.translate([drop_x, layout.available_rect.top()].into());
             painter.add(drop_shape);
 
-            let item_outline_width = animated_item_width + 2. * (margin + layout.top_rounding);
+            let (margin_x, _) = layout.layout_params.outline_margin;
+
+            let item_outline_width =
+                animated_item_width + 2. * (margin_x + layout.layout_params.top_rounding);
+
             painter.line_segment(
                 [
                     layout.available_rect.left_top(),
@@ -301,6 +303,7 @@ fn render_picker_items<Item: PartialEq>(
             );
         }
     }
+    newly_selected
 }
 
 fn measure_text_size(painter: &egui::Painter, text: &str, font_id: FontId) -> Vec2 {
@@ -328,8 +331,9 @@ struct SelectionOutlineDesc {
     top_radious: f32,
     item_width: f32,
     item_height: f32,
-    /// That applies to the sides and bottom
-    margin: f32,
+    /// That (x,y) margins to be applied to the outline
+    ///
+    margin: (f32, f32),
 }
 
 fn selection_outline(
@@ -342,12 +346,13 @@ fn selection_outline(
     }: SelectionOutlineDesc,
 ) -> Vec<Pos2> {
     let mut path: Vec<Pos2> = vec![];
+    let (margin_x, margin_y) = margin;
 
-    let top_circle_center_x = item_width / 2.0 + margin + top_radious;
+    let top_circle_center_x = item_width / 2.0 + margin_x + top_radious;
 
     let bottom_segment_width = (item_width - 2. * bottom_radius).max(0.0);
-    let bottom_circle_center_y = item_height - bottom_radius + margin;
-    let bottom_circle_center_x = bottom_segment_width / 2.0 + margin;
+    let bottom_circle_center_y = item_height - bottom_radius + margin_y;
+    let bottom_circle_center_x = bottom_segment_width / 2.0 + margin_x;
 
     // top left rounding
     add_circle_quadrant(

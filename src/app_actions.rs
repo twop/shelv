@@ -12,8 +12,12 @@ use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
 
 use crate::{
-    actions::word_jump::{
-        add_keystroke_to_sequence, create_jump_points, find_matching_jump, has_potential_matches,
+    actions::{
+        self,
+        word_jump::{
+            add_keystroke_to_sequence, create_jump_points, find_matching_jump,
+            has_potential_matches,
+        },
     },
     app_state::{
         AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk,
@@ -29,7 +33,7 @@ use crate::{
     },
     effects::text_change_effect::{TextChange, apply_text_changes},
     feedback::FeedbackType,
-    persistent_state::NoteFile,
+    persistent_state::{ExternalFile, ExternalFileId, NoteId},
     scripting::{
         note_eval::{JSBlockLang, evaluate_all_live_js_blocks, evaluate_js_block},
         settings_eval::{
@@ -92,7 +96,7 @@ pub struct AppNotification {
 #[derive(Debug, Clone)]
 pub enum AppAction {
     SwitchToNote {
-        note_file: NoteFile,
+        note_file: NoteId,
         via_shortcut: bool,
     },
     // HideApp,
@@ -100,14 +104,14 @@ pub enum AppAction {
     OpenLink(String),
     SetWindowPinned(bool),
     ApplyTextChanges {
-        target: NoteFile,
+        target: NoteId,
         changes: Vec<TextChange>,
         should_trigger_eval: bool,
     },
     HandleMsgToApp(MsgToApp),
-    EvalNote(NoteFile),
+    EvalNote(NoteId),
     AskLLM(LLMBlockRequest),
-    RunCodeBlock(NoteFile, SpanIndex),
+    RunCodeBlock(NoteId, SpanIndex),
     SubmitFeedback,
     OpenFeedbackWindow,
     CloseFeedbackWindow,
@@ -125,15 +129,17 @@ pub enum AppAction {
     SlashPalette(SlashPaletteAction),
     WordJump(WordJumpAction),
     HideApp,
-    CopyCodeBlock(NoteFile, SpanIndex),
+    CopyCodeBlock(NoteId, SpanIndex),
     AppUpdateClicked,
     ToggleDevTools,
     ShowNotification(AppNotification),
     CloseNotification(NotificationId),
+    OpenExternalFile(PathBuf),
+    CloseExternalFile(ExternalFileId),
 }
 
 impl AppAction {
-    pub fn apply_text_changes(target: NoteFile, changes: Vec<TextChange>) -> Self {
+    pub fn apply_text_changes(target: NoteId, changes: Vec<TextChange>) -> Self {
         Self::ApplyTextChanges {
             target,
             changes,
@@ -162,7 +168,7 @@ pub struct Conversation {
 pub struct LLMBlockRequest {
     pub conversation: Conversation,
     pub output_code_block_address: String,
-    pub note_id: NoteFile,
+    pub note_id: NoteId,
 }
 
 #[derive(Debug)]
@@ -194,6 +200,8 @@ pub trait AppIO {
         last_saved: u128,
     ) -> Result<Option<String>, io::Error>;
 
+    fn read_file(&self, path: &PathBuf) -> Result<String, io::Error>;
+
     fn cleanup_all_global_hotkeys(&mut self) -> Result<(), String>;
 
     fn try_map_hotkey(&self, hotkey_id: u32) -> Option<MsgToApp>;
@@ -221,6 +229,9 @@ pub trait AppIO {
     fn start_update_checker(&self);
 
     fn open_app_store_for_shelv_update(&self);
+
+    fn watch_external_file(&mut self, external_file: &ExternalFile) -> Result<(), String>;
+    fn unwatch_external_file(&mut self, external_file_id: ExternalFileId) -> Result<(), String>;
 }
 
 pub fn process_app_action(
@@ -624,6 +635,12 @@ pub fn process_app_action(
                         SmallVec::new()
                     }
                 },
+                MsgToApp::ExternalFileDeletedOrRenamed(file_id) => {
+                    // Close the external file when it's deleted or renamed for now
+                    // In the future it might make sense to rename the ExternalFile directly
+                    // but one thing at a time...
+                    [AppAction::CloseExternalFile(file_id)].into()
+                }
                 MsgToApp::UpdateRequired(required_version) => {
                     state.app_version_state =
                         VersionState::RequiredUpdateAvailable(required_version);
@@ -636,7 +653,10 @@ pub fn process_app_action(
             }
         }
         AppAction::EvalNote(note_file) => {
-            let note = &mut state.notes.get_mut(&note_file).unwrap();
+            let Some(note) = state.notes.get_mut(&note_file) else {
+                return SmallVec::new();
+            };
+
             let text_structure = &note.derived_state.structure;
             let text = &mut note.text;
 
@@ -669,7 +689,7 @@ pub fn process_app_action(
             }
 
             let requested_changes = match note_file {
-                NoteFile::Note(_) => {
+                NoteId::Note(_) | NoteId::ExternalFileId(_) => {
                     let run_button_annotations = text_structure
                         .filter_map_codeblocks(|lang| {
                             if let Some(JSBlockLang::Source(link_id)) = JSBlockLang::parse(lang) {
@@ -703,7 +723,7 @@ pub fn process_app_action(
                     evaluate_all_live_js_blocks(text_structure, text)
                 }
 
-                NoteFile::Settings => {
+                NoteId::Settings => {
                     println!("####### eval settings");
 
                     let (settings_scripts, block_annotations) =
@@ -819,7 +839,7 @@ pub fn process_app_action(
             // Insert tutorial content into the first note only
             const TUTORIAL_CONTENT: &str = include_str!("default-notes/tutorial.md");
 
-            let first_note_id = NoteFile::Note(0);
+            let first_note_id = NoteId::Note(0);
             let is_empty = state
                 .notes
                 .get(&first_note_id)
@@ -1195,6 +1215,14 @@ pub fn process_app_action(
         AppAction::CloseNotification(notification_id) => {
             state.notifications.dismiss(notification_id);
             SmallVec::new()
+        }
+
+        AppAction::OpenExternalFile(path) => {
+            actions::external_files::open_external_file(path, state, app_io)
+        }
+
+        AppAction::CloseExternalFile(file_id) => {
+            actions::external_files::close_external_file(file_id, state, app_io)
         }
 
         AppAction::WordJump(word_jump_action) => match word_jump_action {

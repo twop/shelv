@@ -44,7 +44,7 @@ use crate::{
     commands::inline_llm_prompt::compute_inline_prompt_text_input_id,
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
-    persistent_state::NoteFile,
+    persistent_state::{ExternalFile, NoteId},
     picker::{Picker, PickerItem, PickerItemKind, PickerVisualStyle},
     settings_parsing::format_mac_shortcut_with_symbols,
     taffy_styles::{StyleBuilder, flex_column, flex_row},
@@ -55,9 +55,12 @@ use crate::{
 };
 
 pub struct AppRenderData<'a> {
-    pub selected_note: NoteFile,
+    //---- for footer panel ----
+    pub selected_note: NoteId,
+    pub opened_files: SmallVec<[NoteId; 8]>,
+    pub external_files: &'a [crate::persistent_state::ExternalFile],
+    //---- end of footer panel ----
     pub code_block_annotations: &'a [(SpanIndex, CodeBlockAnnotation)],
-    pub note_count: usize,
     pub text_edit_id: Id,
     pub byte_cursor: Option<UnOrderedByteSpan>,
     pub command_list: &'a CommandList,
@@ -94,7 +97,7 @@ pub fn render_app(
     let AppRenderData {
         selected_note,
         text_edit_id,
-        note_count,
+        external_files,
         byte_cursor,
         command_list,
         computed_layout,
@@ -111,11 +114,19 @@ pub fn render_app(
         version_state,
         dev_tools_show,
         notifications,
+        opened_files,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
 
-    let footer_actions = render_footer_panel(selected_note, note_count, command_list, ctx, &theme);
+    let footer_actions = render_footer_panel(
+        selected_note,
+        opened_files,
+        external_files,
+        command_list,
+        ctx,
+        &theme,
+    );
     output_actions.extend(footer_actions);
 
     let header_actions = render_header_panel(
@@ -305,31 +316,31 @@ pub fn render_app(
                                                 let action = match parts.as_slice() {
                                                     ["shelv", "note1", ..] => {
                                                         AppAction::SwitchToNote {
-                                                            note_file: NoteFile::Note(0),
+                                                            note_file: NoteId::Note(0),
                                                             via_shortcut: true,
                                                         }
                                                     }
                                                     ["shelv", "note2", ..] => {
                                                         AppAction::SwitchToNote {
-                                                            note_file: NoteFile::Note(1),
+                                                            note_file: NoteId::Note(1),
                                                             via_shortcut: true,
                                                         }
                                                     }
                                                     ["shelv", "note3", ..] => {
                                                         AppAction::SwitchToNote {
-                                                            note_file: NoteFile::Note(2),
+                                                            note_file: NoteId::Note(2),
                                                             via_shortcut: true,
                                                         }
                                                     }
                                                     ["shelv", "note4", ..] => {
                                                         AppAction::SwitchToNote {
-                                                            note_file: NoteFile::Note(3),
+                                                            note_file: NoteId::Note(3),
                                                             via_shortcut: true,
                                                         }
                                                     }
                                                     ["shelv", "settings", ..] => {
                                                         AppAction::SwitchToNote {
-                                                            note_file: NoteFile::Settings,
+                                                            note_file: NoteId::Settings,
                                                             via_shortcut: true,
                                                         }
                                                     }
@@ -382,7 +393,7 @@ fn render_editor(
     syntax_set: &SyntaxSet,
     theme_set: &ThemeSet,
     text_edit_id: Id,
-    note_file: NoteFile,
+    note_file: NoteId,
     command_list: &CommandList,
     frame_hotkeys: &mut FrameHotkeys,
     code_block_annotations: &[(SpanIndex, CodeBlockAnnotation)],
@@ -1106,7 +1117,7 @@ fn render_code_actions(
     code_area: Rect,
     annotation: Option<&CodeBlockAnnotation>,
     span_index: SpanIndex,
-    note_file: NoteFile,
+    note_file: NoteId,
     frame_hotkeys: &mut FrameHotkeys,
     is_cursor_inside: bool,
 ) -> EditorCommandOutput {
@@ -1418,22 +1429,13 @@ fn restore_cursor_from_note_state(
 }
 
 fn render_footer_panel(
-    selected: NoteFile,
-    note_count: usize,
+    selected: NoteId,
+    opened_files: SmallVec<[NoteId; 8]>,
+    external_files: &[ExternalFile],
     command_list: &CommandList,
     ctx: &Context,
     theme: &AppTheme,
 ) -> SmallVec<[AppAction; 1]> {
-    let tooltips: SmallVec<[String; 6]> = (0..note_count)
-        .map(|note_index| CommandInstruction::SwitchToNote(note_index as u8))
-        .map(|cmd| command_list.find(cmd))
-        .enumerate()
-        .map(|(note_index, cmd)| match cmd.and_then(|cmd| cmd.shortcut) {
-            Some(shortcut) => format!("Shelf {}", ctx.format_shortcut(&shortcut)),
-            None => format!("Shelf {}", note_index + 1),
-        })
-        .collect();
-
     let mut actions = SmallVec::new();
     TopBottomPanel::bottom("footer")
         // .exact_height(32.)
@@ -1445,74 +1447,92 @@ fn render_footer_panel(
                 ui.set_min_size(vec2(avail_width, sizes.header_footer));
 
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    let items = tooltips
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, tooltip)| PickerItem {
-                            tooltip,
-                            // kind: PickerItemKind::ItemName(
-                            //     // FIXME don't allocate
-                            //     format!("note-{index}").to_smolstr(),
-                            //     FontId::new(theme.fonts.size.normal, FontFamily::Proportional),
-                            // ),
+                    // Build picker items from opened_files, filtering and organizing by type
+                    let items = opened_files
+                        .iter()
+                        .filter_map(|note_id| match note_id {
+                            NoteId::Note(index) => {
+                                let index = *index;
+                                let cmd = command_list
+                                    .find(CommandInstruction::SwitchToNote(index as u8));
+                                let tooltip = match cmd.and_then(|cmd| cmd.shortcut) {
+                                    Some(shortcut) => {
+                                        format!("Shelf {}", ctx.format_shortcut(&shortcut))
+                                    }
+                                    None => format!("Shelf {}", index + 1),
+                                };
+
+                                Some(PickerItem {
+                                    tooltip,
+                                    kind: PickerItemKind::FontIcon(
+                                        match index {
+                                            0 => AppIcon::One,
+                                            1 => AppIcon::Two,
+                                            2 => AppIcon::Three,
+                                            3 => AppIcon::Four,
+                                            _ => AppIcon::More,
+                                        }
+                                        .to_icon_str()
+                                        .to_smolstr(),
+                                        FontId::new(
+                                            theme.sizes.toolbar_icon,
+                                            FontFamily::Proportional,
+                                        ),
+                                    ),
+                                    data: *note_id,
+                                })
+                            }
+                            NoteId::ExternalFileId(_) => None, // We'll add external files separately
+                            NoteId::Settings => None,          // We'll add settings separately
+                        })
+                        .chain(external_files.iter().map(|ext_file| {
+                            let file_name = ext_file
+                                .path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("external file");
+
+                            PickerItem {
+                                tooltip: ext_file.path.display().to_string(),
+                                kind: PickerItemKind::ItemName(
+                                    file_name.to_smolstr(),
+                                    FontId::new(theme.fonts.size.normal, FontFamily::Proportional),
+                                ),
+                                data: NoteId::ExternalFileId(ext_file.id),
+                            }
+                        }))
+                        .chain([PickerItem {
+                            tooltip: {
+                                let tooltip_text = "Settings";
+                                command_list
+                                    .find(CommandInstruction::SwitchToSettings)
+                                    .and_then(|cmd| cmd.shortcut)
+                                    .map(|shortcut| {
+                                        format!(
+                                            "{} {}",
+                                            tooltip_text,
+                                            ctx.format_shortcut(&shortcut)
+                                        )
+                                    })
+                                    .unwrap_or_else(|| tooltip_text.to_string())
+                            },
                             kind: PickerItemKind::FontIcon(
-                                match index {
-                                    0 => AppIcon::One,
-                                    1 => AppIcon::Two,
-                                    2 => AppIcon::Three,
-                                    3 => AppIcon::Four,
-                                    // should not be reachable
-                                    _ => AppIcon::More,
-                                }
-                                .to_icon_str()
-                                .to_smolstr(),
+                                AppIcon::Settings.to_icon_str().to_smolstr(),
                                 FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
                             ),
-                            data: NoteFile::Note(index as u32),
-                        })
-                        .chain([
-                            // PickerItem {
-                            //     tooltip: "Note 1 example".to_string(),
-                            //     kind: PickerItemKind::ItemName("note-1", FontFamily::Monospace),
-                            //     data: NoteFile::Note(10),
-                            // },
-                            // PickerItem {
-                            //     tooltip: "Note 2 example".to_string(),
-                            //     kind: PickerItemKind::ItemName("note-2", FontFamily::Monospace),
-                            //     data: NoteFile::Note(11),
-                            // },
-                            PickerItem {
-                                tooltip: {
-                                    let tooltip_text = "Settings";
-                                    command_list
-                                        .find(CommandInstruction::SwitchToSettings)
-                                        .and_then(|cmd| cmd.shortcut)
-                                        .map(|shortcut| {
-                                            format!(
-                                                "{} {}",
-                                                tooltip_text,
-                                                ctx.format_shortcut(&shortcut)
-                                            )
-                                        })
-                                        .unwrap_or_else(|| tooltip_text.to_string())
-                                },
-                                kind: PickerItemKind::FontIcon(
-                                    AppIcon::Settings.to_icon_str().to_smolstr(),
-                                    FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
-                                ),
-                                data: NoteFile::Settings,
-                            },
-                        ])
+                            data: NoteId::Settings,
+                        }])
                         .collect::<Vec<_>>();
 
                     let picker = Picker {
-                        current: match selected {
-                            NoteFile::Note(i) => i as usize,
-                            NoteFile::Settings => note_count,
-                        },
+                        current: selected,
                         items: &items,
-                        gap: sizes.xs,
-                        bottom_rounding: sizes.s,
+                        layout_params: crate::picker::PickerLayoutParams {
+                            outline_margin: (sizes.xs, sizes.xs / 2.0),
+                            gap: sizes.xs,
+                            bottom_rounding: sizes.s,
+                            top_rounding: sizes.s,
+                        },
                         style: PickerVisualStyle {
                             inactive_color: theme.colors.subtle_text_color,
                             hover_color: theme.colors.button_hover_fg,
@@ -1552,7 +1572,7 @@ fn render_header_panel(
     ctx: &egui::Context,
     theme: &AppTheme,
     command_list: &CommandList,
-    selected_note: NoteFile,
+    selected_note: NoteId,
     is_window_pinned: bool,
     feedback_sent: bool,
     version_state: &VersionState,
@@ -1610,8 +1630,9 @@ fn render_header_panel(
                                     RichText::new(format!(
                                         "Shelv - {}",
                                         match selected_note {
-                                            NoteFile::Note(index) => format!("note {}", index + 1),
-                                            NoteFile::Settings => "settings".to_string(),
+                                            NoteId::Note(index)=>format!("note {}",index+1),
+                                            NoteId::Settings=>"settings".to_string(),
+                                            NoteId::ExternalFileId(external_file_id) => format!("TODO: external {:?}",external_file_id),
                                         }
                                     ))
                                     .color(theme.colors.subtle_text_color)
@@ -1651,6 +1672,21 @@ fn render_header_panel(
                                 if t.ui_add(update_btn).clicked() {
                                     resulting_actions.push(AppAction::AppUpdateClicked);
                                 };
+                            }
+
+                            // TEST: Open external file button (temporary)
+                            #[cfg(debug_assertions)]
+                            if t.ui_add(
+                                IconButton::new(AppIcon::Folder, theme)
+                                    .size(IconButtonSize::Large)
+                                    .tooltip("TEST: Open test.md", None),
+                            )
+                            .clicked()
+                            {
+                                use std::path::PathBuf;
+                                let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                                let readme_path = PathBuf::from(home).join("work/shelv/test.md");
+                                resulting_actions.push(AppAction::OpenExternalFile(readme_path));
                             }
 
                             // Feedback button

@@ -8,6 +8,11 @@ use std::{
     sync::mpsc::SyncSender,
 };
 
+use hotwatch::{
+    Event, EventKind, Hotwatch,
+    notify::event::{ModifyKind, RemoveKind},
+};
+
 use eframe::egui;
 use genai::{
     ModelIden, ServiceTarget,
@@ -22,7 +27,7 @@ use crate::{
     app_actions::{AppIO, HideMode, LLMBlockRequest, LLMPromptRequest, SettingsForAiRequests},
     app_state::{InlineLLMResponseChunk, MsgToApp},
     command::create_ai_keybindings_documentation,
-    persistent_state::get_utc_timestamp,
+    persistent_state::{ExternalFile, ExternalFileId, NoteId, get_utc_timestamp},
 };
 
 use tokio_stream::StreamExt;
@@ -36,6 +41,8 @@ pub struct RegisteredGlobalHotkey {
 pub struct RealAppIO {
     pub hotkeys_manager: GlobalHotKeyManager,
     pub registered_hotkeys: BTreeMap<u32, RegisteredGlobalHotkey>,
+    pub hotwatch: Hotwatch,
+    pub watched_external_files: Vec<ExternalFile>,
     pub egui_ctx: egui::Context,
     pub msg_queue: SyncSender<MsgToApp>,
     pub shelv_folder: PathBuf,
@@ -48,6 +55,7 @@ pub struct RealAppIO {
 impl RealAppIO {
     pub fn new(
         hotkeys_manager: GlobalHotKeyManager,
+        hotwatch: Hotwatch,
         egui_ctx: egui::Context,
         msg_queue: SyncSender<MsgToApp>,
         shelv_folder: PathBuf,
@@ -59,6 +67,8 @@ impl RealAppIO {
         Self {
             hotkeys_manager,
             registered_hotkeys: Default::default(),
+            hotwatch,
+            watched_external_files: Vec::new(),
             egui_ctx,
             msg_queue,
             shelv_folder,
@@ -84,6 +94,10 @@ impl AppIO for RealAppIO {
         last_saved: u128,
     ) -> Result<Option<String>, io::Error> {
         try_read_note_if_newer(path, last_saved)
+    }
+
+    fn read_file(&self, path: &PathBuf) -> Result<String, io::Error> {
+        std::fs::read_to_string(path)
     }
 
     fn try_map_hotkey(&self, hotkey_id: u32) -> Option<MsgToApp> {
@@ -364,6 +378,54 @@ impl AppIO for RealAppIO {
             .unwrap_or_else(|err| {
                 println!("Error opening app store URL: {}", err);
             });
+    }
+
+    fn watch_external_file(&mut self, external_file: &ExternalFile) -> Result<(), String> {
+        let sender = self.msg_queue.clone();
+        let egui_ctx = self.egui_ctx.clone();
+        let file_id = external_file.id;
+        let path = external_file.path.clone();
+        self.watched_external_files.push(external_file.clone());
+
+        self.hotwatch
+            .watch(&external_file.path, move |event: Event| {
+                println!("watched file event: {event:#?}");
+                match event.kind {
+                    EventKind::Modify(ModifyKind::Data(_)) => {
+                        sender
+                            .send(MsgToApp::NoteFileChanged(
+                                NoteId::ExternalFileId(file_id),
+                                path.clone(),
+                            ))
+                            .unwrap();
+                        egui_ctx.request_repaint();
+                    }
+                    EventKind::Remove(RemoveKind::File)
+                    | EventKind::Modify(ModifyKind::Name(_)) => {
+                        sender
+                            .send(MsgToApp::ExternalFileDeletedOrRenamed(file_id))
+                            .unwrap();
+                        egui_ctx.request_repaint();
+                    }
+                    _ => {}
+                }
+            })
+            .map_err(|err| err.to_string())
+    }
+
+    fn unwatch_external_file(&mut self, external_file_id: ExternalFileId) -> Result<(), String> {
+        let index = self
+            .watched_external_files
+            .iter()
+            .position(|f| f.id == external_file_id);
+
+        let Some(watched_file) = index.map(|idx| self.watched_external_files.remove(idx)) else {
+            return Ok(());
+        };
+
+        self.hotwatch
+            .unwatch(watched_file.path)
+            .map_err(|err| err.to_string())
     }
 }
 

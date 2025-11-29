@@ -42,7 +42,9 @@ use crate::{
     },
     dev_tools::DevToolsState,
     feedback::FeedbackData,
-    persistent_state::{DataToSave, LoadKind, NoteFile, RestoredData},
+    persistent_state::{
+        DataToSave, ExternalFile, ExternalFileId, FileAddress, LoadKind, NoteId, RestoredData,
+    },
     scripting::settings_eval::Scripts,
     settings_parsing::LlmSettings,
     text_structure::{
@@ -60,12 +62,12 @@ pub struct TextSelectionAddress {
 
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub struct NoteSignature {
-    pub note_file: NoteFile,
+    pub note_file: NoteId,
     pub text_version: TextHash,
 }
 
 impl NoteSignature {
-    pub fn new(note_file: NoteFile, text_version: TextHash) -> Self {
+    pub fn new(note_file: NoteId, text_version: TextHash) -> Self {
         Self {
             note_file,
             text_version,
@@ -197,6 +199,15 @@ pub struct Note {
 }
 
 impl Note {
+    pub fn new(text: String, derived_state: NoteDerivedState) -> Self {
+        Self {
+            text,
+            cursor: None,
+            last_cursor: None,
+            derived_state,
+        }
+    }
+
     pub fn reset_cursor(&mut self) {
         self.cursor = None;
     }
@@ -217,7 +228,7 @@ impl Note {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum UnsavedChange {
-    NoteContentChanged(NoteFile),
+    NoteContentChanged(NoteId),
     SelectionChanged,
     LastUpdated,
     PinStateChanged,
@@ -231,7 +242,7 @@ pub enum RenderAction {
 
 #[derive(Debug, Clone)]
 pub struct SlashPalette {
-    pub note_file: NoteFile,
+    pub note_file: NoteId,
     pub slash_byte_pos: usize,
     pub search_term: String,
     pub options: Vec<SlashPaletteCmd>,
@@ -241,15 +252,15 @@ pub struct SlashPalette {
 
 pub struct AppState {
     // -----this is persistent model-------
-    pub notes: BTreeMap<NoteFile, Note>,
-    pub selected_note: NoteFile,
+    pub notes: BTreeMap<NoteId, Note>,
+    pub selected_note: NoteId,
     // ------------------------------------
     // -------- emphemeral state ----------
     pub last_saved: u128,
     unsaved_changes: SmallVec<[UnsavedChange; 2]>,
     pub scheduled_script_run_version: Option<u64>,
-
     // ------------------------------------
+    pub external_files: Vec<ExternalFile>,
     pub is_pinned: bool,
 
     pub theme: AppTheme,
@@ -399,7 +410,7 @@ impl ComputedLayout {
 pub struct LLMBlockResponseChunk {
     pub chunk: String,
     pub address: String,
-    pub note_id: NoteFile,
+    pub note_id: NoteId,
 }
 
 #[derive(Debug, Clone)]
@@ -412,7 +423,8 @@ pub enum InlineLLMResponseChunk {
 #[derive(Debug, Clone)]
 pub enum MsgToApp {
     ToggleVisibility,
-    NoteFileChanged(NoteFile, PathBuf),
+    NoteFileChanged(NoteId, PathBuf),
+    ExternalFileDeletedOrRenamed(ExternalFileId),
     GlobalHotkey(u32),
     LLMBlockResponseChunk(LLMBlockResponseChunk),
 
@@ -448,13 +460,13 @@ impl AppState {
 
         let shelf_count = notes.len();
 
-        let notes: BTreeMap<NoteFile, Note> = notes
+        let notes: BTreeMap<NoteId, Note> = notes
             .into_iter()
             .enumerate()
             .map(|(i, text)| {
                 let derived_state = NoteDerivedState::new_from(&text);
                 (
-                    NoteFile::Note(i as u32),
+                    NoteId::Note(i as u32),
                     Note {
                         text,
                         cursor: None,
@@ -466,7 +478,7 @@ impl AppState {
             .chain([{
                 let derived_state = NoteDerivedState::new_from(&settings);
                 (
-                    NoteFile::Settings,
+                    NoteId::Settings,
                     Note {
                         text: settings,
                         cursor: None,
@@ -477,7 +489,7 @@ impl AppState {
             }])
             .collect();
 
-        let selected_note = saved_state.selected;
+        let mut selected_note = saved_state.selected;
         let is_window_pinned = saved_state.is_pinned;
 
         let keybord_instructions: Vec<CommandInstruction> = Vec::from_iter(
@@ -565,6 +577,10 @@ impl AppState {
             deferred_actions.push(AppAction::StartTutorial);
         }
 
+        if !notes.contains_key(&selected_note) {
+            selected_note = NoteId::Note(0);
+        }
+
         Self {
             is_pinned: is_window_pinned,
             unsaved_changes: Default::default(),
@@ -591,6 +607,7 @@ impl AppState {
             app_version_state: VersionState::UpToDate,
             dev_tools: DevToolsState::default(),
             notifications: Notifications::new(),
+            external_files: Vec::new(),
         }
     }
 
@@ -601,10 +618,22 @@ impl AppState {
                 files: changes
                     .into_iter()
                     .filter_map(|change| match change {
-                        UnsavedChange::NoteContentChanged(note_file) => self
-                            .notes
-                            .get(&note_file)
-                            .map(|n| (note_file, n.text.as_str())),
+                        UnsavedChange::NoteContentChanged(note_file) => {
+                            self.notes.get(&note_file).and_then(|n| match note_file {
+                                NoteId::Note(i) => Some((FileAddress::Note(i), n.text.as_str())),
+                                NoteId::Settings => Some((FileAddress::Settings, n.text.as_str())),
+                                NoteId::ExternalFileId(external_file_id) => self
+                                    .external_files
+                                    .iter()
+                                    .find(|ex_file| ex_file.id == external_file_id)
+                                    .map(|ex_file| {
+                                        (
+                                            FileAddress::ExternalFile(ex_file.path.clone()),
+                                            n.text.as_str(),
+                                        )
+                                    }),
+                            })
+                        }
                         _ => None,
                     })
                     .collect(),
@@ -708,12 +737,12 @@ fn execute_instruction(
         CI::EnterInsideKDL => call_with_text_ctx(ctx, on_enter_inside_kdl_block),
 
         CI::SwitchToNote(note_index) => SmallVec::from([AppAction::SwitchToNote {
-            note_file: NoteFile::Note(*note_index as u32),
+            note_file: NoteId::Note(*note_index as u32),
             via_shortcut: true,
         }]),
 
         CI::SwitchToSettings => [AppAction::SwitchToNote {
-            note_file: NoteFile::Settings,
+            note_file: NoteId::Settings,
             via_shortcut: true,
         }]
         .into(),
@@ -746,11 +775,12 @@ fn execute_instruction(
     }
 }
 
-pub fn compute_editor_text_id(selected_note_file: NoteFile) -> Id {
-    Id::new(match selected_note_file {
-        NoteFile::Note(index) => ("text_edit_id", index),
-        NoteFile::Settings => ("text_edit_id_settings", 4568),
-    })
+pub fn compute_editor_text_id(selected_note_file: NoteId) -> Id {
+    match selected_note_file {
+        NoteId::Note(index) => Id::new(("text_edit_id", index)),
+        NoteId::Settings => Id::new("text_edit_id_settings"),
+        NoteId::ExternalFileId(external_file_id) => Id::new(external_file_id),
+    }
 }
 
 impl ParsedPromptResponse {

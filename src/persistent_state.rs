@@ -25,9 +25,31 @@ fn check_version_update(data: &RestoredData) -> UpdateStatus {
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Hash, Clone, PartialEq, Ord, PartialOrd, Eq, Copy, Deserialize, Serialize)]
-pub enum NoteFile {
+pub struct ExternalFileId(u64);
+
+impl ExternalFileId {
+    pub fn from_pathbuf(path: &PathBuf) -> Self {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        path.hash(&mut hasher);
+        ExternalFileId(hasher.finish())
+    }
+}
+
+// #[derive(Debug, Hash, Clone, PartialEq, Ord, PartialOrd, Eq, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
+pub struct ExternalFile {
+    pub id: ExternalFileId,
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Hash, Copy, Clone, PartialEq, Ord, PartialOrd, Eq, Deserialize, Serialize)]
+pub enum NoteId {
     Note(u32),
     Settings,
+    ExternalFileId(ExternalFileId),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -40,7 +62,7 @@ pub struct SaveState {
     #[serde(default = "default_window_pinned_value")]
     pub is_pinned: bool,
     pub last_saved: u128,
-    pub selected: NoteFile,
+    pub selected: NoteId,
 }
 
 fn default_window_pinned_value() -> bool {
@@ -55,9 +77,16 @@ pub struct RestoredData {
 }
 
 #[derive(Debug)]
+pub enum FileAddress {
+    Note(u32),
+    Settings,
+    ExternalFile(PathBuf),
+}
+
+#[derive(Debug)]
 pub struct DataToSave<'a> {
-    pub files: Vec<(NoteFile, &'a str)>,
-    pub selected: NoteFile,
+    pub files: Vec<(FileAddress, &'a str)>,
+    pub selected: NoteId,
     pub is_pinned: bool,
 }
 
@@ -144,7 +173,7 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
         return Ok(HydrationResult::FolderIsMissing);
     };
 
-    let mut retrieved_files: Vec<(NoteFile, String)> = vec![];
+    let mut retrieved_files: Vec<(NoteId, String)> = vec![];
 
     let mut state: Option<SaveState> = None;
 
@@ -175,7 +204,7 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
     let mut notes = vec![];
 
     for index in 0..number_of_notes {
-        let searched_note_file = NoteFile::Note(index);
+        let searched_note_file = NoteId::Note(index);
         if let Some((_, note_content)) = retrieved_files
             .iter()
             .find(|(note_file, _)| *note_file == searched_note_file)
@@ -185,7 +214,7 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
             notes.push(get_default_note_content(searched_note_file).to_string());
             println!("try_hydrate: detected missing {searched_note_file:?}");
             missing_notes.push((
-                searched_note_file,
+                FileAddress::Note(index),
                 get_default_note_content(searched_note_file),
             ))
         }
@@ -198,7 +227,7 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
         version: CURRENT_VERSION,
         is_pinned: true,
         last_saved: get_current_utc_timestamp(),
-        selected: NoteFile::Note(0),
+        selected: NoteId::Note(0),
         app_version: get_current_app_version(),
     });
 
@@ -210,7 +239,7 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
         notes,
         settings: retrieved_files
             .into_iter()
-            .find(|(note_file, _)| *note_file == NoteFile::Settings)
+            .find(|(note_file, _)| *note_file == NoteId::Settings)
             .map(|(_, content)| content)
             .unwrap_or_else(|| "".to_string()),
     };
@@ -234,14 +263,14 @@ fn try_hydrate(number_of_notes: u32, folder: &PathBuf) -> Result<HydrationResult
     }
 }
 
-pub fn extract_note_file(file_name: &str) -> Option<(NoteFile, &str)> {
+pub fn extract_note_file(file_name: &str) -> Option<(NoteId, &str)> {
     match file_name {
-        "settings.md" => Some((NoteFile::Settings, "settings.md")),
+        "settings.md" => Some((NoteId::Settings, "settings.md")),
         note if note.starts_with("note-") && note.ends_with(".md") => note
             .strip_prefix("note-")
             .and_then(|s| s.strip_suffix(".md"))
             .and_then(|s| s.parse().ok())
-            .map(|i: u32| (NoteFile::Note(i - 1), note)),
+            .map(|i: u32| (NoteId::Note(i - 1), note)),
         _ => None,
     }
 }
@@ -270,8 +299,11 @@ pub fn try_save<'a>(data: DataToSave<'a>, folder: &PathBuf) -> Result<SaveState,
 
     for (note, content) in files {
         let file_name = match note {
-            NoteFile::Note(zero_based_index) => format!("note-{}.md", zero_based_index + 1),
-            NoteFile::Settings => "settings.md".to_string(),
+            FileAddress::Note(zero_based_index) => {
+                PathBuf::from(format!("note-{}.md", zero_based_index + 1))
+            }
+            FileAddress::Settings => PathBuf::from("settings.md".to_string()),
+            FileAddress::ExternalFile(path_buf) => path_buf,
         };
 
         fs::write(folder.join(file_name), content)?;
@@ -295,16 +327,16 @@ pub fn get_utc_timestamp(start: SystemTime) -> u128 {
 pub fn fn_migrate_from_v1<'s>(
     old_state: &'s v1::PersistentState,
 ) -> (DataToSave<'s>, RestoredData) {
-    let selected = NoteFile::Note(old_state.selected_note);
+    let selected = NoteId::Note(old_state.selected_note);
     let to_save = DataToSave {
         files: old_state
             .notes
             .iter()
             .enumerate()
-            .map(|(index, note)| (NoteFile::Note(index as u32), note.as_ref()))
+            .map(|(index, note)| (FileAddress::Note(index as u32), note.as_ref()))
             .chain([(
-                NoteFile::Settings,
-                get_default_note_content(NoteFile::Settings),
+                FileAddress::Settings,
+                get_default_note_content(NoteId::Settings),
             )])
             .collect(),
         is_pinned: true,
@@ -320,20 +352,26 @@ pub fn fn_migrate_from_v1<'s>(
             app_version: get_current_app_version(),
         },
         notes: old_state.notes.iter().map(|s| s.to_string()).collect(),
-        settings: get_default_note_content(NoteFile::Settings).to_string(),
+        settings: get_default_note_content(NoteId::Settings).to_string(),
     };
 
     (to_save, restored_data)
 }
 
 pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
-    let selected = NoteFile::Note(0);
+    let selected = NoteId::Note(0);
     let to_save = DataToSave {
         files: (0..number_of_notes)
             .into_iter()
-            .map(|index| NoteFile::Note(index as u32))
-            .chain([NoteFile::Settings])
+            .map(|index| NoteId::Note(index as u32))
+            .chain([NoteId::Settings])
             .map(|file| (file, get_default_note_content(file)))
+            .filter_map(|(note_id, content)| match note_id {
+                NoteId::Note(index) => Some((FileAddress::Note(index), content)),
+                NoteId::Settings => Some((FileAddress::Settings, content)),
+                // we don't have any external files to bootstrap to opened files
+                NoteId::ExternalFileId(_) => None,
+            })
             .collect(),
         selected,
         is_pinned: true,
@@ -349,22 +387,22 @@ pub fn bootstrap(number_of_notes: u32) -> (DataToSave<'static>, RestoredData) {
         },
         notes: (0..number_of_notes)
             .into_iter()
-            .map(|i| get_default_note_content(NoteFile::Note(i)))
+            .map(|i| get_default_note_content(NoteId::Note(i)))
             .map(|s| s.to_string())
             .collect(),
-        settings: get_default_note_content(NoteFile::Settings).to_string(),
+        settings: get_default_note_content(NoteId::Settings).to_string(),
     };
 
     (to_save, restored_data)
 }
 
-pub fn get_default_note_content(note: NoteFile) -> &'static str {
+pub fn get_default_note_content(note: NoteId) -> &'static str {
     match note {
-        NoteFile::Settings => include_str!("./default-notes/default-settings.md"),
-        NoteFile::Note(0) => include_str!("./default-notes/default-note-1.md"),
-        NoteFile::Note(1) => include_str!("./default-notes/default-note-2.md"),
-        NoteFile::Note(2) => include_str!("./default-notes/default-note-3.md"),
-        NoteFile::Note(3) => include_str!("./default-notes/default-note-4.md"),
+        NoteId::Settings => include_str!("./default-notes/default-settings.md"),
+        NoteId::Note(0) => include_str!("./default-notes/default-note-1.md"),
+        NoteId::Note(1) => include_str!("./default-notes/default-note-2.md"),
+        NoteId::Note(2) => include_str!("./default-notes/default-note-3.md"),
+        NoteId::Note(3) => include_str!("./default-notes/default-note-4.md"),
         _ => "",
     }
 }
