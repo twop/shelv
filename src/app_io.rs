@@ -427,6 +427,10 @@ impl AppIO for RealAppIO {
             .unwatch(watched_file.path)
             .map_err(|err| err.to_string())
     }
+
+    fn open_file_dialog(&self) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+        open_file_dialog_macos()
+    }
 }
 
 fn prepare_shelv_providers(
@@ -626,6 +630,54 @@ fn open_url_with_nsworkspace(url: &str) -> Result<(), Box<dyn std::error::Error>
             Ok(())
         } else {
             Err("NSWorkspace failed to open URL".into())
+        }
+    }
+}
+
+fn open_file_dialog_macos() -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    use objc2::rc::Id;
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send, msg_send_id};
+
+    unsafe {
+        // Create NSOpenPanel instance
+        let panel: Id<AnyObject> = msg_send_id![class!(NSOpenPanel), openPanel];
+
+        // Set panel properties
+        let _: () = msg_send![&panel, setCanChooseFiles: true];
+        let _: () = msg_send![&panel, setCanChooseDirectories: false];
+        let _: () = msg_send![&panel, setAllowsMultipleSelection: false];
+
+        // Run the modal dialog (without file type filtering for now)
+        let response: isize = msg_send![&panel, runModal];
+
+        // NSModalResponseOK = 1
+        if response == 1 {
+            // Get the selected URL
+            let url: *mut AnyObject = msg_send![&panel, URL];
+            if url.is_null() {
+                return Err("Failed to get URL from panel".into());
+            }
+
+            // Get the path from the NSURL
+            let path_nsstring: *mut AnyObject = msg_send![url, path];
+            if path_nsstring.is_null() {
+                return Err("Failed to get path from URL".into());
+            }
+
+            // Convert NSString to UTF8 C string
+            let path_ptr: *const i8 = msg_send![path_nsstring, UTF8String];
+            if path_ptr.is_null() {
+                return Err("Failed to convert path to UTF8".into());
+            }
+
+            let path_cstr = std::ffi::CStr::from_ptr(path_ptr);
+            let path_str = path_cstr.to_str()?.to_string();
+
+            Ok(Some(PathBuf::from(path_str)))
+        } else {
+            // User cancelled
+            Ok(None)
         }
     }
 }

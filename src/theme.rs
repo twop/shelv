@@ -40,6 +40,7 @@ pub enum AppIcon {
     Copy,
     Download,
     Bug,
+    FileOpen,
 }
 
 impl AppIcon {
@@ -178,6 +179,7 @@ impl AppIcon {
             AppIcon::Copy => P::COPY_SIMPLE,
             AppIcon::Download => P::DOWNLOAD_SIMPLE,
             AppIcon::Bug => P::BUG,
+            AppIcon::FileOpen => P::FOLDER_OPEN,
         }
     }
 }

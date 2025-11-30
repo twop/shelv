@@ -4833,6 +4833,8 @@ dependencies = [
  "linkify",
  "miette 7.5.0",
  "objc2 0.5.2",
+ "objc2-app-kit",
+ "objc2-foundation 0.2.2",
  "pulldown-cmark",
  "regex",
  "reqwest",

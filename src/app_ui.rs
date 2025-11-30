@@ -1,9 +1,9 @@
 use eframe::{
     egui::{
-        self, Context, CursorIcon, FontFamily, FontSelection, Frame, Id, Key, KeyboardShortcut,
-        Label, Layout, Margin, Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense,
-        Shadow, TextEdit, TextFormat, TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder,
-        UiKind, UiStackInfo, Vec2, WidgetText,
+        self, Button, Context, CursorIcon, FontFamily, FontSelection, Frame, Id, Key,
+        KeyboardShortcut, Label, Layout, Margin, Modal, Modifiers, Painter, Response, RichText,
+        ScrollArea, Sense, Shadow, TextEdit, TextFormat, TextStyle, TextWrapMode, TopBottomPanel,
+        Ui, UiBuilder, UiKind, UiStackInfo, Vec2, WidgetText,
         scroll_area::ScrollBarVisibility,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
@@ -1549,6 +1549,24 @@ fn render_footer_panel(
                             note_file,
                             via_shortcut: false,
                         });
+                    }
+
+                    // Open file dialog button
+                    ui.add_space(sizes.xs);
+                    if ui
+                        .add(
+                            Button::new(
+                                AppIcon::FileOpen.render(
+                                    theme.sizes.toolbar_icon,
+                                    theme.colors.normal_text_color,
+                                ),
+                            )
+                            .frame(false),
+                        )
+                        .on_hover_text("Open File")
+                        .clicked()
+                    {
+                        actions.push(AppAction::OpenFileDialog);
                     }
                 });
             });
