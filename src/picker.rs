@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use eframe::{
     egui::{
         self, Align2, FontFamily, FontId, InnerResponse, Response, RichText, Sense, Ui, Vec2,
@@ -25,7 +27,7 @@ struct PickerLayout<'a, Item: PartialEq> {
     items: SmallVec<[PickerItemLayout<'a, Item>; PREALLOCATED_PICKER_ITEMS]>,
     total_width: f32,
     layout_params: PickerLayoutParams,
-    available_rect: Rect,
+    // available_rect: Rect,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +60,7 @@ pub struct PickerLayoutParams {
     pub bottom_rounding: f32,
     pub top_rounding: f32,
     pub outline_margin: (f32, f32),
+    pub entire_available_rect: Rect,
 }
 
 pub struct Picker<'a, Item: PartialEq> {
@@ -81,7 +84,7 @@ fn calculate_picker_layout<'a, Item: PartialEq>(
     items: &'a [PickerItem<Item>],
     layout_params: PickerLayoutParams,
     painter: &egui::Painter,
-    available_rect: Rect,
+    // available_rect: Rect,
 ) -> PickerLayout<'a, Item> {
     let mut layout_items = SmallVec::new();
     // just have some safe space
@@ -112,7 +115,7 @@ fn calculate_picker_layout<'a, Item: PartialEq>(
         items: layout_items,
         layout_params,
         total_width,
-        available_rect,
+        // available_rect,
     }
 }
 
@@ -130,9 +133,17 @@ impl<'a, 'b, Item: PartialEq> Widget for PickerResultWrapper<'a, 'b, Item> {
 
         let mut current = original_current;
         let radius = layout_params.bottom_rounding;
-        let available_rect = ui.available_rect_before_wrap();
+        // let available_rect = ui.available_rect_before_wrap();
+        // ui.painter()
+        //     .debug_rect(available_rect, Color32::RED, "picker space");
 
-        let layout = calculate_picker_layout(items, layout_params, &ui.painter(), available_rect);
+        // ui.painter().debug_rect(
+        //     ui.available_rect_before_wrap(),
+        //     Color32::LIGHT_GREEN,
+        //     format!("available_rect={:?}", ui.available_rect_before_wrap()),
+        // );
+
+        let layout = calculate_picker_layout(items, layout_params, &ui.painter());
 
         let desired_size = vec2(layout.total_width, radius * 2.);
         ui.add_space(radius * 2.);
@@ -167,8 +178,8 @@ fn render_picker_items<'items, Item: PartialEq>(
         let item = item_layout.item;
 
         let center = pos2(
-            layout.available_rect.left() + item_layout.offset_x,
-            layout.available_rect.center().y,
+            layout.layout_params.entire_available_rect.left() + item_layout.offset_x,
+            layout.layout_params.entire_available_rect.center().y,
         );
 
         let point_id = picker_id.with(i);
@@ -248,7 +259,7 @@ fn render_picker_items<'items, Item: PartialEq>(
             let animated_height = ctx.animate_value_with_time(
                 picker_id.with("height"),
                 center.y + item_layout.size.y / 2.0
-                    - layout.available_rect.top()
+                    - layout.layout_params.entire_available_rect.top()
                     - selection_y_jump,
                 animation_duration,
             );
@@ -272,7 +283,7 @@ fn render_picker_items<'items, Item: PartialEq>(
                 animation_duration,
             );
 
-            drop_shape.translate([drop_x, layout.available_rect.top()].into());
+            drop_shape.translate([drop_x, layout.layout_params.entire_available_rect.top()].into());
             painter.add(drop_shape);
 
             let (margin_x, _) = layout.layout_params.outline_margin;
@@ -280,24 +291,28 @@ fn render_picker_items<'items, Item: PartialEq>(
             let item_outline_width =
                 animated_item_width + 2. * (margin_x + layout.layout_params.top_rounding);
 
+            // left side of the break line
             painter.line_segment(
                 [
-                    layout.available_rect.left_top(),
+                    layout.layout_params.entire_available_rect.left_top(),
                     pos2(
-                        (drop_x - item_outline_width / 2.0).max(layout.available_rect.left()),
-                        layout.available_rect.top(),
+                        (drop_x - item_outline_width / 2.0)
+                            .max(layout.layout_params.entire_available_rect.left()),
+                        layout.layout_params.entire_available_rect.top(),
                     ),
                 ],
                 Stroke::new(style.outline.width, style.outline.color),
             );
 
+            // right side of the break line
             painter.line_segment(
                 [
                     pos2(
-                        (drop_x + item_outline_width / 2.0).min(layout.available_rect.right()),
-                        layout.available_rect.top(),
+                        (drop_x + item_outline_width / 2.0)
+                            .min(layout.layout_params.entire_available_rect.right()),
+                        layout.layout_params.entire_available_rect.top(),
                     ),
-                    layout.available_rect.right_top(),
+                    layout.layout_params.entire_available_rect.right_top(),
                 ],
                 style.outline.clone(),
             );
