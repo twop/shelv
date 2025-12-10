@@ -518,6 +518,8 @@ impl AppState {
                 CommandInstruction::SwitchToSettings,
                 CommandInstruction::PinWindow,
                 CommandInstruction::HideApp,
+                CommandInstruction::OpenFileDialog,
+                CommandInstruction::CloseCurrentNote,
             ]
             .into_iter()
             .chain(
@@ -750,6 +752,17 @@ fn execute_instruction(
         CI::PinWindow => [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
 
         CI::HideApp => [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into(),
+
+        CI::OpenFileDialog => [AppAction::OpenFileDialog].into(),
+
+        CI::CloseCurrentNote => {
+            match ctx.app_state.selected_note {
+                NoteId::ExternalFileId(file_id) => {
+                    [AppAction::CloseExternalFile(file_id)].into()
+                }
+                _ => SmallVec::new(), // No-op for regular notes
+            }
+        }
 
         // CI::RunLLMBlock => prepare_to_run_llm_block(ctx.app_state, CodeBlockAddress::NoteSelection)
         //     .unwrap_or_default(),

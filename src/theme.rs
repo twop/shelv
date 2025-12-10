@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use eframe::{
     egui::{
-        self, FontDefinitions, RichText, TextStyle, ThemePreference, Vec2, Visuals, WidgetText,
+        self, FontDefinitions, Margin, RichText, TextStyle, ThemePreference, Vec2, Visuals,
+        WidgetText,
         style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets},
         vec2,
     },
@@ -40,6 +41,7 @@ pub enum AppIcon {
     Copy,
     Download,
     Bug,
+    FileOpen,
 }
 
 impl AppIcon {
@@ -178,6 +180,7 @@ impl AppIcon {
             AppIcon::Copy => P::COPY_SIMPLE,
             AppIcon::Download => P::DOWNLOAD_SIMPLE,
             AppIcon::Bug => P::BUG,
+            AppIcon::FileOpen => P::FOLDER_OPEN,
         }
     }
 }
@@ -195,7 +198,7 @@ pub struct Sizes {
     pub menu_height: f32,
 
     // semantic
-    pub header_footer: f32,
+    pub header_footer_height: f32,
     pub toolbar_icon: f32,
 }
 
@@ -265,7 +268,7 @@ impl Sizes {
             xl,
             menu_width,
             menu_height,
-            header_footer: xl + xs,
+            header_footer_height: xl + xs, // 28.0
             toolbar_icon: l + xs / 2.,
         }
     }
@@ -474,7 +477,8 @@ pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
 
     style.text_styles = text_styles(&theme.fonts);
     style.visuals = visuals(&theme.colors);
-    style.spacing.item_spacing = Vec2::splat(theme.sizes.s);
+    style.spacing.item_spacing = Vec2::splat(0.);
+    style.spacing.window_margin = Margin::same(0);
     // style.spacing.button_padding = Vec2::splat(theme.sizes.s);
     style.interaction.tooltip_delay = 0.05;
     ctx.set_style(style);

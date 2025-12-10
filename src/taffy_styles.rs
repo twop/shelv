@@ -13,6 +13,8 @@ pub trait StyleBuilder {
     fn gap(self, gap: f32) -> Self;
     /// Sets the padding around flex items
     fn padding(self, padding: f32) -> Self;
+    /// Sets the padding around flex items horizontally
+    fn padding_horizontal(self, padding: f32) -> Self;
     /// Sets the width of the flex container
     fn width(self, width: f32) -> Self;
     /// Sets the height of the flex container
@@ -27,6 +29,10 @@ pub trait StyleBuilder {
     fn min_width(self, width: f32) -> Self;
     /// Sets how much the flex item will grow relative to other flex items
     fn grow(self, grow: f32) -> Self;
+    /// The relative rate at which this item shrinks when it is contracting to fit into space
+    ///
+    /// 1.0 is the default value, and this value must be positive.
+    fn shrink(self, shrink: f32) -> Self;
     /// Sets the initial main size of the flex item
     fn basis(self, basis: f32) -> Self;
     /// Sets the direction of the main axis (row or column)
@@ -63,6 +69,13 @@ impl StyleBuilder for Style {
     /// Sets padding around flex items
     fn padding(mut self, padding: f32) -> Self {
         self.padding = length(padding);
+        self
+    }
+
+    /// Sets the padding around flex items horizontally
+    fn padding_horizontal(mut self, padding: f32) -> Self {
+        self.padding.left = length(padding);
+        self.padding.right = length(padding);
         self
     }
 
@@ -105,6 +118,14 @@ impl StyleBuilder for Style {
     /// Sets flex grow factor
     fn grow(mut self, grow: f32) -> Self {
         self.flex_grow = grow;
+        self
+    }
+
+    /// The relative rate at which this item shrinks when it is contracting to fit into space
+    ///
+    /// 1.0 is the default value, and this value must be positive.
+    fn shrink(mut self, shrink: f32) -> Self {
+        self.flex_shrink = shrink;
         self
     }
 

@@ -112,6 +112,12 @@ bind "Cmd P" { PinWindow; }
 // (Escape): Hide Window
 bind "Escape" { HideApp; }
 
+// (⌘ O): Open File
+bind "Cmd O" { OpenFileDialog; }
+
+// (⌘ W): Close File
+bind "Cmd W" { CloseCurrentNote; }
+
 // (⌘ 1): Shelf 1
 bind "Cmd 1" { SwitchToNote 0; }
 

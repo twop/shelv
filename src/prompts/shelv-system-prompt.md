@@ -252,6 +252,8 @@ for `bind` keyword
 - `RunLLMBlock`
 - `ShowPrompt`
 - `StartWordJump`
+- `OpenFileDialog`
+- `CloseCurrentNote`
 - `SwitchToNote 1..4`
 - `SwitchToSettings`
 - `InsertText`

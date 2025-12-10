@@ -136,6 +136,7 @@ pub enum AppAction {
     CloseNotification(NotificationId),
     OpenExternalFile(PathBuf),
     CloseExternalFile(ExternalFileId),
+    OpenFileDialog,
 }
 
 impl AppAction {
@@ -232,6 +233,7 @@ pub trait AppIO {
 
     fn watch_external_file(&mut self, external_file: &ExternalFile) -> Result<(), String>;
     fn unwatch_external_file(&mut self, external_file_id: ExternalFileId) -> Result<(), String>;
+    fn open_file_dialog(&self) -> Result<Option<PathBuf>, Box<dyn std::error::Error>>;
 }
 
 pub fn process_app_action(
@@ -1223,6 +1225,22 @@ pub fn process_app_action(
 
         AppAction::CloseExternalFile(file_id) => {
             actions::external_files::close_external_file(file_id, state, app_io)
+        }
+
+        AppAction::OpenFileDialog => {
+            match app_io.open_file_dialog() {
+                Ok(Some(path)) => {
+                    actions::external_files::open_external_file(path, state, app_io)
+                }
+                Ok(None) => {
+                    // User cancelled - no action needed
+                    SmallVec::new()
+                }
+                Err(err) => {
+                    println!("Failed to open file dialog: {}", err);
+                    SmallVec::new()
+                }
+            }
         }
 
         AppAction::WordJump(word_jump_action) => match word_jump_action {

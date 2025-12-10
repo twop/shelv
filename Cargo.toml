@@ -59,6 +59,8 @@ egui-phosphor = { version = "0.10.0", features = ["light"] }
 winit = "0.30.12"
 linkify = "0.10.0"
 objc2 = "0.5.1"
+objc2-app-kit = "0.2.2"
+objc2-foundation = "0.2.2"
 boa_engine = "0.20.0"
 boa_parser = "0.20.0"
 boa_runtime = "0.20.0"
