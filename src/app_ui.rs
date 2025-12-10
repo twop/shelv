@@ -1600,7 +1600,12 @@ fn render_footer_panel(
                     if t.ui_add(
                         IconButton::new(AppIcon::Folder, theme)
                             .size(IconButtonSize::Large)
-                            .tooltip("Open file", None),
+                            .tooltip(
+                            "Open file",
+                            command_list
+                                .find(CommandInstruction::OpenFileDialog)
+                                .and_then(|cmd| cmd.shortcut),
+                        ),
                     )
                     .clicked()
                     {

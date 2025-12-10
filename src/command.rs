@@ -343,6 +343,12 @@ pub enum CommandInstruction {
     #[knus(name = "StartWordJump")]
     StartWordJump,
 
+    #[knus(name = "OpenFileDialog")]
+    OpenFileDialog,
+
+    #[knus(name = "CloseCurrentNote")]
+    CloseCurrentNote,
+
     #[knus(name = "ToggleDebugTools")]
     ToggleDebugTools,
 
@@ -352,7 +358,7 @@ pub enum CommandInstruction {
 }
 
 /// Commands that we promote in UI
-pub const PROMOTED_COMMANDS: [CommandInstruction; 10] = const {
+pub const PROMOTED_COMMANDS: [CommandInstruction; 11] = const {
     [
         CommandInstruction::PinWindow,
         CommandInstruction::MarkdownBold,
@@ -365,6 +371,7 @@ pub const PROMOTED_COMMANDS: [CommandInstruction; 10] = const {
         CommandInstruction::MarkdownH3,
         CommandInstruction::ShowPrompt,
         CommandInstruction::StartWordJump,
+        CommandInstruction::OpenFileDialog,
     ]
 };
 
@@ -401,6 +408,8 @@ impl CommandInstruction {
             // Self::RunLLMBlock => "Execute AI Block".into(),
             CommandInstruction::ShowPrompt => "Show AI Prompt".into(),
             CommandInstruction::StartWordJump => "Activate Word Jump".into(),
+            CommandInstruction::OpenFileDialog => "Open File".into(),
+            CommandInstruction::CloseCurrentNote => "Close File".into(),
             CommandInstruction::ToggleDebugTools => "Toggle Debug Tools".into(),
             CommandInstruction::EnterInsideKDL => "Auto indent KDL".into(),
             CommandInstruction::BracketAutoclosingInsideKDL => {
@@ -441,6 +450,8 @@ impl CommandInstruction {
             C::PinWindow => shortcut(Modifiers::COMMAND, Key::P),
             C::ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
             C::StartWordJump => shortcut(Modifiers::COMMAND, Key::J),
+            C::OpenFileDialog => shortcut(Modifiers::COMMAND, Key::O),
+            C::CloseCurrentNote => shortcut(Modifiers::COMMAND, Key::W),
             C::ToggleDebugTools => shortcut(Modifiers::ALT.plus(Modifiers::SHIFT).plus(Modifiers::CTRL), Key::D),
             C::EnterInsideKDL => shortcut(Modifiers::NONE, Key::Enter),
             C::BracketAutoclosingInsideKDL => shortcut(Modifiers::SHIFT, Key::OpenBracket),
@@ -481,7 +492,9 @@ impl CommandInstruction {
             // Global commands that work in any context
             C::SwitchToSettings
             | C::PinWindow
-            | C::ToggleDebugTools => (
+            | C::ToggleDebugTools
+            | C::OpenFileDialog
+            | C::CloseCurrentNote => (
                 CommandPhase::InsideRender,
                 CommandCondition::loose_match([UiStateAttribute::Idle])
             ),
@@ -526,6 +539,8 @@ impl CommandInstruction {
             // Self::RunLLMBlock => Some("ExecutePrompt;".into()),
             Self::ShowPrompt => Some("ShowPrompt;".into()),
             Self::StartWordJump => Some("StartWordJump;".into()),
+            Self::OpenFileDialog => Some("OpenFileDialog;".into()),
+            Self::CloseCurrentNote => Some("CloseCurrentNote;".into()),
             Self::ToggleDebugTools => Some("ToggleDebugTools;".into()),
             Self::InsertText(ForwardToChild(source)) => match source {
                 TextSource::Str(text) => {

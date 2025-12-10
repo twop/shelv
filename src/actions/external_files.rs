@@ -54,7 +54,7 @@ pub fn open_external_file(
                 // Switch to the newly opened file
                 SmallVec::from([AppAction::SwitchToNote {
                     note_file: note_id,
-                    via_shortcut: false,
+                    via_shortcut: true,
                 }])
             }
             Err(err) => {
@@ -86,7 +86,7 @@ pub fn close_external_file(
     if state.selected_note == note_id {
         SmallVec::from([AppAction::SwitchToNote {
             note_file: NoteId::Note(0),
-            via_shortcut: false,
+            via_shortcut: true,
         }])
     } else {
         SmallVec::new()

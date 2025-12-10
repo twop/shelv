@@ -47,6 +47,18 @@ Shelv has a cool word jumping feature that lets you quickly navigate to any word
 *This feature is especially useful for quickly navigating long notes without reaching for your mouse!*
 
 
+## Opening External Files
+You can open files from your computer directly in Shelv to view and edit them alongside your notes.
+
+- [ ] Try it out: Click the folder icon in the bottom-right corner of the footer, or press `⌘ + o` to open a file picker.
+- [ ] Select any text file from your computer to open it in Shelv.
+
+*External files appear as separate tabs and any changes you make are saved automatically.*
+
+*This is perfect for quickly editing config files, viewing logs, or working on any text-based files without leaving Shelv!*
+
+- [ ] Close the opened file by pressing `⌘ + w`
+
 ## Live JS code blocks
 You can do quick math or even write mini programs in shelv directly by making `js` code blocks to come "alive"
 
