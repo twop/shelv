@@ -5,6 +5,7 @@ use eframe::{
         self, Align2, FontFamily, FontId, InnerResponse, Response, RichText, Sense, Ui, Vec2,
         Widget, WidgetInfo, WidgetType,
     },
+    emath::TSTransform,
     epaint::{
         Color32, PathShape, PathStroke, Pos2, Rect, Shape, Stroke, pos2,
         tessellator::path::add_circle_quadrant, vec2,
@@ -453,11 +454,13 @@ impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, '
         ) = self;
 
         let mut newly_selected = None;
+        let animation_duration = 0.2;
+        let picker_id = ui.id().with("simple_picker");
 
-        let response = ui.horizontal(|ui| {
+        let response = ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0; // gap between items
 
-            for item in items {
+            for (i, item) in items.iter().enumerate() {
                 let is_selected = &item.data == &current;
 
                 // Get icon based on item kind
@@ -483,12 +486,27 @@ impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, '
                     _ => crate::theme::AppIcon::More, // fallback
                 };
 
+                // Animate selection with vertical jump
+                // Similar to line 228 in manual implementation: selection_y_jump = gap / 1.0
+                let selection_y_jump = 4.0; // Using the gap value
+                let item_id = picker_id.with(i);
+                let selection_progress =
+                    ui.ctx()
+                        .animate_bool_with_time(item_id, is_selected, animation_duration);
+
+                // Calculate vertical offset (negative to move up, matching line 230)
+                let y_offset = -selection_progress * selection_y_jump;
+                let transform = TSTransform::from_translation((0.0, y_offset).into());
+
                 let button = crate::ui_components::IconButton::new(app_icon, theme)
                     .size(crate::ui_components::IconButtonSize::Large)
                     .toggled(is_selected)
                     .tooltip(&item.tooltip, None);
 
-                if ui.add(button).clicked() && !is_selected {
+                // Apply transform and render button
+                let button_response = ui.with_visual_transform(transform, |ui| ui.add(button));
+
+                if button_response.inner.clicked() && !is_selected {
                     newly_selected = Some(&item.data);
                 }
             }

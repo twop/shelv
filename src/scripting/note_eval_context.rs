@@ -1,5 +1,7 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+/// This is a very naive 2 bytes hash
+/// for identifying code snippets by it's content
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct SourceHash(u16);
 
