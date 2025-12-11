@@ -410,3 +410,92 @@ fn selection_outline(
 
     path
 }
+
+// ========== EXPERIMENTAL SIMPLE PICKER ==========
+// Simplified picker using egui's horizontal layout instead of custom rendering
+// No selection outline or animations yet
+
+/// Simplified picker widget using egui's horizontal layout and IconButtons
+pub struct SimplePicker<'a, Item: PartialEq> {
+    pub current: Item,
+    pub items: &'a [PickerItem<Item>],
+    pub style: PickerVisualStyle,
+}
+
+impl<'a, Item: PartialEq> SimplePicker<'a, Item> {
+    pub fn show(
+        self,
+        ui: &mut Ui,
+        theme: &crate::theme::AppTheme,
+    ) -> InnerResponse<Option<&'a Item>> {
+        let mut result = None;
+        let response = ui.add(SimplePickerResultWrapper(&mut result, self, theme));
+        InnerResponse::new(result, response)
+    }
+}
+
+struct SimplePickerResultWrapper<'a, 'b, 'theme, Item: PartialEq>(
+    &'b mut Option<&'a Item>,
+    SimplePicker<'a, Item>,
+    &'theme crate::theme::AppTheme,
+);
+
+impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, 'b, 'theme, Item> {
+    fn ui(self, ui: &mut Ui) -> Response {
+        let SimplePickerResultWrapper(
+            result,
+            SimplePicker {
+                items,
+                current,
+                style: _style,
+            },
+            theme,
+        ) = self;
+
+        let mut newly_selected = None;
+
+        let response = ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0; // gap between items
+
+            for item in items {
+                let is_selected = &item.data == &current;
+
+                // Get icon based on item kind
+                let icon_str = match &item.kind {
+                    PickerItemKind::FontIcon(icon_str, _font_id) => icon_str.as_str(),
+                    PickerItemKind::ItemName(_name, _font_id) => {
+                        // Ignore external files (ItemName) for now
+                        continue;
+                    }
+                };
+
+                // Map phosphor icon strings back to AppIcon enum
+                // We need to match the exact strings from to_icon_str()
+                use egui_phosphor::light as P;
+                let app_icon = match icon_str {
+                    P::NUMBER_ONE => crate::theme::AppIcon::One,
+                    P::NUMBER_TWO => crate::theme::AppIcon::Two,
+                    P::NUMBER_THREE => crate::theme::AppIcon::Three,
+                    P::NUMBER_FOUR => crate::theme::AppIcon::Four,
+                    P::GEAR_FINE => crate::theme::AppIcon::Settings,
+                    P::DOTS_THREE_OUTLINE => crate::theme::AppIcon::More,
+                    P::FOLDER_SIMPLE => crate::theme::AppIcon::Folder,
+                    _ => crate::theme::AppIcon::More, // fallback
+                };
+
+                let button = crate::ui_components::IconButton::new(app_icon, theme)
+                    .size(crate::ui_components::IconButtonSize::Large)
+                    .toggled(is_selected)
+                    .tooltip(&item.tooltip, None);
+
+                if ui.add(button).clicked() && !is_selected {
+                    newly_selected = Some(&item.data);
+                }
+            }
+        });
+
+        *result = newly_selected;
+
+        response.response
+    }
+}

@@ -1,8 +1,9 @@
-use eframe::egui::{Color32, KeyboardShortcut, RichText, Stroke, TextWrapMode};
+use eframe::egui::{Color32, KeyboardShortcut, RichText, Stroke, TextWrapMode, Widget, vec2};
 use egui_taffy::{AsTuiBuilder, Tui, TuiBuilder, TuiBuilderLogic, TuiInnerResponse, TuiWidget};
 
 use crate::{
     settings_parsing::format_mac_shortcut_with_symbols,
+    taffy_styles::{StyleBuilder, style},
     theme::{AppIcon, AppTheme},
 };
 
@@ -48,6 +49,7 @@ pub fn apply_icon_btn_styling(style: &mut eframe::egui::Style) {
     style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
     style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
+    style.spacing.button_padding = vec2(1.0, 1.0);
     style.wrap_mode = Some(TextWrapMode::Extend);
 }
 
@@ -150,6 +152,8 @@ impl<'theme> TuiWidget for IconButton<'theme> {
                 .lerp_to_gamma(base_color, fade);
 
             tui.mut_egui_style(apply_icon_btn_styling)
+                // FIXME padding is not taken from egui.styles()
+                // .style(style().padding(0.))
                 .button(|tui| {
                     let label = if let Some(text) = text.as_ref() {
                         tui.label(
@@ -168,6 +172,53 @@ impl<'theme> TuiWidget for IconButton<'theme> {
                     }
                 })
                 .response
+        }
+    }
+}
+impl<'theme> Widget for IconButton<'theme> {
+    fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
+        let Self {
+            icon,
+            size,
+            tooltip,
+            fade,
+            is_toggled,
+            theme,
+            color,
+            text,
+            text_size,
+        } = self;
+
+        let icon_size = size.get_icon_font_size(theme);
+
+        let base_color = if let Some(color) = color {
+            color
+        } else if is_toggled {
+            theme.colors.button_pressed_fg
+        } else {
+            theme.colors.subtle_text_color
+        };
+
+        let icon_color = theme
+            .colors
+            .subtle_text_color
+            .gamma_multiply(0.2)
+            .lerp_to_gamma(base_color, fade);
+
+        apply_icon_btn_styling(ui.style_mut());
+
+        let label = if let Some(text) = text.as_ref() {
+            ui.button(icon.render_with_text_size(icon_size, text_size, icon_color, text))
+        } else {
+            ui.button(icon.render(icon_size, icon_color))
+        };
+
+        if let Some((tooltip_text, shortcut)) = tooltip.as_ref() {
+            label.on_hover_ui(|ui| {
+                ui.label(rich_text_tooltip(tooltip_text, shortcut.clone(), theme));
+            })
+        } else {
+            label
         }
     }
 }

@@ -45,7 +45,9 @@ use crate::{
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
     persistent_state::{ExternalFile, NoteId},
-    picker::{Picker, PickerItem, PickerItemKind, PickerLayoutParams, PickerVisualStyle},
+    picker::{
+        Picker, PickerItem, PickerItemKind, PickerLayoutParams, PickerVisualStyle, SimplePicker,
+    },
     settings_parsing::format_mac_shortcut_with_symbols,
     taffy_styles::{StyleBuilder, flex_column, flex_row},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
@@ -1444,174 +1446,122 @@ fn render_footer_panel(
             let sizes = &theme.sizes;
             ui.set_height(sizes.header_footer_height);
 
-            let total_available_area = ui.available_rect_before_wrap();
-            let avail_width = ui.available_width();
-            // ui.set_min_size(vec2(avail_width, sizes.header_footer));
-            // ui.painter().debug_rect(
-            //     total_available_area,
-            //     Color32::LIGHT_RED,
-            //     format!("footer={total_available_area:?}"), // sizes.header_footer_height,
-            // );
+            // ui.debug_paint_cursor();
+            ui.horizontal_centered(|ui| {
+                // let button = crate::ui_components::IconButton::new(AppIcon::Twitter, theme)
+                //     .size(crate::ui_components::IconButtonSize::Large);
 
-            let footer_ui_id = ui.id().with("footer");
+                // ui.add(button);
+                // let button = crate::ui_components::IconButton::new(AppIcon::Feedback, theme)
+                //     .size(crate::ui_components::IconButtonSize::Large);
 
-            tui(ui, footer_ui_id)
-                .style(
-                    flex_row()
-                        .width(avail_width)
-                        .height(sizes.header_footer_height)
-                        .align_items(AlignItems::Center)
-                        .justify_content(JustifyContent::SpaceBetween) // .padding(sizes.xs),
-                        .padding_horizontal(sizes.s),
-                )
-                .show(|t| {
-                    // let ui = t.egui_ui();
-                    // draw_debug_rect(ui);
-                    let footer_available_rect = t.egui_ui().available_rect_before_wrap();
-                    // Left section: Picker with note tabs
-                    t.ui_finite(
-                        |ui| {
-                            // draw_debug_rect(ui);
-                            // Build picker items from opened_files, filtering and organizing by type
-                            let items = opened_files
-                                .iter()
-                                .filter_map(|note_id| match note_id {
-                                    NoteId::Note(index) => {
-                                        let index = *index;
-                                        let cmd = command_list
-                                            .find(CommandInstruction::SwitchToNote(index as u8));
-                                        let tooltip = match cmd.and_then(|cmd| cmd.shortcut) {
-                                            Some(shortcut) => {
-                                                format!("Shelf {}", ctx.format_shortcut(&shortcut))
-                                            }
-                                            None => format!("Shelf {}", index + 1),
-                                        };
+                // ui.add(button);
 
-                                        Some(PickerItem {
-                                            tooltip,
-                                            kind: PickerItemKind::FontIcon(
-                                                match index {
-                                                    0 => AppIcon::One,
-                                                    1 => AppIcon::Two,
-                                                    2 => AppIcon::Three,
-                                                    3 => AppIcon::Four,
-                                                    _ => AppIcon::More,
-                                                }
-                                                .to_icon_str()
-                                                .to_smolstr(),
-                                                FontId::new(
-                                                    theme.sizes.toolbar_icon,
-                                                    FontFamily::Proportional,
-                                                ),
-                                            ),
-                                            data: *note_id,
-                                        })
-                                    }
-                                    NoteId::ExternalFileId(_) => None, // We'll add external files separately
-                                    NoteId::Settings => None, // We'll add settings separately
-                                })
-                                .chain(external_files.iter().map(|ext_file| {
-                                    let file_name = ext_file
-                                        .path
-                                        .file_name()
-                                        .and_then(|n| n.to_str())
-                                        .unwrap_or("external file");
+                // ui.debug_paint_cursor();
+                // ui.spacing_mut().item_spacing.x = sizes.s;
+                // draw_debug_rect(ui);
 
-                                    PickerItem {
-                                        tooltip: ext_file.path.display().to_string(),
-                                        kind: PickerItemKind::ItemName(
-                                            file_name.to_smolstr(),
-                                            FontId::new(
-                                                theme.fonts.size.normal,
-                                                FontFamily::Proportional,
-                                            ),
-                                        ),
-                                        data: NoteId::ExternalFileId(ext_file.id),
-                                    }
-                                }))
-                                .chain([PickerItem {
-                                    tooltip: {
-                                        let tooltip_text = "Settings";
-                                        command_list
-                                            .find(CommandInstruction::SwitchToSettings)
-                                            .and_then(|cmd| cmd.shortcut)
-                                            .map(|shortcut| {
-                                                format!(
-                                                    "{} {}",
-                                                    tooltip_text,
-                                                    ctx.format_shortcut(&shortcut)
-                                                )
-                                            })
-                                            .unwrap_or_else(|| tooltip_text.to_string())
-                                    },
-                                    kind: PickerItemKind::FontIcon(
-                                        AppIcon::Settings.to_icon_str().to_smolstr(),
-                                        FontId::new(
-                                            theme.sizes.toolbar_icon,
-                                            FontFamily::Proportional,
-                                        ),
-                                    ),
-                                    data: NoteId::Settings,
-                                }])
-                                .collect::<Vec<_>>();
-
-                            let picker = Picker {
-                                current: selected,
-                                items: &items,
-                                layout_params: PickerLayoutParams {
-                                    outline_margin: (sizes.xs / 1.5, sizes.xs / 2.0),
-                                    gap: sizes.xs,
-                                    bottom_rounding: sizes.s,
-                                    top_rounding: sizes.xs,
-                                    entire_available_rect: footer_available_rect
-                                        .shrink2(vec2(theme.sizes.s, 0.0)),
-                                },
-                                style: PickerVisualStyle {
-                                    inactive_color: theme.colors.subtle_text_color,
-                                    hover_color: theme.colors.button_hover_fg,
-                                    pressed_color: theme.colors.button_pressed_fg,
-                                    selected_stroke_color: theme.colors.button_pressed_fg,
-                                    selected_fill_color: theme.colors.button_pressed_fg,
-                                    outline: Stroke::new(1.0, theme.colors.outline_fg),
-                                    tooltip_text_color: theme.colors.subtle_text_color,
-                                },
+                // Left section: SimplePicker with note tabs
+                let items = opened_files
+                    .iter()
+                    .filter_map(|note_id| match note_id {
+                        NoteId::Note(index) => {
+                            let index = *index;
+                            let cmd =
+                                command_list.find(CommandInstruction::SwitchToNote(index as u8));
+                            let tooltip = match cmd.and_then(|cmd| cmd.shortcut) {
+                                Some(shortcut) => {
+                                    format!("Shelf {}", ctx.format_shortcut(&shortcut))
+                                }
+                                None => format!("Shelf {}", index + 1),
                             };
 
-                            let picker_response = picker.show(ui);
-
-                            if let Some(&note_file) = picker_response.inner {
-                                actions.push(AppAction::SwitchToNote {
-                                    note_file,
-                                    via_shortcut: false,
-                                });
-                            }
-
-                            picker_response.response
-                        },
-                        // |mut val, _ui| {
-                        //     // Return the layout info for taffy
-                        //     val.max_size = val.min_size;
-                        //     val.infinite = egui::Vec2b::FALSE;
-                        //     val
-                        // },
-                    );
-
-                    // Right section: Open file button
-                    if t.ui_add(
-                        IconButton::new(AppIcon::Folder, theme)
-                            .size(IconButtonSize::Large)
-                            .tooltip(
-                            "Open file",
+                            Some(PickerItem {
+                                tooltip,
+                                kind: PickerItemKind::FontIcon(
+                                    match index {
+                                        0 => AppIcon::One,
+                                        1 => AppIcon::Two,
+                                        2 => AppIcon::Three,
+                                        3 => AppIcon::Four,
+                                        _ => AppIcon::More,
+                                    }
+                                    .to_icon_str()
+                                    .to_smolstr(),
+                                    FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
+                                ),
+                                data: *note_id,
+                            })
+                        }
+                        NoteId::ExternalFileId(_) => None, // Ignore for now
+                        NoteId::Settings => None,
+                    })
+                    .chain([PickerItem {
+                        tooltip: {
+                            let tooltip_text = "Settings";
                             command_list
-                                .find(CommandInstruction::OpenFileDialog)
-                                .and_then(|cmd| cmd.shortcut),
+                                .find(CommandInstruction::SwitchToSettings)
+                                .and_then(|cmd| cmd.shortcut)
+                                .map(|shortcut| {
+                                    format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
+                                })
+                                .unwrap_or_else(|| tooltip_text.to_string())
+                        },
+                        kind: PickerItemKind::FontIcon(
+                            AppIcon::Settings.to_icon_str().to_smolstr(),
+                            FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
                         ),
-                    )
-                    .clicked()
-                    {
-                        actions.push(AppAction::OpenFileDialog);
-                    }
-                });
+                        data: NoteId::Settings,
+                    }])
+                    .collect::<Vec<_>>();
+
+                let picker = SimplePicker {
+                    current: selected,
+                    items: &items,
+                    style: PickerVisualStyle {
+                        inactive_color: theme.colors.subtle_text_color,
+                        hover_color: theme.colors.button_hover_fg,
+                        pressed_color: theme.colors.button_pressed_fg,
+                        selected_stroke_color: theme.colors.button_pressed_fg,
+                        selected_fill_color: theme.colors.button_pressed_fg,
+                        outline: Stroke::new(1.0, theme.colors.outline_fg),
+                        tooltip_text_color: theme.colors.subtle_text_color,
+                    },
+                };
+
+                let picker_response = picker.show(ui, theme);
+
+                if let Some(&note_file) = picker_response.inner {
+                    actions.push(AppAction::SwitchToNote {
+                        note_file,
+                        via_shortcut: false,
+                    });
+                }
+
+                // Add spacer to push button to the right
+                let available = ui.available_width();
+                let button_width = sizes.toolbar_icon + sizes.s * 2.0;
+                if available > button_width {
+                    ui.add_space(available - button_width);
+                }
+
+                // // Right section: Open file button
+                // if ui
+                //     .add(
+                //         IconButton::new(AppIcon::Folder, theme)
+                //             .size(IconButtonSize::Large)
+                //             .tooltip(
+                //                 "Open file",
+                //                 command_list
+                //                     .find(CommandInstruction::OpenFileDialog)
+                //                     .and_then(|cmd| cmd.shortcut),
+                //             ),
+                //     )
+                //     .clicked()
+                // {
+                //     actions.push(AppAction::OpenFileDialog);
+                // }
+            });
         });
 
     actions
