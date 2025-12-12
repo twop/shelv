@@ -474,9 +474,8 @@ impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, '
         let animation_duration = 0.2;
         let picker_id = ui.id().with("simple_picker");
 
-        // Track selected item rect for outline drawing
-        let mut selected_item_rect: Option<Rect> = None;
-        let mut selected_item_index: Option<usize> = None;
+        // This is to track selected item rect for outline drawing
+        let mut selected_item_rect_index: Option<(Rect, usize)> = None;
 
         let response = ui.horizontal_centered(|ui| {
             // draw_debug_rect(ui);
@@ -534,14 +533,12 @@ impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, '
 
                 // Store selected item's rect for outline drawing
                 if is_selected {
-                    selected_item_rect = Some(button_response.response.rect);
-                    selected_item_index = Some(i);
+                    selected_item_rect_index = Some((button_response.response.rect, i));
                 }
             }
         });
 
-        if let (Some(item_rect), Some(idx)) = (selected_item_rect, selected_item_index) {
-            // Animate item width (line 256-260)
+        if let Some((item_rect, idx)) = selected_item_rect_index {
             let animated_item_width = ui.ctx().animate_value_with_time(
                 picker_id.with("width"),
                 item_rect.width(),
