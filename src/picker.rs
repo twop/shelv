@@ -270,7 +270,10 @@ fn render_picker_items<'items, Item: PartialEq>(
             let mut drop_shape = Shape::Path(PathShape {
                 points: selection_outline(SelectionOutlineDesc {
                     bottom_radius: layout.layout_params.bottom_rounding,
-                    top_radious: layout.layout_params.top_rounding,
+                    top_radious: (
+                        layout.layout_params.top_rounding,
+                        layout.layout_params.top_rounding,
+                    ),
                     item_width: animated_item_width,
                     item_height: animated_height,
                     margin: layout.layout_params.outline_margin,
@@ -346,11 +349,11 @@ fn interpolate_color(from: Color32, to: Color32, progress: f32) -> Color32 {
 
 struct SelectionOutlineDesc {
     bottom_radius: f32,
-    top_radious: f32,
+    /// Top rounding radii: (left, right)
+    top_radious: (f32, f32),
     item_width: f32,
     item_height: f32,
     /// That (x,y) margins to be applied to the outline
-    ///
     margin: (f32, f32),
 }
 
@@ -365,8 +368,10 @@ fn selection_outline(
 ) -> Vec<Pos2> {
     let mut path: Vec<Pos2> = vec![];
     let (margin_x, margin_y) = margin;
+    let (top_left_radius, top_right_radius) = top_radious;
 
-    let top_circle_center_x = item_width / 2.0 + margin_x + top_radious;
+    let top_left_circle_center_x = item_width / 2.0 + margin_x + top_left_radius;
+    let top_right_circle_center_x = item_width / 2.0 + margin_x + top_right_radius;
 
     let bottom_segment_width = (item_width - 2. * bottom_radius).max(0.0);
     let bottom_circle_center_y = item_height - bottom_radius + margin_y;
@@ -375,8 +380,8 @@ fn selection_outline(
     // top left rounding
     add_circle_quadrant(
         &mut path,
-        pos2(-top_circle_center_x, top_radious),
-        top_radious,
+        pos2(-top_left_circle_center_x, top_left_radius),
+        top_left_radius,
         3.0,
     );
 
@@ -406,8 +411,8 @@ fn selection_outline(
     // top right rounding
     add_circle_quadrant(
         &mut path,
-        pos2(top_circle_center_x, top_radious),
-        top_radious,
+        pos2(top_right_circle_center_x, top_right_radius),
+        top_right_radius,
         2.0,
     );
 
@@ -477,7 +482,8 @@ impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, '
             // draw_debug_rect(ui);
             ui.spacing_mut().item_spacing.x = layout_params.gap;
             // // to make sure that the very left rounding does not exceed the widget bounds
-            ui.add_space(layout_params.top_rounding + layout_params.outline_margin.0);
+            // we animate the rad to 0.0, hence only margin needs to be adjusted
+            ui.add_space(layout_params.outline_margin.0);
 
             for (i, item) in items.iter().enumerate() {
                 let is_selected = &item.data == &current;
@@ -534,7 +540,7 @@ impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, '
             }
         });
 
-        if let (Some(item_rect), Some(_idx)) = (selected_item_rect, selected_item_index) {
+        if let (Some(item_rect), Some(idx)) = (selected_item_rect, selected_item_index) {
             // Animate item width (line 256-260)
             let animated_item_width = ui.ctx().animate_value_with_time(
                 picker_id.with("width"),
@@ -551,10 +557,23 @@ impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, '
                 animation_duration,
             );
 
+            // If first item is selected, animate top left radius to 0, otherwise to normal radius
+            let is_first_item = idx == 0;
+            let target_top_left_radius = if is_first_item {
+                0.0
+            } else {
+                layout_params.top_rounding
+            };
+            let animated_top_left_radius = ui.ctx().animate_value_with_time(
+                picker_id.with("top_left_radius"),
+                target_top_left_radius,
+                animation_duration,
+            );
+
             let mut drop_shape = Shape::Path(PathShape {
                 points: selection_outline(SelectionOutlineDesc {
                     bottom_radius: layout_params.bottom_rounding,
-                    top_radious: layout_params.top_rounding,
+                    top_radious: (animated_top_left_radius, layout_params.top_rounding),
                     item_width: animated_item_width,
                     item_height: animated_height,
                     margin: layout_params.outline_margin,
@@ -576,8 +595,10 @@ impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, '
             painter.add(drop_shape);
 
             let (margin_x, _) = layout_params.outline_margin;
-            let item_outline_width =
-                animated_item_width + 2. * (margin_x + layout_params.top_rounding);
+            let item_outline_width = animated_item_width
+                + 2. * margin_x
+                + animated_top_left_radius
+                + layout_params.top_rounding;
 
             // Draw left side of the break line
             painter.line_segment(
