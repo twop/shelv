@@ -49,7 +49,7 @@ pub fn apply_icon_btn_styling(style: &mut eframe::egui::Style) {
     style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
     style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
-    style.spacing.button_padding = vec2(1.0, 1.0);
+    // style.spacing.button_padding = vec2(1.0, 1.0);
     style.wrap_mode = Some(TextWrapMode::Extend);
 }
 

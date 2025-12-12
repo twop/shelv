@@ -1441,7 +1441,11 @@ fn render_footer_panel(
     let mut actions = SmallVec::new();
     TopBottomPanel::bottom("footer")
         .show_separator_line(false)
-        .frame(Frame::new().fill(theme.colors.main_bg))
+        .frame(
+            Frame::new()
+                .inner_margin(Vec2::new(theme.sizes.s, 0.))
+                .fill(theme.colors.main_bg),
+        )
         .show(ctx, |ui| {
             let sizes = &theme.sizes;
             ui.set_height(sizes.header_footer_height);
@@ -1515,6 +1519,7 @@ fn render_footer_panel(
                     }])
                     .collect::<Vec<_>>();
 
+                let available_rect = ui.available_rect_before_wrap();
                 let picker = SimplePicker {
                     current: selected,
                     items: &items,
@@ -1526,6 +1531,13 @@ fn render_footer_panel(
                         selected_fill_color: theme.colors.button_pressed_fg,
                         outline: Stroke::new(1.0, theme.colors.outline_fg),
                         tooltip_text_color: theme.colors.subtle_text_color,
+                    },
+                    layout_params: PickerLayoutParams {
+                        gap: sizes.xs,                             // matches ui.spacing_mut().item_spacing.x
+                        bottom_rounding: sizes.toolbar_icon / 2.0, // half icon size for nice rounding
+                        top_rounding: sizes.s,                     // small rounding at top
+                        outline_margin: (sizes.xxs, 0.),           // small margins
+                        entire_available_rect: available_rect,
                     },
                 };
 
@@ -1567,7 +1579,7 @@ fn render_footer_panel(
     actions
 }
 
-fn draw_debug_rect(ui: &Ui) {
+pub fn draw_debug_rect(ui: &Ui) {
     ui.painter().debug_rect(
         Rect::from_center_size(
             ui.available_rect_before_wrap().center(),
@@ -1581,7 +1593,7 @@ fn draw_debug_rect(ui: &Ui) {
 fn set_menu_bar_style(ui: &mut egui::Ui) {
     let style = ui.style_mut();
     // TODO 2 seems better (more square, but we need to take the value from theme or soemthing)
-    style.spacing.button_padding = vec2(2., 0.0);
+    // style.spacing.button_padding = vec2(2., 0.0);
     style.spacing.item_spacing = vec2(0.0, 0.0);
     style.visuals.widgets.active.bg_stroke = Stroke::NONE;
     style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;

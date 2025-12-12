@@ -188,6 +188,7 @@ impl AppIcon {
 #[derive(Debug)]
 // #[derive(Debug, Clone, Copy)]
 pub struct Sizes {
+    pub xxs: f32,
     pub xs: f32,
     pub s: f32,
     pub m: f32,
@@ -251,6 +252,7 @@ impl FontSizes {
 
 impl Sizes {
     pub fn new() -> Self {
+        let xxs = 2.0;
         let xs = 4.0;
         let s = 8.0;
         let m = 12.0;
@@ -261,6 +263,7 @@ impl Sizes {
         let menu_height = xl * 10.;
 
         Self {
+            xxs,
             xs,
             s,
             m,
@@ -478,6 +481,7 @@ pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
     style.text_styles = text_styles(&theme.fonts);
     style.visuals = visuals(&theme.colors);
     style.spacing.item_spacing = Vec2::splat(0.);
+    style.spacing.button_padding = Vec2::splat(theme.sizes.xxs);
     style.spacing.window_margin = Margin::same(0);
     // style.spacing.button_padding = Vec2::splat(theme.sizes.s);
     style.interaction.tooltip_delay = 0.05;

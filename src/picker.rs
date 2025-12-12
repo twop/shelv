@@ -14,6 +14,8 @@ use eframe::{
 use smallvec::SmallVec;
 use smol_str::SmolStr;
 
+use crate::app_ui::draw_debug_rect;
+
 const PREALLOCATED_PICKER_ITEMS: usize = 5;
 
 #[derive(Debug, Clone)]
@@ -421,6 +423,7 @@ pub struct SimplePicker<'a, Item: PartialEq> {
     pub current: Item,
     pub items: &'a [PickerItem<Item>],
     pub style: PickerVisualStyle,
+    pub layout_params: PickerLayoutParams,
 }
 
 impl<'a, Item: PartialEq> SimplePicker<'a, Item> {
@@ -430,7 +433,13 @@ impl<'a, Item: PartialEq> SimplePicker<'a, Item> {
         theme: &crate::theme::AppTheme,
     ) -> InnerResponse<Option<&'a Item>> {
         let mut result = None;
-        let response = ui.add(SimplePickerResultWrapper(&mut result, self, theme));
+        let available_rect = ui.available_rect_before_wrap();
+        let response = ui.add(SimplePickerResultWrapper(
+            &mut result,
+            self,
+            theme,
+            available_rect,
+        ));
         InnerResponse::new(result, response)
     }
 }
@@ -439,6 +448,7 @@ struct SimplePickerResultWrapper<'a, 'b, 'theme, Item: PartialEq>(
     &'b mut Option<&'a Item>,
     SimplePicker<'a, Item>,
     &'theme crate::theme::AppTheme,
+    Rect, // available_rect
 );
 
 impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, 'b, 'theme, Item> {
@@ -448,17 +458,26 @@ impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, '
             SimplePicker {
                 items,
                 current,
-                style: _style,
+                style,
+                layout_params,
             },
             theme,
+            available_rect,
         ) = self;
 
         let mut newly_selected = None;
         let animation_duration = 0.2;
         let picker_id = ui.id().with("simple_picker");
 
+        // Track selected item rect for outline drawing
+        let mut selected_item_rect: Option<Rect> = None;
+        let mut selected_item_index: Option<usize> = None;
+
         let response = ui.horizontal_centered(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0; // gap between items
+            // draw_debug_rect(ui);
+            ui.spacing_mut().item_spacing.x = layout_params.gap;
+            // // to make sure that the very left rounding does not exceed the widget bounds
+            ui.add_space(layout_params.top_rounding + layout_params.outline_margin.0);
 
             for (i, item) in items.iter().enumerate() {
                 let is_selected = &item.data == &current;
@@ -486,9 +505,7 @@ impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, '
                     _ => crate::theme::AppIcon::More, // fallback
                 };
 
-                // Animate selection with vertical jump
-                // Similar to line 228 in manual implementation: selection_y_jump = gap / 1.0
-                let selection_y_jump = 4.0; // Using the gap value
+                let selection_y_jump = layout_params.gap;
                 let item_id = picker_id.with(i);
                 let selection_progress =
                     ui.ctx()
@@ -503,14 +520,89 @@ impl<'a, 'b, 'theme, Item: PartialEq> Widget for SimplePickerResultWrapper<'a, '
                     .toggled(is_selected)
                     .tooltip(&item.tooltip, None);
 
-                // Apply transform and render button
                 let button_response = ui.with_visual_transform(transform, |ui| ui.add(button));
 
                 if button_response.inner.clicked() && !is_selected {
                     newly_selected = Some(&item.data);
                 }
+
+                // Store selected item's rect for outline drawing
+                if is_selected {
+                    selected_item_rect = Some(button_response.response.rect);
+                    selected_item_index = Some(i);
+                }
             }
         });
+
+        if let (Some(item_rect), Some(_idx)) = (selected_item_rect, selected_item_index) {
+            // Animate item width (line 256-260)
+            let animated_item_width = ui.ctx().animate_value_with_time(
+                picker_id.with("width"),
+                item_rect.width(),
+                animation_duration,
+            );
+
+            let selection_y_jump = layout_params.gap;
+            let animated_height = ui.ctx().animate_value_with_time(
+                picker_id.with("height"),
+                item_rect.center().y + item_rect.height() / 2.0
+                    - available_rect.top()
+                    - selection_y_jump,
+                animation_duration,
+            );
+
+            let mut drop_shape = Shape::Path(PathShape {
+                points: selection_outline(SelectionOutlineDesc {
+                    bottom_radius: layout_params.bottom_rounding,
+                    top_radious: layout_params.top_rounding,
+                    item_width: animated_item_width,
+                    item_height: animated_height,
+                    margin: layout_params.outline_margin,
+                }),
+                closed: false,
+                fill: Color32::TRANSPARENT,
+                stroke: PathStroke::new(style.outline.width, style.outline.color),
+            });
+
+            let drop_x = ui.ctx().animate_value_with_time(
+                picker_id.with("drop"),
+                item_rect.center().x,
+                animation_duration,
+            );
+
+            drop_shape.translate([drop_x, available_rect.top()].into());
+
+            let painter = ui.painter();
+            painter.add(drop_shape);
+
+            let (margin_x, _) = layout_params.outline_margin;
+            let item_outline_width =
+                animated_item_width + 2. * (margin_x + layout_params.top_rounding);
+
+            // Draw left side of the break line
+            painter.line_segment(
+                [
+                    available_rect.left_top(),
+                    pos2(
+                        (drop_x - item_outline_width / 2.0).max(available_rect.left()),
+                        available_rect.top(),
+                    ),
+                ],
+                Stroke::new(style.outline.width, style.outline.color),
+            );
+
+            // Draw right side of the break line
+            painter.line_segment(
+                [
+                    pos2(
+                        (drop_x + item_outline_width / 2.0).min(available_rect.right()),
+                        available_rect.top(),
+                    ),
+                    available_rect.right_top(),
+                ],
+                style.outline.clone(),
+            );
+        }
 
         *result = newly_selected;
 
