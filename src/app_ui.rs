@@ -1465,59 +1465,56 @@ fn render_footer_panel(
                 // ui.spacing_mut().item_spacing.x = sizes.s;
                 // draw_debug_rect(ui);
 
-                // Left section: SimplePicker with note tabs
-                let items = opened_files
-                    .iter()
-                    .filter_map(|note_id| match note_id {
-                        NoteId::Note(index) => {
-                            let index = *index;
-                            let cmd =
-                                command_list.find(CommandInstruction::SwitchToNote(index as u8));
-                            let tooltip = match cmd.and_then(|cmd| cmd.shortcut) {
-                                Some(shortcut) => {
-                                    format!("Shelf {}", ctx.format_shortcut(&shortcut))
-                                }
-                                None => format!("Shelf {}", index + 1),
-                            };
-
-                            Some(PickerItem {
-                                tooltip,
-                                kind: PickerItemKind::FontIcon(
-                                    match index {
-                                        0 => AppIcon::One,
-                                        1 => AppIcon::Two,
-                                        2 => AppIcon::Three,
-                                        3 => AppIcon::Four,
-                                        _ => AppIcon::More,
-                                    }
-                                    .to_icon_str()
-                                    .to_smolstr(),
-                                    FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
-                                ),
-                                data: *note_id,
+                let items: SmallVec<[_; 6]> = [PickerItem {
+                    tooltip: {
+                        let tooltip_text = "Settings";
+                        command_list
+                            .find(CommandInstruction::SwitchToSettings)
+                            .and_then(|cmd| cmd.shortcut)
+                            .map(|shortcut| {
+                                format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
                             })
-                        }
-                        NoteId::ExternalFileId(_) => None, // Ignore for now
-                        NoteId::Settings => None,
-                    })
-                    .chain([PickerItem {
-                        tooltip: {
-                            let tooltip_text = "Settings";
-                            command_list
-                                .find(CommandInstruction::SwitchToSettings)
-                                .and_then(|cmd| cmd.shortcut)
-                                .map(|shortcut| {
-                                    format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
-                                })
-                                .unwrap_or_else(|| tooltip_text.to_string())
-                        },
-                        kind: PickerItemKind::FontIcon(
-                            AppIcon::Settings.to_icon_str().to_smolstr(),
-                            FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
-                        ),
-                        data: NoteId::Settings,
-                    }])
-                    .collect::<Vec<_>>();
+                            .unwrap_or_else(|| tooltip_text.to_string())
+                    },
+                    kind: PickerItemKind::FontIcon(
+                        AppIcon::Settings.to_icon_str().to_smolstr(),
+                        FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
+                    ),
+                    data: NoteId::Settings,
+                }]
+                .into_iter()
+                .chain(opened_files.iter().filter_map(|note_id| match note_id {
+                    NoteId::Note(index) => {
+                        let index = *index;
+                        let cmd = command_list.find(CommandInstruction::SwitchToNote(index as u8));
+                        let tooltip = match cmd.and_then(|cmd| cmd.shortcut) {
+                            Some(shortcut) => {
+                                format!("Shelf {}", ctx.format_shortcut(&shortcut))
+                            }
+                            None => format!("Shelf {}", index + 1),
+                        };
+
+                        Some(PickerItem {
+                            tooltip,
+                            kind: PickerItemKind::FontIcon(
+                                match index {
+                                    0 => AppIcon::One,
+                                    1 => AppIcon::Two,
+                                    2 => AppIcon::Three,
+                                    3 => AppIcon::Four,
+                                    _ => AppIcon::More,
+                                }
+                                .to_icon_str()
+                                .to_smolstr(),
+                                FontId::new(theme.sizes.toolbar_icon, FontFamily::Proportional),
+                            ),
+                            data: *note_id,
+                        })
+                    }
+                    NoteId::ExternalFileId(_) => None, // Ignore for now
+                    NoteId::Settings => None,
+                }))
+                .collect();
 
                 let available_rect = ui.available_rect_before_wrap();
                 let picker = SimplePicker {

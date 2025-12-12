@@ -129,6 +129,12 @@ bind "Cmd 3" { SwitchToNote 2; }
 
 // (⌘ 4): Shelf 4
 bind "Cmd 4" { SwitchToNote 3; }
+
+// (⌥ ⌘ →): Next Shelf
+bind "Shift Cmd ArrowRight" { SwitchToNextNote; }
+
+// (⌥ ⌘ ←): Previous Shelf
+bind "Shift Cmd ArrowLeft" { SwitchToPrevNote; }
 ```
 
 ---
@@ -308,7 +314,7 @@ Example: `bind "Cmd T" icon="text-aa" alias="test" description="Insert test text
 - `MarkdownCodeBlock` or with optional language attribute `MarkdownCodeBlock lang="js"`
 - `MarkdownH1`, `MarkdownH2`, `MarkdownH3`
 - `PinWindow`, `RunLLMBlock`, `ShowPrompt`, `StartWordJump`
-- `SwitchToNote 1..4`, `SwitchToSettings`
+- `SwitchToNote 1..4`, `SwitchToNextNote`, `SwitchToPrevNote`, `SwitchToSettings`
 - `InsertText`
   - Format:
     ```

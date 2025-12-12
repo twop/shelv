@@ -255,6 +255,8 @@ for `bind` keyword
 - `OpenFileDialog`
 - `CloseCurrentNote`
 - `SwitchToNote 1..4`
+- `SwitchToNextNote` - Navigate to the next note (circular)
+- `SwitchToPrevNote` - Navigate to the previous note (circular)
 - `SwitchToSettings`
 - `InsertText`
   - Format:

@@ -313,6 +313,12 @@ pub enum CommandInstruction {
     #[knus(name = "SwitchToNote")]
     SwitchToNote(#[knus(argument)] u8),
 
+    #[knus(name = "SwitchToNextNote")]
+    SwitchToNextNote,
+
+    #[knus(name = "SwitchToPrevNote")]
+    SwitchToPrevNote,
+
     #[knus(name = "SwitchToSettings")]
     SwitchToSettings,
 
@@ -402,6 +408,8 @@ impl CommandInstruction {
                     n => format!("Shelf {}", n + 1).into(),
                 }
             }
+            Self::SwitchToNextNote => "Next Note".into(),
+            Self::SwitchToPrevNote => "Previous Note".into(),
             Self::SwitchToSettings => "Open Settings".into(),
             Self::PinWindow => "Toggle Always on Top".into(),
             Self::HideApp => "Hide Window".into(),
@@ -446,6 +454,8 @@ impl CommandInstruction {
             C::SwitchToNote(2) => shortcut(Modifiers::COMMAND, Key::Num3),
             C::SwitchToNote(3) => shortcut(Modifiers::COMMAND, Key::Num4),
             C::SwitchToNote(_) => shortcut(Modifiers::COMMAND, Key::Num0),
+            C::SwitchToNextNote => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::ArrowRight),
+            C::SwitchToPrevNote => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::ArrowLeft),
             C::SwitchToSettings => shortcut(Modifiers::COMMAND, Key::Comma),
             C::PinWindow => shortcut(Modifiers::COMMAND, Key::P),
             C::ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
@@ -501,7 +511,7 @@ impl CommandInstruction {
 
             // Commands that work in editor or idle state
             // e.g. don't require focus to work
-            C::HideApp | C::SwitchToNote(_)=> (
+            C::HideApp | C::SwitchToNote(_) | C::SwitchToNextNote | C::SwitchToPrevNote => (
                 CommandPhase::InsideRender,
                 CommandCondition::exact_match([
                     UiStateAttribute::Idle,
@@ -512,7 +522,7 @@ impl CommandInstruction {
         }
     }
 
-    pub fn serialize_to_kdl(&self) -> Option<CowStr> {
+    pub fn serialize_to_kdl(&self) -> Option<CowStr<'static>> {
         match self {
             Self::ExpandTaskMarker
             | Self::IndentListItem
@@ -533,6 +543,8 @@ impl CommandInstruction {
             Self::MarkdownH2 => Some("MarkdownH2;".into()),
             Self::MarkdownH3 => Some("MarkdownH3;".into()),
             Self::SwitchToNote(n) => Some(format!("SwitchToNote {};", n).into()),
+            Self::SwitchToNextNote => Some("SwitchToNextNote;".into()),
+            Self::SwitchToPrevNote => Some("SwitchToPrevNote;".into()),
             Self::SwitchToSettings => Some("SwitchToSettings;".into()),
             Self::PinWindow => Some("PinWindow;".into()),
             Self::HideApp => Some("HideApp;".into()),

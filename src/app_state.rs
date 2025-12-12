@@ -516,6 +516,8 @@ impl AppState {
                 // CommandInstruction::PrevSlashPalleteCmd,
                 // CommandInstruction::ExecuteSlashPalleteCmd,
                 CommandInstruction::SwitchToSettings,
+                CommandInstruction::SwitchToNextNote,
+                CommandInstruction::SwitchToPrevNote,
                 CommandInstruction::PinWindow,
                 CommandInstruction::HideApp,
                 CommandInstruction::OpenFileDialog,
@@ -749,6 +751,44 @@ fn execute_instruction(
         }]
         .into(),
 
+        CI::SwitchToNextNote => {
+            let current = ctx.app_state.selected_note;
+
+            let prev_note = ctx
+                .app_state
+                .notes
+                .keys()
+                .circular_tuple_windows()
+                .find_map(|(&a, &b)| (a == current).then(|| b));
+
+            match prev_note {
+                Some(prev_note) => SmallVec::from([AppAction::SwitchToNote {
+                    note_file: prev_note,
+                    via_shortcut: true,
+                }]),
+                None => SmallVec::new(),
+            }
+        }
+
+        CI::SwitchToPrevNote => {
+            let current = ctx.app_state.selected_note;
+
+            let prev_note = ctx
+                .app_state
+                .notes
+                .keys()
+                .circular_tuple_windows()
+                .find_map(|(&a, &b)| (b == current).then(|| a));
+
+            match prev_note {
+                Some(prev_note) => SmallVec::from([AppAction::SwitchToNote {
+                    note_file: prev_note,
+                    via_shortcut: true,
+                }]),
+                None => SmallVec::new(),
+            }
+        }
+
         CI::PinWindow => [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
 
         CI::HideApp => [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into(),
@@ -757,9 +797,7 @@ fn execute_instruction(
 
         CI::CloseCurrentNote => {
             match ctx.app_state.selected_note {
-                NoteId::ExternalFileId(file_id) => {
-                    [AppAction::CloseExternalFile(file_id)].into()
-                }
+                NoteId::ExternalFileId(file_id) => [AppAction::CloseExternalFile(file_id)].into(),
                 _ => SmallVec::new(), // No-op for regular notes
             }
         }
