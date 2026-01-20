@@ -1,3 +1,5 @@
+pub mod footer_ui;
 pub mod notifications;
+pub mod picker;
 
-pub use notifications::{Notifications, NotificationId, NotificationsConfig, NotificationState};
+pub use notifications::{NotificationId, NotificationState, Notifications, NotificationsConfig};

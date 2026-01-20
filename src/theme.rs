@@ -12,7 +12,7 @@ use eframe::{
 
 use crate::nord::Nord;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum AppIcon {
     More,
     Settings,

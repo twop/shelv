@@ -23,6 +23,7 @@ fn check_version_update(data: &RestoredData) -> UpdateStatus {
 }
 
 use serde::{Deserialize, Serialize};
+use smol_str::{SmolStr, SmolStrBuilder, ToSmolStr};
 
 #[derive(Debug, Hash, Clone, PartialEq, Ord, PartialOrd, Eq, Copy, Deserialize, Serialize)]
 pub struct ExternalFileId(u64);
@@ -35,6 +36,19 @@ impl ExternalFileId {
         let mut hasher = DefaultHasher::new();
         path.hash(&mut hasher);
         ExternalFileId(hasher.finish())
+    }
+
+    /// Lossy conversion to a nice-ish consistent nuber string of the last 6 digits
+    pub fn to_6_digit_smol_str(&self) -> SmolStr {
+        let mut builder = SmolStrBuilder::new();
+        let mut num = self.0;
+        let mut taken = 0;
+        while num > 0 && taken < 7 {
+            builder.push_str(((num % 10) as u32).to_smolstr().as_str());
+            num /= 10;
+            taken += 1;
+        }
+        builder.finish()
     }
 }
 
