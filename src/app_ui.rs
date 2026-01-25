@@ -1443,14 +1443,14 @@ fn restore_cursor_from_note_state(
     }
 }
 
-pub fn draw_debug_rect(ui: &Ui) {
+pub fn draw_debug_rect(ui: &Ui, color: Color32) {
     ui.painter().debug_rect(
         Rect::from_center_size(
             ui.available_rect_before_wrap().center(),
             ui.available_size(),
         ),
-        Color32::LIGHT_GREEN,
-        format!("available_rect={:?}", ui.available_rect_before_wrap()),
+        color,
+        format!("r={:?}", ui.available_rect_before_wrap()),
     );
 }
 
