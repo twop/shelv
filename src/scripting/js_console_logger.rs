@@ -1,4 +1,4 @@
-use boa_engine::{js_str, Context, JsError, JsResult};
+use boa_engine::{Context, JsError, JsResult, js_str};
 use boa_gc::{Finalize, Gc, GcRefCell, Trace};
 use boa_runtime::{ConsoleState, Logger};
 

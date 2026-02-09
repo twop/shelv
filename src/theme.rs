@@ -42,6 +42,8 @@ pub enum AppIcon {
     Download,
     Bug,
     FileOpen,
+    ChevronLeft,
+    ChevronRight,
 }
 
 impl AppIcon {
@@ -181,6 +183,8 @@ impl AppIcon {
             AppIcon::Download => P::DOWNLOAD_SIMPLE,
             AppIcon::Bug => P::BUG,
             AppIcon::FileOpen => P::FOLDER_OPEN,
+            AppIcon::ChevronLeft => P::CARET_LEFT,
+            AppIcon::ChevronRight => P::CARET_RIGHT,
         }
     }
 }

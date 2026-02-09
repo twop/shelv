@@ -26,7 +26,7 @@ pub struct TextCommandContext<'a> {
 pub enum AppFocus {
     NoteEditor,
     InlinePropmptEditor,
-    Other(Id)
+    Other(Id),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -34,7 +34,7 @@ pub struct AppFocusState {
     pub is_menu_opened: bool,
     pub viewport_focused: bool,
     pub internal_focus: Option<AppFocus>,
-    pub focus_id: Option<egui::Id>
+    pub focus_id: Option<egui::Id>,
 }
 
 // #[derive(Clone, Copy)]
@@ -62,8 +62,7 @@ pub struct CommandInstance {
     pub shortcut: Option<KeyboardShortcut>,
     pub instruction: CommandInstruction,
     pub phase: CommandPhase,
-    pub cond: CommandCondition
-    // pub handler: CommandHandler,
+    pub cond: CommandCondition, // pub handler: CommandHandler,
 }
 
 impl Debug for CommandInstance {
@@ -99,17 +98,14 @@ impl CommandInstance {
     }
 
     pub fn phase(self, phase: CommandPhase) -> Self {
-        Self {
-            phase,
-             ..self
-        }
+        Self { phase, ..self }
     }
 }
 
 #[derive(Debug, Clone, Hash, knus::Decode, PartialEq, Eq)]
-pub enum ScriptCallArgument{
+pub enum ScriptCallArgument {
     #[knus(name = "selection")]
-    Selection
+    Selection,
 }
 
 #[derive(Debug, Hash, Clone, knus::Decode, PartialEq, Eq)]
@@ -225,7 +221,7 @@ pub enum CommandCondition {
     All(Vec<CommandCondition>),
     Any(Vec<CommandCondition>),
     LooseMatch(UiState),
-    ExactMatch(UiState)
+    ExactMatch(UiState),
 }
 
 impl CommandCondition {
@@ -234,45 +230,45 @@ impl CommandCondition {
             CommandCondition::ExactMatch(required_state) => {
                 let state_attrs = state.attributes();
                 let required_attrs = required_state.attributes();
-                
-                state_attrs.len() == required_attrs.len() && 
-                required_attrs.iter().all(|req_attr| state_attrs.contains(req_attr))
+
+                state_attrs.len() == required_attrs.len()
+                    && required_attrs
+                        .iter()
+                        .all(|req_attr| state_attrs.contains(req_attr))
             }
-            
+
             CommandCondition::LooseMatch(required_state) => {
                 let state_attrs = state.attributes();
                 let required_attrs = required_state.attributes();
-                
-                required_attrs.iter().all(|req_attr| state_attrs.contains(req_attr))
+
+                required_attrs
+                    .iter()
+                    .all(|req_attr| state_attrs.contains(req_attr))
             }
-            
-            CommandCondition::Not(inner_condition) => {
-                !inner_condition.eval(state)
-            }
-            
+
+            CommandCondition::Not(inner_condition) => !inner_condition.eval(state),
+
             CommandCondition::All(conditions) => {
                 conditions.iter().all(|condition| condition.eval(state))
             }
-            
+
             CommandCondition::Any(conditions) => {
                 conditions.iter().any(|condition| condition.eval(state))
             }
         }
     }
 
-    pub fn loose_match( attributes : impl IntoIterator<Item = UiStateAttribute> ) -> Self {
+    pub fn loose_match(attributes: impl IntoIterator<Item = UiStateAttribute>) -> Self {
         Self::LooseMatch(UiState::new(attributes.into_iter()))
     }
 
-    pub fn exact_match( attributes : impl IntoIterator<Item = UiStateAttribute> ) -> Self {
+    pub fn exact_match(attributes: impl IntoIterator<Item = UiStateAttribute>) -> Self {
         Self::ExactMatch(UiState::new(attributes.into_iter()))
     }
 
     pub fn or(self, other: Self) -> Self {
         Self::Any(Vec::from([self, other]))
     }
-
-    
 }
 
 #[derive(PartialEq, Hash, knus::Decode, Debug, Clone)]
@@ -342,7 +338,6 @@ pub enum CommandInstruction {
     // Async Code blocks
     // #[knus(name = "ExecutePrompt")]
     // RunLLMBlock,
-
     #[knus(name = "ShowPrompt")]
     ShowPrompt,
 
@@ -454,15 +449,22 @@ impl CommandInstruction {
             C::SwitchToNote(2) => shortcut(Modifiers::COMMAND, Key::Num3),
             C::SwitchToNote(3) => shortcut(Modifiers::COMMAND, Key::Num4),
             C::SwitchToNote(_) => shortcut(Modifiers::COMMAND, Key::Num0),
-            C::SwitchToNextNote => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::ArrowRight),
-            C::SwitchToPrevNote => shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::ArrowLeft),
+            C::SwitchToNextNote => {
+                shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::ArrowRight)
+            }
+            C::SwitchToPrevNote => {
+                shortcut(Modifiers::COMMAND.plus(Modifiers::ALT), Key::ArrowLeft)
+            }
             C::SwitchToSettings => shortcut(Modifiers::COMMAND, Key::Comma),
             C::PinWindow => shortcut(Modifiers::COMMAND, Key::P),
             C::ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
             C::StartWordJump => shortcut(Modifiers::COMMAND, Key::J),
             C::OpenFileDialog => shortcut(Modifiers::COMMAND, Key::O),
             C::CloseCurrentNote => shortcut(Modifiers::COMMAND, Key::W),
-            C::ToggleDebugTools => shortcut(Modifiers::ALT.plus(Modifiers::SHIFT).plus(Modifiers::CTRL), Key::D),
+            C::ToggleDebugTools => shortcut(
+                Modifiers::ALT.plus(Modifiers::SHIFT).plus(Modifiers::CTRL),
+                Key::D,
+            ),
             C::EnterInsideKDL => shortcut(Modifiers::NONE, Key::Enter),
             C::BracketAutoclosingInsideKDL => shortcut(Modifiers::SHIFT, Key::OpenBracket),
             C::HideApp => shortcut(Modifiers::NONE, Key::Escape),
@@ -496,7 +498,7 @@ impl CommandInstruction {
                 CommandCondition::exact_match([
                     UiStateAttribute::Idle,
                     UiStateAttribute::Focus(AppFocus::NoteEditor),
-                ])
+                ]),
             ),
 
             // Global commands that work in any context
@@ -506,7 +508,7 @@ impl CommandInstruction {
             | C::OpenFileDialog
             | C::CloseCurrentNote => (
                 CommandPhase::InsideRender,
-                CommandCondition::loose_match([UiStateAttribute::Idle])
+                CommandCondition::loose_match([UiStateAttribute::Idle]),
             ),
 
             // Commands that work in editor or idle state
@@ -517,7 +519,7 @@ impl CommandInstruction {
                     UiStateAttribute::Idle,
                     UiStateAttribute::Focus(AppFocus::NoteEditor),
                 ])
-                .or(CommandCondition::exact_match([UiStateAttribute::Idle]))
+                .or(CommandCondition::exact_match([UiStateAttribute::Idle])),
             ),
         }
     }
@@ -585,7 +587,7 @@ impl PhosphorIcon {
     pub fn from_string(icon_name: &str) -> Option<Self> {
         // Convert kebab-case to UPPER_SNAKE_CASE
         let upper_snake = icon_name.to_uppercase().replace('-', "_");
-        
+
         // First try to find by key (UPPER_SNAKE_CASE)
         if let Some((key, icon_char)) = egui_phosphor::light::ICONS
             .iter()
@@ -621,10 +623,7 @@ pub struct SlashPaletteCmd {
 }
 
 impl SlashPaletteCmd {
-    pub fn from_instruction(
-        prefix: impl Into<String>,
-        instruction: CommandInstruction,
-    ) -> Self {
+    pub fn from_instruction(prefix: impl Into<String>, instruction: CommandInstruction) -> Self {
         Self {
             phosphor_icon: None,
             prefix: prefix.into(),
@@ -657,34 +656,36 @@ pub struct InnerHotkey(KeyboardShortcut);
 
 impl From<Key> for InnerHotkey {
     fn from(logical_key: Key) -> Self {
-        InnerHotkey(KeyboardShortcut::new(Modifiers::NONE , logical_key))
+        InnerHotkey(KeyboardShortcut::new(Modifiers::NONE, logical_key))
     }
 }
 
 impl From<(Modifiers, Key)> for InnerHotkey {
-    fn from(( modifiers, logical_key): (Modifiers, Key)) -> Self {
-        InnerHotkey(KeyboardShortcut::new(modifiers , logical_key))
+    fn from((modifiers, logical_key): (Modifiers, Key)) -> Self {
+        InnerHotkey(KeyboardShortcut::new(modifiers, logical_key))
     }
 }
 
 pub struct InnerFrameHotkeyHandler(Box<dyn for<'a> Fn(CommandContext<'a>) -> EditorCommandOutput>);
 
-
 impl From<AppAction> for InnerFrameHotkeyHandler {
     fn from(value: AppAction) -> Self {
         let as_collection = EditorCommandOutput::from_iter([value]);
-        Self(Box::new(move |_ctx|as_collection.clone()))
+        Self(Box::new(move |_ctx| as_collection.clone()))
     }
 }
 
-impl<const N: usize> From<[AppAction; N]> for InnerFrameHotkeyHandler   {
+impl<const N: usize> From<[AppAction; N]> for InnerFrameHotkeyHandler {
     fn from(value: [AppAction; N]) -> Self {
         let as_collection = EditorCommandOutput::from_iter(value);
-        Self(Box::new(move |_ctx|as_collection.clone()))
+        Self(Box::new(move |_ctx| as_collection.clone()))
     }
 }
 
-impl<T> From<T> for InnerFrameHotkeyHandler where T:  Fn(CommandContext) -> EditorCommandOutput + 'static{
+impl<T> From<T> for InnerFrameHotkeyHandler
+where
+    T: Fn(CommandContext) -> EditorCommandOutput + 'static,
+{
     fn from(value: T) -> Self {
         Self(Box::new(value))
     }
@@ -730,7 +731,7 @@ impl FrameHotkey {
     //     }
     // }
 
-    pub fn run<'a >(&self, ctx: CommandContext<'a>) -> EditorCommandOutput{
+    pub fn run<'a>(&self, ctx: CommandContext<'a>) -> EditorCommandOutput {
         (self.handler.0)(ctx)
     }
 }
@@ -741,10 +742,7 @@ impl FrameHotkey {
 pub struct FrameHotkeys(Vec<FrameHotkey>);
 
 impl FrameHotkeys {
-    pub fn add_key(
-        &mut self,
-        frame_hotkey: FrameHotkey
-    ) {
+    pub fn add_key(&mut self, frame_hotkey: FrameHotkey) {
         self.0.push(frame_hotkey);
     }
 }
@@ -784,7 +782,7 @@ impl CommandList {
     ) -> Self {
         let keyboard_commands: Vec<_> = default_keyboard_instructions
             .into_iter()
-            .map(|instruction | CommandInstance::new(instruction))
+            .map(|instruction| CommandInstance::new(instruction))
             .collect();
 
         let defaults = (keyboard_commands.clone(), slash_palette_commands.clone());
@@ -806,10 +804,15 @@ impl CommandList {
             .rev()
             .filter(move |h| h.phase == phase)
             .map(|hotkey| (hotkey.shortcut, KeyboardBinding::FrameBinding(hotkey)))
-            .chain(self.keyboard_commands.iter().filter(move |cmd| cmd.phase == phase).flat_map(|cmd| {
-                cmd.shortcut
-                    .zip(Some(KeyboardBinding::CommandInstance(cmd)))
-            }))
+            .chain(
+                self.keyboard_commands
+                    .iter()
+                    .filter(move |cmd| cmd.phase == phase)
+                    .flat_map(|cmd| {
+                        cmd.shortcut
+                            .zip(Some(KeyboardBinding::CommandInstance(cmd)))
+                    }),
+            )
     }
 
     pub fn prepare_frame_hotkeys(&mut self) -> FrameHotkeys {
@@ -872,10 +875,9 @@ impl CommandList {
         cond: &CommandCondition,
         ctx: CommandContext,
     ) -> EditorCommandOutput {
-        if cond.eval(&ctx.ui_state){
+        if cond.eval(&ctx.ui_state) {
             (self.execute_instruction)(target_instruction, ctx)
-        }
-        else {
+        } else {
             SmallVec::new()
         }
     }
@@ -980,13 +982,10 @@ fn test_keybindings_documentation_generation() {
             CommandInstruction::MarkdownItalic,
         ],
         vec![
-            SlashPaletteCmd::from_instruction(
-                "bold",
-                CommandInstruction::MarkdownBold,
-            )
-            .icon(egui_phosphor::light::USER_CIRCLE_GEAR.to_string())
-            .shortcut(Some(kbd_shortcut1))
-            .description("Make text bold"),
+            SlashPaletteCmd::from_instruction("bold", CommandInstruction::MarkdownBold)
+                .icon(egui_phosphor::light::USER_CIRCLE_GEAR.to_string())
+                .shortcut(Some(kbd_shortcut1))
+                .description("Make text bold"),
         ],
     );
 
@@ -1008,8 +1007,8 @@ bind "Cmd I" { MarkdownItalic; }"#;
 #[cfg(test)]
 mod command_condition_tests {
     use super::*;
-    use UiStateAttribute as A;
     use CommandCondition as C;
+    use UiStateAttribute as A;
 
     #[test]
     fn test_exact_match() {
@@ -1025,7 +1024,8 @@ mod command_condition_tests {
         assert!(!just_idle.eval(&state));
 
         // Test exact match with missing attribute in state (should not match)
-        let extra_requirements = C::exact_match([A::Idle, A::Focus(AppFocus::NoteEditor), A::JumpMode]);
+        let extra_requirements =
+            C::exact_match([A::Idle, A::Focus(AppFocus::NoteEditor), A::JumpMode]);
         assert!(!extra_requirements.eval(&state));
 
         let empty_state = UiState::new([]);
@@ -1037,7 +1037,8 @@ mod command_condition_tests {
     fn test_loose_match() {
         let state = UiState::new([A::Idle, A::Focus(AppFocus::NoteEditor), A::JumpMode]);
 
-        let smaller_condition = C::loose_match([A::Idle, A::Focus(AppFocus::NoteEditor), A::JumpMode]);
+        let smaller_condition =
+            C::loose_match([A::Idle, A::Focus(AppFocus::NoteEditor), A::JumpMode]);
         assert!(smaller_condition.eval(&state));
 
         let smaller_condition = C::loose_match([A::Idle, A::Focus(AppFocus::NoteEditor)]);
@@ -1054,7 +1055,7 @@ mod command_condition_tests {
     #[test]
     fn test_not_condition() {
         let state = UiState::new([A::Idle]);
-        
+
         let matching = C::exact_match([A::Idle]);
         let not_matching = C::Not(Box::new(matching));
         assert!(!not_matching.eval(&state));

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use smallvec::SmallVec;
 
 use crate::{
-    app_actions::{AppAction, AppIO},
+    app_actions::{AppAction, AppIO, SwitchToNoteTarget},
     app_state::{AppState, Note, NoteDerivedState, UnsavedChange},
     persistent_state::{ExternalFile, ExternalFileId, NoteId},
 };
@@ -20,10 +20,10 @@ pub fn open_external_file(
 
     if let Some(existing_file) = already_open {
         // File is already open, just switch to it
-        SmallVec::from([AppAction::SwitchToNote {
+        SmallVec::from([AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
             note_file: NoteId::ExternalFileId(existing_file.id),
             via_shortcut: false,
-        }])
+        })])
     } else {
         // Read the file and add it to the system
         match app_io.read_file(&path) {
@@ -52,10 +52,10 @@ pub fn open_external_file(
                 state.add_unsaved_change(UnsavedChange::NoteContentChanged(note_id));
 
                 // Switch to the newly opened file
-                SmallVec::from([AppAction::SwitchToNote {
+                SmallVec::from([AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
                     note_file: note_id,
                     via_shortcut: true,
-                }])
+                })])
             }
             Err(err) => {
                 println!("Failed to open external file {}: {}", path.display(), err);
@@ -84,10 +84,10 @@ pub fn close_external_file(
 
     // If this was the selected note, switch to the first note
     if state.selected_note == note_id {
-        SmallVec::from([AppAction::SwitchToNote {
+        SmallVec::from([AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
             note_file: NoteId::Note(0),
             via_shortcut: true,
-        }])
+        })])
     } else {
         SmallVec::new()
     }

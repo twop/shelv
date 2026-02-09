@@ -56,6 +56,21 @@ pub enum FocusTarget {
     SpecificId(Id),
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum StepDirection {
+    Left,
+    Right,
+}
+
+#[derive(Clone, Debug)]
+pub enum SwitchToNoteTarget {
+    TargetNote {
+        note_file: NoteId,
+        via_shortcut: bool,
+    },
+    StepNote(StepDirection),
+}
+
 #[derive(Debug, Clone)]
 pub enum SlashPaletteAction {
     // Slash Palette
@@ -95,10 +110,7 @@ pub struct AppNotification {
 
 #[derive(Debug, Clone)]
 pub enum AppAction {
-    SwitchToNote {
-        note_file: NoteId,
-        via_shortcut: bool,
-    },
+    SwitchToNote(SwitchToNoteTarget),
     // HideApp,
     // ShowApp,
     OpenLink(String),
@@ -245,49 +257,87 @@ pub fn process_app_action(
     app_io: &mut impl AppIO,
 ) -> SmallVec<[AppAction; 1]> {
     match action {
-        AppAction::SwitchToNote {
-            note_file,
-            via_shortcut,
-        } => {
-            if note_file != state.selected_note {
-                state.add_unsaved_change(UnsavedChange::SelectionChanged);
-                if via_shortcut {
-                    let note = &mut state.notes.get_mut(&note_file).unwrap();
+        AppAction::SwitchToNote(target) => match target {
+            SwitchToNoteTarget::TargetNote {
+                note_file,
+                via_shortcut,
+            } => {
+                if note_file != state.selected_note {
+                    state.add_unsaved_change(UnsavedChange::SelectionChanged);
+                    if via_shortcut {
+                        let note = &mut state.notes.get_mut(&note_file).unwrap();
 
-                    match note.cursor() {
-                        None => {
-                            let len = note.text.len();
-                            println!("--- AppAction::SwitchToNote cursor set to the end = {len}");
-                            note.update_cursor(UnOrderedByteSpan::new(len, len));
+                        match note.cursor() {
+                            None => {
+                                let len = note.text.len();
+                                println!(
+                                    "--- AppAction::SwitchToNote cursor set to the end = {len}"
+                                );
+                                note.update_cursor(UnOrderedByteSpan::new(len, len));
+                            }
+                            _ => {}
                         }
-                        _ => {}
-                    }
-                } else {
-                    // means that we reselected via UI
+                    } else {
+                        // means that we reselected via UI
 
-                    // if that is the case then reset cursors from both of the notes
-                    if let Some(prev_note) = state.notes.get_mut(&state.selected_note) {
-                        prev_note.reset_cursor();
-                    }
+                        // if that is the case then reset cursors from both of the notes
+                        if let Some(prev_note) = state.notes.get_mut(&state.selected_note) {
+                            prev_note.reset_cursor();
+                        }
 
-                    if let Some(cur_note) = state.notes.get_mut(&note_file) {
-                        cur_note.reset_cursor();
+                        if let Some(cur_note) = state.notes.get_mut(&note_file) {
+                            cur_note.reset_cursor();
+                        }
                     }
+                    state.selected_note = note_file;
+
+                    // reset inline prompt state if we switched to a different note
+                    state.inline_llm_prompt = None;
                 }
-                state.selected_note = note_file;
 
-                // reset inline prompt state if we switched to a different note
-                state.inline_llm_prompt = None;
+                match via_shortcut {
+                    true => [AppAction::DeferToPostRender(Box::new(
+                        AppAction::FocusRequest(FocusTarget::CurrentNote),
+                    ))]
+                    .into(),
+                    false => SmallVec::new(),
+                }
             }
 
-            match via_shortcut {
-                true => [AppAction::DeferToPostRender(Box::new(
-                    AppAction::FocusRequest(FocusTarget::CurrentNote),
-                ))]
-                .into(),
-                false => SmallVec::new(),
+            SwitchToNoteTarget::StepNote(direction) => {
+                use itertools::Itertools;
+                let current = state.selected_note;
+
+                let target_note = match direction {
+                    StepDirection::Right => {
+                        // Next note
+                        state
+                            .notes
+                            .keys()
+                            .circular_tuple_windows()
+                            .find_map(|(&a, &b)| (a == current).then(|| b))
+                    }
+                    StepDirection::Left => {
+                        // Previous note
+                        state
+                            .notes
+                            .keys()
+                            .circular_tuple_windows()
+                            .find_map(|(&a, &b)| (b == current).then(|| a))
+                    }
+                };
+
+                match target_note {
+                    Some(note_file) => {
+                        SmallVec::from([AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
+                            note_file,
+                            via_shortcut: true,
+                        })])
+                    }
+                    None => SmallVec::new(),
+                }
             }
-        }
+        },
         AppAction::OpenLink(url) => {
             ctx.open_url(OpenUrl::new_tab(url));
             SmallVec::new()
@@ -864,10 +914,10 @@ pub fn process_app_action(
             };
 
             SmallVec::from_iter([
-                AppAction::SwitchToNote {
+                AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
                     note_file: first_note_id,
                     via_shortcut: true,
-                },
+                }),
                 AppAction::ApplyTextChanges {
                     target: first_note_id,
                     changes: [TextChange::Insert(ByteSpan::point(0), to_insert)].into(),
@@ -1229,9 +1279,7 @@ pub fn process_app_action(
 
         AppAction::OpenFileDialog => {
             match app_io.open_file_dialog() {
-                Ok(Some(path)) => {
-                    actions::external_files::open_external_file(path, state, app_io)
-                }
+                Ok(Some(path)) => actions::external_files::open_external_file(path, state, app_io),
                 Ok(None) => {
                     // User cancelled - no action needed
                     SmallVec::new()

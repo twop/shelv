@@ -29,7 +29,7 @@ use crate::{
     actions::word_jump::{JumpCharSequence, JumpLabel, JumpLabelMatchResult},
     app_actions::{
         AppAction, AppNotification, AppNotificationAction, FocusTarget, SlashPaletteAction,
-        WordJumpAction,
+        SwitchToNoteTarget, WordJumpAction,
     },
     app_state::{
         CodeBlockAnnotation, ComputedLayout, FeedbackState, InlineLLMPromptState,
@@ -330,34 +330,44 @@ pub fn render_app(
                                                     url.split("://").collect_vec();
                                                 let action = match parts.as_slice() {
                                                     ["shelv", "note1", ..] => {
-                                                        AppAction::SwitchToNote {
-                                                            note_file: NoteId::Note(0),
-                                                            via_shortcut: true,
-                                                        }
+                                                        AppAction::SwitchToNote(
+                                                            SwitchToNoteTarget::TargetNote {
+                                                                note_file: NoteId::Note(0),
+                                                                via_shortcut: true,
+                                                            },
+                                                        )
                                                     }
                                                     ["shelv", "note2", ..] => {
-                                                        AppAction::SwitchToNote {
-                                                            note_file: NoteId::Note(1),
-                                                            via_shortcut: true,
-                                                        }
+                                                        AppAction::SwitchToNote(
+                                                            SwitchToNoteTarget::TargetNote {
+                                                                note_file: NoteId::Note(1),
+                                                                via_shortcut: true,
+                                                            },
+                                                        )
                                                     }
                                                     ["shelv", "note3", ..] => {
-                                                        AppAction::SwitchToNote {
-                                                            note_file: NoteId::Note(2),
-                                                            via_shortcut: true,
-                                                        }
+                                                        AppAction::SwitchToNote(
+                                                            SwitchToNoteTarget::TargetNote {
+                                                                note_file: NoteId::Note(2),
+                                                                via_shortcut: true,
+                                                            },
+                                                        )
                                                     }
                                                     ["shelv", "note4", ..] => {
-                                                        AppAction::SwitchToNote {
-                                                            note_file: NoteId::Note(3),
-                                                            via_shortcut: true,
-                                                        }
+                                                        AppAction::SwitchToNote(
+                                                            SwitchToNoteTarget::TargetNote {
+                                                                note_file: NoteId::Note(3),
+                                                                via_shortcut: true,
+                                                            },
+                                                        )
                                                     }
                                                     ["shelv", "settings", ..] => {
-                                                        AppAction::SwitchToNote {
-                                                            note_file: NoteId::Settings,
-                                                            via_shortcut: true,
-                                                        }
+                                                        AppAction::SwitchToNote(
+                                                            SwitchToNoteTarget::TargetNote {
+                                                                note_file: NoteId::Settings,
+                                                                via_shortcut: true,
+                                                            },
+                                                        )
                                                     }
                                                     _ => AppAction::OpenLink(url.to_string()),
                                                 };

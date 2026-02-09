@@ -10,12 +10,106 @@ use smallvec::SmallVec;
 use smol_str::ToSmolStr;
 
 use crate::{
-    app_actions::AppAction,
+    app_actions::{AppAction, StepDirection, SwitchToNoteTarget},
     command::{CommandInstruction, CommandList},
     persistent_state::{ExternalFile, NoteId},
     theme::{AppIcon, AppTheme},
-    ui_components::{IconButton, IconButtonSize, apply_icon_btn_styling},
+    ui_components::{IconButton, IconButtonSize, apply_icon_btn_styling, get_button_fg_color},
 };
+
+// ============================================================================
+// Filename truncation
+// ============================================================================
+
+/// Configuration for truncating long filenames
+#[derive(Debug, Clone, Copy)]
+pub struct FilenameCapConfig {
+    /// Maximum total characters allowed
+    pub max_chars: usize,
+    /// Number of characters to preserve from the beginning (before ..)
+    pub offset_from_beginning: usize,
+}
+
+impl Default for FilenameCapConfig {
+    fn default() -> Self {
+        Self {
+            max_chars: 20,
+            offset_from_beginning: 4,
+        }
+    }
+}
+
+/// Truncates a filename to a maximum length while preserving the extension.
+///
+/// Examples:
+/// - `too_very_long.md` -> `too_..long.md` (with offset=4, max=15)
+/// - `short.md` -> `short.md` (no truncation needed)
+/// - `no_extension` -> `no_e..ion_here` (no extension to preserve)
+fn truncate_filename(filename: &str, config: FilenameCapConfig) -> String {
+    let FilenameCapConfig {
+        max_chars,
+        offset_from_beginning,
+    } = config;
+
+    if filename.len() <= max_chars {
+        return filename.to_string();
+    }
+
+    let separator = "..";
+
+    // Find the last dot to identify extension
+    if let Some(dot_pos) = filename.rfind('.') {
+        let name = &filename[..dot_pos];
+        let ext = &filename[dot_pos..]; // includes the dot
+
+        // Check if extension is too long to preserve
+        let min_required = offset_from_beginning + separator.len() + ext.len();
+
+        if min_required > max_chars {
+            // Extension is too long, truncate without preserving it
+            let end_chars = max_chars.saturating_sub(offset_from_beginning + separator.len());
+            let start = &filename[..offset_from_beginning.min(filename.len())];
+            let end = if end_chars > 0 && filename.len() > offset_from_beginning + separator.len() {
+                &filename[filename.len().saturating_sub(end_chars)..]
+            } else {
+                ""
+            };
+            format!("{}{}{}", start, separator, end)
+        } else {
+            // We can preserve the extension
+            // Calculate how many chars we have left for the name (excluding separator and extension)
+            let available_for_name = max_chars.saturating_sub(separator.len() + ext.len());
+
+            // Start takes offset_from_beginning chars, but not more than available
+            let start_len = offset_from_beginning
+                .min(available_for_name)
+                .min(name.len());
+
+            // End takes the remaining available chars from the end of the name
+            let end_len = available_for_name.saturating_sub(start_len);
+
+            let start = &name[..start_len];
+            let end = if end_len > 0 && name.len() > start_len {
+                let end_start_pos = name.len().saturating_sub(end_len);
+                &name[end_start_pos..]
+            } else {
+                ""
+            };
+
+            format!("{}{}{}{}", start, separator, end, ext)
+        }
+    } else {
+        // No extension found
+        let end_chars = max_chars.saturating_sub(offset_from_beginning + separator.len());
+        let start = &filename[..offset_from_beginning.min(filename.len())];
+        let end = if end_chars > 0 && filename.len() > offset_from_beginning + separator.len() {
+            &filename[filename.len().saturating_sub(end_chars)..]
+        } else {
+            ""
+        };
+        format!("{}{}{}", start, separator, end)
+    }
+}
 
 // ============================================================================
 // Picker structures and functions
@@ -141,10 +235,10 @@ fn render_default_notes_picker(
 
         let settings_response = ui.add(settings_button);
         if settings_response.clicked() && !is_settings_selected {
-            actions.push(AppAction::SwitchToNote {
+            actions.push(AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
                 note_file: NoteId::Settings,
                 via_shortcut: false,
-            });
+            }));
         }
         if is_settings_selected {
             selected_item_rect = Some(settings_response.rect);
@@ -178,10 +272,10 @@ fn render_default_notes_picker(
 
                 let button_response = ui.add(button);
                 if button_response.clicked() && !is_selected {
-                    actions.push(AppAction::SwitchToNote {
+                    actions.push(AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
                         note_file: *note_id,
                         via_shortcut: false,
-                    });
+                    }));
                 }
 
                 if is_selected {
@@ -220,19 +314,27 @@ fn render_external_files_picker(
                     let filename = ext_file
                         .path
                         .file_name()
-                        .map(|name| name.to_string_lossy().to_smolstr())
-                        .unwrap_or_else(|| external_id.to_6_digit_smol_str());
+                        .map(|name| name.to_string_lossy().to_string())
+                        .unwrap_or_else(|| external_id.to_6_digit_smol_str().to_string());
+
+                    // Truncate long filenames
+                    let display_name = truncate_filename(&filename, FilenameCapConfig::default());
 
                     apply_icon_btn_styling(ui.style_mut());
-                    let button_response = ui.button(RichText::new(filename.as_str()).font(
-                        FontId::new(theme.fonts.size.normal, FontFamily::Proportional),
-                    ));
+                    let button_response = ui.button(
+                        RichText::new(display_name)
+                            .font(FontId::new(
+                                theme.fonts.size.normal,
+                                FontFamily::Proportional,
+                            ))
+                            .color(get_button_fg_color(is_selected, theme, None)),
+                    );
 
                     if button_response.clicked() && !is_selected {
-                        actions.push(AppAction::SwitchToNote {
+                        actions.push(AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
                             note_file: *note_id,
                             via_shortcut: false,
-                        });
+                        }));
                     }
 
                     if is_selected {
@@ -276,7 +378,7 @@ pub fn render_footer_panel(
     let sides_result = Sides::new()
         .height(original_available_space.height())
         .shrink_left()
-        .spacing(layout_params.gap)
+        .spacing(theme.sizes.s)
         .show(
             ui,
             |ui| {
@@ -291,11 +393,13 @@ pub fn render_footer_panel(
                     theme,
                 );
 
+                ui.add_space(theme.sizes.s);
+
                 // External files picker in horizontal scroll
                 let response = ScrollArea::horizontal()
                     .id_salt("footer_external_files")
                     .scroll_bar_visibility(
-                        eframe::egui::scroll_area::ScrollBarVisibility::AlwaysVisible,
+                        eframe::egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded,
                     )
                     .show(ui, |ui| {
                         let (actions, rect) = render_external_files_picker(
@@ -349,6 +453,56 @@ pub fn render_footer_panel(
                     .clicked()
                 {
                     right_actions.push(AppAction::OpenFileDialog);
+                }
+
+                // Count external files to determine if we should show stepper buttons
+                let external_file_count = opened_files
+                    .iter()
+                    .filter(|id| matches!(id, NoteId::ExternalFileId(_)))
+                    .count();
+
+                // Show stepper buttons if there are multiple external files
+                if external_file_count > 1 {
+                    if ui
+                        .add(
+                            IconButton::new(AppIcon::ChevronRight, theme)
+                                .size(IconButtonSize::Large)
+                                .tooltip(
+                                    "Next Note",
+                                    command_list
+                                        .find(CommandInstruction::SwitchToNextNote)
+                                        .and_then(|cmd| cmd.shortcut),
+                                ),
+                        )
+                        .clicked()
+                    {
+                        right_actions.push(AppAction::SwitchToNote(SwitchToNoteTarget::StepNote(
+                            StepDirection::Right,
+                        )));
+                    }
+                    if ui
+                        .add(
+                            IconButton::new(AppIcon::ChevronLeft, theme)
+                                .size(IconButtonSize::Large)
+                                .tooltip(
+                                    "Previous Note",
+                                    command_list
+                                        .find(CommandInstruction::SwitchToPrevNote)
+                                        .and_then(|cmd| cmd.shortcut),
+                                ),
+                        )
+                        .clicked()
+                    {
+                        right_actions.push(AppAction::SwitchToNote(SwitchToNoteTarget::StepNote(
+                            StepDirection::Left,
+                        )));
+                    }
+
+                    // // Separator
+                    // ui.label(
+                    //     AppIcon::VerticalSeparator
+                    //         .render(sizes.toolbar_icon, theme.colors.outline_fg),
+                    // );
                 }
 
                 // Separator
@@ -453,4 +607,128 @@ pub fn render_footer_panel(
     }
 
     actions
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_filename_no_truncation_needed() {
+        let config = FilenameCapConfig {
+            max_chars: 20,
+            offset_from_beginning: 4,
+        };
+        assert_eq!(truncate_filename("short.md", config), "short.md");
+        assert_eq!(
+            truncate_filename("exact_length.md", config),
+            "exact_length.md"
+        );
+    }
+
+    #[test]
+    fn test_truncate_filename_with_extension() {
+        let config = FilenameCapConfig {
+            max_chars: 15,
+            offset_from_beginning: 4,
+        };
+        // "too_very_long" is the name (13 chars), ".md" is extension (3 chars)
+        // max_chars=15, minus ".." (2) minus ".md" (3) = 10 chars for name parts
+        // start gets 4 chars: "too_", end gets 6 chars from end of name: "y_long"
+        assert_eq!(
+            truncate_filename("too_very_long.md", config),
+            "too_..y_long.md"
+        );
+    }
+
+    #[test]
+    fn test_truncate_filename_different_offset() {
+        let config = FilenameCapConfig {
+            max_chars: 20,
+            offset_from_beginning: 6,
+        };
+        // "this_is_a_very_long_filename" is the name (28 chars), ".md" is extension (3 chars)
+        // max_chars=20, minus ".." (2) minus ".md" (3) = 15 chars for name parts
+        // start gets 6 chars: "this_i", end gets 9 chars from end: "_filename"
+        assert_eq!(
+            truncate_filename("this_is_a_very_long_filename.md", config),
+            "this_i.._filename.md"
+        );
+    }
+
+    #[test]
+    fn test_truncate_filename_no_extension() {
+        let config = FilenameCapConfig {
+            max_chars: 15,
+            offset_from_beginning: 4,
+        };
+        // "no_extension_here" is 17 chars total
+        // max_chars=15, minus ".." (2) = 13 chars available
+        // start gets 4 chars: "no_e", end gets 9 chars: "sion_here"
+        assert_eq!(
+            truncate_filename("no_extension_here", config),
+            "no_e..sion_here"
+        );
+    }
+
+    #[test]
+    fn test_truncate_filename_very_long_extension() {
+        let config = FilenameCapConfig {
+            max_chars: 15,
+            offset_from_beginning: 4,
+        };
+        // Extension is too long to preserve with offset
+        assert_eq!(
+            truncate_filename("file.verylongextension", config),
+            "file..extension"
+        );
+    }
+
+    #[test]
+    fn test_truncate_filename_edge_cases() {
+        let config = FilenameCapConfig {
+            max_chars: 10,
+            offset_from_beginning: 3,
+        };
+        assert_eq!(truncate_filename("a.md", config), "a.md");
+        assert_eq!(truncate_filename("abc.md", config), "abc.md");
+        // "abcdefgh" is name (8 chars), ".md" is extension (3 chars)
+        // max_chars=10, minus ".." (2) minus ".md" (3) = 5 chars for name parts
+        // start gets 3 chars: "abc", end gets 2 chars: "gh"
+        assert_eq!(truncate_filename("abcdefgh.md", config), "abc..gh.md");
+    }
+
+    #[test]
+    fn test_truncate_filename_default_config() {
+        let config = FilenameCapConfig::default();
+        // max_chars=20, offset=4
+        // "this_is_a_very_long_filename" is name (28 chars), ".md" is extension (3 chars)
+        // max_chars=20, minus ".." (2) minus ".md" (3) = 15 chars for name parts
+        // start gets 4 chars: "this", end gets 11 chars: "ng_filename"
+        assert_eq!(
+            truncate_filename("this_is_a_very_long_filename.md", config),
+            "this..ng_filename.md"
+        );
+    }
+
+    #[test]
+    fn test_truncate_filename_multiple_dots() {
+        let config = FilenameCapConfig {
+            max_chars: 20,
+            offset_from_beginning: 5,
+        };
+        // Should use the last dot for extension
+        // "my.file.name.is.long" is name (20 chars), ".md" is extension (3 chars)
+        // max_chars=20, minus ".." (2) minus ".md" (3) = 15 chars for name parts
+        // start gets 5 chars: "my.fi", end gets 10 chars: "ame.is.long" -> wait, that's 11
+        // Actually: end gets 10 chars from end of name: "me.is.long"
+        assert_eq!(
+            truncate_filename("my.file.name.is.long.md", config),
+            "my.fi..me.is.long.md"
+        );
+    }
 }

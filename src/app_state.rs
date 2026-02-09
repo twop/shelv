@@ -20,7 +20,7 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     actions::word_jump::{JumpCharSequence, JumpLabel},
-    app_actions::{AppAction, AppNotification, FocusTarget},
+    app_actions::{AppAction, AppNotification, FocusTarget, StepDirection, SwitchToNoteTarget},
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
@@ -740,54 +740,26 @@ fn execute_instruction(
         }),
         CI::EnterInsideKDL => call_with_text_ctx(ctx, on_enter_inside_kdl_block),
 
-        CI::SwitchToNote(note_index) => SmallVec::from([AppAction::SwitchToNote {
-            note_file: NoteId::Note(*note_index as u32),
-            via_shortcut: true,
-        }]),
+        CI::SwitchToNote(note_index) => {
+            SmallVec::from([AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
+                note_file: NoteId::Note(*note_index as u32),
+                via_shortcut: true,
+            })])
+        }
 
-        CI::SwitchToSettings => [AppAction::SwitchToNote {
+        CI::SwitchToSettings => [AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
             note_file: NoteId::Settings,
             via_shortcut: true,
-        }]
+        })]
         .into(),
 
-        CI::SwitchToNextNote => {
-            let current = ctx.app_state.selected_note;
+        CI::SwitchToNextNote => SmallVec::from([AppAction::SwitchToNote(
+            SwitchToNoteTarget::StepNote(StepDirection::Right),
+        )]),
 
-            let prev_note = ctx
-                .app_state
-                .notes
-                .keys()
-                .circular_tuple_windows()
-                .find_map(|(&a, &b)| (a == current).then(|| b));
-
-            match prev_note {
-                Some(prev_note) => SmallVec::from([AppAction::SwitchToNote {
-                    note_file: prev_note,
-                    via_shortcut: true,
-                }]),
-                None => SmallVec::new(),
-            }
-        }
-
-        CI::SwitchToPrevNote => {
-            let current = ctx.app_state.selected_note;
-
-            let prev_note = ctx
-                .app_state
-                .notes
-                .keys()
-                .circular_tuple_windows()
-                .find_map(|(&a, &b)| (b == current).then(|| a));
-
-            match prev_note {
-                Some(prev_note) => SmallVec::from([AppAction::SwitchToNote {
-                    note_file: prev_note,
-                    via_shortcut: true,
-                }]),
-                None => SmallVec::new(),
-            }
-        }
+        CI::SwitchToPrevNote => SmallVec::from([AppAction::SwitchToNote(
+            SwitchToNoteTarget::StepNote(StepDirection::Left),
+        )]),
 
         CI::PinWindow => [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
 

@@ -137,19 +137,13 @@ impl<'theme> TuiWidget for IconButton<'theme> {
         {
             let icon_size = size.get_icon_font_size(theme);
 
-            let base_color = if let Some(color) = color {
-                color
-            } else if is_toggled {
-                theme.colors.button_pressed_fg
-            } else {
-                theme.colors.subtle_text_color
-            };
+            let desired_fg_color = get_button_fg_color(is_toggled, theme, color);
 
             let icon_color = theme
                 .colors
                 .subtle_text_color
-                .gamma_multiply(0.2)
-                .lerp_to_gamma(base_color, fade);
+                // .gamma_multiply(0.2)
+                .lerp_to_gamma(desired_fg_color, fade);
 
             tui.mut_egui_style(apply_icon_btn_styling)
                 // FIXME padding is not taken from egui.styles()
@@ -175,6 +169,18 @@ impl<'theme> TuiWidget for IconButton<'theme> {
         }
     }
 }
+
+pub fn get_button_fg_color(is_toggled: bool, theme: &AppTheme, color: Option<Color32>) -> Color32 {
+    let base_color = if let Some(color) = color {
+        color
+    } else if is_toggled {
+        theme.colors.button_pressed_fg
+    } else {
+        theme.colors.subtle_text_color
+    };
+    base_color
+}
+
 impl<'theme> Widget for IconButton<'theme> {
     fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
         let Self {
