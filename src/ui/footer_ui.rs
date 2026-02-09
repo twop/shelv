@@ -1,8 +1,5 @@
 use eframe::{
-    egui::{
-        Color32, Context, FontFamily, FontId, InnerResponse, Layout, RichText, ScrollArea, Ui,
-        UiBuilder, vec2,
-    },
+    egui::{Color32, Context, FontFamily, FontId, RichText, ScrollArea, Sides, Ui, vec2},
     emath::Align,
     epaint::{
         PathShape, PathStroke, Pos2, Rect, Shape, Stroke, pos2,
@@ -10,11 +7,10 @@ use eframe::{
     },
 };
 use smallvec::SmallVec;
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::ToSmolStr;
 
 use crate::{
     app_actions::AppAction,
-    app_ui::draw_debug_rect,
     command::{CommandInstruction, CommandList},
     persistent_state::{ExternalFile, NoteId},
     theme::{AppIcon, AppTheme},
@@ -22,26 +18,8 @@ use crate::{
 };
 
 // ============================================================================
-// Picker structures and functions (copied from picker.rs)
+// Picker structures and functions
 // ============================================================================
-
-#[derive(Debug, Clone)]
-pub struct PickerVisualStyle {
-    pub outline: Stroke,
-}
-
-#[derive(Debug)]
-pub enum PickerItemKind {
-    FontIcon(AppIcon, IconButtonSize),
-    ItemName(SmolStr, FontId),
-}
-
-#[derive(Debug)]
-pub struct PickerItem<Item: PartialEq> {
-    pub tooltip: String,
-    pub kind: PickerItemKind,
-    pub data: Item,
-}
 
 #[derive(Debug, Clone)]
 pub struct PickerLayoutParams {
@@ -124,140 +102,148 @@ fn selection_outline(
     path
 }
 
-pub fn render_picker_items_refactored<'a, Item: PartialEq>(
-    current: Item,
-    items: impl IntoIterator<Item = PickerItem<Item>>,
-    style: PickerVisualStyle,
-    layout_params: PickerLayoutParams,
+/// Render default picker (Settings + Notes)
+fn render_default_notes_picker(
+    selected: NoteId,
+    opened_files: &SmallVec<[NoteId; 8]>,
+    command_list: &CommandList,
+    layout_params: &PickerLayoutParams,
     ui: &mut Ui,
+    ctx: &Context,
     theme: &AppTheme,
-) -> InnerResponse<Option<Item>> {
-    let mut newly_selected = None;
-    let animation_duration = 0.2;
-    let picker_id = ui.id().with("simple_picker");
+) -> (SmallVec<[AppAction; 1]>, Option<Rect>, Option<usize>) {
+    let mut actions = SmallVec::new();
+    let mut selected_item_rect: Option<Rect> = None;
+    let mut selected_item_index: Option<usize> = None;
 
-    // This is to track selected item rect for outline drawing
-    let mut selected_item_rect_index: Option<(Rect, usize)> = None;
-
-    let response = ui.horizontal_centered(|ui| {
-        // draw_debug_rect(ui);
+    ui.horizontal_centered(|ui| {
         ui.spacing_mut().item_spacing.x = layout_params.gap;
-        // // to make sure that the very left rounding does not exceed the widget bounds
-        // we animate the rad to 0.0, hence only margin needs to be adjusted
         ui.add_space(layout_params.outline_margin.0);
 
-        for (i, item) in items.into_iter().enumerate() {
-            let is_selected = &item.data == &current;
+        // Settings button
+        let is_settings_selected = selected == NoteId::Settings;
+        let settings_button = IconButton::new(AppIcon::Settings, theme)
+            .size(IconButtonSize::Large)
+            .toggled(is_settings_selected)
+            .tooltip(
+                {
+                    let tooltip_text = "Settings";
+                    command_list
+                        .find(CommandInstruction::SwitchToSettings)
+                        .and_then(|cmd| cmd.shortcut)
+                        .map(|shortcut| {
+                            format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
+                        })
+                        .unwrap_or_else(|| tooltip_text.to_string())
+                },
+                None,
+            );
 
-            let button_response = match &item.kind {
-                PickerItemKind::FontIcon(app_icon, icon_size) => {
-                    let button = crate::ui_components::IconButton::new(*app_icon, theme)
-                        .size(*icon_size)
-                        .toggled(is_selected)
-                        .tooltip(&item.tooltip, None);
+        let settings_response = ui.add(settings_button);
+        if settings_response.clicked() && !is_settings_selected {
+            actions.push(AppAction::SwitchToNote {
+                note_file: NoteId::Settings,
+                via_shortcut: false,
+            });
+        }
+        if is_settings_selected {
+            selected_item_rect = Some(settings_response.rect);
+            selected_item_index = Some(0);
+        }
 
-                    ui.add(button)
+        // Note buttons
+        let mut current_index = 1; // Settings is index 0
+        for note_id in opened_files.iter() {
+            if let NoteId::Note(index) = note_id {
+                let index = *index;
+                let is_selected = selected == *note_id;
+                let cmd = command_list.find(CommandInstruction::SwitchToNote(index as u8));
+                let tooltip = match cmd.and_then(|cmd| cmd.shortcut) {
+                    Some(shortcut) => format!("Shelf {}", ctx.format_shortcut(&shortcut)),
+                    None => format!("Shelf {}", index + 1),
+                };
+
+                let icon = match index {
+                    0 => AppIcon::One,
+                    1 => AppIcon::Two,
+                    2 => AppIcon::Three,
+                    3 => AppIcon::Four,
+                    _ => AppIcon::More,
+                };
+
+                let button = IconButton::new(icon, theme)
+                    .size(IconButtonSize::Large)
+                    .toggled(is_selected)
+                    .tooltip(tooltip, None);
+
+                let button_response = ui.add(button);
+                if button_response.clicked() && !is_selected {
+                    actions.push(AppAction::SwitchToNote {
+                        note_file: *note_id,
+                        via_shortcut: false,
+                    });
                 }
 
-                PickerItemKind::ItemName(smol_str, font_id) => {
-                    apply_icon_btn_styling(ui.style_mut());
-                    ui.button(RichText::new(smol_str.as_str()).font(font_id.clone()))
+                if is_selected {
+                    selected_item_rect = Some(button_response.rect);
+                    selected_item_index = Some(current_index);
                 }
-            };
 
-            if button_response.clicked() && !is_selected {
-                newly_selected = Some(item.data);
-            }
-
-            // Store selected item's rect for outline drawing
-            if is_selected {
-                selected_item_rect_index = Some((button_response.rect, i));
+                current_index += 1;
             }
         }
     });
 
-    if let Some((item_rect, idx)) = selected_item_rect_index {
-        let animated_item_width = ui.ctx().animate_value_with_time(
-            picker_id.with("width"),
-            item_rect.width(),
-            animation_duration,
-        );
+    (actions, selected_item_rect, selected_item_index)
+}
 
-        // Calculate fixed height without vertical bump animation
-        let item_height = item_rect.center().y + item_rect.height() / 2.0
-            - layout_params.entire_available_rect.top();
+/// Render external files picker
+fn render_external_files_picker(
+    selected: NoteId,
+    opened_files: &SmallVec<[NoteId; 8]>,
+    external_files: &[ExternalFile],
+    layout_params: &PickerLayoutParams,
+    ui: &mut Ui,
+    theme: &AppTheme,
+) -> (SmallVec<[AppAction; 1]>, Option<Rect>) {
+    let mut actions = SmallVec::new();
+    let mut selected_item_rect: Option<Rect> = None;
 
-        // If first item is selected, animate top left radius to 0, otherwise to normal radius
-        let is_first_item = idx == 0;
-        let target_top_left_radius = if is_first_item {
-            0.0
-        } else {
-            layout_params.top_rounding
-        };
-        let animated_top_left_radius = ui.ctx().animate_value_with_time(
-            picker_id.with("top_left_radius"),
-            target_top_left_radius,
-            animation_duration,
-        );
+    ui.horizontal_centered(|ui| {
+        ui.spacing_mut().item_spacing.x = layout_params.gap;
+        ui.add_space(layout_params.outline_margin.0);
 
-        let mut drop_shape = Shape::Path(PathShape {
-            points: selection_outline(SelectionOutlineDesc {
-                bottom_radius: layout_params.bottom_rounding,
-                top_radious: (animated_top_left_radius, layout_params.top_rounding),
-                item_width: animated_item_width,
-                item_height: item_height,
-                margin: layout_params.outline_margin,
-            }),
-            closed: false,
-            fill: Color32::TRANSPARENT,
-            stroke: PathStroke::new(style.outline.width, style.outline.color),
-        });
+        for note_id in opened_files.iter() {
+            if let NoteId::ExternalFileId(external_id) = note_id {
+                if let Some(ext_file) = external_files.iter().find(|ef| ef.id == *external_id) {
+                    let is_selected = selected == *note_id;
+                    let filename = ext_file
+                        .path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().to_smolstr())
+                        .unwrap_or_else(|| external_id.to_6_digit_smol_str());
 
-        let drop_x = ui.ctx().animate_value_with_time(
-            picker_id.with("drop"),
-            item_rect.center().x,
-            animation_duration,
-        );
+                    apply_icon_btn_styling(ui.style_mut());
+                    let button_response = ui.button(RichText::new(filename.as_str()).font(
+                        FontId::new(theme.fonts.size.normal, FontFamily::Proportional),
+                    ));
 
-        drop_shape.translate([drop_x, layout_params.entire_available_rect.top()].into());
+                    if button_response.clicked() && !is_selected {
+                        actions.push(AppAction::SwitchToNote {
+                            note_file: *note_id,
+                            via_shortcut: false,
+                        });
+                    }
 
-        let painter = ui.painter();
-        painter.add(drop_shape);
+                    if is_selected {
+                        selected_item_rect = Some(button_response.rect);
+                    }
+                }
+            }
+        }
+    });
 
-        let (margin_x, _) = layout_params.outline_margin;
-        let item_outline_width = animated_item_width
-            + 2. * margin_x
-            + animated_top_left_radius
-            + layout_params.top_rounding;
-
-        // Draw left side of the break line
-        painter.line_segment(
-            [
-                layout_params.entire_available_rect.left_top(),
-                pos2(
-                    (drop_x - item_outline_width / 2.0)
-                        .max(layout_params.entire_available_rect.left()),
-                    layout_params.entire_available_rect.top(),
-                ),
-            ],
-            Stroke::new(style.outline.width, style.outline.color),
-        );
-
-        // Draw right side of the break line
-        painter.line_segment(
-            [
-                pos2(
-                    (drop_x + item_outline_width / 2.0)
-                        .min(layout_params.entire_available_rect.right()),
-                    layout_params.entire_available_rect.top(),
-                ),
-                layout_params.entire_available_rect.right_top(),
-            ],
-            style.outline.clone(),
-        );
-    }
-
-    InnerResponse::new(newly_selected, response.response)
+    (actions, selected_item_rect)
 }
 
 // ============================================================================
@@ -278,147 +264,193 @@ pub fn render_footer_panel(
 
     let original_available_space = ui.available_rect_before_wrap();
 
-    let space_after_right_side = {
-        // STEP 1: Render right side first using right-to-left layout
-        // Allocate UI for the right section and render it first
-        let mut right_side_ui = ui.new_child(
-            UiBuilder::new()
-                .max_rect(ui.available_rect_before_wrap())
-                .layout(Layout::right_to_left(Align::Center)),
-        );
-
-        // draw_debug_rect(&right_side_ui, Color32::LIGHT_YELLOW.gamma_multiply(0.5));
-        // Right section: Open file button
-        if right_side_ui
-            .add(
-                IconButton::new(AppIcon::Folder, theme)
-                    .size(IconButtonSize::Large)
-                    .tooltip(
-                        "Open file",
-                        command_list
-                            .find(CommandInstruction::OpenFileDialog)
-                            .and_then(|cmd| cmd.shortcut),
-                    ),
-            )
-            .clicked()
-        {
-            actions.push(AppAction::OpenFileDialog);
-        }
-
-        // Separator
-        right_side_ui
-            .label(AppIcon::VerticalSeparator.render(sizes.toolbar_icon, theme.colors.outline_fg));
-
-        // draw_debug_rect(&right_side_ui, Color32::LIGHT_GREEN.gamma_multiply(0.5));
-        right_side_ui.available_rect_before_wrap()
+    let layout_params = PickerLayoutParams {
+        gap: sizes.xs,
+        bottom_rounding: sizes.toolbar_icon / 2.0,
+        top_rounding: sizes.s,
+        outline_margin: (sizes.xxs, 0.),
+        entire_available_rect: original_available_space,
     };
 
-    let mut left_side = ui.new_child(
-        UiBuilder::new()
-            .max_rect(space_after_right_side)
-            .layout(Layout::left_to_right(Align::Center)),
-    );
+    // Use Sides widget to layout left (pickers) and right (buttons)
+    let sides_result = Sides::new()
+        .height(original_available_space.height())
+        .shrink_left()
+        .spacing(layout_params.gap)
+        .show(
+            ui,
+            |ui| {
+                // Left side: pickers
+                let (default_actions, default_rect, default_idx) = render_default_notes_picker(
+                    selected,
+                    &opened_files,
+                    command_list,
+                    &layout_params,
+                    ui,
+                    ctx,
+                    theme,
+                );
 
-    {
-        let mut ui = &mut left_side;
-        // draw_debug_rect(&ui, Color32::LIGHT_YELLOW.gamma_multiply(0.5));
+                // External files picker in horizontal scroll
+                let response = ScrollArea::horizontal()
+                    .id_salt("footer_external_files")
+                    .scroll_bar_visibility(
+                        eframe::egui::scroll_area::ScrollBarVisibility::AlwaysVisible,
+                    )
+                    .show(ui, |ui| {
+                        let (actions, rect) = render_external_files_picker(
+                            selected,
+                            &opened_files,
+                            external_files,
+                            &layout_params,
+                            ui,
+                            theme,
+                        );
 
-        let total_available = ui.available_width();
+                        if let Some(item_rect) = rect {
+                            ui.scroll_to_rect(item_rect, Some(eframe::emath::Align::Center));
+                        }
 
-        // Calculate the width needed for right section (folder button + separator)
-        let button_width = sizes.toolbar_icon + sizes.s * 2.0;
-        let separator_width = sizes.toolbar_icon + sizes.s;
-        let right_section_width = button_width + separator_width;
+                        (actions, rect)
+                    });
 
-        // STEP 2: Render default items (settings and notes) + external files in one picker
-        // Build the default items list
-        let default_items: SmallVec<[PickerItem<NoteId>; 5]> = [PickerItem {
-            tooltip: {
-                let tooltip_text = "Settings";
-                command_list
-                    .find(CommandInstruction::SwitchToSettings)
-                    .and_then(|cmd| cmd.shortcut)
-                    .map(|shortcut| format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut)))
-                    .unwrap_or_else(|| tooltip_text.to_string())
-            },
-            kind: PickerItemKind::FontIcon(AppIcon::Settings, IconButtonSize::Large),
-            data: NoteId::Settings,
-        }]
-        .into_iter()
-        .chain(opened_files.iter().filter_map(|note_id| match note_id {
-            NoteId::Note(index) => {
-                let index = *index;
-                let cmd = command_list.find(CommandInstruction::SwitchToNote(index as u8));
-                let tooltip = match cmd.and_then(|cmd| cmd.shortcut) {
-                    Some(shortcut) => {
-                        format!("Shelf {}", ctx.format_shortcut(&shortcut))
-                    }
-                    None => format!("Shelf {}", index + 1),
+                let (external_actions, external_rect) = response.inner;
+                // Combine actions and determine selected item
+                let mut left_side_actions = default_actions;
+                left_side_actions.extend(external_actions);
+
+                let selected_from_default = default_rect.is_some();
+                let (selected_rect, is_first_item_overall) = if selected_from_default {
+                    (default_rect, default_idx == Some(0))
+                } else {
+                    (
+                        external_rect.map(|r| response.inner_rect.intersect(r)),
+                        false,
+                    )
                 };
 
-                Some(PickerItem {
-                    tooltip,
-                    kind: PickerItemKind::FontIcon(
-                        match index {
-                            0 => AppIcon::One,
-                            1 => AppIcon::Two,
-                            2 => AppIcon::Three,
-                            3 => AppIcon::Four,
-                            _ => AppIcon::More,
-                        },
-                        IconButtonSize::Large,
-                    ),
-                    data: *note_id,
-                })
-            }
-            NoteId::Settings => None,
-            NoteId::ExternalFileId(external_id) => {
-                // Include external files in the main picker
-                external_files
-                    .iter()
-                    .find(|ext_file| ext_file.id == *external_id)
-                    .map(|ext_file| PickerItem {
-                        tooltip: ext_file.path.to_string_lossy().to_string(),
-                        kind: PickerItemKind::ItemName(
-                            ext_file
-                                .path
-                                .file_name()
-                                .map(|name| name.to_string_lossy().to_smolstr())
-                                .unwrap_or_else(|| external_id.to_6_digit_smol_str()),
-                            FontId::new(theme.fonts.size.normal, FontFamily::Proportional),
-                        ),
-                        data: *note_id,
-                    })
-            }
-        }))
-        .collect();
-
-        let available_rect = ui.available_rect_before_wrap();
-
-        let picker_response = render_picker_items_refactored(
-            selected,
-            default_items.into_iter(),
-            PickerVisualStyle {
-                outline: Stroke::new(1.0, theme.colors.outline_fg),
+                (left_side_actions, selected_rect, is_first_item_overall)
             },
-            PickerLayoutParams {
-                gap: sizes.xs,                             // matches ui.spacing_mut().item_spacing.x
-                bottom_rounding: sizes.toolbar_icon / 2.0, // half icon size for nice rounding
-                top_rounding: sizes.s,                     // small rounding at top
-                outline_margin: (sizes.xxs, 0.),           // small margins
-                entire_available_rect: original_available_space,
+            |ui| {
+                // Right side: buttons
+                let mut right_actions: SmallVec<[AppAction; 1]> = SmallVec::new();
+
+                if ui
+                    .add(
+                        IconButton::new(AppIcon::Folder, theme)
+                            .size(IconButtonSize::Large)
+                            .tooltip(
+                                "Open file",
+                                command_list
+                                    .find(CommandInstruction::OpenFileDialog)
+                                    .and_then(|cmd| cmd.shortcut),
+                            ),
+                    )
+                    .clicked()
+                {
+                    right_actions.push(AppAction::OpenFileDialog);
+                }
+
+                // Separator
+                ui.label(
+                    AppIcon::VerticalSeparator.render(sizes.toolbar_icon, theme.colors.outline_fg),
+                );
+
+                right_actions
             },
-            &mut ui,
-            theme,
         );
 
-        if let Some(note_file) = picker_response.inner {
-            actions.push(AppAction::SwitchToNote {
-                note_file,
-                via_shortcut: false,
-            });
-        }
-    };
+    // Extract results from Sides
+    let ((left_actions, selected_rect, is_first_item_overall), right_actions) = sides_result;
+
+    actions.extend(left_actions);
+    actions.extend(right_actions);
+
+    if let Some(item_rect) = selected_rect {
+        let animation_duration = 0.2;
+        let picker_id = ui.id().with("simple_picker");
+
+        let animated_item_width = ctx.animate_value_with_time(
+            picker_id.with("width"),
+            item_rect.width(),
+            animation_duration,
+        );
+
+        // Calculate fixed height without vertical bump animation
+        let item_height = item_rect.center().y + item_rect.height() / 2.0
+            - layout_params.entire_available_rect.top();
+
+        // If first item overall is selected, animate top left radius to 0, otherwise to normal radius
+        let target_top_left_radius = if is_first_item_overall {
+            0.0
+        } else {
+            layout_params.top_rounding
+        };
+        let animated_top_left_radius = ctx.animate_value_with_time(
+            picker_id.with("top_left_radius"),
+            target_top_left_radius,
+            animation_duration,
+        );
+
+        let mut drop_shape = Shape::Path(PathShape {
+            points: selection_outline(SelectionOutlineDesc {
+                bottom_radius: layout_params.bottom_rounding,
+                top_radious: (animated_top_left_radius, layout_params.top_rounding),
+                item_width: animated_item_width,
+                item_height: item_height,
+                margin: layout_params.outline_margin,
+            }),
+            closed: false,
+            fill: Color32::TRANSPARENT,
+            stroke: PathStroke::new(1.0, theme.colors.outline_fg),
+        });
+
+        let drop_x = ctx.animate_value_with_time(
+            picker_id.with("drop"),
+            item_rect.center().x,
+            animation_duration,
+        );
+
+        drop_shape.translate([drop_x, layout_params.entire_available_rect.top()].into());
+
+        let painter = ui.painter();
+        // Clip the outline to the available rect to prevent overflow
+        painter
+            .with_clip_rect(layout_params.entire_available_rect)
+            .add(drop_shape);
+
+        let (margin_x, _) = layout_params.outline_margin;
+        let item_outline_width = animated_item_width
+            + 2. * margin_x
+            + animated_top_left_radius
+            + layout_params.top_rounding;
+
+        // Draw left side of the break line
+        painter.line_segment(
+            [
+                layout_params.entire_available_rect.left_top(),
+                pos2(
+                    (drop_x - item_outline_width / 2.0)
+                        .max(layout_params.entire_available_rect.left()),
+                    layout_params.entire_available_rect.top(),
+                ),
+            ],
+            Stroke::new(1.0, theme.colors.outline_fg),
+        );
+
+        // Draw right side of the break line
+        painter.line_segment(
+            [
+                pos2(
+                    (drop_x + item_outline_width / 2.0)
+                        .min(layout_params.entire_available_rect.right()),
+                    layout_params.entire_available_rect.top(),
+                ),
+                layout_params.entire_available_rect.right_top(),
+            ],
+            Stroke::new(1.0, theme.colors.outline_fg),
+        );
+    }
 
     actions
 }
