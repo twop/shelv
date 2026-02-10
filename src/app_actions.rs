@@ -295,12 +295,22 @@ pub fn process_app_action(
                     state.inline_llm_prompt = None;
                 }
 
+                // If switching to an external file, add scroll action
+                let scroll_action = if let NoteId::ExternalFileId(file_id) = note_file {
+                    Some(AppAction::IssueRenderAction(
+                        RenderAction::ScrollToExternalFile(file_id),
+                    ))
+                } else {
+                    None
+                };
+
                 match via_shortcut {
-                    true => [AppAction::DeferToPostRender(Box::new(
-                        AppAction::FocusRequest(FocusTarget::CurrentNote),
-                    ))]
-                    .into(),
-                    false => SmallVec::new(),
+                    true => SmallVec::from_iter(scroll_action.into_iter().chain([
+                        AppAction::DeferToPostRender(Box::new(AppAction::FocusRequest(
+                            FocusTarget::CurrentNote,
+                        ))),
+                    ])),
+                    false => SmallVec::from_iter(scroll_action),
                 }
             }
 

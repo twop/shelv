@@ -238,6 +238,7 @@ pub enum UnsavedChange {
 #[derive(Debug, Clone)]
 pub enum RenderAction {
     ScrollToEditorCursorPos,
+    ScrollToExternalFile(ExternalFileId),
 }
 
 #[derive(Debug, Clone)]

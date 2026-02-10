@@ -1,5 +1,8 @@
 use eframe::{
-    egui::{Color32, Context, FontFamily, FontId, RichText, ScrollArea, Sides, Ui, vec2},
+    egui::{
+        Button, Color32, Context, FontFamily, FontId, RichText, ScrollArea, Sides, Ui, Vec2,
+        scroll_area::ScrollBarVisibility, vec2,
+    },
     emath::Align,
     epaint::{
         PathShape, PathStroke, Pos2, Rect, Shape, Stroke, pos2,
@@ -7,14 +10,14 @@ use eframe::{
     },
 };
 use smallvec::SmallVec;
-use smol_str::ToSmolStr;
 
 use crate::{
     app_actions::{AppAction, StepDirection, SwitchToNoteTarget},
+    app_state::RenderAction,
     command::{CommandInstruction, CommandList},
     persistent_state::{ExternalFile, NoteId},
     theme::{AppIcon, AppTheme},
-    ui_components::{IconButton, IconButtonSize, apply_icon_btn_styling, get_button_fg_color},
+    ui_components::{apply_icon_btn_styling, get_button_fg_color, rich_text_tooltip, IconButton, IconButtonSize},
 };
 
 // ============================================================================
@@ -252,11 +255,6 @@ fn render_default_notes_picker(
                 let index = *index;
                 let is_selected = selected == *note_id;
                 let cmd = command_list.find(CommandInstruction::SwitchToNote(index as u8));
-                let tooltip = match cmd.and_then(|cmd| cmd.shortcut) {
-                    Some(shortcut) => format!("Shelf {}", ctx.format_shortcut(&shortcut)),
-                    None => format!("Shelf {}", index + 1),
-                };
-
                 let icon = match index {
                     0 => AppIcon::One,
                     1 => AppIcon::Two,
@@ -268,7 +266,7 @@ fn render_default_notes_picker(
                 let button = IconButton::new(icon, theme)
                     .size(IconButtonSize::Large)
                     .toggled(is_selected)
-                    .tooltip(tooltip, None);
+                    .tooltip(format!("Shelf {}", index + 1), cmd.and_then(|cmd| cmd.shortcut) );
 
                 let button_response = ui.add(button);
                 if button_response.clicked() && !is_selected {
@@ -297,7 +295,9 @@ fn render_external_files_picker(
     opened_files: &SmallVec<[NoteId; 8]>,
     external_files: &[ExternalFile],
     layout_params: &PickerLayoutParams,
+    command_list: &CommandList,
     ui: &mut Ui,
+    ctx: &Context,
     theme: &AppTheme,
 ) -> (SmallVec<[AppAction; 1]>, Option<Rect>) {
     let mut actions = SmallVec::new();
@@ -317,28 +317,99 @@ fn render_external_files_picker(
                         .map(|name| name.to_string_lossy().to_string())
                         .unwrap_or_else(|| external_id.to_6_digit_smol_str().to_string());
 
-                    // Truncate long filenames
                     let display_name = truncate_filename(&filename, FilenameCapConfig::default());
 
-                    apply_icon_btn_styling(ui.style_mut());
-                    let button_response = ui.button(
-                        RichText::new(display_name)
-                            .font(FontId::new(
-                                theme.fonts.size.normal,
-                                FontFamily::Proportional,
-                            ))
-                            .color(get_button_fg_color(is_selected, theme, None)),
-                    );
+                    // Create unique ID for this external file's hover animation
+                    let hover_id = ui.id().with("external_file_hover").with(*external_id);
 
-                    if button_response.clicked() && !is_selected {
+                    // Create a horizontal UI that always contains both the filename and close button space
+                    let response = ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme.sizes.xxs;
+                        ui.add_space(theme.sizes.xxs);
+
+                        apply_icon_btn_styling(ui.style_mut());
+                        let button_response = {
+                            ui.add(
+                                Button::new(
+                                    RichText::new(display_name)
+                                        .font(FontId::new(
+                                            theme.fonts.size.normal,
+                                            FontFamily::Proportional,
+                                        ))
+                                        .color(get_button_fg_color(is_selected, theme, None)),
+                                )
+                                .min_size(Vec2::splat(
+                                    IconButtonSize::Large.get_icon_font_size(theme)
+                                        + theme.sizes.xxs,
+                                )),
+                            )
+                        };
+
+                        // Check if the button is hovered
+                        let button_hovered = button_response.hovered();
+
+
+                        let button_response =
+                        button_response.on_hover_ui(|ui| {
+                            ui.set_max_width(theme.sizes.menu_width);
+                            ui.label(rich_text_tooltip(&ext_file.path.display().to_string(), None, theme));
+                        });
+
+                        // let button_response =
+                        //     button_response.on_hover_text(ext_file.path.display().to_string());
+                        let mut close_button_clicked = false;
+
+                        let size = IconButtonSize::Small;
+
+                        // This is needed to show "x" button
+                        // The idea here is once we hovered over the file button it gives 200ms to hover over "x" button
+                        let current_hover_progress = ctx.animate_value_with_time(
+                            hover_id,
+                            if button_hovered { 1.0 } else { 0.0 },
+                            0.2,
+                        );
+
+                        // Only render the close button if we're hovering or animating
+                        if current_hover_progress > 0.0 {
+                            let close_button =
+                                IconButton::new(AppIcon::Close, theme).size(size).tooltip(
+                                    "Close file",
+                                    command_list
+                                        .find(CommandInstruction::CloseCurrentNote)
+                                        .and_then(|i| i.shortcut),
+                                );
+
+                            let close_response = ui.add(close_button);
+                            // Note that I'm using animate_value_with_time vs bool, due to egui tracks toggle time
+                            // hence the "x" button will work as expected: if hovered is stays hovered
+                            if close_response.hovered() {
+                                ctx.animate_value_with_time(hover_id, 1.0, 0.2);
+                            }
+                            close_button_clicked = close_response.clicked();
+                        }
+                        ui.add_space(theme.sizes.xxs);
+
+                        (button_response, close_button_clicked)
+                    });
+
+                    let (button_response, close_button_clicked) = response.inner;
+                    let group_rect = response.response.rect;
+
+                    // Only process the original button click if close button wasn't clicked
+                    if !close_button_clicked && button_response.clicked() && !is_selected {
                         actions.push(AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
                             note_file: *note_id,
                             via_shortcut: false,
                         }));
                     }
 
+                    // If close button was clicked, add close action
+                    if close_button_clicked {
+                        actions.push(AppAction::CloseExternalFile(*external_id));
+                    }
+
                     if is_selected {
-                        selected_item_rect = Some(button_response.rect);
+                        selected_item_rect = Some(group_rect);
                     }
                 }
             }
@@ -360,6 +431,7 @@ pub fn render_footer_panel(
     command_list: &CommandList,
     ctx: &Context,
     theme: &AppTheme,
+    render_actions: &mut SmallVec<[RenderAction; 2]>,
 ) -> SmallVec<[AppAction; 1]> {
     let mut actions = SmallVec::new();
     let sizes = &theme.sizes;
@@ -398,27 +470,44 @@ pub fn render_footer_panel(
                 // External files picker in horizontal scroll
                 let response = ScrollArea::horizontal()
                     .id_salt("footer_external_files")
-                    .scroll_bar_visibility(
-                        eframe::egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded,
-                    )
+                    .scroll_bar_visibility(ScrollBarVisibility::AlwaysHidden)
                     .show(ui, |ui| {
                         let (actions, rect) = render_external_files_picker(
                             selected,
                             &opened_files,
                             external_files,
                             &layout_params,
+                            command_list,
                             ui,
+                            ctx,
                             theme,
                         );
 
-                        if let Some(item_rect) = rect {
-                            ui.scroll_to_rect(item_rect, Some(eframe::emath::Align::Center));
+                        // Check if we have a scroll action for the selected external file
+                        if let NoteId::ExternalFileId(file_id) = selected {
+                            let should_scroll = render_actions.iter().any(|action| {
+                                matches!(action, RenderAction::ScrollToExternalFile(id) if *id == file_id)
+                            });
+                            
+                            if should_scroll {
+                                if let Some(item_rect) = rect {
+                                    ui.scroll_to_rect(item_rect, Some(eframe::emath::Align::Center));
+                                }
+                            }
                         }
 
                         (actions, rect)
                     });
 
                 let (external_actions, external_rect) = response.inner;
+                
+                // Remove scroll actions for external files after processing
+                if let NoteId::ExternalFileId(file_id) = selected {
+                    render_actions.retain(|action| {
+                        !matches!(action, RenderAction::ScrollToExternalFile(id) if *id == file_id)
+                    });
+                }
+                
                 // Combine actions and determine selected item
                 let mut left_side_actions = default_actions;
                 left_side_actions.extend(external_actions);

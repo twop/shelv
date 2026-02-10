@@ -139,6 +139,7 @@ pub fn render_app(
                 command_list,
                 ctx,
                 &theme,
+                &mut render_actions,
             )
         })
         .inner;
