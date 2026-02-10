@@ -17,7 +17,9 @@ use crate::{
     command::{CommandInstruction, CommandList},
     persistent_state::{ExternalFile, NoteId},
     theme::{AppIcon, AppTheme},
-    ui_components::{apply_icon_btn_styling, get_button_fg_color, rich_text_tooltip, IconButton, IconButtonSize},
+    ui_components::{
+        IconButton, IconButtonSize, apply_icon_btn_styling, get_button_fg_color, rich_text_tooltip,
+    },
 };
 
 // ============================================================================
@@ -266,7 +268,10 @@ fn render_default_notes_picker(
                 let button = IconButton::new(icon, theme)
                     .size(IconButtonSize::Large)
                     .toggled(is_selected)
-                    .tooltip(format!("Shelf {}", index + 1), cmd.and_then(|cmd| cmd.shortcut) );
+                    .tooltip(
+                        format!("Shelf {}", index + 1),
+                        cmd.and_then(|cmd| cmd.shortcut),
+                    );
 
                 let button_response = ui.add(button);
                 if button_response.clicked() && !is_selected {
@@ -348,11 +353,13 @@ fn render_external_files_picker(
                         // Check if the button is hovered
                         let button_hovered = button_response.hovered();
 
-
-                        let button_response =
-                        button_response.on_hover_ui(|ui| {
+                        let button_response = button_response.on_hover_ui(|ui| {
                             ui.set_max_width(theme.sizes.menu_width);
-                            ui.label(rich_text_tooltip(&ext_file.path.display().to_string(), None, theme));
+                            ui.label(rich_text_tooltip(
+                                &ext_file.path.display().to_string(),
+                                None,
+                                theme,
+                            ));
                         });
 
                         // let button_response =
