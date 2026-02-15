@@ -1,4 +1,9 @@
-use eframe::egui::{Color32, KeyboardShortcut, RichText, Stroke, TextWrapMode, Widget, vec2};
+use std::sync::Arc;
+
+use eframe::egui::{
+    Color32, FontId, KeyboardShortcut, RichText, Stroke, TextFormat, TextWrapMode, Widget,
+    WidgetText, text::LayoutJob, vec2,
+};
 use egui_taffy::{AsTuiBuilder, Tui, TuiBuilder, TuiBuilderLogic, TuiInnerResponse, TuiWidget};
 
 use crate::{
@@ -30,18 +35,44 @@ pub fn rich_text_tooltip(
     tooltip_text: &str,
     shortcut: Option<KeyboardShortcut>,
     theme: &AppTheme,
-) -> RichText {
-    RichText::new(match shortcut {
-        Some(shortcut) => {
-            format!(
-                "{} ({})",
-                tooltip_text,
-                format_mac_shortcut_with_symbols(shortcut)
-            )
-        }
-        None => tooltip_text.to_string(),
-    })
-    .color(theme.colors.subtle_text_color)
+) -> WidgetText {
+    match shortcut {
+        Some(shortcut) => WidgetText::LayoutJob(
+            {
+                let mut job = LayoutJob::default();
+
+                let code_font_id = FontId {
+                    size: theme.fonts.size.normal,
+                    family: theme.fonts.family.code.clone(),
+                };
+
+                let normal_font_id = FontId {
+                    size: theme.fonts.size.normal,
+                    family: theme.fonts.family.normal.clone(),
+                };
+
+                job.append(
+                    &format!("{tooltip_text}  "),
+                    0.0,
+                    TextFormat::simple(normal_font_id.clone(), theme.colors.subtle_text_color),
+                );
+
+                job.append(
+                    &format_mac_shortcut_with_symbols(shortcut),
+                    0.0,
+                    TextFormat::simple(normal_font_id, theme.colors.outline_fg),
+                );
+                job
+            }
+            .into(),
+        ),
+
+        None => WidgetText::RichText(
+            RichText::new(tooltip_text.to_string())
+                .color(theme.colors.subtle_text_color)
+                .into(),
+        ),
+    }
 }
 
 pub fn apply_icon_btn_styling(style: &mut eframe::egui::Style) {

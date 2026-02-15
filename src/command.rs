@@ -1,18 +1,14 @@
 use std::{fmt::Debug, ops::Deref};
 
-use eframe::egui::{self, Id, Key, KeyboardShortcut, Modifiers};
+use eframe::egui::{self, Id, Key, KeyboardShortcut, ModifierNames, Modifiers};
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
 use smallvec::SmallVec;
 
 use crate::{
-    app_actions::AppAction,
-    app_state::AppState,
-    byte_span::ByteSpan,
-    effects::text_change_effect::TextChange,
-    scripting::settings_eval::Scripts,
-    settings_parsing::{format_mac_shortcut_with_names, format_mac_shortcut_with_symbols},
-    text_structure::TextStructure,
+    app_actions::AppAction, app_state::AppState, byte_span::ByteSpan,
+    effects::text_change_effect::TextChange, scripting::settings_eval::Scripts,
+    settings_parsing::format_mac_shortcut_with_symbols, text_structure::TextStructure,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -831,6 +827,10 @@ impl CommandList {
             .find(|c| c.instruction == cmd)
     }
 
+    pub fn shortcut_for(&self, cmd: CommandInstruction) -> Option<KeyboardShortcut> {
+        self.find(cmd).and_then(|c| c.shortcut)
+    }
+
     pub fn add_editor_cmd(&mut self, cmd: CommandInstance) {
         if let Some(shortcut) = cmd.shortcut {
             if let Some(existing_pos) = self
@@ -939,7 +939,6 @@ pub fn create_ai_keybindings_documentation(cmd_list: &CommandList) -> String {
             }),
                 KeyboardBinding::FrameBinding(_frame_hotkey) => None,
             }
-            
         })
         .map(|(shortcut, kdl_block, instruction, slash_cmd)| {
             let text = format!(
@@ -968,6 +967,16 @@ pub fn create_ai_keybindings_documentation(cmd_list: &CommandList) -> String {
 
     current_commands_help
 }
+
+fn format_mac_shortcut_with_names(shortcut: KeyboardShortcut) -> String {
+    const SPACED_NAMES: ModifierNames = ModifierNames {
+        concat: " ",
+        ..ModifierNames::NAMES
+    };
+
+    shortcut.format(&SPACED_NAMES, true)
+}
+
 #[test]
 fn test_keybindings_documentation_generation() {
     use eframe::egui::{Key, Modifiers};

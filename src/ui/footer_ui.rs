@@ -225,17 +225,8 @@ fn render_default_notes_picker(
             .size(IconButtonSize::Large)
             .toggled(is_settings_selected)
             .tooltip(
-                {
-                    let tooltip_text = "Settings";
-                    command_list
-                        .find(CommandInstruction::SwitchToSettings)
-                        .and_then(|cmd| cmd.shortcut)
-                        .map(|shortcut| {
-                            format!("{} {}", tooltip_text, ctx.format_shortcut(&shortcut))
-                        })
-                        .unwrap_or_else(|| tooltip_text.to_string())
-                },
-                None,
+                "Settings",
+                command_list.shortcut_for(CommandInstruction::SwitchToSettings),
             );
 
         let settings_response = ui.add(settings_button);
@@ -256,7 +247,6 @@ fn render_default_notes_picker(
             if let NoteId::Note(index) = note_id {
                 let index = *index;
                 let is_selected = selected == *note_id;
-                let cmd = command_list.find(CommandInstruction::SwitchToNote(index as u8));
                 let icon = match index {
                     0 => AppIcon::One,
                     1 => AppIcon::Two,
@@ -270,7 +260,7 @@ fn render_default_notes_picker(
                     .toggled(is_selected)
                     .tooltip(
                         format!("Shelf {}", index + 1),
-                        cmd.and_then(|cmd| cmd.shortcut),
+                        command_list.shortcut_for(CommandInstruction::SwitchToNote(index as u8)),
                     );
 
                 let button_response = ui.add(button);
@@ -381,9 +371,7 @@ fn render_external_files_picker(
                             let close_button =
                                 IconButton::new(AppIcon::Close, theme).size(size).tooltip(
                                     "Close file",
-                                    command_list
-                                        .find(CommandInstruction::CloseCurrentNote)
-                                        .and_then(|i| i.shortcut),
+                                    command_list.shortcut_for(CommandInstruction::CloseCurrentNote),
                                 );
 
                             let close_response = ui.add(close_button);
@@ -495,7 +483,7 @@ pub fn render_footer_panel(
                             let should_scroll = render_actions.iter().any(|action| {
                                 matches!(action, RenderAction::ScrollToExternalFile(id) if *id == file_id)
                             });
-                            
+
                             if should_scroll {
                                 if let Some(item_rect) = rect {
                                     ui.scroll_to_rect(item_rect, Some(eframe::emath::Align::Center));
@@ -507,14 +495,14 @@ pub fn render_footer_panel(
                     });
 
                 let (external_actions, external_rect) = response.inner;
-                
+
                 // Remove scroll actions for external files after processing
                 if let NoteId::ExternalFileId(file_id) = selected {
                     render_actions.retain(|action| {
                         !matches!(action, RenderAction::ScrollToExternalFile(id) if *id == file_id)
                     });
                 }
-                
+
                 // Combine actions and determine selected item
                 let mut left_side_actions = default_actions;
                 left_side_actions.extend(external_actions);
@@ -542,8 +530,7 @@ pub fn render_footer_panel(
                             .tooltip(
                                 "Open file",
                                 command_list
-                                    .find(CommandInstruction::OpenFileDialog)
-                                    .and_then(|cmd| cmd.shortcut),
+                                   .shortcut_for(CommandInstruction::OpenFileDialog)
                             ),
                     )
                     .clicked()
@@ -560,7 +547,7 @@ pub fn render_footer_panel(
                 // Show stepper buttons if there are multiple external files
                 if external_file_count > 1 {
                     ui.add_space(sizes.xs);
-                      
+
                     if ui
                         .add(
                             IconButton::new(AppIcon::ChevronRight, theme)
@@ -568,8 +555,7 @@ pub fn render_footer_panel(
                                 .tooltip(
                                     "Next Note",
                                     command_list
-                                        .find(CommandInstruction::SwitchToNextNote)
-                                        .and_then(|cmd| cmd.shortcut),
+                                        .shortcut_for(CommandInstruction::SwitchToNextNote)
                                 ),
                         )
                         .clicked()
@@ -585,8 +571,7 @@ pub fn render_footer_panel(
                                 .tooltip(
                                     "Previous Note",
                                     command_list
-                                        .find(CommandInstruction::SwitchToPrevNote)
-                                        .and_then(|cmd| cmd.shortcut),
+                                        .shortcut_for(CommandInstruction::SwitchToPrevNote)
                                 ),
                         )
                         .clicked()

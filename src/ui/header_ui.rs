@@ -186,9 +186,7 @@ pub fn render_header_panel(
                                     } else {
                                         "Pin window"
                                     },
-                                    command_list
-                                        .find(CommandInstruction::PinWindow)
-                                        .and_then(|cmd| cmd.shortcut),
+                                    command_list.shortcut_for(CommandInstruction::PinWindow),
                                 ),
                         )
                         .clicked()

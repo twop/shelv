@@ -1375,7 +1375,7 @@ fn render_slash_cmd(
 
     let shortcut_font = TextFormat::simple(
         FontId::new(theme.fonts.size.small, theme.fonts.family.italic.clone()),
-        theme.colors.subtle_text_color,
+        theme.colors.outline_fg,
     );
 
     let description_font = TextFormat::simple(
