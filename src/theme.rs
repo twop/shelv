@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use eframe::{
     egui::{
-        self, FontDefinitions, Margin, RichText, TextStyle, ThemePreference, Vec2, Visuals,
-        WidgetText,
+        self, FontDefinitions, FontTweak, Margin, RichText, TextStyle, ThemePreference, Vec2,
+        Visuals, WidgetText,
         style::{NumericColorSpace, Selection, TextCursorStyle, WidgetVisuals, Widgets},
         vec2,
     },
@@ -82,7 +82,7 @@ impl AppIcon {
             "  ",
             0.0,
             TextFormat {
-                font_id: FontId::new(text_size, FontFamily::Name("inter".into())),
+                font_id: FontId::new(text_size, FontFamily::Proportional),
                 valign: egui::Align::Center,
                 color,
                 ..Default::default()
@@ -94,7 +94,7 @@ impl AppIcon {
             text,
             0.0,
             TextFormat {
-                font_id: FontId::new(text_size, FontFamily::Name("inter".into())),
+                font_id: FontId::new(text_size, FontFamily::Proportional),
                 valign: egui::Align::Center,
                 color,
                 ..Default::default()
@@ -131,7 +131,7 @@ impl AppIcon {
             "  ",
             0.0,
             TextFormat {
-                font_id: FontId::new(size, FontFamily::Name("inter".into())),
+                font_id: FontId::new(size, FontFamily::Proportional),
                 valign: egui::Align::Center,
                 color: Color32::default(),
                 ..Default::default()
@@ -143,7 +143,7 @@ impl AppIcon {
             text,
             0.0,
             TextFormat {
-                font_id: FontId::new(size, FontFamily::Name("inter".into())),
+                font_id: FontId::new(size, FontFamily::Proportional),
                 valign: egui::Align::Center,
                 color: text_color,
                 ..Default::default()
@@ -295,7 +295,7 @@ pub struct FontFamilies {
 impl FontFamilies {
     pub fn new() -> Self {
         Self {
-            normal: FontFamily::Name("inter".into()),
+            normal: FontFamily::Proportional,
             italic: FontFamily::Name("inter-italic".into()),
             bold: FontFamily::Name("inter-bold".into()),
             extra_bold: FontFamily::Name("inter-extra-bold".into()),
@@ -495,12 +495,7 @@ pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
 
 pub fn get_font_definitions() -> FontDefinitions {
     // Start with the default fonts (we will be adding to them rather than replacing them).
-    let mut fonts = FontDefinitions::default();
-
-    fonts.font_data.insert(
-        "phosphor".into(),
-        egui_phosphor::Variant::Light.font_data().into(),
-    );
+    let mut fonts = FontDefinitions::empty();
 
     fonts.font_data.insert(
         "phosphor".into(),
@@ -556,19 +551,51 @@ pub fn get_font_definitions() -> FontDefinitions {
         .into(),
     );
 
-    // Put my font first (highest priority) for proportional text:
-    fonts
-        .families
-        .entry(FontFamily::Proportional)
-        .or_default()
-        .insert(0, "inter".to_owned());
+    // http://jslegers.github.io/emoji-icon-font/
+    fonts.font_data.insert(
+        "emoji-icon-font".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/emoji-icon-font.ttf"))
+            .tweak(FontTweak {
+                scale: 0.90, // Make smaller
+                ..Default::default()
+            })
+            .into(),
+    );
 
-    // Put my font as last fallback for monospace:
-    fonts
-        .families
-        .entry(egui::FontFamily::Monospace)
-        .or_default()
-        .push("jetbrains-mono".to_owned());
+    // // Put my font first (highest priority) for proportional text:
+    // fonts
+    //     .families
+    //     .entry(FontFamily::Proportional)
+    //     .or_default()
+    //     .insert(0, "inter".to_owned());
+
+    // // Put my font as last fallback for monospace:
+    // fonts
+    //     .families
+    //     .entry(egui::FontFamily::Monospace)
+    //     .or_default()
+    //     .push("jetbrains-mono".to_owned());
+
+    fonts.families.insert(
+        FontFamily::Monospace,
+        vec![
+            "jetbrains-mono".to_owned(),
+            "emoji-icon-font".to_owned(),
+            "inter".to_owned(),
+            // "Ubuntu-Light".to_owned(), // fallback for √ etc
+            // "NotoEmoji-Regular".to_owned(),
+            // "emoji-icon-font".to_owned(),
+        ],
+    );
+
+    fonts.families.insert(
+        FontFamily::Proportional,
+        vec![
+            "inter".to_owned(),
+            "jetbrains-mono".to_owned(),
+            "emoji-icon-font".to_owned(),
+        ],
+    );
 
     fonts
         .families
@@ -605,6 +632,8 @@ pub fn get_font_definitions() -> FontDefinitions {
         .entry(egui::FontFamily::Name("inter-bold-italic".into()))
         .or_default()
         .push("inter-bold-italic".to_owned());
+
+    println!("______________ fonts.families\n\n{:#?}", fonts.families);
 
     // Tell egui to use these fonts:
     fonts

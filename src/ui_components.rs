@@ -41,11 +41,6 @@ pub fn rich_text_tooltip(
             {
                 let mut job = LayoutJob::default();
 
-                let code_font_id = FontId {
-                    size: theme.fonts.size.normal,
-                    family: theme.fonts.family.code.clone(),
-                };
-
                 let normal_font_id = FontId {
                     size: theme.fonts.size.normal,
                     family: theme.fonts.family.normal.clone(),
