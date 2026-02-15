@@ -559,6 +559,8 @@ pub fn render_footer_panel(
 
                 // Show stepper buttons if there are multiple external files
                 if external_file_count > 1 {
+                    ui.add_space(sizes.xs);
+                      
                     if ui
                         .add(
                             IconButton::new(AppIcon::ChevronRight, theme)
@@ -594,11 +596,7 @@ pub fn render_footer_panel(
                         )));
                     }
 
-                    // // Separator
-                    // ui.label(
-                    //     AppIcon::VerticalSeparator
-                    //         .render(sizes.toolbar_icon, theme.colors.outline_fg),
-                    // );
+                    ui.add_space(sizes.xs);
                 }
 
                 // Separator

@@ -10,7 +10,7 @@ use eframe::{
         text_selection::text_cursor_state::cursor_rect,
     },
     emath::{self, Align, Align2},
-    epaint::{Color32, FontId, Rect, Stroke, pos2, vec2},
+    epaint::{Color32, FontId, Rect, Stroke, StrokeKind, pos2, vec2},
 };
 use egui_taffy::{
     TuiBuilderLogic,
@@ -145,16 +145,31 @@ pub fn render_app(
         .inner;
     output_actions.extend(footer_actions);
 
-    let header_actions = render_header_panel(
-        ctx,
-        theme,
-        command_list,
-        selected_note,
-        is_window_pinned,
-        feedback.as_ref().map(|f| f.is_sent).unwrap_or(false),
-        version_state,
-        dev_tools_show,
-    );
+    let header_actions = TopBottomPanel::top("header")
+        .show_separator_line(false)
+        .frame(
+            Frame::new()
+                .inner_margin(Vec2::new(theme.sizes.s, 0.))
+                .fill(theme.colors.main_bg),
+        )
+        .show(ctx, |ui| {
+            // ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            ui.set_height(theme.sizes.header_footer_height);
+
+            render_header_panel(
+                ui,
+                ctx,
+                theme,
+                command_list,
+                selected_note,
+                is_window_pinned,
+                feedback.as_ref().map(|f| f.is_sent).unwrap_or(false),
+                version_state,
+                dev_tools_show,
+            )
+        })
+        .inner;
+
     output_actions.extend(header_actions);
 
     restore_cursor_from_note_state(&editor_text, byte_cursor, ctx, text_edit_id);
@@ -1455,13 +1470,38 @@ fn restore_cursor_from_note_state(
 }
 
 pub fn draw_debug_rect(ui: &Ui, color: Color32) {
-    ui.painter().debug_rect(
-        Rect::from_center_size(
-            ui.available_rect_before_wrap().center(),
-            ui.available_size(),
-        ),
-        color,
+    let rect = Rect::from_center_size(
+        ui.available_rect_before_wrap().center(),
+        ui.available_size(),
+    );
+
+    let painter = ui.painter();
+
+    // Draw the rectangle outline
+    painter.rect_stroke(rect, 0.0, Stroke::new(1.0, color), StrokeKind::Outside);
+
+    // Draw center lines (horizontal and vertical)
+    let center = rect.center();
+
+    // Horizontal center line
+    painter.line_segment(
+        [pos2(rect.left(), center.y), pos2(rect.right(), center.y)],
+        Stroke::new(1.0, color),
+    );
+
+    // Vertical center line
+    painter.line_segment(
+        [pos2(center.x, rect.top()), pos2(center.x, rect.bottom())],
+        Stroke::new(1.0, color),
+    );
+
+    // Draw text centered in the rectangle
+    painter.text(
+        center,
+        Align2::CENTER_CENTER,
         format!("r={:?}", ui.available_rect_before_wrap()),
+        FontId::proportional(8.0),
+        color,
     );
 }
 
