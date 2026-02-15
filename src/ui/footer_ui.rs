@@ -18,103 +18,10 @@ use crate::{
     persistent_state::{ExternalFile, NoteId},
     theme::{AppIcon, AppTheme},
     ui_components::{
-        IconButton, IconButtonSize, apply_icon_btn_styling, get_button_fg_color, rich_text_tooltip,
+        FilenameCapConfig, IconButton, IconButtonSize, apply_icon_btn_styling, get_button_fg_color,
+        rich_text_tooltip, truncate_filename,
     },
 };
-
-// ============================================================================
-// Filename truncation
-// ============================================================================
-
-/// Configuration for truncating long filenames
-#[derive(Debug, Clone, Copy)]
-pub struct FilenameCapConfig {
-    /// Maximum total characters allowed
-    pub max_chars: usize,
-    /// Number of characters to preserve from the beginning (before ..)
-    pub offset_from_beginning: usize,
-}
-
-impl Default for FilenameCapConfig {
-    fn default() -> Self {
-        Self {
-            max_chars: 20,
-            offset_from_beginning: 4,
-        }
-    }
-}
-
-/// Truncates a filename to a maximum length while preserving the extension.
-///
-/// Examples:
-/// - `too_very_long.md` -> `too_..long.md` (with offset=4, max=15)
-/// - `short.md` -> `short.md` (no truncation needed)
-/// - `no_extension` -> `no_e..ion_here` (no extension to preserve)
-fn truncate_filename(filename: &str, config: FilenameCapConfig) -> String {
-    let FilenameCapConfig {
-        max_chars,
-        offset_from_beginning,
-    } = config;
-
-    if filename.len() <= max_chars {
-        return filename.to_string();
-    }
-
-    let separator = "..";
-
-    // Find the last dot to identify extension
-    if let Some(dot_pos) = filename.rfind('.') {
-        let name = &filename[..dot_pos];
-        let ext = &filename[dot_pos..]; // includes the dot
-
-        // Check if extension is too long to preserve
-        let min_required = offset_from_beginning + separator.len() + ext.len();
-
-        if min_required > max_chars {
-            // Extension is too long, truncate without preserving it
-            let end_chars = max_chars.saturating_sub(offset_from_beginning + separator.len());
-            let start = &filename[..offset_from_beginning.min(filename.len())];
-            let end = if end_chars > 0 && filename.len() > offset_from_beginning + separator.len() {
-                &filename[filename.len().saturating_sub(end_chars)..]
-            } else {
-                ""
-            };
-            format!("{}{}{}", start, separator, end)
-        } else {
-            // We can preserve the extension
-            // Calculate how many chars we have left for the name (excluding separator and extension)
-            let available_for_name = max_chars.saturating_sub(separator.len() + ext.len());
-
-            // Start takes offset_from_beginning chars, but not more than available
-            let start_len = offset_from_beginning
-                .min(available_for_name)
-                .min(name.len());
-
-            // End takes the remaining available chars from the end of the name
-            let end_len = available_for_name.saturating_sub(start_len);
-
-            let start = &name[..start_len];
-            let end = if end_len > 0 && name.len() > start_len {
-                let end_start_pos = name.len().saturating_sub(end_len);
-                &name[end_start_pos..]
-            } else {
-                ""
-            };
-
-            format!("{}{}{}{}", start, separator, end, ext)
-        }
-    } else {
-        // No extension found
-        let end_chars = max_chars.saturating_sub(offset_from_beginning + separator.len());
-        let start = &filename[..offset_from_beginning.min(filename.len())];
-        let end = if end_chars > 0 && filename.len() > offset_from_beginning + separator.len() {
-            &filename[filename.len().saturating_sub(end_chars)..]
-        } else {
-            ""
-        };
-        format!("{}{}{}", start, separator, end)
-    }
-}
 
 // ============================================================================
 // Picker structures and functions
@@ -312,8 +219,6 @@ fn render_external_files_picker(
                         .map(|name| name.to_string_lossy().to_string())
                         .unwrap_or_else(|| external_id.to_6_digit_smol_str().to_string());
 
-                    let display_name = truncate_filename(&filename, FilenameCapConfig::default());
-
                     // Create unique ID for this external file's hover animation
                     let hover_id = ui.id().with("external_file_hover").with(*external_id);
 
@@ -326,12 +231,15 @@ fn render_external_files_picker(
                         let button_response = {
                             ui.add(
                                 Button::new(
-                                    RichText::new(display_name)
-                                        .font(FontId::new(
-                                            theme.fonts.size.normal,
-                                            FontFamily::Proportional,
-                                        ))
-                                        .color(get_button_fg_color(is_selected, theme, None)),
+                                    RichText::new(truncate_filename(
+                                        &filename,
+                                        FilenameCapConfig::default(),
+                                    ))
+                                    .font(FontId::new(
+                                        theme.fonts.size.normal,
+                                        FontFamily::Proportional,
+                                    ))
+                                    .color(get_button_fg_color(is_selected, theme, None)),
                                 )
                                 .min_size(Vec2::splat(
                                     IconButtonSize::Large.get_icon_font_size(theme)

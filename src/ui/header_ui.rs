@@ -8,9 +8,11 @@ use crate::{
     app_actions::AppAction,
     app_state::VersionState,
     command::{CommandInstruction, CommandList},
-    persistent_state::NoteId,
+    persistent_state::{ExternalFile, NoteId},
     theme::{AppIcon, AppTheme},
-    ui_components::{IconButton, IconButtonSize, apply_icon_btn_styling},
+    ui_components::{
+        FilenameCapConfig, IconButton, IconButtonSize, apply_icon_btn_styling, truncate_filename,
+    },
 };
 
 pub fn render_header_panel(
@@ -19,6 +21,7 @@ pub fn render_header_panel(
     theme: &AppTheme,
     command_list: &CommandList,
     selected_note: NoteId,
+    external_files: &[ExternalFile],
     is_window_pinned: bool,
     feedback_sent: bool,
     version_state: &VersionState,
@@ -70,8 +73,22 @@ pub fn render_header_panel(
                             match selected_note {
                                 NoteId::Note(index) => format!("note {}", index + 1),
                                 NoteId::Settings => "settings".to_string(),
-                                NoteId::ExternalFileId(external_file_id) =>
-                                    format!("TODO: external {:?}", external_file_id),
+                                NoteId::ExternalFileId(external_file_id) => {
+                                    if let Some(ext_file) =
+                                        external_files.iter().find(|ef| ef.id == external_file_id)
+                                    {
+                                        let filename = ext_file
+                                            .path
+                                            .file_name()
+                                            .map(|name| name.to_string_lossy().to_string())
+                                            .unwrap_or_else(|| {
+                                                external_file_id.to_6_digit_smol_str().to_string()
+                                            });
+                                        truncate_filename(&filename, FilenameCapConfig::default())
+                                    } else {
+                                        external_file_id.to_6_digit_smol_str().to_string()
+                                    }
+                                }
                             }
                         ))
                         .color(theme.colors.subtle_text_color)

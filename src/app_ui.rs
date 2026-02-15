@@ -162,6 +162,7 @@ pub fn render_app(
                 theme,
                 command_list,
                 selected_note,
+                external_files,
                 is_window_pinned,
                 feedback.as_ref().map(|f| f.is_sent).unwrap_or(false),
                 version_state,
