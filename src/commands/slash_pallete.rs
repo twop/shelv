@@ -4,8 +4,8 @@ use crate::{
     app_actions::{AppAction, SlashPaletteAction},
     app_state::SlashPalette,
     command::{
-        AppFocus, AppFocusState, CommandContext, EditorCommandOutput, TextCommandContext,
-        try_extract_text_command_context,
+        try_extract_text_command_context, AppFocus, AppFocusState, CommandContext,
+        EditorCommandOutput, TextCommandContext,
     },
     text_structure::{SpanKind, SpanMeta},
 };
@@ -37,7 +37,7 @@ pub fn show_slash_pallete(
             //     should_trigger_eval: false,
             // },
             AppAction::SlashPalette(SlashPaletteAction::Show(SlashPalette {
-                note_file: app_state.selected_note,
+                note_file: app_state.notes.selected_note,
                 // TODO verify + 1 thing, seems sketchy
                 // it relies that this will be done before rendering
                 slash_byte_pos: byte_cursor.start,

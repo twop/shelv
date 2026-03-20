@@ -1,21 +1,21 @@
 use eframe::{
     egui::{
-        self, Context, CursorIcon, FontFamily, FontSelection, Frame, Id, Key, KeyboardShortcut,
-        Label, Layout, Margin, Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense,
-        Spacing, TextEdit, TextFormat, TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder,
-        UiKind, UiStackInfo, Vec2, WidgetText,
+        self,
         scroll_area::ScrollBarVisibility,
         text::{CCursor, CCursorRange},
         text_edit::TextEditOutput,
         text_selection::text_cursor_state::cursor_rect,
+        Context, CursorIcon, FontFamily, FontSelection, Frame, Id, Key, KeyboardShortcut, Label,
+        Layout, Margin, Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense, Spacing,
+        TextEdit, TextFormat, TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder, UiKind,
+        UiStackInfo, Vec2, WidgetText,
     },
     emath::{self, Align, Align2},
-    epaint::{Color32, FontId, Rect, Stroke, StrokeKind, pos2, vec2},
+    epaint::{pos2, vec2, Color32, FontId, Rect, Stroke, StrokeKind},
 };
 use egui_taffy::{
-    TuiBuilderLogic,
     taffy::{AlignContent, AlignItems, FlexDirection, FlexboxItemStyle, JustifyContent},
-    tui,
+    tui, TuiBuilderLogic,
 };
 use itertools::Itertools;
 use pulldown_cmark::CowStr;
@@ -39,28 +39,28 @@ use crate::{
     byte_span::UnOrderedByteSpan,
     command::{
         CommandContext, CommandInstruction, CommandList, EditorCommandOutput, FrameHotkey,
-        FrameHotkeys, PROMOTED_COMMANDS, SlashPaletteCmd,
+        FrameHotkeys, SlashPaletteCmd, PROMOTED_COMMANDS,
     },
     commands::inline_llm_prompt::compute_inline_prompt_text_input_id,
     effects::text_change_effect::TextChange,
     feedback::{Feedback, FeedbackResult},
     persistent_state::{ExternalFile, NoteId},
     settings_parsing::format_mac_shortcut_with_symbols,
-    taffy_styles::{StyleBuilder, flex_column, flex_row},
+    taffy_styles::{flex_column, flex_row, StyleBuilder},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
     ui::{
-        NotificationId, Notifications, footer_ui::render_footer_panel,
-        header_ui::render_header_panel, notifications::NotificationItem,
+        footer_ui::render_footer_panel, header_ui::render_header_panel,
+        notifications::NotificationItem, NotificationId, Notifications,
     },
-    ui_components::{IconButton, IconButtonSize, apply_icon_btn_styling, rich_text_tooltip},
+    ui_components::{apply_icon_btn_styling, rich_text_tooltip, IconButton, IconButtonSize},
 };
 
 pub struct AppRenderData<'a> {
     //---- for footer panel ----
     pub selected_note: NoteId,
     pub opened_files: SmallVec<[NoteId; 8]>,
-    pub external_files: &'a [crate::persistent_state::ExternalFile],
+    pub external_files: Vec<crate::persistent_state::ExternalFile>,
     //---- end of footer panel ----
     pub code_block_annotations: &'a [(SpanIndex, CodeBlockAnnotation)],
     pub text_edit_id: Id,
@@ -98,8 +98,9 @@ pub fn render_app(
 ) -> RenderAppResult {
     let AppRenderData {
         selected_note,
-        text_edit_id,
+        opened_files,
         external_files,
+        text_edit_id,
         byte_cursor,
         command_list,
         computed_layout,
@@ -116,7 +117,6 @@ pub fn render_app(
         version_state,
         dev_tools_show,
         notifications,
-        opened_files,
     } = visual_state;
 
     let mut output_actions: SmallVec<[AppAction; 4]> = Default::default();
@@ -135,7 +135,7 @@ pub fn render_app(
                 ui,
                 selected_note,
                 opened_files,
-                external_files,
+                &external_files,
                 command_list,
                 ctx,
                 &theme,
@@ -162,7 +162,7 @@ pub fn render_app(
                 theme,
                 command_list,
                 selected_note,
-                external_files,
+                &external_files,
                 is_window_pinned,
                 feedback.as_ref().map(|f| f.is_sent).unwrap_or(false),
                 version_state,

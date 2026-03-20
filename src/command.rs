@@ -425,8 +425,8 @@ impl CommandInstruction {
     }
 
     pub fn default_keybinding(&self) -> Option<eframe::egui::KeyboardShortcut> {
-        use CommandInstruction as C;
         use eframe::egui::{Key, Modifiers};
+        use CommandInstruction as C;
         let shortcut = |mods, key| Some(KeyboardShortcut::new(mods, key));
         match self {
             C::ExpandTaskMarker => shortcut(Modifiers::NONE, Key::Space),
@@ -898,7 +898,7 @@ pub fn call_with_text_ctx(
     f(text_command_context)
         .map(|changes| {
             SmallVec::from([AppAction::apply_text_changes(
-                app_state.selected_note,
+                app_state.notes.selected_note,
                 changes,
             )])
         })
@@ -906,7 +906,7 @@ pub fn call_with_text_ctx(
 }
 
 pub fn try_extract_text_command_context(app_state: &AppState) -> Option<TextCommandContext<'_>> {
-    let note = app_state.notes.get(&app_state.selected_note).unwrap();
+    let note = app_state.notes.get(&app_state.notes.selected_note).unwrap();
 
     let cursor = note.cursor().or(note.last_cursor())?;
 

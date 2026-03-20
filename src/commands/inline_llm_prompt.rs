@@ -3,7 +3,7 @@ use eframe::egui::Id;
 use crate::{
     app_actions::AppAction,
     app_state::{NoteSignature, TextSelectionAddress},
-    command::{CommandContext, EditorCommandOutput, try_extract_text_command_context},
+    command::{try_extract_text_command_context, CommandContext, EditorCommandOutput},
 };
 
 pub fn inline_llm_prompt_command_handler(
@@ -15,7 +15,7 @@ pub fn inline_llm_prompt_command_handler(
         [AppAction::ShowPrompt(TextSelectionAddress {
             span: text_command_ctx.byte_cursor,
             note_version: NoteSignature::new(
-                app_state.selected_note,
+                app_state.notes.selected_note,
                 text_command_ctx.text_structure.opaque_version(),
             ),
         })]

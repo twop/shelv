@@ -57,6 +57,7 @@ mod egui_hotkey;
 mod feedback;
 // mod knus_test;
 mod nord;
+mod opened_notes;
 mod persistent_state;
 mod scripting;
 mod settings_parsing;
@@ -331,7 +332,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
         let app_state = &mut self.state;
 
-        let selected_note_file = app_state.selected_note;
+        let selected_note_file = app_state.notes.selected_note;
 
         let text_edit_id = compute_editor_text_id(selected_note_file);
 
@@ -389,9 +390,9 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
         // Note that it will consume the input event, so essentially WordJump acts as a modal
         if let Some(word_jump_state) = &app_state.word_jump_state {
-            let note = app_state.notes.get(&app_state.selected_note).unwrap();
+            let note = app_state.notes.get(&app_state.notes.selected_note).unwrap();
             let current_note_signature = NoteSignature::new(
-                app_state.selected_note,
+                app_state.notes.selected_note,
                 (&note.derived_state.structure).opaque_version(),
             );
 
@@ -536,7 +537,8 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             }
         }
 
-        let note = app_state.notes.get_mut(&app_state.selected_note).unwrap();
+        let selected_note_id = app_state.notes.selected_note;
+        let note = app_state.notes.get_mut(&selected_note_id).unwrap();
         let text_structure = std::mem::take(&mut note.derived_state.structure);
         let cursor = note.cursor().or(note.last_cursor());
 
@@ -558,17 +560,18 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             app_state.prev_focused = is_frame_actually_focused;
         }
 
+        let selected_note_id = app_state.notes.selected_note;
         let opened_files = SmallVec::from_iter(app_state.notes.keys().cloned());
-        let edited_note = app_state.notes.get_mut(&app_state.selected_note).unwrap();
+        let edited_note = app_state.notes.get_mut(&selected_note_id).unwrap();
 
         let editor_text = &mut edited_note.text;
         let code_block_annotations = &mut edited_note.derived_state.code_block_annotations;
 
         let vis_state = AppRenderData {
-            selected_note: app_state.selected_note,
+            selected_note: selected_note_id,
             opened_files,
+            external_files,
             is_window_pinned: app_state.is_pinned,
-            external_files: &app_state.external_files,
             text_edit_id,
             command_list: &app_state.commands,
             byte_cursor: cursor,
@@ -605,13 +608,15 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
 
         if text_changed {
             println!("----note changed during render");
-            app_state
-                .add_unsaved_change(UnsavedChange::NoteContentChanged(app_state.selected_note));
+            app_state.add_unsaved_change(UnsavedChange::NoteContentChanged(
+                app_state.notes.selected_note,
+            ));
         }
 
         // TODO it seems that this can be done inside process_app_action
         app_state.computed_layout = updated_layout;
-        let note = app_state.notes.get_mut(&app_state.selected_note).unwrap();
+        let selected_note_id = app_state.notes.selected_note;
+        let note = app_state.notes.get_mut(&selected_note_id).unwrap();
         note.derived_state.structure = updated_structure;
         match byte_cursor {
             Some(cursor) => {

@@ -6,8 +6,8 @@ use std::{
 };
 
 use boa_engine::{
-    Context, JsError, JsNativeError, JsString, JsValue, Module, builtins::promise::PromiseState,
-    js_string, module::SimpleModuleLoader,
+    builtins::promise::PromiseState, js_string, module::SimpleModuleLoader, Context, JsError,
+    JsNativeError, JsString, JsValue, Module,
 };
 use boa_parser::Source;
 use smallvec::SmallVec;
@@ -15,7 +15,7 @@ use smallvec::SmallVec;
 use crate::{
     app_actions::AppAction,
     byte_span::ByteSpan,
-    command::{CommandContext, TextCommandContext, TextSource, try_extract_text_command_context},
+    command::{try_extract_text_command_context, CommandContext, TextCommandContext, TextSource},
     effects::text_change_effect::TextChange,
     scripting::settings_eval::{ScriptExportType, Scripts},
 };
@@ -36,7 +36,7 @@ pub fn call_replace_text(
     run_insert_text_cmd(text, byte_cursor, scripts, text_source)
         .map(|changes| {
             SmallVec::from([AppAction::apply_text_changes(
-                app_state.selected_note,
+                app_state.notes.selected_note,
                 changes,
             )])
         })

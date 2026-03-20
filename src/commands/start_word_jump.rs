@@ -1,7 +1,7 @@
 use crate::{
     app_actions::{AppAction, WordJumpAction},
     app_state::NoteSignature,
-    command::{CommandContext, EditorCommandOutput, try_extract_text_command_context},
+    command::{try_extract_text_command_context, CommandContext, EditorCommandOutput},
 };
 
 pub fn start_jump_list_command_handler(
@@ -13,7 +13,7 @@ pub fn start_jump_list_command_handler(
         [AppAction::WordJump(WordJumpAction::SwitchToJumpingMode(
             text_command_ctx.byte_cursor,
             NoteSignature::new(
-                app_state.selected_note,
+                app_state.notes.selected_note,
                 text_command_ctx.text_structure.opaque_version(),
             ),
         ))]

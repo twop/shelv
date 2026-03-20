@@ -16,7 +16,7 @@ pub fn open_external_file(
     app_io: &mut impl AppIO,
 ) -> SmallVec<[AppAction; 1]> {
     // Check if this file is already open
-    let already_open = state.external_files.iter().find(|f| f.path == path);
+    let already_open = state.notes.external_files.iter().find(|f| f.path == path);
 
     if let Some(existing_file) = already_open {
         // File is already open, just switch to it
@@ -42,7 +42,7 @@ pub fn open_external_file(
                 // FIXME show a notification that failed was failed to be watched
                 let _ = app_io.watch_external_file(&external_file);
 
-                state.external_files.push(external_file);
+                state.notes.external_files.push(external_file);
 
                 // Create a note for this external file
                 let derived_state = NoteDerivedState::new_from(&content);
@@ -74,16 +74,12 @@ pub fn close_external_file(
 ) -> SmallVec<[AppAction; 1]> {
     let note_id = NoteId::ExternalFileId(file_id);
 
-    // Remove the note from the notes map
-    state.notes.remove(&note_id);
-
-    // Remove from external files list
-    state.external_files.retain(|f| f.id != file_id);
+    state.notes.remove(note_id);
 
     let _ = app_io.unwatch_external_file(file_id);
 
     // If this was the selected note, switch to the first note
-    if state.selected_note == note_id {
+    if state.notes.selected_note == note_id {
         SmallVec::from([AppAction::SwitchToNote(SwitchToNoteTarget::TargetNote {
             note_file: NoteId::Note(0),
             via_shortcut: true,

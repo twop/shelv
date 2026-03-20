@@ -1,14 +1,13 @@
 use std::{
-    collections::BTreeMap,
     hash::{Hash, Hasher},
     path::PathBuf,
-    sync::{Arc, mpsc::Receiver},
+    sync::{mpsc::Receiver, Arc},
 };
 
 use eframe::{
     egui::{
-        Color32, Id, Rect, Ui,
         text::{CCursor, LayoutJob},
+        Color32, Id, Rect, Ui,
     },
     epaint::Galley,
 };
@@ -24,8 +23,8 @@ use crate::{
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
-        AppFocusState, CommandContext, CommandInstruction, CommandList, EditorCommandOutput,
-        SlashPaletteCmd, UiState, UiStateAttribute, call_with_text_ctx,
+        call_with_text_ctx, AppFocusState, CommandContext, CommandInstruction, CommandList,
+        EditorCommandOutput, SlashPaletteCmd, UiState, UiStateAttribute,
     },
     commands::{
         enter_in_list::on_enter_inside_list_item,
@@ -42,6 +41,7 @@ use crate::{
     },
     dev_tools::DevToolsState,
     feedback::FeedbackData,
+    opened_notes::OpenNotes,
     persistent_state::{
         DataToSave, ExternalFile, ExternalFileId, FileAddress, LoadKind, NoteId, RestoredData,
     },
@@ -253,15 +253,13 @@ pub struct SlashPalette {
 
 pub struct AppState {
     // -----this is persistent model-------
-    pub notes: BTreeMap<NoteId, Note>,
-    pub selected_note: NoteId,
+    pub notes: OpenNotes,
     // ------------------------------------
     // -------- emphemeral state ----------
     pub last_saved: u128,
     unsaved_changes: SmallVec<[UnsavedChange; 2]>,
     pub scheduled_script_run_version: Option<u64>,
     // ------------------------------------
-    pub external_files: Vec<ExternalFile>,
     pub is_pinned: bool,
 
     pub theme: AppTheme,
@@ -461,7 +459,7 @@ impl AppState {
 
         let shelf_count = notes.len();
 
-        let notes: BTreeMap<NoteId, Note> = notes
+        let notes: Vec<(NoteId, Note)> = notes
             .into_iter()
             .enumerate()
             .map(|(i, text)| {
@@ -572,8 +570,8 @@ impl AppState {
 
         // schedule notes eval, most importantly settings, but that will also make code annotations appear
         let mut deferred_actions: Vec<_> = notes
-            .keys()
-            .map(|key| AppAction::EvalNote(*key))
+            .iter()
+            .map(|(key, _)| AppAction::EvalNote(*key))
             .chain([AppAction::FocusRequest(FocusTarget::CurrentNote)])
             .collect();
 
@@ -582,7 +580,7 @@ impl AppState {
             deferred_actions.push(AppAction::StartTutorial);
         }
 
-        if !notes.contains_key(&selected_note) {
+        if !notes.iter().any(|(id, _)| id == &selected_note) {
             selected_note = NoteId::Note(0);
         }
 
@@ -591,12 +589,11 @@ impl AppState {
             unsaved_changes: Default::default(),
             scheduled_script_run_version: None,
             theme,
-            notes,
+            notes: OpenNotes::new(notes, selected_note),
             computed_layout: None,
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
             msg_queue,
-            selected_note,
             hidden: false,
             prev_focused: false,
             last_saved,
@@ -612,7 +609,6 @@ impl AppState {
             app_version_state: VersionState::UpToDate,
             dev_tools: DevToolsState::default(),
             notifications: Notifications::new(),
-            external_files: Vec::new(),
         }
     }
 
@@ -628,6 +624,7 @@ impl AppState {
                                 NoteId::Note(i) => Some((FileAddress::Note(i), n.text.as_str())),
                                 NoteId::Settings => Some((FileAddress::Settings, n.text.as_str())),
                                 NoteId::ExternalFileId(external_file_id) => self
+                                    .notes
                                     .external_files
                                     .iter()
                                     .find(|ex_file| ex_file.id == external_file_id)
@@ -642,7 +639,7 @@ impl AppState {
                         _ => None,
                     })
                     .collect(),
-                selected: self.selected_note,
+                selected: self.notes.selected_note,
                 is_pinned: self.is_pinned,
             })
         } else {
@@ -769,7 +766,7 @@ fn execute_instruction(
         CI::OpenFileDialog => [AppAction::OpenFileDialog].into(),
 
         CI::CloseCurrentNote => {
-            match ctx.app_state.selected_note {
+            match ctx.app_state.notes.selected_note {
                 NoteId::ExternalFileId(file_id) => [AppAction::CloseExternalFile(file_id)].into(),
                 _ => SmallVec::new(), // No-op for regular notes
             }

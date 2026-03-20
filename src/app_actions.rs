@@ -262,7 +262,7 @@ pub fn process_app_action(
                 note_file,
                 via_shortcut,
             } => {
-                if note_file != state.selected_note {
+                if note_file != state.notes.selected_note {
                     state.add_unsaved_change(UnsavedChange::SelectionChanged);
                     if via_shortcut {
                         let note = &mut state.notes.get_mut(&note_file).unwrap();
@@ -281,7 +281,8 @@ pub fn process_app_action(
                         // means that we reselected via UI
 
                         // if that is the case then reset cursors from both of the notes
-                        if let Some(prev_note) = state.notes.get_mut(&state.selected_note) {
+                        let prev_note_id = state.notes.selected_note;
+                        if let Some(prev_note) = state.notes.get_mut(&prev_note_id) {
                             prev_note.reset_cursor();
                         }
 
@@ -289,7 +290,7 @@ pub fn process_app_action(
                             cur_note.reset_cursor();
                         }
                     }
-                    state.selected_note = note_file;
+                    state.notes.selected_note = note_file;
 
                     // reset inline prompt state if we switched to a different note
                     state.inline_llm_prompt = None;
@@ -315,27 +316,28 @@ pub fn process_app_action(
             }
 
             SwitchToNoteTarget::StepNote(direction) => {
-                use itertools::Itertools;
-                let current = state.selected_note;
+                let current = state.notes.selected_note;
+                let len = state.notes.len();
 
-                let target_note = match direction {
-                    StepDirection::Right => {
-                        // Next note
-                        state
-                            .notes
-                            .keys()
-                            .circular_tuple_windows()
-                            .find_map(|(&a, &b)| (a == current).then(|| b))
-                    }
-                    StepDirection::Left => {
-                        // Previous note
-                        state
-                            .notes
-                            .keys()
-                            .circular_tuple_windows()
-                            .find_map(|(&a, &b)| (b == current).then(|| a))
-                    }
-                };
+                if len == 0 {
+                    return SmallVec::new();
+                }
+
+                let current_index = state.notes.find_index(&current);
+
+                let target_note = current_index.and_then(|idx| {
+                    let next_idx = match direction {
+                        StepDirection::Right => (idx + 1) % len,
+                        StepDirection::Left => {
+                            if idx == 0 {
+                                len - 1
+                            } else {
+                                idx - 1
+                            }
+                        }
+                    };
+                    state.notes.get_by_index(next_idx).map(|(id, _)| *id)
+                });
 
                 match target_note {
                     Some(note_file) => {
@@ -390,7 +392,7 @@ pub fn process_app_action(
             };
 
             // if the target for change is indeed the current note then scroll it to the cursor if it is present
-            let scroll_action = if state.selected_note == note_file {
+            let scroll_action = if state.notes.selected_note == note_file {
                 Some(AppAction::IssueRenderAction(
                     RenderAction::ScrollToEditorCursorPos,
                 ))
@@ -849,14 +851,14 @@ pub fn process_app_action(
                                 "{:#?}",
                                 state
                                     .notes
-                                    .get(&state.selected_note)
+                                    .get(&state.notes.selected_note)
                                     .map(|n| &n.derived_state.structure)
                             )
                             .into(),
                         );
                         map.insert(
                             String::from("selected_note"),
-                            format!("{:?}", state.selected_note).into(),
+                            format!("{:?}", state.notes.selected_note).into(),
                         );
                         map.insert(
                             String::from("note"),
@@ -864,7 +866,7 @@ pub fn process_app_action(
                                 "{}",
                                 state
                                     .notes
-                                    .get(&state.selected_note)
+                                    .get(&state.notes.selected_note)
                                     .map(|n| n.text.clone())
                                     .unwrap_or_default()
                             )
@@ -945,7 +947,11 @@ pub fn process_app_action(
         AppAction::IssueRenderAction(render_action) => {
             println!(
                 "IssueRenderAction cursor={:?}",
-                state.notes.get(&state.selected_note).unwrap().cursor()
+                state
+                    .notes
+                    .get(&state.notes.selected_note)
+                    .unwrap()
+                    .cursor()
             );
             state.render_actions.push(render_action);
             SmallVec::new()
@@ -1303,11 +1309,14 @@ pub fn process_app_action(
 
         AppAction::WordJump(word_jump_action) => match word_jump_action {
             WordJumpAction::SwitchToJumpingMode(cursor, signature) => {
-                let note = state.notes.get(&state.selected_note).unwrap();
+                let note = state.notes.get(&state.notes.selected_note).unwrap();
                 let text_structure = &note.derived_state.structure;
 
                 if signature
-                    != NoteSignature::new(state.selected_note, text_structure.opaque_version())
+                    != NoteSignature::new(
+                        state.notes.selected_note,
+                        text_structure.opaque_version(),
+                    )
                 {
                     return SmallVec::new();
                 }
@@ -1356,7 +1365,8 @@ pub fn process_app_action(
             }
 
             WordJumpAction::JumpTo(word_jump_address) => {
-                if let Some(note) = state.notes.get_mut(&state.selected_note) {
+                let selected_note_id = state.notes.selected_note;
+                if let Some(note) = state.notes.get_mut(&selected_note_id) {
                     note.update_cursor(word_jump_address.span);
                 }
 
@@ -1391,7 +1401,7 @@ fn update_slash_palette(
     //     return None;
     // };
 
-    if palette.note_file != state.selected_note {
+    if palette.note_file != state.notes.selected_note {
         println!("## hide Slash Palette: Palette note file doesn't match selected note");
         return None;
     }
@@ -1399,7 +1409,7 @@ fn update_slash_palette(
     // if some => means that we still have focus cursor
     let (note_cursor, text_part) = state
         .notes
-        .get(&state.selected_note)
+        .get(&state.notes.selected_note)
         .and_then(|note| {
             note.cursor()
                 .or(note.last_cursor())
@@ -1471,7 +1481,7 @@ pub fn compute_app_focus(ctx: &Context, app_state: &AppState) -> AppFocusState {
                 Some(AppFocus::InlinePropmptEditor)
             }
 
-            Some(id) if compute_editor_text_id(app_state.selected_note) == id => {
+            Some(id) if compute_editor_text_id(app_state.notes.selected_note) == id => {
                 Some(AppFocus::NoteEditor)
             }
 

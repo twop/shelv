@@ -7,7 +7,7 @@ use crate::{
     app_state::AppState,
     byte_span::ByteSpan,
     command::{
-        CommandContext, EditorCommandOutput, TextCommandContext, try_extract_text_command_context,
+        try_extract_text_command_context, CommandContext, EditorCommandOutput, TextCommandContext,
     },
     effects::text_change_effect::TextChange,
     persistent_state::NoteId,
@@ -127,7 +127,7 @@ pub fn prepare_to_run_llm_block(
 
     let text_change = TextChange::Insert(replacemen_pos, output_block);
 
-    let target = app_state.selected_note;
+    let target = app_state.notes.selected_note;
 
     let mut conversation = Conversation { parts: Vec::new() };
 
