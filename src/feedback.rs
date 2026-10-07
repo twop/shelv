@@ -150,8 +150,10 @@ impl<'a> Feedback<'a> {
 
                     t.ui_add(
                         TextEdit::singleline(&mut self.data.contact_info)
-                            .hint_text(format!("Name (your@email.com / discord@ / etc)"))
-                            .hint_text_font(FontSelection::FontId(italic.clone()))
+                            .hint_text(
+                                eframe::egui::RichText::new("Name (your@email.com / discord@ / etc)")
+                                    .font(italic.clone()),
+                            )
                             .desired_width(f32::INFINITY),
                     );
                     t.add_empty();
@@ -214,10 +216,12 @@ impl<'a> Feedback<'a> {
 
                         t.style(flex_column().grow(1.)).ui_add(
                             TextEdit::multiline(&mut self.data.feedback_text)
-                                .hint_text(format!(
-                                    "Describe any issues you encountered, or any general feedback."
-                                ))
-                                .hint_text_font(FontSelection::FontId(italic.clone()))
+                                .hint_text(
+                                    eframe::egui::RichText::new(
+                                        "Describe any issues you encountered, or any general feedback.",
+                                    )
+                                    .font(italic.clone()),
+                                )
                                 .desired_width(f32::INFINITY)
                                 .desired_rows(6),
                         );

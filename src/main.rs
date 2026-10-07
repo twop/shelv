@@ -327,7 +327,8 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         }
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = &ui.ctx().clone();
         // ctx.set_visuals(egui::Visuals::dark());
 
         let app_state = &mut self.state;
@@ -599,7 +600,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             editor_text,
             vis_state,
             &app_state.theme,
-            ctx,
+            ui,
         );
 
         app_state.commands.add_frame_hotkeys(frame_hotkeys);

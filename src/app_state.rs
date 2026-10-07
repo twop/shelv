@@ -358,7 +358,7 @@ impl ComputedLayout {
 
         job.wrap.max_width = layout_params.wrap_width;
 
-        let galley = ui.fonts(|f| f.layout_job(job));
+        let galley = ui.fonts_mut(|f| f.layout_job(job));
 
         let code_areas: SmallVec<[CodeArea; 6]> = text_structure
             .iter()

@@ -473,7 +473,7 @@ impl ColorTheme {
 }
 
 pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
-    let mut style = (*ctx.style()).clone();
+    let mut style = (*ctx.global_style()).clone();
 
     style.text_styles = text_styles(&theme.fonts);
     style.visuals = visuals(&theme.colors);
@@ -481,7 +481,7 @@ pub fn configure_styles(ctx: &egui::Context, theme: &AppTheme) {
     style.spacing.window_margin = Margin::same(0);
     // style.spacing.button_padding = Vec2::splat(theme.sizes.s);
     style.interaction.tooltip_delay = 0.05;
-    ctx.set_style(style);
+    ctx.set_global_style(style);
     ctx.set_theme(ThemePreference::Dark);
 }
 
@@ -781,7 +781,8 @@ fn visuals(color_theme: &ColorTheme) -> Visuals {
         handle_shape: egui::style::HandleShape::Circle,
         numeric_color_space: NumericColorSpace::GammaByte,
         text_edit_bg_color: Some(code_bg_color),
-        text_alpha_from_coverage: default_dark.text_alpha_from_coverage,
+        ime_composition: default_dark.ime_composition,
+        text_options: default_dark.text_options,
         weak_text_alpha: default_dark.weak_text_alpha,
         weak_text_color: default_dark.weak_text_color,
         disabled_alpha: default_dark.disabled_alpha,

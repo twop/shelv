@@ -1,6 +1,6 @@
 // #![doc = include_str!("../README.md")]
 use crate::egui::{
-    Align2, Event, FontId, Id, Key, Modifiers, PointerButton, Response, Rounding, Sense, Ui,
+    Align2, Event, FontId, Id, Key, Modifiers, PointerButton, Response, CornerRadius, Sense, Ui,
     Widget, vec2,
 };
 use std::hash::Hash;
@@ -38,7 +38,7 @@ where
     }
 
     /// Changes the default id for this widget.
-    pub fn with_id(binding: &'a mut B, id_source: impl Hash) -> Self {
+    pub fn with_id(binding: &'a mut B, id_source: impl Hash + std::fmt::Debug) -> Self {
         Self {
             binding,
             id: Id::new(id_source),
@@ -124,7 +124,7 @@ where
         if ui.is_rect_visible(rect) {
             let visuals = ui.style().interact_selectable(&response, expecting);
             ui.painter()
-                .rect_filled(rect, Rounding::same(2), visuals.bg_fill);
+                .rect_filled(rect, CornerRadius::same(2), visuals.bg_fill);
 
             let binding = self.binding.get();
 

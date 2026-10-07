@@ -80,7 +80,7 @@ impl RealAppIO {
     }
 }
 
-pub const DEFAULT_REAL_LLM_MODEL: &str = "claude-3-5-haiku-20241022";
+pub const DEFAULT_REAL_LLM_MODEL: &str = "claude-haiku-4-5";
 pub const SHELV_LLM_PROXY_MODEL: &str = "shelv-claude";
 
 impl AppIO for RealAppIO {

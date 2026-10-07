@@ -35,13 +35,13 @@ description = "Note taking app optimized for capturing phase."
 #   "svg",
 # ] }
 
-eframe = { version = "0.32.3", default-features = false, features = [
+eframe = { version = "0.36.2", default-features = false, features = [
     "wgpu",
     "persistence",
 ] }
-wgpu = { version = "25", default-features = false, features = ["metal"] }
-egui_extras = { version = "0.32.3", features = ["svg"] }
-egui_tiles = "0.13.0"
+wgpu = { version = "30", default-features = false, features = ["metal"] }
+egui_extras = { version = "0.36.2", features = ["svg"] }
+egui_tiles = "0.17.1"
 
 serde = { version = "1.0.197", features = ["derive"] }
 ron = "0.8"
@@ -54,7 +54,7 @@ syntect = { version = "5.0.0", default-features = false, features = [
 smallvec = "1.10.0"
 smol_str = "0.3.1"
 tray-icon = "0.14.0"
-egui-phosphor = { version = "0.10.0", features = ["light"] }
+egui-phosphor = { version = "0.14.0", features = ["light"] }
 # tray-item = "0.7.1"
 winit = "0.30.12"
 linkify = "0.10.0"
@@ -92,7 +92,7 @@ shared = { path = "shared" }
 miette = { version = "7.2.0", features = ["fancy"] }
 strip-ansi-escapes = "0.2.0"
 chrono = "0.4.40"
-egui_taffy = "0.9.0"
+egui_taffy = "0.14.0"
 reqwest = "0.12.23"
 regex = "1.11.3"
 

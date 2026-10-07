@@ -2,7 +2,7 @@ use eframe::{
     egui::{
         self, Context, CursorIcon, FontFamily, FontSelection, Frame, Id, Key, KeyboardShortcut,
         Label, Layout, Margin, Modal, Modifiers, Painter, Response, RichText, ScrollArea, Sense,
-        Spacing, TextEdit, TextFormat, TextStyle, TextWrapMode, TopBottomPanel, Ui, UiBuilder,
+        Spacing, TextEdit, TextFormat, TextStyle, TextWrapMode, Panel, Ui, UiBuilder,
         UiKind, UiStackInfo, Vec2, WidgetText,
         scroll_area::ScrollBarVisibility,
         text::{CCursor, CCursorRange},
@@ -92,8 +92,9 @@ pub fn render_app(
     editor_text: &mut String,
     visual_state: AppRenderData,
     theme: &AppTheme,
-    ctx: &egui::Context,
+    ui: &mut Ui,
 ) -> RenderAppResult {
+    let ctx = &ui.ctx().clone();
     let AppRenderData {
         selected_note,
         text_edit_id,
@@ -124,13 +125,13 @@ pub fn render_app(
         opened_files,
         external_files,
         command_list,
-        ctx,
+        ui,
         &theme,
     );
     output_actions.extend(footer_actions);
 
     let header_actions = render_header_panel(
-        ctx,
+        ui,
         theme,
         command_list,
         selected_note,
@@ -197,8 +198,8 @@ pub fn render_app(
 
     let (text_has_changed, text_structure, computed_layout, updated_cursor, editor_actions) =
         egui::CentralPanel::default()
-            .frame(Frame::central_panel(&ctx.style()).inner_margin(Margin::ZERO))
-            .show(ctx, |ui| {
+            .frame(Frame::central_panel(&ctx.global_style()).inner_margin(Margin::ZERO))
+            .show(ui, |ui| {
                 {
                     let avail_space = ui.available_rect_before_wrap();
 
@@ -284,7 +285,7 @@ pub fn render_app(
                                 .byte_index_from_char_index(cursor.index);
 
                             if let Some(interactive) =
-                                text_structure.find_interactive_text_part(byte_cursor)
+                                text_structure.find_interactive_text_part(byte_cursor.0)
                             {
                                 // if ui.input(|i| i.modifiers.command)
                                 {
@@ -477,8 +478,8 @@ fn render_editor(
         .id(text_edit_id)
         .lock_focus(true)
         .desired_width(f32::INFINITY)
-        .frame(false)
-        .margin(text_edit_margin)
+        // egui 0.36 ignores `.margin()` when a custom frame is set, so put it on the frame
+        .frame(Frame::NONE.inner_margin(text_edit_margin))
         .layouter(&mut layouter)
         .show(ui);
 
@@ -488,7 +489,7 @@ fn render_editor(
     // that verifies that we indeed removed some actions, that is, there was at least one scroll action
     if let (Some(cursor_range), true) = (cursor_range, prev_actions_count != render_actions.len()) {
         let font_id = FontSelection::Style(TextStyle::Monospace).resolve(ui.style());
-        let row_height = ui.fonts(|f| f.row_height(&font_id));
+        let row_height = ui.fonts_mut(|f| f.row_height(&font_id));
         let primary_cursor_pos = cursor_rect(&galley, &cursor_range.primary, row_height);
 
         println!(
@@ -561,7 +562,7 @@ fn render_editor(
                 use egui::TextBuffer;
                 let cursor_byte_pos = editor_text.byte_index_from_char_index(range.primary.index);
                 match text_structure.get_span_with_meta(area.code_block_span_index) {
-                    Some((code_span, _)) => code_span.byte_pos.contains_pos(cursor_byte_pos),
+                    Some((code_span, _)) => code_span.byte_pos.contains_pos(cursor_byte_pos.0),
                     None => false,
                 }
             });
@@ -675,7 +676,7 @@ fn render_editor(
         let [start, end] = [range.secondary, range.primary]
             .map(|c| editor_text.byte_index_from_char_index(c.index));
 
-        UnOrderedByteSpan::new(start, end)
+        UnOrderedByteSpan::new(start.0, end.0)
     });
 
     (
@@ -814,7 +815,8 @@ fn render_inline_prompt(
             let prompt_input_resp = TextEdit::multiline(&mut inline_llm_prompt.prompt)
                 .id(prompt_text_id)
                 .desired_width(f32::INFINITY)
-                .frame(false)
+                // keep egui's default text edit margin (the frame overrides it in 0.36)
+                .frame(Frame::NONE.inner_margin(Margin::symmetric(4, 2)))
                 .desired_rows(1)
                 .desired_width(f32::INFINITY)
                 .hint_text("Prompt AI ...")
@@ -982,7 +984,7 @@ fn render_slash_palette(
             .ui_stack_info(UiStackInfo::new(egui::UiKind::GenericArea)),
     );
 
-    let frame_resp = egui::Frame::none()
+    let frame_resp = egui::Frame::new()
         .fill(theme.colors.code_bg_color)
         .inner_margin(theme.sizes.s)
         .stroke(prompt_ui.visuals().window_stroke)
@@ -1080,8 +1082,7 @@ fn render_slash_palette(
                                     ui.input(|input| {
                                         if input.pointer.is_moving()
                                             || input.smooth_scroll_delta != Vec2::ZERO
-                                            || input.raw_scroll_delta != Vec2::ZERO
-                                        {
+                                                                                    {
                                             if resp.contains_pointer() {
                                                 resulting_actions.push(AppAction::SlashPalette(
                                                     SlashPaletteAction::SelectCommand(i),
@@ -1433,14 +1434,15 @@ fn render_footer_panel(
     opened_files: SmallVec<[NoteId; 8]>,
     external_files: &[ExternalFile],
     command_list: &CommandList,
-    ctx: &Context,
+    ui: &mut Ui,
     theme: &AppTheme,
 ) -> SmallVec<[AppAction; 1]> {
+    let ctx = &ui.ctx().clone();
     let mut actions = SmallVec::new();
-    TopBottomPanel::bottom("footer")
+    Panel::bottom("footer")
         .show_separator_line(false)
         .frame(Frame::new().fill(theme.colors.main_bg))
-        .show(ctx, |ui| {
+        .show(ui, |ui| {
             let sizes = &theme.sizes;
             ui.set_height(sizes.header_footer_height);
 
@@ -1640,7 +1642,7 @@ fn set_menu_bar_style(ui: &mut egui::Ui) {
 }
 
 fn render_header_panel(
-    ctx: &egui::Context,
+    ui: &mut Ui,
     theme: &AppTheme,
     command_list: &CommandList,
     selected_note: NoteId,
@@ -1649,11 +1651,12 @@ fn render_header_panel(
     version_state: &VersionState,
     dev_tools_show: bool,
 ) -> SmallVec<[AppAction; 1]> {
-    TopBottomPanel::top("top_panel")
+    let ctx = &ui.ctx().clone();
+    Panel::top("top_panel")
         .show_separator_line(false)
         // .exact_height(theme.sizes.header_footer)
         .frame(Frame::new().fill(theme.colors.main_bg))
-        .show(ctx, |ui| {
+        .show(ui, |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             let mut resulting_actions: SmallVec<[AppAction; 1]> = Default::default();
             let sizes = &theme.sizes;
@@ -1876,7 +1879,7 @@ fn render_header_panel(
                                                     ))
                                                     .clicked()
                                                 {
-                                                    ui.close_menu();
+                                                    ui.close();
                                                     resulting_actions.push(AppAction::OpenLink(
                                                         link.to_string(),
                                                     ));
@@ -1893,7 +1896,7 @@ fn render_header_panel(
                                                 ))
                                                 .clicked()
                                             {
-                                                ui.close_menu();
+                                                ui.close();
                                                 resulting_actions
                                                     .push(AppAction::OpenNotesInFinder);
                                             }

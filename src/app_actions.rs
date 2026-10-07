@@ -1399,9 +1399,10 @@ fn update_slash_palette(
 
 pub fn compute_app_focus(ctx: &Context, app_state: &AppState) -> AppFocusState {
     let viewport_focused = ctx.input(|input| input.viewport().focused.unwrap_or(false));
+    let is_menu_opened = eframe::egui::Popup::is_any_open(ctx);
     ctx.memory(|m| AppFocusState {
         viewport_focused,
-        is_menu_opened: m.any_popup_open(),
+        is_menu_opened,
         internal_focus: match m.focused() {
             Some(id)
                 if app_state

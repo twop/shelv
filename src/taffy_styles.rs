@@ -99,19 +99,19 @@ impl StyleBuilder for Style {
 
     /// Sets width to automatic sizing
     fn auto_width(mut self) -> Self {
-        self.size.width = Dimension::Auto;
+        self.size.width = Dimension::auto();
         self
     }
 
     /// Sets max width for a given element
     fn max_width(mut self, width: f32) -> Self {
-        self.max_size.width = Dimension::Length(width);
+        self.max_size.width = Dimension::length(width);
         self
     }
 
     /// Sets min width for a given element
     fn min_width(mut self, width: f32) -> Self {
-        self.min_size.width = Dimension::Length(width);
+        self.min_size.width = Dimension::length(width);
         self
     }
 
