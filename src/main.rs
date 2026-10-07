@@ -327,6 +327,39 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         }
     }
 
+    /// egui 0.36 doesn't run `ui` while the window is hidden, only `logic`.
+    /// So messages (e.g. the global hotkey that brings the window back) have to be handled here
+    /// when hidden, otherwise nothing would ever make the window visible again.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if !self.state.hidden {
+            // `ui` is going to drain the message queue
+            return;
+        }
+
+        let app_focus = self.app_focus_state.clone();
+        let app_state = &mut self.state;
+        let text_edit_id = compute_editor_text_id(app_state.selected_note);
+
+        let msgs: SmallVec<[MsgToApp; 4]> = app_state.msg_queue.try_iter().collect();
+
+        for msg in msgs {
+            let mut action_buffer: SmallVec<[AppAction; 4]> =
+                SmallVec::from_iter([AppAction::HandleMsgToApp(msg)]);
+
+            while let Some(action) = action_buffer.pop() {
+                let new_actions = process_app_action(
+                    action,
+                    ctx,
+                    app_state,
+                    app_focus,
+                    text_edit_id,
+                    &mut self.app_io,
+                );
+                action_buffer.extend(new_actions);
+            }
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = &ui.ctx().clone();
         // ctx.set_visuals(egui::Visuals::dark());
