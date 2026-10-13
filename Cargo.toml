@@ -41,7 +41,6 @@ eframe = { version = "0.36.2", default-features = false, features = [
 ] }
 wgpu = { version = "30", default-features = false, features = ["metal"] }
 egui_extras = { version = "0.36.2", features = ["svg"] }
-egui_tiles = "0.17.1"
 
 serde = { version = "1.0.197", features = ["derive"] }
 ron = "0.8"
@@ -97,6 +96,15 @@ reqwest = "0.12.23"
 regex = "1.11.3"
 
 [patch.crates-io]
+# egui fork with `LayoutSection::hanging_indent` (used for markdown lists)
+eframe = { git = "https://github.com/twop/egui", branch = "twop/persisten-wrap-indent" }
+egui = { git = "https://github.com/twop/egui", branch = "twop/persisten-wrap-indent" }
+egui_extras = { git = "https://github.com/twop/egui", branch = "twop/persisten-wrap-indent" }
+egui-wgpu = { git = "https://github.com/twop/egui", branch = "twop/persisten-wrap-indent" }
+egui-winit = { git = "https://github.com/twop/egui", branch = "twop/persisten-wrap-indent" }
+epaint = { git = "https://github.com/twop/egui", branch = "twop/persisten-wrap-indent" }
+emath = { git = "https://github.com/twop/egui", branch = "twop/persisten-wrap-indent" }
+ecolor = { git = "https://github.com/twop/egui", branch = "twop/persisten-wrap-indent" }
 winit = { git = 'https://github.com/twop/winit-no-private-api', branch = "removed-private-api-v30-12" }
 
 [package.metadata.bundle]

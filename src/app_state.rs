@@ -358,6 +358,13 @@ impl ComputedLayout {
 
         job.wrap.max_width = layout_params.wrap_width;
 
+        text_structure.apply_list_hanging_indents(&mut job, |job| {
+            let galley = ui.fonts_mut(|f| f.layout_job(job));
+            galley.rows.first().map_or(0.0, |row| {
+                row.pos.x + row.glyphs.last().map_or(0.0, |glyph| glyph.max_x())
+            })
+        });
+
         let galley = ui.fonts_mut(|f| f.layout_job(job));
 
         let code_areas: SmallVec<[CodeArea; 6]> = text_structure

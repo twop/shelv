@@ -2,7 +2,10 @@ use std::ops::Range;
 
 use eframe::{
     egui::TextFormat,
-    epaint::{Color32, FontId, Stroke, text::LayoutJob},
+    epaint::{
+        Color32, FontId, Stroke,
+        text::{ByteIndex, LayoutJob, LayoutSection},
+    },
 };
 use fxhash::hash64;
 use itertools::Itertools;
@@ -959,6 +962,150 @@ impl TextStructure {
         job
     }
 
+    /// Gives markdown list items a hanging indent (see `LayoutSection::hanging_indent`),
+    /// so soft-wrapped rows line up with the text after the list marker:
+    ///
+    /// ```text
+    /// - a list item that is long
+    ///   enough to wrap
+    ///   continuation after "\n" is aligned too
+    ///   - nested marker is aligned with the parent text
+    ///     and wraps at its own text
+    /// ```
+    ///
+    /// `measure` returns the width of a single-row layout job.
+    /// The text is not changed, the indent is purely visual.
+    pub fn apply_list_hanging_indents(
+        &self,
+        job: &mut LayoutJob,
+        mut measure: impl FnMut(LayoutJob) -> f32,
+    ) {
+        // (leading_space, hanging_indent) for each line that is a part of a list item
+        let mut line_indents: Vec<Option<(f32, f32)>> = vec![None; self.lines.len()];
+        // x of the item text, for each list item span (to align nested items)
+        let mut content_indents: Vec<f32> = vec![0.0; self.spans.len()];
+
+        let mut measure_range = |job: &LayoutJob, start: usize, end: usize| {
+            if start >= end {
+                0.0
+            } else {
+                measure(sub_layout_job(job, start, end))
+            }
+        };
+
+        let leading_spaces_end = |line: ByteSpan| {
+            let line_text = &job.text[line.range()];
+            line.start + line_text.len() - line_text.trim_start_matches([' ', '\t']).len()
+        };
+
+        // Note: parents always come before their children, so nested items override the indents
+        for (index, desc) in self.iter() {
+            if desc.kind != SpanKind::ListItem {
+                continue;
+            }
+
+            let LineLocation {
+                line_start,
+                line_end,
+            } = desc.line_loc;
+            let Some(&first_line) = self.lines.get(line_start as usize) else {
+                continue;
+            };
+
+            let parent_indent = self
+                .iterate_parents_of(index)
+                .find(|(_, parent)| parent.kind == SpanKind::ListItem)
+                .map_or(0.0, |(parent_index, _)| content_indents[parent_index.0]);
+
+            // the text of the item starts after the marker (and the task marker if any)
+            let content_start = self
+                .iterate_immediate_children_of(index)
+                .find(|(_, child)| child.kind != SpanKind::TaskMarker)
+                .map_or(desc.byte_pos.end, |(_, child)| child.byte_pos.start)
+                .clamp(first_line.start, first_line.end);
+
+            let spaces_width =
+                measure_range(job, first_line.start, leading_spaces_end(first_line));
+            let prefix_width = measure_range(job, first_line.start, content_start);
+
+            let leading_space = (parent_indent - spaces_width).max(0.0);
+            let content_indent = leading_space + prefix_width;
+            content_indents[index.0] = content_indent;
+
+            line_indents[line_start as usize] = Some((leading_space, content_indent));
+
+            for line_index in (line_start + 1)..=line_end {
+                let Some(&line) = self.lines.get(line_index as usize) else {
+                    break;
+                };
+                let spaces_width = measure_range(job, line.start, leading_spaces_end(line));
+                line_indents[line_index as usize] =
+                    Some(((content_indent - spaces_width).max(0.0), content_indent));
+            }
+        }
+
+        // Each indented line needs to start a new section, since the hanging indent is taken from
+        // the section of the first char in a line. And the line after needs to start a new
+        // section as well, otherwise it would inherit the indent.
+        let breaks: Vec<(usize, (f32, f32))> = self
+            .lines
+            .iter()
+            .enumerate()
+            .filter_map(|(i, line)| match line_indents[i] {
+                Some(indent) => Some((line.start, indent)),
+                None if i > 0 && line_indents[i - 1].is_some() => Some((line.start, (0.0, 0.0))),
+                None => None,
+            })
+            .collect();
+
+        if breaks.is_empty() {
+            return;
+        }
+
+        let mut sections = Vec::with_capacity(job.sections.len() + breaks.len());
+        let mut next_break = 0;
+
+        for section in std::mem::take(&mut job.sections) {
+            let (start, end) = (section.byte_range.start.0, section.byte_range.end.0);
+            if start >= end {
+                // empty sections don't render anything, but could double the leading space
+                continue;
+            }
+
+            while next_break < breaks.len() && breaks[next_break].0 < start {
+                next_break += 1;
+            }
+
+            let mut piece_start = start;
+            let mut indent = (section.leading_space, section.hanging_indent);
+
+            for &(break_pos, break_indent) in breaks[next_break..]
+                .iter()
+                .take_while(|(break_pos, _)| *break_pos < end)
+            {
+                if break_pos > piece_start {
+                    sections.push(LayoutSection {
+                        leading_space: indent.0,
+                        hanging_indent: indent.1,
+                        byte_range: ByteIndex(piece_start)..ByteIndex(break_pos),
+                        format: section.format.clone(),
+                    });
+                    piece_start = break_pos;
+                }
+                indent = break_indent;
+            }
+
+            sections.push(LayoutSection {
+                leading_space: indent.0,
+                hanging_indent: indent.1,
+                byte_range: ByteIndex(piece_start)..ByteIndex(end),
+                format: section.format,
+            });
+        }
+
+        job.sections = sections;
+    }
+
     pub fn find_interactive_text_part(
         &self,
         byte_cursor_pos: usize,
@@ -1395,6 +1542,31 @@ fn calc_total_range<'a>(spans: impl Iterator<Item = &'a ByteSpan>) -> Option<Byt
     })
 }
 
+/// A job with the `[start, end)` byte range of `job`, laid out on a single row
+fn sub_layout_job(job: &LayoutJob, start: usize, end: usize) -> LayoutJob {
+    let mut sub_job = LayoutJob {
+        text: job.text[start..end].to_string(),
+        // we want the exact width, so the indent matches the text
+        round_output_to_gui: false,
+        ..Default::default()
+    };
+
+    for section in &job.sections {
+        let section_start = section.byte_range.start.0.max(start);
+        let section_end = section.byte_range.end.0.min(end);
+        if section_start < section_end {
+            sub_job.sections.push(LayoutSection {
+                leading_space: 0.0,
+                hanging_indent: 0.0,
+                byte_range: ByteIndex(section_start - start)..ByteIndex(section_end - start),
+                format: section.format.clone(),
+            });
+        }
+    }
+
+    sub_job
+}
+
 #[inline(always)]
 fn find_metadata(index: SpanIndex, metadata: &Vec<(SpanIndex, SpanMeta)>) -> Option<&SpanMeta> {
     metadata
@@ -1761,6 +1933,100 @@ mod tests {
     use crate::byte_span::RangeRelation;
 
     use super::*;
+
+    /// (line text, leading_space, hanging_indent) of the section starting each line,
+    /// laid out with a fake font where every char is 10 wide, except for spaces
+    fn list_indents(md: &str, space_width: f32) -> Vec<(String, i32, i32)> {
+        let structure = TextStructure::new(md);
+        let mut job = LayoutJob::default();
+        // a few sections that span multiple lines, similar to what `create_layout_job` produces
+        for chunk in md.as_bytes().chunks(7) {
+            job.append(
+                std::str::from_utf8(chunk).unwrap(),
+                0.0,
+                TextFormat::default(),
+            );
+        }
+        structure.apply_list_hanging_indents(&mut job, |job| {
+            job.text
+                .chars()
+                .map(|c| if c == ' ' { space_width } else { 10.0 })
+                .sum()
+        });
+
+        assert_eq!(
+            job.sections
+                .iter()
+                .map(|s| &md[s.byte_range.start.0..s.byte_range.end.0])
+                .collect::<String>(),
+            md,
+            "sections must cover the whole text"
+        );
+
+        structure
+            .lines
+            .iter()
+            .map(|line| {
+                let section = job
+                    .sections
+                    .iter()
+                    .find(|s| s.byte_range.start.0 <= line.start && line.start < s.byte_range.end.0)
+                    .unwrap();
+                let indent = if section.byte_range.start.0 == line.start {
+                    (section.leading_space, section.hanging_indent)
+                } else {
+                    // a section from a previous line, which means no indent
+                    (0.0, 0.0)
+                };
+                (md[line.range()].to_string(), indent.0 as i32, indent.1 as i32)
+            })
+            .collect()
+    }
+
+    #[test]
+    pub fn test_list_hanging_indents() {
+        let md = "para\n- item\n  continuation\n  - nested\n- [ ] task\n\n1. numbered\nafter";
+        let indents = list_indents(md, 10.0);
+
+        let expected = [
+            ("para", 0, 0),
+            ("- item", 0, 20),
+            // 2 spaces are already 20 wide
+            ("  continuation", 0, 20),
+            // nested marker is aligned with the parent's text
+            ("  - nested", 0, 40),
+            // task marker is a part of the prefix
+            ("- [ ] task", 0, 60),
+            ("", 0, 0),
+            ("1. numbered", 0, 30),
+            // lazy continuation of the paragraph in the list item
+            ("after", 30, 30),
+        ]
+        .map(|(line, leading, hanging)| (line.to_string(), leading, hanging));
+
+        assert_eq!(indents, expected);
+    }
+
+    #[test]
+    pub fn test_list_hanging_indents_narrow_spaces() {
+        // with spaces narrower than other chars (as in proportional fonts),
+        // leading spaces of nested items and continuations are not enough to align the text
+        let md = "10. item\n    - nested\n      text";
+        let indents = list_indents(md, 5.0);
+
+        let expected = [
+            // "10. " = 3 * 10 + 5
+            ("10. item", 0, 35),
+            // 4 spaces = 20, so 15 more to align the marker with the parent's text
+            ("    - nested", 15, 50),
+            // 6 spaces = 30, so 20 more to align with the nested item's text
+            ("      text", 20, 50),
+        ]
+        .map(|(line, leading, hanging)| (line.to_string(), leading, hanging));
+
+        assert_eq!(indents, expected);
+    }
+
     #[test]
     pub fn test_inner_content() {
         let md = "## ti**tle** \n";

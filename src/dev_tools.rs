@@ -1,9 +1,11 @@
 use std::collections::VecDeque;
 
 use chrono::{DateTime, Local, Utc};
-use eframe::egui::{self, Id, InputState, Margin, RichText, ScrollArea, Ui, containers::Frame};
+use eframe::egui::{
+    self, Align, FontFamily, Id, InputState, Layout, Margin, Panel, Response, RichText, ScrollArea,
+    Ui, containers::Frame,
+};
 use egui_extras::TableBuilder;
-use egui_tiles::{Behavior, TileId, Tiles, Tree, UiResponse};
 
 use crate::{
     app_actions::{AppAction, AppNotification, AppNotificationAction},
@@ -19,14 +21,6 @@ const MAX_INPUT_EVENT_HISTORY: usize = 100;
 pub enum ActionPhase {
     PreRender,
     PostRender,
-}
-
-#[derive(Debug, Clone)]
-enum DevToolPane {
-    FocusState,
-    InputEvents,
-    Actions,
-    Notifications,
 }
 
 #[derive(Debug, Clone)]
@@ -51,32 +45,17 @@ pub struct DevToolsState {
     action_history: VecDeque<ActionLogEntry>,
     input_event_history: VecDeque<InputEventEntry>,
     show_pointer_events: bool,
-    tree: Tree<DevToolPane>,
+    expanded: ExpandedPanes,
 }
 
 impl Default for DevToolsState {
     fn default() -> Self {
-        let mut tiles = Tiles::default();
-
-        let focus_tile = tiles.insert_pane(DevToolPane::FocusState);
-        let input_events_tile = tiles.insert_pane(DevToolPane::InputEvents);
-        let actions_tile = tiles.insert_pane(DevToolPane::Actions);
-        let notifications_tile = tiles.insert_pane(DevToolPane::Notifications);
-
-        let root = tiles.insert_tab_tile(vec![
-            focus_tile,
-            input_events_tile,
-            actions_tile,
-            notifications_tile,
-        ]);
-        let tree = Tree::new("dev_tools_tree", root, tiles);
-
         Self {
             show_dev_tools: false,
             action_history: VecDeque::with_capacity(MAX_ACTION_HISTORY),
             input_event_history: VecDeque::with_capacity(MAX_INPUT_EVENT_HISTORY),
             show_pointer_events: false,
-            tree,
+            expanded: ExpandedPanes::default(),
         }
     }
 }
@@ -151,75 +130,201 @@ impl DevToolsState {
 
         ui.separator();
 
-        let mut behavior = DevToolsBehavior {
-            app_focus,
-            ui_state,
-            theme,
-            action_history: &self.action_history,
-            input_event_history: &self.input_event_history,
-            show_pointer_events: &mut self.show_pointer_events,
-            notifications,
-            result_actions: EditorCommandOutput::default(),
-        };
+        let Self {
+            action_history,
+            input_event_history,
+            show_pointer_events,
+            expanded,
+            ..
+        } = self;
 
-        let _ui_response = self.tree.ui(&mut behavior, ui);
-        behavior.result_actions
+        let mut result_actions = EditorCommandOutput::default();
+
+        // Note: the order matters, bottom goes first, so side panels are above it
+        show_collapsible_pane(
+            ui,
+            Side::Bottom,
+            &format!("Input Events ({})", input_event_history.len()),
+            &mut expanded.input_events,
+            |ui| {
+                render_input_events_pane(
+                    input_event_history.iter().rev(),
+                    show_pointer_events,
+                    ui,
+                    theme,
+                )
+            },
+        );
+
+        show_collapsible_pane(
+            ui,
+            Side::Left,
+            "Focus State",
+            &mut expanded.focus_state,
+            |ui| render_focus_state_pane(app_focus.as_ref(), ui_state, ui),
+        );
+
+        show_collapsible_pane(
+            ui,
+            Side::Right,
+            &format!("Notifications ({})", notifications.count()),
+            &mut expanded.notifications,
+            |ui| {
+                if let Some(actions) = render_notifications_pane(notifications, ui, theme) {
+                    result_actions.extend(actions);
+                }
+            },
+        );
+
+        // Actions take the rest of the space, and a central panel can't shrink,
+        // so when collapsed it is replaced with a strip on the left, like the side panes
+        let actions_title = format!("Actions ({})", action_history.len());
+        if expanded.actions {
+            egui::CentralPanel::default()
+                .frame(pane_frame())
+                .show(ui, |ui| {
+                    pane_header(ui, &actions_title, &mut expanded.actions, Side::Left);
+                    render_actions_pane(action_history.iter().rev(), ui);
+                });
+        } else {
+            Panel::left("dev_tools_Actions_collapsed")
+                .resizable(false)
+                .exact_size(COLLAPSED_PANE_SIZE)
+                .frame(pane_frame())
+                .show(ui, |ui| {
+                    toggle_button(ui, &mut expanded.actions, Side::Left)
+                        .on_hover_text(&actions_title);
+                });
+        }
+
+        result_actions
     }
 }
 
-struct DevToolsBehavior<'a> {
-    app_focus: Option<AppFocusState>,
-    ui_state: &'a UiState,
-    theme: &'a AppTheme,
-    action_history: &'a VecDeque<ActionLogEntry>,
-    input_event_history: &'a VecDeque<InputEventEntry>,
-    show_pointer_events: &'a mut bool,
-    notifications: &'a Notifications<AppNotification>,
-    result_actions: EditorCommandOutput,
+struct ExpandedPanes {
+    focus_state: bool,
+    input_events: bool,
+    actions: bool,
+    notifications: bool,
 }
 
-impl<'a> Behavior<DevToolPane> for DevToolsBehavior<'a> {
-    fn pane_ui(&mut self, ui: &mut Ui, _tile_id: TileId, pane: &mut DevToolPane) -> UiResponse {
-        Frame::new()
-            .inner_margin(Margin::same(2))
-            .show(ui, |ui| match pane {
-                DevToolPane::FocusState => {
-                    render_focus_state_pane(self.app_focus.as_ref(), self.ui_state, ui);
-                }
-                DevToolPane::InputEvents => {
-                    render_input_events_pane(
-                        self.input_event_history.iter().rev(),
-                        &mut self.show_pointer_events,
-                        ui,
-                        self.theme,
-                    );
-                }
-                DevToolPane::Actions => {
-                    render_actions_pane(self.action_history.iter().rev(), ui);
-                }
-                DevToolPane::Notifications => {
-                    if let Some(actions) =
-                        render_notifications_pane(self.notifications, ui, self.theme)
-                    {
-                        self.result_actions.extend(actions);
-                    }
-                }
-            });
-        UiResponse::None
-    }
-
-    fn tab_title_for_pane(&mut self, pane: &DevToolPane) -> egui::WidgetText {
-        match pane {
-            DevToolPane::FocusState => "Focus State".into(),
-            DevToolPane::InputEvents => {
-                format!("Input Events ({})", self.input_event_history.len()).into()
-            }
-            DevToolPane::Actions => format!("Actions ({})", self.action_history.len()).into(),
-            DevToolPane::Notifications => {
-                format!("Notifications ({})", self.notifications.count()).into()
-            }
+impl Default for ExpandedPanes {
+    fn default() -> Self {
+        Self {
+            focus_state: true,
+            input_events: true,
+            actions: true,
+            notifications: true,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum Side {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+const COLLAPSED_PANE_SIZE: f32 = 28.0;
+
+fn pane_frame() -> Frame {
+    Frame::new().inner_margin(Margin::same(4))
+}
+
+/// A panel on the given `side` with a header that has a button to collapse it into a thin strip
+fn show_collapsible_pane(
+    ui: &mut Ui,
+    side: Side,
+    title: &str,
+    is_expanded: &mut bool,
+    add_contents: impl FnOnce(&mut Ui),
+) {
+    let id = format!("dev_tools_{}", title.split(" (").next().unwrap_or(title));
+    let collapsed_id = format!("{id}_collapsed");
+
+    let (expanded_panel, collapsed_panel, default_size) = match side {
+        Side::Left => (Panel::left(id), Panel::left(collapsed_id), 240.0),
+        Side::Right => (Panel::right(id), Panel::right(collapsed_id), 340.0),
+        Side::Top => (Panel::top(id), Panel::top(collapsed_id), 200.0),
+        Side::Bottom => (Panel::bottom(id), Panel::bottom(collapsed_id), 220.0),
+    };
+
+    let expanded_panel = expanded_panel
+        .resizable(true)
+        .default_size(default_size)
+        .frame(pane_frame());
+    let collapsed_panel = collapsed_panel
+        .resizable(true)
+        .exact_size(COLLAPSED_PANE_SIZE)
+        .frame(pane_frame());
+
+    // the header button can't touch `is_expanded` directly, since `show_switched` borrows it,
+    // so the closure reports whether the button was clicked
+    let toggle_clicked = Panel::show_switched(
+        ui,
+        is_expanded,
+        collapsed_panel,
+        expanded_panel,
+        |ui, show_expanded| {
+            // note: during the collapse animation `show_expanded` is still true
+            let mut expanded = show_expanded;
+            if show_expanded {
+                pane_header(ui, title, &mut expanded, side);
+                add_contents(ui);
+            } else {
+                match side {
+                    // a vertical strip is too narrow for the title, show it on hover
+                    Side::Left | Side::Right => {
+                        toggle_button(ui, &mut expanded, side).on_hover_text(title);
+                    }
+                    Side::Top | Side::Bottom => pane_header(ui, title, &mut expanded, side),
+                }
+            }
+            expanded != show_expanded
+        },
+    )
+    .inner;
+
+    if toggle_clicked {
+        *is_expanded = !*is_expanded;
+    }
+}
+
+/// Title on the left, collapse/expand button on the right
+fn pane_header(ui: &mut Ui, title: &str, is_expanded: &mut bool, side: Side) {
+    ui.horizontal(|ui| {
+        ui.strong(title);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            toggle_button(ui, is_expanded, side);
+        });
+    });
+    if *is_expanded {
+        ui.separator();
+    }
+}
+
+/// The arrow points to where the pane goes when clicked
+fn toggle_button(ui: &mut Ui, is_expanded: &mut bool, side: Side) -> Response {
+    use egui_phosphor::light as P;
+
+    let icon = match (side, *is_expanded) {
+        (Side::Left, true) | (Side::Right, false) => P::CARET_LEFT,
+        (Side::Left, false) | (Side::Right, true) => P::CARET_RIGHT,
+        (Side::Top, true) | (Side::Bottom, false) => P::CARET_UP,
+        (Side::Top, false) | (Side::Bottom, true) => P::CARET_DOWN,
+    };
+
+    let response = ui
+        .small_button(RichText::new(icon).family(FontFamily::Name("phosphor".into())))
+        .on_hover_text(if *is_expanded { "Collapse" } else { "Expand" });
+
+    if response.clicked() {
+        *is_expanded = !*is_expanded;
+    }
+
+    response
 }
 
 fn render_focus_state_pane(app_focus: Option<&AppFocusState>, ui_state: &UiState, ui: &mut Ui) {

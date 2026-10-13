@@ -471,6 +471,7 @@ fn render_editor(
         galley_pos,
         cursor_range,
         galley,
+        state: text_edit_state,
         ..
     } = egui::TextEdit::multiline(editor_text)
         .font(TextStyle::Monospace) // for cursor height
@@ -482,6 +483,12 @@ fn render_editor(
         .frame(Frame::NONE.inner_margin(text_edit_margin))
         .layouter(&mut layouter)
         .show(ui);
+
+    // `TextEditOutput::cursor_range` is computed before pointer interaction (click, drag),
+    // so it lags a frame behind. Since we restore the cursor from the note state every frame,
+    // that would revert mouse selection, hence use the state after interaction instead.
+    // Note: `cursor_range` is `None` when the editor is not focused, keep that.
+    let cursor_range = cursor_range.and(text_edit_state.cursor.range(&galley));
 
     let prev_actions_count = render_actions.len();
     render_actions.retain(|action| !matches!(action, RenderAction::ScrollToEditorCursorPos));
