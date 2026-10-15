@@ -38,6 +38,8 @@ description = "Note taking app optimized for capturing phase."
 eframe = { version = "0.36.2", default-features = false, features = [
     "wgpu",
     "persistence",
+    # the egui fork made OS clipboard an opt-in feature (crates.io 0.36.2 always enabled it)
+    "clipboard",
 ] }
 wgpu = { version = "30", default-features = false, features = ["metal"] }
 egui_extras = { version = "0.36.2", features = ["svg"] }
