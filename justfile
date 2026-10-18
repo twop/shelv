@@ -25,6 +25,6 @@ test *args:
 clippy *args:
     cargo clippy {{args}}
 
-# debug Shelv.app with document types registered
-dev-bundle:
-    distribution/dev_bundle.sh
+# Shelv.app (release, or `just dev-bundle debug`) with document types registered
+dev-bundle profile="release":
+    distribution/dev_bundle.sh {{profile}}
