@@ -76,6 +76,8 @@ jobs:
         uses: actions-rs/install@v0.1
         with:
           crate: cargo-bundle
+          # >= 0.12.0 is required for [package.metadata.bundle.osx] (document types, min macOS version)
+          version: 0.12.0
           use-tool-cache: false
 
       - name: 🔨 Build Bundle

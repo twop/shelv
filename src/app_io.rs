@@ -227,10 +227,6 @@ impl AppIO for RealAppIO {
         let debug_folder = PathBuf::from("prompts");
         let debug_file = debug_folder.join(format!("req_{}.md", time));
 
-        if !debug_folder.exists() {
-            std::fs::create_dir(&debug_folder).unwrap();
-        }
-
         let mut contents = String::new();
         for msg in &chat_req.messages {
             contents.push_str(&format!(
@@ -255,7 +251,10 @@ impl AppIO for RealAppIO {
         tokio::spawn(async move {
             if debug_chat_prompts {
                 println!("-----llm inline req: {chat_req:#?}");
-                if let Err(err) = std::fs::write(&debug_file, contents) {
+                // relative to cwd, which is `/` (read-only) when launched as an app bundle
+                if let Err(err) = std::fs::create_dir_all(&debug_folder)
+                    .and_then(|_| std::fs::write(&debug_file, contents))
+                {
                     println!("failed to dump llm logs err: {err:#?}");
                 } else {
                     println!("written llm logs here: {debug_file:#?}");

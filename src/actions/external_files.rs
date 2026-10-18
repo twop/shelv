@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use smallvec::SmallVec;
 
 use crate::{
-    app_actions::{AppAction, AppIO},
+    app_actions::{AppAction, AppIO, AppNotification},
     app_state::{AppState, Note, NoteDerivedState, UnsavedChange},
     persistent_state::{ExternalFile, ExternalFileId, NoteId},
+    ui::notifications::NotificationId,
 };
 
 /// Opens an external file by reading it from disk and adding it to the application state.
@@ -59,7 +60,12 @@ pub fn open_external_file(
             }
             Err(err) => {
                 println!("Failed to open external file {}: {}", path.display(), err);
-                SmallVec::new()
+                SmallVec::from([AppAction::ShowNotification(AppNotification {
+                    id: NotificationId::new(chrono::Utc::now().timestamp_millis() as u64),
+                    title: None,
+                    message: format!("Unable to open '{}': {}", path.display(), err),
+                    action: None,
+                })])
             }
         }
     }

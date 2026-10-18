@@ -236,6 +236,12 @@ pub trait AppIO {
     fn open_file_dialog(&self) -> Result<Option<PathBuf>, Box<dyn std::error::Error>>;
 }
 
+fn show_app(ctx: &Context, state: &mut AppState) {
+    state.hidden = false;
+    ctx.send_viewport_cmd(ViewportCommand::Visible(true));
+    ctx.send_viewport_cmd(ViewportCommand::Focus);
+}
+
 pub fn process_app_action(
     action: AppAction,
     ctx: &Context,
@@ -370,9 +376,7 @@ pub fn process_app_action(
                             SmallVec::new()
                         }
                     } else {
-                        state.hidden = was_visible;
-                        ctx.send_viewport_cmd(ViewportCommand::Visible(true));
-                        ctx.send_viewport_cmd(ViewportCommand::Focus);
+                        show_app(ctx, state);
                         // ctx.memory_mut(|mem| mem.request_focus(text_edit_id));
                         println!("Toggle visibility: show + focus");
 
@@ -652,8 +656,20 @@ pub fn process_app_action(
                     state.app_version_state = VersionState::UpdateAvailable(latest_version);
                     SmallVec::new()
                 }
+                MsgToApp::OpenFiles(paths) => {
+                    println!("Opening files requested by the OS: {paths:?}");
+                    show_app(ctx, state);
+                    paths.into_iter().map(AppAction::OpenExternalFile).collect()
+                }
             }
         }
+        // AppAction::HandleOsInboxMsg(msg) => match msg {
+        //     OsInboxMsg::OpenFiles(paths) => {
+        //         println!("Opening files requested by the OS: {paths:?}");
+        //         show_app(ctx, state);
+        //         paths.into_iter().map(AppAction::OpenExternalFile).collect()
+        //     }
+        // },
         AppAction::EvalNote(note_file) => {
             let Some(note) = state.notes.get_mut(&note_file) else {
                 return SmallVec::new();
@@ -1229,9 +1245,7 @@ pub fn process_app_action(
 
         AppAction::OpenFileDialog => {
             match app_io.open_file_dialog() {
-                Ok(Some(path)) => {
-                    actions::external_files::open_external_file(path, state, app_io)
-                }
+                Ok(Some(path)) => actions::external_files::open_external_file(path, state, app_io),
                 Ok(None) => {
                     // User cancelled - no action needed
                     SmallVec::new()

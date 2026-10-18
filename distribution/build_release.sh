@@ -11,6 +11,12 @@ if [ ! -f "$PLIST_FILE" ]; then
   exit 1
 fi
 
+# document types come from `info_plist_exts` in Cargo.toml, silently dropped by cargo-bundle < 0.12.0
+if ! /usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes" "$PLIST_FILE" >/dev/null 2>&1; then
+  echo "CFBundleDocumentTypes missing from $PLIST_FILE, is cargo-bundle older than 0.12.0?"
+  exit 1
+fi
+
 echo "Modifying plist: $PLIST_FILE"
 
 /usr/libexec/PlistBuddy -c "Add :DTCompiler string com.apple.compilers.llvm.clang.1_0" "$PLIST_FILE"

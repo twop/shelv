@@ -6,6 +6,7 @@ use app_state::{AppInitData, AppState, MsgToApp, compute_editor_text_id};
 use app_ui::{AppRenderData, RenderAppResult, render_app};
 use command::{AppFocusState, CommandContext, EditorCommandOutput};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use os_inbox::OsInbox;
 
 use hotwatch::{
     Event, EventKind, Hotwatch,
@@ -25,7 +26,10 @@ use tray_icon::{
 };
 // use tray_item::TrayItem;G1
 
-use std::{path::PathBuf, sync::mpsc::sync_channel};
+use std::{
+    path::PathBuf,
+    sync::mpsc::{Receiver, Sender, SyncSender, sync_channel},
+};
 
 use eframe::{
     CreationContext,
@@ -57,6 +61,7 @@ mod egui_hotkey;
 mod feedback;
 // mod knus_test;
 mod nord;
+mod os_inbox;
 mod persistent_state;
 mod picker;
 mod scripting;
@@ -73,13 +78,18 @@ pub struct MyApp<IO: AppIO> {
     tray: TrayIcon,
     persistence_folder: PathBuf,
     app_io: IO,
-
+    // keeps the Apple Event handler registered
+    os_inbox: OsInbox,
     // begining of the frame
     app_focus_state: AppFocusState,
 }
 
 impl MyApp<RealAppIO> {
-    pub fn new(cc: &CreationContext) -> Self {
+    pub fn new(
+        cc: &CreationContext,
+        os_inbox: OsInbox,
+        (msg_queue_tx, msg_queue_rx): (SyncSender<MsgToApp>, Receiver<MsgToApp>),
+    ) -> Self {
         let theme = Default::default();
         configure_styles(&cc.egui_ctx, &theme);
 
@@ -91,7 +101,7 @@ impl MyApp<RealAppIO> {
             .map(|proj_dirs| proj_dirs.data_dir().to_path_buf())
             .unwrap();
 
-        let (msg_queue_tx, msg_queue_rx) = sync_channel::<MsgToApp>(10);
+        // let (msg_queue_tx, msg_queue_rx) = sync_channel::<MsgToApp>(10);
 
         let (shelv_api_server, shelv_magic_token, debug_chat_prompts): (
             &'static str,
@@ -239,6 +249,7 @@ impl MyApp<RealAppIO> {
         Self {
             state,
             app_io,
+            os_inbox,
             tray: tray_icon,
             app_focus_state: AppFocusState {
                 is_menu_opened: false,
@@ -340,11 +351,14 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         let app_state = &mut self.state;
         let text_edit_id = compute_editor_text_id(app_state.selected_note);
 
-        let msgs: SmallVec<[MsgToApp; 4]> = app_state.msg_queue.try_iter().collect();
+        let actions: SmallVec<[AppAction; 4]> = app_state
+            .msg_queue
+            .try_iter()
+            .map(AppAction::HandleMsgToApp)
+            .collect();
 
-        for msg in msgs {
-            let mut action_buffer: SmallVec<[AppAction; 4]> =
-                SmallVec::from_iter([AppAction::HandleMsgToApp(msg)]);
+        for action in actions {
+            let mut action_buffer: SmallVec<[AppAction; 4]> = SmallVec::from_iter([action]);
 
             while let Some(action) = action_buffer.pop() {
                 let new_actions = process_app_action(
@@ -628,13 +642,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
             latest_cursor: byte_cursor,
             latest_layout: updated_layout,
             text_changed,
-        } = render_app(
-            text_structure,
-            editor_text,
-            vis_state,
-            &app_state.theme,
-            ui,
-        );
+        } = render_app(text_structure, editor_text, vis_state, &app_state.theme, ui);
 
         app_state.commands.add_frame_hotkeys(frame_hotkeys);
 
@@ -761,6 +769,10 @@ fn main() {
     // Enter the runtime so that `tokio::spawn` is available immediately.
     let _enter = rt.enter();
 
+    // has to happen before the event loop starts, otherwise the files that launched the app are lost
+    let (msg_to_app_tx, msg_to_app_rx) = sync_channel::<MsgToApp>(30);
+    let os_inbox = OsInbox::install(msg_to_app_tx.clone());
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_resizable(true)
@@ -804,7 +816,13 @@ fn main() {
     eframe::run_native(
         "Shelv",
         options,
-        Box::new(|cc| Ok(Box::new(MyApp::new(cc)))),
+        Box::new(move |cc| {
+            Ok(Box::new(MyApp::new(
+                cc,
+                os_inbox,
+                (msg_to_app_tx, msg_to_app_rx),
+            )))
+        }),
     )
     .unwrap();
 }

@@ -441,6 +441,9 @@ pub enum MsgToApp {
     },
     UpdateRequired(Version),
     UpdateAvailable(Version),
+    /// files the OS asked us to open (`open -a Shelv file.md`, Finder "Open With"),
+    /// in a sandboxed build these come with the access grant
+    OpenFiles(Vec<PathBuf>),
 }
 
 // struct MdAnnotationShortcut {
@@ -764,9 +767,7 @@ fn execute_instruction(
 
         CI::CloseCurrentNote => {
             match ctx.app_state.selected_note {
-                NoteId::ExternalFileId(file_id) => {
-                    [AppAction::CloseExternalFile(file_id)].into()
-                }
+                NoteId::ExternalFileId(file_id) => [AppAction::CloseExternalFile(file_id)].into(),
                 _ => SmallVec::new(), // No-op for regular notes
             }
         }

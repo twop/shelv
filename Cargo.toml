@@ -113,7 +113,6 @@ winit = { git = 'https://github.com/twop/winit-no-private-api', branch = "remove
 name = "Shelv"
 identifier = "app.shelv"
 icon = ["assets/shelv-app-icon.icns"]
-osx_minimum_system_version = "12.0"
 resources = ["assets"]
 copyright = "Copyright (c) Briskmode Labs 2023. All rights reserved."
 category = "Productivity"
@@ -121,3 +120,9 @@ short_description = "Hackable playground for ephemeral thoughts."
 long_description = """
 Hackable playground for ephemeral thoughts.
 """
+
+# requires cargo-bundle >= 0.12.0 (macOS keys moved into this sub-table)
+[package.metadata.bundle.osx]
+minimum_system_version = "12.0"
+# raw Info.plist fragments, e.g. CFBundleDocumentTypes (no dedicated cargo-bundle key)
+info_plist_exts = ["distribution/Info.ext.plist"]
