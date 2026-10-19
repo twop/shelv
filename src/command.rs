@@ -343,6 +343,19 @@ pub enum CommandInstruction {
     #[knus(name = "StartWordJump")]
     StartWordJump,
 
+    // Structural editing
+    #[knus(name = "ExpandSelection")]
+    ExpandSelection,
+
+    #[knus(name = "ShrinkSelection")]
+    ShrinkSelection,
+
+    #[knus(name = "MoveStructureUp")]
+    MoveStructureUp,
+
+    #[knus(name = "MoveStructureDown")]
+    MoveStructureDown,
+
     #[knus(name = "OpenFileDialog")]
     OpenFileDialog,
 
@@ -408,6 +421,10 @@ impl CommandInstruction {
             // Self::RunLLMBlock => "Execute AI Block".into(),
             CommandInstruction::ShowPrompt => "Show AI Prompt".into(),
             CommandInstruction::StartWordJump => "Activate Word Jump".into(),
+            CommandInstruction::ExpandSelection => "Expand Selection".into(),
+            CommandInstruction::ShrinkSelection => "Shrink Selection".into(),
+            CommandInstruction::MoveStructureUp => "Move Up (line, list item, block)".into(),
+            CommandInstruction::MoveStructureDown => "Move Down (line, list item, block)".into(),
             CommandInstruction::OpenFileDialog => "Open File".into(),
             CommandInstruction::CloseCurrentNote => "Close File".into(),
             CommandInstruction::ToggleDebugTools => "Toggle Debug Tools".into(),
@@ -450,6 +467,10 @@ impl CommandInstruction {
             C::PinWindow => shortcut(Modifiers::COMMAND, Key::P),
             C::ShowPrompt => shortcut(Modifiers::CTRL, Key::Enter),
             C::StartWordJump => shortcut(Modifiers::COMMAND, Key::J),
+            C::ExpandSelection => shortcut(Modifiers::ALT, Key::O),
+            C::ShrinkSelection => shortcut(Modifiers::ALT, Key::I),
+            C::MoveStructureUp => shortcut(Modifiers::ALT, Key::K),
+            C::MoveStructureDown => shortcut(Modifiers::ALT, Key::J),
             C::OpenFileDialog => shortcut(Modifiers::COMMAND, Key::O),
             C::CloseCurrentNote => shortcut(Modifiers::COMMAND, Key::W),
             C::ToggleDebugTools => shortcut(Modifiers::ALT.plus(Modifiers::SHIFT).plus(Modifiers::CTRL), Key::D),
@@ -479,6 +500,10 @@ impl CommandInstruction {
             | C::EnterInsideKDL
             | C::ShowPrompt
             | C::StartWordJump
+            | C::ExpandSelection
+            | C::ShrinkSelection
+            | C::MoveStructureUp
+            | C::MoveStructureDown
             | C::ShowSlashPallete
             | C::BracketAutoclosingInsideKDL
             | C::InsertText(_) => (
@@ -539,6 +564,10 @@ impl CommandInstruction {
             // Self::RunLLMBlock => Some("ExecutePrompt;".into()),
             Self::ShowPrompt => Some("ShowPrompt;".into()),
             Self::StartWordJump => Some("StartWordJump;".into()),
+            Self::ExpandSelection => Some("ExpandSelection;".into()),
+            Self::ShrinkSelection => Some("ShrinkSelection;".into()),
+            Self::MoveStructureUp => Some("MoveStructureUp;".into()),
+            Self::MoveStructureDown => Some("MoveStructureDown;".into()),
             Self::OpenFileDialog => Some("OpenFileDialog;".into()),
             Self::CloseCurrentNote => Some("CloseCurrentNote;".into()),
             Self::ToggleDebugTools => Some("ToggleDebugTools;".into()),
@@ -798,6 +827,14 @@ impl CommandList {
                 cmd.shortcut
                     .zip(Some(KeyboardBinding::CommandInstance(cmd)))
             }))
+    }
+
+    pub fn has_binding_for(&self, shortcut: KeyboardShortcut) -> bool {
+        self.frame_hotkeys.iter().any(|hotkey| hotkey.shortcut == shortcut)
+            || self
+                .keyboard_commands
+                .iter()
+                .any(|cmd| cmd.shortcut == Some(shortcut))
     }
 
     pub fn prepare_frame_hotkeys(&mut self) -> FrameHotkeys {

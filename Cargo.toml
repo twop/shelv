@@ -96,6 +96,7 @@ chrono = "0.4.40"
 egui_taffy = "0.14.0"
 reqwest = "0.12.23"
 regex = "1.11.3"
+unicode-segmentation = "1.13.3"
 
 [patch.crates-io]
 # egui fork with `LayoutSection::hanging_indent` (used for markdown lists)

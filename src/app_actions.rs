@@ -22,7 +22,7 @@ use crate::{
     app_state::{
         AppState, CodeBlockAnnotation, FeedbackState, InlineLLMPromptState, InlineLLMResponseChunk,
         InlinePromptStatus, MsgToApp, NoteSignature, ParsedPromptResponse, RenderAction,
-        SlashPalette, TextSelectionAddress, UnsavedChange, VersionState, WordJumpAddress,
+        SelectionExpansion, SlashPalette, TextSelectionAddress, UnsavedChange, VersionState, WordJumpAddress,
         WordJumpState, compute_editor_text_id,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
@@ -30,6 +30,7 @@ use crate::{
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
         run_llm::{CodeBlockAddress, LLM_LANG, prepare_to_run_llm_block},
+        structural_selection::{expand_selection, shrink_selection},
     },
     effects::text_change_effect::{TextChange, apply_text_changes},
     feedback::FeedbackType,
@@ -128,6 +129,7 @@ pub enum AppAction {
 
     SlashPalette(SlashPaletteAction),
     WordJump(WordJumpAction),
+    StructuralSelection(SelectionStep),
     HideApp,
     CopyCodeBlock(NoteId, SpanIndex),
     AppUpdateClicked,
@@ -151,6 +153,12 @@ impl AppAction {
     pub fn defer(action: Self) -> Self {
         Self::DeferToPostRender(Box::new(action))
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SelectionStep {
+    Expand,
+    Shrink,
 }
 
 #[derive(Debug, Clone)]
@@ -194,6 +202,8 @@ pub enum HideMode {
 // TODO consider focus, opening links etc as IO operations
 pub trait AppIO {
     fn hide_app(&self, mode: HideMode);
+    /// Drops a pending IME composition, e.g. a dead key that was used as a shortcut
+    fn cancel_ime_composition(&self);
     fn open_shelv_folder(&self) -> Result<(), Box<dyn std::error::Error>>;
     fn try_read_note_if_newer(
         &self,
@@ -1255,6 +1265,70 @@ pub fn process_app_action(
                     SmallVec::new()
                 }
             }
+        }
+
+        AppAction::StructuralSelection(step) => {
+            let note_file = state.selected_note;
+            let Some(note) = state.notes.get(&note_file) else {
+                return SmallVec::new();
+            };
+            let Some(cursor) = note.cursor().or(note.last_cursor()) else {
+                return SmallVec::new();
+            };
+
+            let structure = &note.derived_state.structure;
+            let text_version = structure.opaque_version();
+
+            // any edit or cursor movement in between makes the history stale
+            let mut history = match state.selection_expansion.take() {
+                Some(expansion)
+                    if expansion.note == note_file
+                        && expansion.text_version == text_version
+                        && expansion.expanded_to == cursor =>
+                {
+                    expansion.history
+                }
+                _ => Vec::new(),
+            };
+
+            // note that `end` is where the cursor (head) is
+            let head = cursor.end;
+            let next = match step {
+                SelectionStep::Expand => {
+                    expand_selection(&note.text, structure, cursor.ordered(), head).map(|expanded| {
+                        history.push(cursor);
+                        expanded.unordered()
+                    })
+                }
+                SelectionStep::Shrink => history.pop().or_else(|| {
+                    Some(
+                        shrink_selection(&note.text, structure, cursor.ordered(), head)
+                            .map(|shrunk| shrunk.unordered())
+                            .unwrap_or(UnOrderedByteSpan::point(head)),
+                    )
+                }),
+            }
+            .unwrap_or(cursor);
+
+            state.selection_expansion = Some(SelectionExpansion {
+                note: note_file,
+                text_version,
+                expanded_to: next,
+                history,
+            });
+
+            if next == cursor {
+                return SmallVec::new();
+            }
+
+            if let Some(note) = state.notes.get_mut(&note_file) {
+                note.update_cursor(next);
+            }
+
+            [AppAction::defer(AppAction::IssueRenderAction(
+                RenderAction::ScrollToEditorCursorPos,
+            ))]
+            .into()
         }
 
         AppAction::WordJump(word_jump_action) => match word_jump_action {
