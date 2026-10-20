@@ -32,7 +32,7 @@ use crate::{
         inline_llm_prompt::inline_llm_prompt_command_handler,
         insert_text::call_replace_text,
         kdl_lang::on_enter_inside_kdl_block,
-        move_structure::{MoveDirection, move_structure},
+        move_lines::{MoveDirection, move_lines},
         slash_pallete::show_slash_pallete,
         space_after_task_markers::on_space_after_task_markers,
         start_word_jump::start_jump_list_command_handler,
@@ -535,8 +535,8 @@ impl AppState {
                 CommandInstruction::StartWordJump,
                 CommandInstruction::ExpandSelection,
                 CommandInstruction::ShrinkSelection,
-                CommandInstruction::MoveStructureUp,
-                CommandInstruction::MoveStructureDown,
+                CommandInstruction::MoveLinesUp,
+                CommandInstruction::MoveLinesDown,
                 CommandInstruction::ToggleDebugTools,
                 CommandInstruction::ShowSlashPallete,
                 // CommandInstruction::HideSlashPallete,
@@ -799,8 +799,8 @@ fn execute_instruction(
 
         CI::ExpandSelection => [AppAction::StructuralSelection(SelectionStep::Expand)].into(),
         CI::ShrinkSelection => [AppAction::StructuralSelection(SelectionStep::Shrink)].into(),
-        CI::MoveStructureUp => move_structure_command(ctx, MoveDirection::Up),
-        CI::MoveStructureDown => move_structure_command(ctx, MoveDirection::Down),
+        CI::MoveLinesUp => move_lines_command(ctx, MoveDirection::Up),
+        CI::MoveLinesDown => move_lines_command(ctx, MoveDirection::Down),
 
         CI::ToggleDebugTools => [AppAction::ToggleDevTools].into(),
 
@@ -820,8 +820,8 @@ fn execute_instruction(
     }
 }
 
-fn move_structure_command(ctx: CommandContext, direction: MoveDirection) -> EditorCommandOutput {
-    let actions = call_with_text_ctx(ctx, |text_ctx| move_structure(text_ctx, direction));
+fn move_lines_command(ctx: CommandContext, direction: MoveDirection) -> EditorCommandOutput {
+    let actions = call_with_text_ctx(ctx, |text_ctx| move_lines(text_ctx, direction));
 
     if actions.is_empty() {
         // nothing to move, but the shortcut still needs to be consumed,

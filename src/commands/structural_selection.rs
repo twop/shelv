@@ -32,28 +32,6 @@ pub fn trim_span(text: &str, span: ByteSpan) -> ByteSpan {
     ByteSpan::new(start, end.max(start))
 }
 
-/// "- ", "* ", "+ ", "1. " or "1) " at the start of a list item, including the spaces after it
-pub fn list_item_marker(text: &str, item: ByteSpan) -> ByteSpan {
-    let item_text = &text[item.range()];
-
-    let bullet_len = if item_text.starts_with(['-', '*', '+']) {
-        1
-    } else {
-        let digits = item_text.chars().take_while(|c| c.is_ascii_digit()).count();
-        match item_text[digits..].chars().next() {
-            Some('.' | ')') if digits > 0 => digits + 1,
-            _ => 0,
-        }
-    };
-
-    let spaces = item_text[bullet_len..]
-        .chars()
-        .take_while(|c| *c == ' ' || *c == '\t')
-        .count();
-
-    ByteSpan::new(item.start, item.start + bullet_len + spaces)
-}
-
 /// The text of a list item without the marker, task marker and nested lists
 pub fn list_item_text(structure: &TextStructure, item: SpanIndex) -> Option<ByteSpan> {
     structure
