@@ -5405,6 +5405,7 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-highlight",
  "tree-sitter-kdl",
+ "unicode-segmentation",
  "wgpu",
  "winit",
 ]

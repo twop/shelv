@@ -269,6 +269,27 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
         let app_focus = self.app_focus_state.clone();
         let app_state = &mut self.state;
 
+        // Option+<dead key> on macOS never produces a key event, only an IME preedit (e.g. "ˆ" for Option+I).
+        // If there is a binding for that Option chord, turn the preedit back into a key press.
+        let prev_modifiers = ctx.input(|input| input.modifiers);
+        if let Some((key, modifiers)) = option_dead_key_press(prev_modifiers, &raw_input.events) {
+            if app_state
+                .commands
+                .has_binding_for(KeyboardShortcut::new(modifiers, key))
+            {
+                drop_text_typed_with_option(&mut raw_input.events);
+                raw_input.events.push(egui::Event::Key {
+                    key,
+                    physical_key: Some(key),
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                });
+                // otherwise macOS keeps the dead key pending and the next keystroke becomes "î"
+                self.app_io.cancel_ime_composition();
+            }
+        }
+
         let mut scripts = app_state
             .settings_scripts
             .take()
@@ -318,6 +339,9 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                                 true
                             }
                         });
+                        if keyboard_shortcut.modifiers.alt {
+                            drop_text_typed_with_option(&mut raw_input.events);
+                        }
                         Some(res)
                     } else {
                         None
@@ -507,6 +531,9 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                                 // remove the keys from the input
 
                                 input.consume_shortcut(&keyboard_shortcut);
+                                if keyboard_shortcut.modifiers.alt {
+                                    drop_text_typed_with_option(&mut input.events);
+                                }
                                 Some(res)
                             } else {
                                 None
@@ -754,6 +781,97 @@ pub fn is_shortcut_match<'a>(
             } if *ev_key == logical_key && ev_mods.matches_exact(modifiers)
         )
     })
+}
+
+/// On macOS Option+letter also produces text ("ø" for Option+O, a dead key for Option+I),
+/// so when an Option shortcut is handled that text must not reach the text editor
+fn drop_text_typed_with_option(events: &mut Vec<egui::Event>) {
+    events.retain(|event| !matches!(event, egui::Event::Text(_) | egui::Event::Ime(_)));
+}
+
+/// Option+<dead key> (e.g. Option+I on the US layout) arrives only as an IME preedit with the accent,
+/// returns the key that was pressed and the modifiers, if that is the case
+fn option_dead_key_press(
+    prev_modifiers: egui::Modifiers,
+    events: &[egui::Event],
+) -> Option<(egui::Key, egui::Modifiers)> {
+    use egui::{Event, ImeEvent, Key};
+
+    let has_key_press = events
+        .iter()
+        .any(|event| matches!(event, Event::Key { pressed: true, .. }));
+    if has_key_press {
+        return None;
+    }
+
+    let mut modifiers = prev_modifiers;
+    for event in events {
+        match event {
+            Event::ModifiersChanged(new_modifiers) => modifiers = *new_modifiers,
+            Event::Ime(ImeEvent::Preedit { text, .. })
+                if modifiers.alt && !modifiers.command && !modifiers.ctrl =>
+            {
+                let key = match text.as_str() {
+                    "ˆ" => Key::I,
+                    "´" => Key::E,
+                    "˜" => Key::N,
+                    "¨" => Key::U,
+                    "`" => Key::Backtick,
+                    _ => continue,
+                };
+                return Some((key, modifiers));
+            }
+            _ => (),
+        }
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod option_dead_key_tests {
+    use super::option_dead_key_press;
+    use eframe::egui::{Event, ImeEvent, Key, Modifiers};
+
+    fn preedit(text: &str) -> Event {
+        Event::Ime(ImeEvent::Preedit {
+            text: text.to_string(),
+            active_range_chars: None,
+        })
+    }
+
+    #[test]
+    fn test_option_dead_key_press() {
+        assert_eq!(
+            option_dead_key_press(Modifiers::ALT, &[preedit("ˆ")]),
+            Some((Key::I, Modifiers::ALT))
+        );
+
+        // option pressed in the same frame
+        assert_eq!(
+            option_dead_key_press(
+                Modifiers::NONE,
+                &[Event::ModifiersChanged(Modifiers::ALT), preedit("ˆ")]
+            ),
+            Some((Key::I, Modifiers::ALT))
+        );
+
+        // regular composition without option
+        assert_eq!(option_dead_key_press(Modifiers::NONE, &[preedit("ˆ")]), None);
+
+        // a real key event means it is not a dead key
+        let key_press = Event::Key {
+            key: Key::I,
+            physical_key: Some(Key::I),
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::ALT,
+        };
+        assert_eq!(
+            option_dead_key_press(Modifiers::ALT, &[key_press, preedit("ˆ")]),
+            None
+        );
+    }
 }
 
 fn main() {

@@ -84,6 +84,10 @@ pub const DEFAULT_REAL_LLM_MODEL: &str = "claude-haiku-4-5";
 pub const SHELV_LLM_PROXY_MODEL: &str = "shelv-claude";
 
 impl AppIO for RealAppIO {
+    fn cancel_ime_composition(&self) {
+        cancel_ime_composition_on_macos();
+    }
+
     fn hide_app(&self, mode: HideMode) {
         hide_app_on_macos(mode);
     }
@@ -504,6 +508,27 @@ fn try_read_note_if_newer(path: &PathBuf, last_saved: u128) -> Result<Option<Str
         Ok(Some(content))
     } else {
         Ok(None)
+    }
+}
+
+fn cancel_ime_composition_on_macos() {
+    // the first responder is winit's view, its `unmarkText` discards the marked text
+    // in the input context and resets winit's own IME state
+    use objc2::rc::Id;
+    use objc2::runtime::{AnyObject, Bool};
+    use objc2::{class, msg_send, msg_send_id, sel};
+    unsafe {
+        let app: Id<AnyObject> = msg_send_id![class!(NSApplication), sharedApplication];
+        let Some(window): Option<Id<AnyObject>> = msg_send_id![&app, keyWindow] else {
+            return;
+        };
+        let Some(responder): Option<Id<AnyObject>> = msg_send_id![&window, firstResponder] else {
+            return;
+        };
+        let responds: Bool = msg_send![&responder, respondsToSelector: sel!(unmarkText)];
+        if responds.as_bool() {
+            let _: () = msg_send![&responder, unmarkText];
+        }
     }
 }
 

@@ -26,8 +26,12 @@ use crate::{
     theme::{AppTheme, ColorManipulation, ColorTheme, FontTheme},
 };
 
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SpanIndex(usize);
+
+impl SpanIndex {
+    pub const ROOT: SpanIndex = SpanIndex(0);
+}
 
 #[derive(Debug)]
 enum PointKind {
@@ -1292,6 +1296,15 @@ impl TextStructure {
         parent: SpanIndex,
     ) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
         iterate_children_recursively_of(parent, &self.spans)
+    }
+
+    pub fn span(&self, index: SpanIndex) -> &SpanDesc {
+        &self.spans[index.0]
+    }
+
+    /// direct children of the root, e.g. paragraphs, headings, lists and code blocks
+    pub fn iterate_top_level(&self) -> impl Iterator<Item = (SpanIndex, &SpanDesc)> {
+        self.iter().filter(|(_, desc)| desc.parent == SpanIndex::ROOT)
     }
 
     pub fn find_meta(&self, index: SpanIndex) -> Option<&SpanMeta> {

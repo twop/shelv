@@ -20,7 +20,7 @@ use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     actions::word_jump::{JumpCharSequence, JumpLabel},
-    app_actions::{AppAction, AppNotification, FocusTarget},
+    app_actions::{AppAction, AppNotification, FocusTarget, SelectionStep},
     app_ui::char_index_from_byte_index,
     byte_span::{ByteSpan, UnOrderedByteSpan},
     command::{
@@ -32,6 +32,7 @@ use crate::{
         inline_llm_prompt::inline_llm_prompt_command_handler,
         insert_text::call_replace_text,
         kdl_lang::on_enter_inside_kdl_block,
+        move_lines::{MoveDirection, move_lines},
         slash_pallete::show_slash_pallete,
         space_after_task_markers::on_space_after_task_markers,
         start_word_jump::start_jump_list_command_handler,
@@ -106,6 +107,18 @@ pub struct WordJumpAddress {
     pub span: UnOrderedByteSpan,
     // TODO should it be always 2? or should 3 letters be allowed too?
     pub label: JumpLabel,
+}
+
+/// Remembers the selections before each "expand selection",
+/// so that shrinking walks back exactly the same way
+#[derive(Debug)]
+pub struct SelectionExpansion {
+    pub note: NoteId,
+    pub text_version: TextHash,
+    /// the selection we set last, if the current one is different the history is stale
+    pub expanded_to: UnOrderedByteSpan,
+    /// previous selections, the original cursor is the first one
+    pub history: Vec<UnOrderedByteSpan>,
 }
 
 pub struct WordJumpState {
@@ -275,6 +288,7 @@ pub struct AppState {
     pub inline_llm_prompt: Option<InlineLLMPromptState>,
     pub slash_palette: Option<SlashPalette>,
     pub word_jump_state: Option<WordJumpState>,
+    pub selection_expansion: Option<SelectionExpansion>,
 
     pub computed_layout: Option<ComputedLayout>,
     pub settings_scripts: Option<Scripts>,
@@ -519,6 +533,10 @@ impl AppState {
                 // CommandInstruction::RunLLMBlock,
                 CommandInstruction::ShowPrompt,
                 CommandInstruction::StartWordJump,
+                CommandInstruction::ExpandSelection,
+                CommandInstruction::ShrinkSelection,
+                CommandInstruction::MoveLinesUp,
+                CommandInstruction::MoveLinesDown,
                 CommandInstruction::ToggleDebugTools,
                 CommandInstruction::ShowSlashPallete,
                 // CommandInstruction::HideSlashPallete,
@@ -613,6 +631,7 @@ impl AppState {
             inline_llm_prompt: None,
             slash_palette: None,
             word_jump_state: None,
+            selection_expansion: None,
             settings_scripts: None,
             render_actions: vec![],
             feedback: None,
@@ -778,6 +797,11 @@ fn execute_instruction(
 
         CI::StartWordJump => start_jump_list_command_handler(ctx).unwrap_or_default(),
 
+        CI::ExpandSelection => [AppAction::StructuralSelection(SelectionStep::Expand)].into(),
+        CI::ShrinkSelection => [AppAction::StructuralSelection(SelectionStep::Shrink)].into(),
+        CI::MoveLinesUp => move_lines_command(ctx, MoveDirection::Up),
+        CI::MoveLinesDown => move_lines_command(ctx, MoveDirection::Down),
+
         CI::ToggleDebugTools => [AppAction::ToggleDevTools].into(),
 
         CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),
@@ -793,6 +817,21 @@ fn execute_instruction(
         CI::InsertText(text_source) => call_replace_text(text_source, ctx),
         // Disable for now
         // CI::BracketAutoclosingInsideKDL => map_text_command_to_command_handler(autoclose_bracket_inside_kdl_block).call(ctx),
+    }
+}
+
+fn move_lines_command(ctx: CommandContext, direction: MoveDirection) -> EditorCommandOutput {
+    let actions = call_with_text_ctx(ctx, |text_ctx| move_lines(text_ctx, direction));
+
+    if actions.is_empty() {
+        // nothing to move, but the shortcut still needs to be consumed,
+        // otherwise Option+J would type "∆"
+        [AppAction::IssueRenderAction(
+            RenderAction::ScrollToEditorCursorPos,
+        )]
+        .into()
+    } else {
+        actions
     }
 }
 
