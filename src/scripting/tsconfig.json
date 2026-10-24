@@ -1,0 +1,20 @@
+{
+  // The "shelv" module (system.ts) and the base layer (default-settings.ts): type-checking for editors
+  // and `just typecheck-settings`. Shelv embeds these .ts files and strips their types at load, hence
+  // erasableSyntaxOnly (what the stripper accepts). default-settings.ts resolves "shelv" to the generated system.d.ts, as a user's settings would,
+  // which also proves the typings are complete.
+  "compilerOptions": {
+    // Boa runs ES2022 modules; no DOM or Node globals exist there
+    "target": "es2022",
+    "lib": ["es2022"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": [],
+    "strict": true,
+    "erasableSyntaxOnly": true,
+    "paths": { "shelv": ["./system.d.ts"], "shelv/defaults": ["./default-settings.ts"] },
+    "noEmit": true
+  },
+  // settings-js-08-my-settings.ts: temporary, type-checked only
+  "files": ["system.ts", "default-settings.ts", "settings-js-08-my-settings.ts"]
+}
