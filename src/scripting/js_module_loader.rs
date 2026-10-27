@@ -1,7 +1,9 @@
+use std::{cell::RefCell, rc::Rc};
+
 use boa_engine::{
-    Context, JsNativeError, JsResult, JsString, Module,
+    Context, JsNativeError, JsResult, Module,
     gc::GcRefCell,
-    module::{ModuleLoader, Referrer},
+    module::{ModuleLoader, ModuleRequest, Referrer},
 };
 use fxhash::FxHashMap;
 
@@ -32,42 +34,25 @@ impl InMemoryModuleLoader {
 }
 
 impl ModuleLoader for InMemoryModuleLoader {
-    fn load_imported_module(
-        &self,
+    async fn load_imported_module(
+        self: Rc<Self>,
         _referrer: Referrer,
-        specifier: JsString,
-        finish_load: Box<dyn FnOnce(JsResult<Module>, &mut Context)>,
-        context: &mut Context,
-    ) {
-        let result = if let Some(module) = self.get(&specifier.to_std_string_escaped()) {
-            Ok(module)
-        } else {
-            Err(JsNativeError::typ()
-                .with_message(format!(
-                    "Module '{}' not found",
-                    specifier.to_std_string_escaped()
-                ))
-                .into())
-        };
-
-        finish_load(result, context);
-    }
-
-    fn register_module(&self, specifier: JsString, module: Module) {
-        self.insert(specifier.to_std_string_escaped(), module);
-    }
-
-    fn get_module(&self, specifier: JsString) -> Option<Module> {
-        self.get(&specifier.to_std_string_escaped())
+        request: ModuleRequest,
+        _context: &RefCell<&mut Context>,
+    ) -> JsResult<Module> {
+        let specifier = request.specifier().to_std_string_escaped();
+        self.get(&specifier).ok_or_else(|| {
+            JsNativeError::typ()
+                .with_message(format!("Module '{specifier}' not found"))
+                .into()
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
     use super::*;
-    use boa_engine::{Context, Source, js_str, js_string};
+    use boa_engine::{Context, Source, js_str};
 
     #[test]
     fn test_missing_module() {
@@ -99,7 +84,7 @@ mod tests {
         "#;
 
         let module = Module::parse(Source::from_bytes(module_code), None, &mut context).unwrap();
-        loader.register_module(js_string!("math.js"), module);
+        loader.insert("math.js".to_string(), module);
 
         // Import and use module
         let source = r#"
@@ -109,7 +94,7 @@ mod tests {
 
         let module = Module::parse(Source::from_bytes(source), None, &mut context).unwrap();
         let _promise = module.load_link_evaluate(&mut context);
-        context.run_jobs();
+        context.run_jobs().unwrap();
         let namespace = module.namespace(&mut context);
         let call_fn = namespace.get(js_str!("call"), &mut context).unwrap();
         let result = call_fn

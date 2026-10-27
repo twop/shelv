@@ -1,6 +1,6 @@
 /*! system.d.ts is GENERATED from system.ts by `just build-system`: edit system.ts only. */
 // The "shelv" module: the API that settings blocks import (`import { action, command } from "shelv"`).
-// Spec: docs/settings-js/spec.md.
+// How it fits with Rust, the defaults and the icons: docs/settings-js/codegen.md.
 //
 // This file is the single source for the module: its types, its runtime and the icon names.
 // Shelv embeds it as is and strips the types when it loads (Boa runs JS only), so only erasable
@@ -15,7 +15,7 @@
 //   - the runtime: pure constructors that build frozen data and have no effect on the app. Shelv reads
 //     that data back in Rust. Values carry an internal `__shelv` tag so the decoder can recognise them;
 //     the tag is not part of the public API.
-//   - region `icons`: the generated `PhosphorIconName` union (rewritten by the icons sync test).
+//   - region `icons`: the generated `PhosphorIconName` union (`just update-icons`; checked by `cargo test`).
 
 //#region api
 
@@ -516,8 +516,8 @@ export const Icon: IconNs = Object.freeze({
 });
 
 //#region icons
-// GENERATED from egui-phosphor 0.14.0 (src/variants/codepoints.rs). Do not edit by hand.
-// Kept in sync by the icons test (docs/settings-js/plan.md, Phase 3).
+// GENERATED from egui_phosphor::light::ICONS by `system_ts_icons_match` (src/scripting/actions.rs).
+// Do not edit by hand: run `just update-icons`.
 // 1530 Phosphor icon names, as accepted by `Icon.phosphor(...)` and `PhosphorIcon::from_string`.
 export type PhosphorIconName =
 	| "acorn"

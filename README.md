@@ -30,7 +30,7 @@
 
 ### Make It Yours
 
-Settings in Shelv is just a note, where you can create custom commands with [KDL](https://kdl.dev/) and JavaScript, assign and tweak keyboard shortcuts, all with live reload.
+Settings in Shelv is just a note, where you can create custom commands in JavaScript (or TypeScript), assign and tweak keyboard shortcuts, all with live reload.
 
 **The origin story:** at the time I used [Bear app](https://bear.app/), which had 4 different formats of dates, but I wanted `YYYY/mmm/dd`, and I kept thinking: "if only I could _define_ what I want". Well, with Shelv you can.
 
@@ -71,65 +71,27 @@ Map { "with" → "live reload" }
 
 ## Default Shortcuts
 
-Here is the list of keybindings that work out of the box, please tweak them to your liking. 
+These keybindings work out of the box. They are defined in JavaScript, like your own settings, in
+[`src/scripting/default-settings.ts`](src/scripting/default-settings.ts); bind the same key in the settings
+note to replace one, or move/remove a default (see [Shelv Settings](#shelv-settings)).
 
-*Note: there can be only one keybinding for a given command, the last declared wins*
-
-```kdl
-// (⌥ ⌘ B): Toggle Code Block
-bind "Option Cmd B" icon="code-block" alias="code" description="Toggle Code Block" { MarkdownCodeBlock; }
-
-// (⌘ B): Toggle Bold
-bind "Cmd B" icon="text-b" alias="bold" description="Toggle Bold" { MarkdownBold; }
-
-// (⌘ I): Toggle Italic
-bind "Cmd I" icon="text-italic" alias="italic" description="Toggle Italic" { MarkdownItalic; }
-
-// (⇧ ⌘ E): Toggle Strikethrough
-bind "Shift Cmd E" icon="text-strikethrough" alias="strike" description="Toggle Strikethrough" { MarkdownStrikethrough; }
-
-// (⌥ ⌘ 1): Heading 1
-bind "Option Cmd 1" icon="text-h-one" alias="h1" description="Heading 1" { MarkdownH1; }
-
-// (⌥ ⌘ 2): Heading 2
-bind "Option Cmd 2" icon="text-h-two" alias="h2" description="Heading 2" { MarkdownH2; }
-
-// (⌥ ⌘ 3): Heading 3
-bind "Option Cmd 3" icon="text-h-three" alias="h3" description="Heading 3" { MarkdownH3; }
-
-// (⌃ Enter): Show AI Prompt
-bind "Ctrl Enter" icon="sparkle" alias="ai" description="Show AI Prompt" { ShowPrompt; }
-
-// (⌘ J): Activates word jump mode for quick navigation to any word using 2-character sequences
-bind "Cmd J" icon="cursor-click" alias="jump" description="Start Word Jump" { StartWordJump; }
-
-// (⌘ ,): Open Settings
-bind "Cmd Comma" { SwitchToSettings; }
-
-// (⌘ P): Toggle Always on Top
-bind "Cmd P" { PinWindow; }
-
-// (Escape): Hide Window
-bind "Escape" { HideApp; }
-
-// (⌘ O): Open File
-bind "Cmd O" { OpenFileDialog; }
-
-// (⌘ W): Close File
-bind "Cmd W" { CloseCurrentNote; }
-
-// (⌘ 1): Shelf 1
-bind "Cmd 1" { SwitchToNote 0; }
-
-// (⌘ 2): Shelf 2
-bind "Cmd 2" { SwitchToNote 1; }
-
-// (⌘ 3): Shelf 3
-bind "Cmd 3" { SwitchToNote 2; }
-
-// (⌘ 4): Shelf 4
-bind "Cmd 4" { SwitchToNote 3; }
-```
+| Shortcut | Command | Slash palette |
+|---|---|---|
+| `⌥ ⌘ B` | Toggle Code Block | `/code` |
+| `⌘ B` / `⌘ I` / `⇧ ⌘ E` | Toggle Bold / Italic / Strikethrough | `/bold`, `/italic`, `/strike` |
+| `⌥ ⌘ 1` / `2` / `3` | Heading 1 / 2 / 3 | `/h1`, `/h2`, `/h3` |
+| `⌃ Enter` | Show AI Prompt | `/ai` |
+| `⌘ J` | Word Jump (jump to any word with 2-character labels) | `/jump` |
+| `⌥ O` / `⌥ I` | Expand / Shrink Selection | |
+| `⌥ K` / `⌥ J` | Move Lines Up / Down | |
+| `Tab` / `⇧ Tab` / `Enter` | Indent / unindent / split list items | |
+| `/` | Slash palette | |
+| `⌘ 1`-`⌘ 4` | Shelf 1-4 | |
+| `⌘ ,` | Open Settings | |
+| `⌘ P` | Toggle Always on Top | |
+| `⌘ O` / `⌘ W` | Open File / Close File | |
+| `Escape` | Hide Window | |
+| `⌥ ⌘ S` (system-wide) | Show / Hide Shelv | |
 
 ---
 
@@ -165,108 +127,70 @@ Inspired by [Vimium](https://vimium.github.io/) and [Helix](https://helix-editor
 
 Settings are defined in the settings note and can be accessed by clicking a gear button on the bottom bar (or `⌘ + ,`).
 
-Settings can contain any number of markdown code blocks with `kdl` language. These blocks change the app's behavior.
+Every ```` ```js ```` or ```` ```ts ```` code block in the settings note is an ES module, evaluated top to
+bottom on every edit. A block's `export default` adds settings; its other exports (functions, constants)
+are available in the blocks below without importing. TypeScript blocks have their types stripped (not
+checked). The API is typed in [`src/scripting/system.d.ts`](src/scripting/system.d.ts); how it fits together is in [`docs/settings-js/codegen.md`](docs/settings-js/codegen.md).
 
-#### Example: Custom Snippets via `InsertText` Command
+#### Example: a custom command
 
-The `InsertText` command allows you to insert either static or dynamic text into your notes:
+Wraps the selection in a Markdown link and puts the cursor inside, on `⌘ K` and as `/link` in the slash palette:
 
-1. **Direct text insertion:**
-```kdl
-bind "Cmd T" icon="text-aa" alias="test" description="Insert test text" {
-    InsertText {
-        string "This is a test"
-    }
-}
+```js
+import { action, command, selection, Icon } from "shelv";
+
+export const insertLink = command("link", {
+  icon: Icon.phosphor("link"), // https://phosphoricons.com
+  description: "Insert Markdown Link",
+  needs: [selection], // the selected text, "" when nothing is selected
+  run: (text) => action.InsertText({ text: `[${text}]({||})` }),
+});
+
+export default {
+  commands: [insertLink],                            // in the slash palette
+  bindings: [{ key: "Cmd K", command: insertLink }], // on a shortcut
+};
 ```
 
-2. **Dynamic text via JavaScript functions:**
-```kdl
-bind "Cmd T" {
-    InsertText {
-        callFunc "myFunction"
-    }
-}
-```
+- `command(alias, { icon?, description?, needs?, run })`: `run` is an action (`action.MarkdownBold`), an
+  array of actions run in order, or a function returning either.
+- In inserted text, `{||}` puts the cursor there and `{|}this will be selected{|}` selects text.
 
-3. **JavaScript functions with selection argument:**
-```kdl
-bind "Cmd T" {
-    InsertText {
-        callFunc "myFunction" {
-            selection
-        }
-    }
-}
-```
-
-JavaScript functions must be exported from `js` code blocks in the settings note.
-Each block is evaluated as a separate js module from top to bottom, with exported variables automatically imported into subsequent modules.
-When using the `selection` child node, the currently selected text will be passed as a js function argument.
-
-#### Example: Inserting the current day of the week
+#### Example: inserting the current day of the week
 
 ```js
 export function getCurrentDayOfWeek() {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const now = new Date();
-    return days[now.getDay()];
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  return days[new Date().getDay()];
 }
 ```
-
-```kdl
-bind "Cmd D" icon="calendar" alias="day" description="Insert current day of the week" {
-    InsertText {
-        callFunc "getCurrentDayOfWeek"
-    }
-}
-```
-
-#### Example: Using selection argument in JavaScript functions
 
 ```js
-export function wrapInQuotes(selectedText) {
-    return `"${selectedText}"`;
-}
+import { action, command, Icon } from "shelv";
 
-export function makeUppercase(selectedText) {
-    return selectedText.toUpperCase();
-}
+// getCurrentDayOfWeek comes from the block above
+export const insertDay = command("day", {
+  icon: Icon.phosphor("calendar"),
+  description: "Insert current day of the week",
+  run: () => action.InsertText({ text: getCurrentDayOfWeek() }),
+});
+
+export default { commands: [insertDay], bindings: [{ key: "Cmd D", command: insertDay }] };
 ```
 
-```kdl
-bind "Cmd Q" icon="quotes" alias="quote" description="Wrap selection in quotes" {
-    InsertText {
-        callFunc "wrapInQuotes" {
-            selection
-        }
-    }
-}
+#### Example: moving and removing default shortcuts
 
-bind "Cmd U" icon="text-aa" alias="upper" description="Make selection uppercase" {
-    InsertText {
-        callFunc "makeUppercase" {
-            selection
-        }
-    }
-}
-```
+```js
+import * as defaults from "shelv/defaults";
 
-#### Magic strings
-
-These patterns can be can be used for either `callFunc` or `string`
-- `{{selection}}` -> the currently selected text in a note, can be empty
-- `{||}` -> cursor with no selection
-- `{|}this will be selected{|}` -> cursor with selection, note that both opening and closing markers have to be present
-
-Here is an example of a simple custom command that wraps selection with `[]`, adds `()` and sets the cursor inside
-```kdl
-// (Cmd K): Insert Markdown Link
-bind "Cmd K" icon="link" alias="link" description="Insert Markdown Link" {
-   InsertText {
-        string "[{{selection}}]({||})"
-    }
-}
+export default {
+  bindings: [
+    { key: "Cmd Shift B", command: defaults.bold }, // bold moves from ⌘ B to ⇧ ⌘ B
+    { key: "Cmd P", command: null },                 // no shortcut for "Always on Top"
+  ],
+  global: [{ key: "Cmd Ctrl Option Shift S", command: defaults.showHide }],
+  // useDefaults: false, // start from no defaults at all
+};
 ```
 
 ### Supported AI Providers
@@ -284,49 +208,30 @@ Shelv supports multiple AI providers through the [rust-genai](https://github.com
 
 ### Settings Schema
 
-#### Keybinding Format
-- `global`: System-wide shortcuts - Format: `global "Shortcut" { Action; }`
-- `bind`: In-app keybindings - Format: `bind "Shortcut" { Action; }`
+```typescript
+export default {
+  useDefaults?: boolean,              // false: drop all of Shelv's defaults
+  commands?: Command[],               // slash palette entries, in order
+  bindings?: { key, command }[],      // in-app shortcuts; command: null removes the key
+  global?: { key, command }[],        // system-wide; only commands running action.ShowHideApp
+  ai?: {
+    model: string,                    // see providers above; default: Shelv's rate limited model
+    systemPrompt?: string,            // extra instructions
+    token?: string | Secret,          // secret("name") reads the macOS keychain (service "Shelv")
+    useShelvSystemPrompt?: boolean,   // default true
+  },
+};
+```
 
-#### Optional Attributes for bind
-- `icon`: Phosphor icon name for slash palette (e.g., "heart", "star", "code-simple") ([full list](https://phosphoricons.com))
-- `alias`: Command name in slash palette
-- `description`: Description shown in slash palette
-
-Example: `bind "Cmd T" icon="text-aa" alias="test" description="Insert test text"`
-
-#### AI Settings Block
-- `model`: Specifies the AI model to use (optional, defaults to rate limited model)
-- `systemPrompt`: Add additional instructions to the default system prompt for AI interactions (optional)
-- `token`: API token for authentication (required for non-Ollama/non-Shelv models)
-- `useShelvSystemPrompt`: Whether to prepend Shelv's default system prompt (default: true)
-
-#### Available Actions
-
-**For `bind` keyword:**
-- `MarkdownBold`, `MarkdownItalic`, , `MarkdownStrikethrough`
-- `MarkdownCodeBlock` or with optional language attribute `MarkdownCodeBlock lang="js"`
-- `MarkdownH1`, `MarkdownH2`, `MarkdownH3`
-- `PinWindow`, `RunLLMBlock`, `ShowPrompt`, `StartWordJump`
-- `SwitchToNote 1..4`, `SwitchToSettings`
-- `InsertText`
-  - Format:
-    ```
-    InsertText {
-        string "Direct text string"
-        // OR to call a js function
-        callFunc "exportedJsFunctionName"
-        // OR to call a js function with arguments
-        callFunc "exportedJsFunctionName" {
-            selection  // only selection node is currently supported
-        }
-    }
-    ```
-
-**For `global` keyword:**
-- `ShowHideApp`
-
-**Shortcut Format:** "Modifier1 Modifier2 Key" where modifiers are: `Cmd`, `Option`, `Shift`, `Ctrl`
+- **Keys:** `"Cmd Shift B"`: modifiers `Cmd`, `Option`, `Shift`, `Ctrl`, then one key.
+- **Actions** (`action.*`): `InsertText({ text })`, `MarkdownBold`, `MarkdownItalic`,
+  `MarkdownStrikethrough`, `MarkdownCodeBlock` / `MarkdownCodeBlock({ lang })`, `MarkdownH1`-`H3`,
+  `IndentListItem`, `UnindentListItem`, `SplitListItem`, `ExpandTaskMarker`, `ExpandSelection`,
+  `ShrinkSelection`, `MoveLinesUp`, `MoveLinesDown`, `StartWordJump`, `ShowSlashPalette`, `ShowPrompt`,
+  `SwitchToNote({ index: 1..4 })`, `SwitchToSettings`, `OpenFileDialog`, `CloseCurrentNote`,
+  `PinWindow`, `HideApp`, `ToggleDebugTools`, and for `global` only: `ShowHideApp`.
+- Typings for editors: [`src/scripting/system.d.ts`](src/scripting/system.d.ts) (map `"shelv"` to it in a tsconfig).
+- Coming from the old KDL settings? See [`docs/settings-js/migration_to_js.md`](docs/settings-js/migration_to_js.md).
 
 ---
 
@@ -464,7 +369,7 @@ Yep, that is it.
 - **[global-hotkey](https://github.com/tauri-apps/global-hotkey)** for system-wide shortcuts
 - **[tray-icon](https://github.com/tauri-apps/tray-icon)** for system tray functionality
 - **[genai](https://github.com/jeremychone/rust-genai)** for LLM integration
-- **[KDL](https://github.com/kdl-org/kdl)** for configuration language
+- **[swc](https://github.com/swc-project/swc)** (`swc_ts_fast_strip`) for running TypeScript settings and code blocks
 
 ---
 

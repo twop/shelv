@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 use crate::{
     app_actions::{AppAction, FocusTarget},
     command::{CommandCondition, CommandPhase, FrameHotkey, FrameHotkeys, UiStateAttribute},
-    settings_parsing::format_mac_shortcut_with_symbols,
+    shortcuts::format_mac_shortcut_with_symbols,
     taffy_styles::{StyleBuilder, flex_column, flex_row, style},
     theme::{AppIcon, AppTheme},
     ui_components::{IconButton, IconButtonSize},

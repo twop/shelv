@@ -16,14 +16,12 @@ use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings,
 };
 
-use tree_sitter::Parser;
-use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 use crate::{
     byte_span::ByteSpan,
     nord::Nord,
     scripting::note_eval::JSBlockLang,
-    theme::{AppTheme, ColorManipulation, ColorTheme, FontTheme},
+    theme::{AppTheme, ColorTheme, FontTheme},
 };
 
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -742,7 +740,7 @@ impl TextStructure {
                 };
 
                 let lang = if let Some(_) = JSBlockLang::parse(&lang) {
-                    "js"
+                    if lang.starts_with("ts") { "typescript" } else { "js" }
                 } else {
                     match lang.as_str() {
                         "ts" => "typescript",
@@ -778,125 +776,6 @@ impl TextStructure {
                                 );
                             }
                         }
-                    }
-
-                    None if lang == "kdl" => {
-                        let mut highlighter = Highlighter::new();
-
-                        let kdl_lang = tree_sitter_kdl::language();
-
-                        let mut kdl_config = HighlightConfiguration::new(
-                            kdl_lang,
-                            tree_sitter_kdl::HIGHLIGHTS_QUERY,
-                            tree_sitter_kdl::INJECTIONS_QUERY,
-                            tree_sitter_kdl::LOCALS_QUERY,
-                        )
-                        .unwrap();
-
-                        let highlight_pairs = [
-                            ("type", Nord::NORD6),
-                            ("type.builtin", Nord::NORD9),
-                            ("property", Nord::NORD8),
-                            ("variable", Nord::NORD4),
-                            ("string", Nord::NORD14),
-                            ("string.escape", Nord::NORD13),
-                            ("number", Nord::NORD15),
-                            ("float", Nord::NORD15),
-                            ("boolean", Nord::NORD9),
-                            ("constant.builtin", Nord::NORD9),
-                            ("punctuation.bracket", Nord::NORD10),
-                            ("punctuation.delimiter", Nord::NORD9),
-                            ("comment", Nord::NORD3.shade(1.2)),
-                            ("spell", Nord::NORD3.shade(1.2)),
-                        ];
-
-                        let highlight_names = highlight_pairs.map(|(name, _)| name);
-
-                        kdl_config.configure(&highlight_names);
-
-                        let highlights = highlighter
-                            .highlight(&kdl_config, code.as_bytes(), None, |_| None)
-                            .unwrap();
-
-                        let mut color = Nord::NORD4;
-                        let mut ident = 0;
-
-                        for event in highlights {
-                            match event.unwrap() {
-                                HighlightEvent::Source { start, end } => {
-                                    // eprintln!("{}{}", "  ".repeat(ident), &code[start..end]);
-
-                                    job.append(
-                                        &code[start..end],
-                                        0.0,
-                                        TextFormat::simple(code_font_id.clone(), color),
-                                    )
-                                }
-                                HighlightEvent::HighlightStart(s) => {
-                                    color = highlight_pairs[s.0].1;
-                                    // eprintln!("{}{} {{", "  ".repeat(ident), highlight_names[s.0]);
-                                    ident = ident + 1;
-                                }
-                                HighlightEvent::HighlightEnd => {
-                                    ident = ident - 1;
-                                    // eprintln!("{}}}", "  ".repeat(ident));
-                                }
-                            }
-                        }
-
-                        let mut parser = Parser::new();
-                        parser
-                            .set_language(kdl_lang)
-                            .expect("Error setting language");
-
-                        // fn calculate_indentation(node: Node, source_code: &str) -> usize {
-                        //     let mut depth = 0;
-                        //     let mut current = Some(node);
-
-                        //     while let Some(n) = current {
-                        //         if n.kind() == "object" || n.kind() == "block" {
-                        //             depth += 1;
-                        //         }
-                        //         current = n.parent();
-                        //     }
-
-                        //     depth
-                        // }
-
-                        // let tree = parser.parse(code, None).unwrap();
-                        // println!("Tree structure:");
-                        // println!("{}", tree.root_node().to_sexp());
-
-                        // // println!("{tree:#?}");
-
-                        // fn format_code(parser: &mut Parser, source_code: &str) {
-                        //     let tree = parser.parse(source_code, None).unwrap();
-                        //     let query =
-                        //         Query::new(parser.language().unwrap(), "(object) @obj").unwrap();
-                        //     let mut cursor = QueryCursor::new();
-
-                        //     for m in
-                        //         cursor.matches(&query, tree.root_node(), source_code.as_bytes())
-                        //     {
-                        //         let node = m.captures[0].node;
-                        //         let indent = calculate_indentation(node, source_code);
-                        //         println!(
-                        //             "Node at {}: {} should be indented {} levels",
-                        //             node.start_position(),
-                        //             node.kind(),
-                        //             indent
-                        //         );
-                        //     }
-                        // }
-
-                        // job.append(
-                        //     code,
-                        //     0.0,
-                        //     TextFormat::simple(
-                        //         code_font_id.clone(),
-                        //         theme.colors.normal_text_color,
-                        //     ),
-                        // )
                     }
 
                     None => job.append(

@@ -62,36 +62,29 @@ linkify = "0.10.0"
 objc2 = "0.5.1"
 objc2-app-kit = "0.2.2"
 objc2-foundation = "0.2.2"
-boa_engine = "0.20.0"
-boa_parser = "0.20.0"
-boa_runtime = "0.20.0"
-boa_gc = "0.20.0"
+boa_engine = "0.22.0"
+boa_parser = "0.22.0"
+boa_runtime = "0.22.0"
+boa_gc = "0.22.0"
+# TypeScript type stripping (strip-only, positions preserved) for .ts settings/note blocks and system.ts
+swc_ts_fast_strip = "59"
+swc_common = "26"
 serde_json = "1.0.115"
+# decoding settings values from Boa (via JsValue::to_json) with error paths
+serde_path_to_error = "0.1"
+strum = { version = "0.28", features = ["derive"] }
 directories-next = "2.0.0"
 hotwatch = "0.5.0"
 itertools = "0.13.0"
-kdl = { version = "4.6.0" }
 genai = "0.3.5"
 tokio = { version = "1.40.0", features = ["full"] }
 tokio-stream = "0.1.15"
 sentry = "0.34.0"
 fxhash = "0.2.1"
 similar = "2.6.0"
-tree-sitter-highlight = "0.20.1"
-tree-sitter-kdl = "1.1.0"
-tree-sitter = "0.20.10"
-knus = { default-features = false, git = 'https://github.com/twop/knus.git', features = [
-    "derive",
-], rev = "0bcbd447866a5be7efc9cc4b597f444b7ae822d2" }
 const-dotenvy = { workspace = true }
 shared = { path = "shared" }
-# knus = { default-features = false, version = "3.2.0", features = ["derive"] }
-# knus = { default-features = false, git = 'https://github.com/TheLostLambda/knus.git', features = [
-#     "derive",
-# ] }
 
-miette = { version = "7.2.0", features = ["fancy"] }
-strip-ansi-escapes = "0.2.0"
 chrono = "0.4.40"
 egui_taffy = "0.14.0"
 reqwest = "0.12.23"

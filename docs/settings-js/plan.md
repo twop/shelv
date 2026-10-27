@@ -1,7 +1,7 @@
 # Settings in JavaScript: implementation plan
 
 Status: **plan, nothing implemented.** API: [`spec.md`](spec.md). User-facing porting guide:
-[`migration_to_js.md`](migration_to_js.md). Design background: `tmp/settings-js-00` … `08`.
+[`migration_to_js.md`](migration_to_js.md).
 
 ## Goal
 
@@ -87,8 +87,7 @@ Write the JS-facing files first, so they can be reviewed and type-checked before
 0. **Upgrade Boa 0.20 → 0.22** as its own change, before any settings work, with no behaviour change.
    Why: `#[boa_module]` / `#[boa_class]` for the host module and its handle classes, `TryFromJs` for
    structs, `Error.prototype.stack` with user line/column for error reporting. Bytecode caching is not a
-   reason, since no release has it (`embedding.md` section 7). The probe port (`tmp/boa-probe-022`) is the
-   reference.
+   reason, since no release has it (`embedding.md` section 7).
    - `Cargo.toml`: `boa_engine`, `boa_parser`, `boa_runtime`, `boa_gc` to `0.22`. Consider
      `default-features = false` + `float16`, `xsum` to drop the now-default `temporal`; compare binary size.
    - `src/scripting/js_module_loader.rs`: `ModuleLoader` becomes `async fn load_imported_module(self:
@@ -117,7 +116,7 @@ Write the JS-facing files first, so they can be reviewed and type-checked before
    - Record the results in the "Results" table below after each step that changes them (the Boa upgrade,
      the separate host API, in-process caching).
 2. **TypeScript stripping** (Boa parses JavaScript only; `boa_parser` has no TypeScript support).
-   - Probe first in `tmp/ts-strip-probe`: `swc_ts_fast_strip` (strip-only mode, what Node's
+   - Probe first: `swc_ts_fast_strip` (strip-only mode, what Node's
      `--experimental-strip-types` uses) against `oxc` (parser + transformer + codegen) on `system.ts`
      (including the 1530-line icon union), `default-settings.ts` and a settings block. Measure strip
      time, added build time and binary size; record them in Results. Expected pick: `swc_ts_fast_strip`,
@@ -179,6 +178,36 @@ Write the JS-facing files first, so they can be reviewed and type-checked before
    (descriptions come from JS; the debug `println!`s in `src/main.rs` use `{:?}`). `CommandList::reset_to_defaults()`
    becomes "apply base layer". Per-instruction phase and focus conditions stay in Rust.
 
+**Status: MVP done** (tagged data + Rust decoder; the separate host API is not started). What landed:
+- Boa 0.22 (`js_module_loader.rs` async loader; JS errors printed as `Kind: message` by
+  `scripting::js_error_message`, since 0.22's `Display` appends positions and a stack).
+- `scripting/typescript.rs`: `strip_types` / `strip_script_types` over `swc_ts_fast_strip` (+ `swc_common`),
+  positioned diagnostics (`2:1: TypeScript enum is not supported in strip-only mode`).
+- `scripting/settings_eval.rs` (rewritten) + `scripting/settings_decode.rs`: one `Context` per evaluation
+  with `"shelv"` and `"shelv/defaults"`; ```` ```js ```` / ```` ```ts ```` blocks as modules
+  `settings:block-N` (shared exports imported at the *end* of each block, so line numbers stay);
+  `merge_settings` implements the spec section 2 rules; `resolve_user_command` runs `run` functions.
+- `CommandInstruction::RunUserCommand` for function and multi-action runs (a single action keeps its own
+  instruction, focus rules and hints); `AppAction::RunInstructions` runs the rest of an array after each
+  previous action's changes; failures show a notification. `CommandInstance.label` carries alias and
+  description (hints, palette, AI docs).
+- No Rust defaults: `default_keybinding()`, the default instruction and palette lists and
+  `reset_to_defaults` are gone; `AppState::new` applies the base layer before the settings note is read.
+- Global hotkeys are released before re-registering; `llm_settings` is replaced (so deleting `ai` takes
+  effect); `secret("name")` is read from the keychain (`security find-generic-password -s Shelv -a name`)
+  when a request is made.
+- ```` ```ts ```` blocks in regular notes (`ts`, `ts <n>`, `ts <n> > #hash`).
+- New users' `default-settings.md` is a JS example; the AI prompt documents JS settings and embeds
+  `system.d.ts` (icon union elided, about 6 KB); the keybindings list comes from the labels.
+- KDL settings evaluation is no longer called (the rest of KDL went in Phase 4).
+
+Known gaps, for later:
+- an array `run` is not one undo step yet (each action is its own step);
+- errors show Boa's message without the user's line:column (0.22's `Error.stack` is not read yet);
+- if the settings note has an unclosed code block at startup, the base layer's keys work but its global
+  hotkey is registered only once the note evaluates;
+- no in-process caching (Phase 5): each settings edit builds a new `Context` (about 3 ms).
+
 ### Phase 4: remove KDL
 
 - **Cargo dependencies:** `kdl`, `knus` (git fork) with its commented alternatives, `tree-sitter`,
@@ -200,6 +229,16 @@ Write the JS-facing files first, so they can be reviewed and type-checked before
     base layer;
   - update the README settings sections;
   - leave CHANGELOG, site update logs and App Store screenshots as they are (historical).
+
+**Status: done.** All of the above is removed; the seven crates are gone from `Cargo.lock`.
+- The shortcut parser and formatters moved to `src/shortcuts.rs`, with clearer errors
+  (`"Bee" is not a key or modifier (keys: A-Z, 0-9, ...)`, `exactly one key expected ..., got "Shit", "B"`).
+- `CommandInstruction::InsertText(String)` (no `TextSource` / `ScriptCall` / `ForwardToChild`);
+  `human_description()` and the `SlashPaletteCmd` builders are gone (descriptions come from JS labels; debug
+  prints use `{:?}`).
+- The AI prompt and default note were already converted in Phase 3; the README now documents JS settings
+  (defaults table, examples, schema), and a test evaluates the README's settings examples.
+- An ```` ```kdl ```` block in the settings note is now an ordinary code block (no special highlighting).
 
 ### Phase 5: performance
 
@@ -229,8 +268,8 @@ Measure first, record the numbers in this file, then optimise.
 
 ### Results
 
-Baseline from the probes (not Shelv itself): `tmp/boa-probe` (0.20), `tmp/boa-probe-022` (0.22) and
-`tmp/boa-probe-main` (git `main` at `9871775`, 2026-10-17, 53 commits after v0.22). Release build,
+Baseline from throwaway probe crates (not Shelv itself) on Boa 0.20, 0.22 and git `main` at `9871775`
+(2026-10-17, 53 commits after v0.22). Release build,
 M-series Mac, the then-generated `system.js` (6.7 KB, comments stripped), binaries run directly and interleaved, 10 runs each; median shown,
 min within 0.03 ms. "Cold" is the first run after a build (0.22).
 
@@ -255,13 +294,12 @@ min within 0.03 ms. "Cold" is the first run after a build (0.22).
 - Cold numbers are what a user sees at app launch; they are dominated by first-touch costs and vary
   between runs.
 
-In Shelv (fill in during Phase 3, step 1 onwards):
+In Shelv (release, `cargo test --release -- --ignored settings_startup --nocapture`, 20 runs):
 
 | # | Measurement | 0.20 | 0.22 | separate host API | after cache |
 |---|---|---|---|---|---|
-| 0 | type stripping (once per process) | | | | |
-| 1 | `Context` + system module (parse / evaluate) | | | | |
-| 2 | base layer (parse / evaluate / decode + apply) | | | | |
+| 0 | type stripping (once per process) | | 3.5 ms (45 KB + 6 KB) | | |
+| 1 + 2 | `Context` + system module + base layer, decoded and merged | | min 2.3 ms, median 3.4 ms | | |
 | 3 | keystroke re-evaluation | | | | |
 | 4 | real-world note | | | | |
 
@@ -274,7 +312,7 @@ In Shelv (fill in during Phase 3, step 1 onwards):
   - `system.ts` and `default-settings.ts` strip without errors and load;
   - the new example settings note evaluates on top of the base layer;
   - the worked example from `migration_to_js.md` evaluates with all of its bindings;
-  - the `icons` region of `system.ts` is in sync with egui-phosphor (rewritten with `UPDATE_ICONS=1`);
+  - the `icons` region of `system.ts` is in sync with egui-phosphor (`actions::tests::system_ts_icons_match`; `just update-icons` rewrites it);
   - the AI prompt stays under a size ceiling (about 20 KB; today 9.5 KB, `system.d.ts` without icons about 5 KB);
   - the keybinding-docs test is updated for JS output.
 - **`tsc`:** over `system.ts` and `default-settings.ts` (`just typecheck-settings`).
@@ -312,6 +350,10 @@ separate from the public `"shelv"` API. The host takes normalized data, answers 
 shortcuts) and returns native handles. `system.ts` maps the public sugar onto it and produces every
 user-facing error. This replaces tagged data plus a Rust decoder, and a JS shim of the same `Host`
 interface runs settings in unit tests and outside Shelv.
+
+Decided (`codegen.md`): actions are decoded with serde straight into `CommandInstruction`
+(`src/scripting/actions.rs`, through Boa's `to_json`) and kept in sync with `system.ts` by a test; the icon
+names are generated (`just update-icons`), the action types are not.
 
 Decided: `NoteIndex` 1-4 with Cmd 1-4 defaults; `null`/`undefined` from `run` is a no-op; the base layer
 is not viewable in the app; silent KDL breakage is accepted; secrets in the macOS keychain; a command

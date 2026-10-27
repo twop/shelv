@@ -26,7 +26,10 @@ use crate::{
         WordJumpState, compute_editor_text_id,
     },
     byte_span::{ByteSpan, UnOrderedByteSpan},
-    command::{AppFocus, AppFocusState, CommandContext, CommandList, EditorCommandOutput},
+    command::{
+        AppFocus, AppFocusState, CommandContext, CommandInstruction, CommandList,
+        EditorCommandOutput,
+    },
     commands::{
         inline_llm_prompt::compute_inline_prompt_text_input_id,
         run_llm::{CodeBlockAddress, LLM_LANG, prepare_to_run_llm_block},
@@ -37,12 +40,9 @@ use crate::{
     persistent_state::{ExternalFile, ExternalFileId, NoteId},
     scripting::{
         note_eval::{JSBlockLang, evaluate_all_live_js_blocks, evaluate_js_block},
-        settings_eval::{
-            Scripts, SettingsNoteEvalContext, eval_js_scripts_in_settings_note,
-            eval_kdl_in_settings_note,
-        },
+        settings_decode::{AiSettings, GlobalAction},
+        settings_eval::{MergedSettings, Scripts, always, eval_settings_note, merge_settings},
     },
-    settings_parsing::LlmSettings,
     text_structure::{
         CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, create_error_text_layout_job,
         create_layout_job_from_text_diff,
@@ -96,6 +96,9 @@ pub struct AppNotification {
 
 #[derive(Debug, Clone)]
 pub enum AppAction {
+    /// The remaining actions of a settings command (`run: [a, b]`), each run after the previous one's
+    /// changes are applied.
+    RunInstructions(SmallVec<[CommandInstruction; 1]>),
     SwitchToNote {
         note_file: NoteId,
         via_shortcut: bool,
@@ -191,7 +194,7 @@ pub struct LLMPromptRequest {
 
 pub struct SettingsForAiRequests<'s> {
     pub commands: &'s CommandList,
-    pub llm_settings: Option<&'s LlmSettings>,
+    pub llm_settings: Option<&'s AiSettings>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -752,25 +755,36 @@ pub fn process_app_action(
                 }
 
                 NoteId::Settings => {
-                    println!("####### eval settings");
+                    let started = std::time::Instant::now();
+                    let eval = eval_settings_note(text, text_structure);
+                    let merged = merge_settings(&eval);
 
-                    let (settings_scripts, block_annotations) =
-                        eval_js_scripts_in_settings_note(text, text_structure);
+                    let mut annotations: Vec<(SpanIndex, CodeBlockAnnotation)> = eval
+                        .blocks
+                        .iter()
+                        .filter_map(|block| Some((block.span?, block.annotation())))
+                        .collect();
 
-                    state.commands.reset_to_defaults();
-                    let cx = SettingsNoteEvalContext {
-                        cmd_list: &mut state.commands,
-                        scripts: &settings_scripts,
-                        app_io,
-                        llm_settings: &mut state.llm_settings,
-                    };
+                    for (span, message) in
+                        install_settings(merged, &mut state.commands, &mut state.llm_settings, app_io)
+                    {
+                        let error = CodeBlockAnnotation::Error {
+                            title: "OS refused to register shortcut".to_string(),
+                            message,
+                        };
+                        match annotations.iter_mut().find(|(s, _)| Some(*s) == span) {
+                            Some((_, annotation)) => *annotation = error,
+                            None => println!("settings: {error:?}"),
+                        }
+                    }
 
-                    let mut kdl_annotations = eval_kdl_in_settings_note(&text, &text_structure, cx);
-
-                    kdl_annotations.extend(block_annotations);
-                    note.derived_state.code_block_annotations = kdl_annotations;
-
-                    state.settings_scripts = Some(settings_scripts);
+                    note.derived_state.code_block_annotations = annotations;
+                    state.settings_scripts = Some(eval.scripts);
+                    println!(
+                        "settings eval: {} blocks in {:.2?}",
+                        eval.blocks.len(),
+                        started.elapsed()
+                    );
 
                     None
                 }
@@ -794,6 +808,28 @@ pub fn process_app_action(
                 },
             );
             SmallVec::new()
+        }
+        AppAction::RunInstructions(mut instructions) => {
+            if instructions.is_empty() {
+                return SmallVec::new();
+            }
+            let next = instructions.remove(0);
+
+            let mut scripts = state.settings_scripts.take().unwrap_or_else(Scripts::new);
+            let app_focus = compute_app_focus(ctx, state);
+            let cmd_context = CommandContext {
+                app_state: state,
+                ui_state: state.to_ui_state(app_focus),
+                scripts: &mut scripts,
+            };
+            let mut actions = state.commands.run(&next, &always(), cmd_context);
+            state.settings_scripts = Some(scripts);
+
+            // the action buffer is a stack: queued first, so it runs after `next`'s changes
+            if !instructions.is_empty() {
+                actions.insert(0, AppAction::RunInstructions(instructions));
+            }
+            actions
         }
         AppAction::SubmitFeedback => {
             let Some(feedback) = state.feedback.as_mut() else {
@@ -1512,4 +1548,33 @@ pub fn compute_app_focus(ctx: &Context, app_state: &AppState) -> AppFocusState {
         },
         focus_id: m.focused(),
     })
+}
+
+/// Installs evaluated settings: the command list, the AI settings and the global hotkeys (released
+/// first, so a changed hotkey stops working at once). Returns hotkeys the OS refused, with the block
+/// that bound them.
+pub fn install_settings<IO: AppIO>(
+    merged: MergedSettings,
+    commands: &mut CommandList,
+    llm_settings: &mut Option<AiSettings>,
+    app_io: &mut IO,
+) -> Vec<(Option<SpanIndex>, String)> {
+    commands.set_commands(merged.keyboard, merged.palette);
+    *llm_settings = merged.ai;
+
+    let mut errors = Vec::new();
+    if let Err(err) = app_io.cleanup_all_global_hotkeys() {
+        errors.push((None, err));
+    }
+    for (shortcut, action, origin) in merged.global {
+        let result = match action {
+            GlobalAction::ShowHideApp => {
+                app_io.bind_global_hotkey(shortcut, Box::new(|| MsgToApp::ToggleVisibility))
+            }
+        };
+        if let Err(err) = result {
+            errors.push((origin, err));
+        }
+    }
+    errors
 }

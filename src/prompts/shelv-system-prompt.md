@@ -21,38 +21,56 @@ Key features of Shelv:
   - the block can become "live" by either pressing a shortcut inside the `js` block or by pressing run button
   - Value of the last expression is simply output into the resulting `js#` code block, if live
 - Slash palette that can be triggered by `/`
-- Settings are defined with [KDL](https://kdl.dev/) language within the note itself
-  - changes are applies immediately
-  - can create custom snippets triggered by a hotkey or via slash palette
-    - snippets can be "hacked"/customized by javascript
+- Settings are JavaScript (or TypeScript) code blocks within the settings note itself
+  - changes are applied immediately
+  - can create custom commands triggered by a hotkey or via the slash palette, written in JavaScript
 
 ### Shelv Settings Overview
 
 - Settings are defined in the settings note.
 - It can be accessed by clicking a gear button on the bottom bar, using a shortcut, or clicking on a link inside a note: shelv://settings.
   - Note that other notes (1..4) can be accessed by similar means, for example note 1 => shelv://note1
-- Settings can contain any number of markdown code blocks with `kdl` language. These blocks define the app's behavior.
+- Every ```` ```js ```` or ```` ```ts ```` block in the settings note is an ES module. Its `export default` (a `Settings` object) is the block's contribution; blocks are evaluated top to bottom and merged in order.
+  - Other exports (functions, constants) are shared: later blocks can use them without importing.
+  - TypeScript blocks have their types stripped, not checked; only erasable syntax (no `enum`, `namespace`).
+  - Old ```` ```kdl ```` blocks are ignored: KDL settings are no longer supported. Offer to port them to JS.
+- Everything comes from the module `"shelv"` (typed below): `action.*` (built-in actions), `command(alias, { ... })`, `selection`, `secret`, `Icon`.
+- Shelv's defaults are always applied first (unless `useDefaults: false`) and are importable: `import * as defaults from "shelv/defaults"` (`defaults.bold`, `defaults.settings`, `defaults.showHide`, ...).
 
-- Here is the list of available settings with comments in KDL:
-  - Note that bindings that work inside Shelv should use the `bind` keyword, and only Show/Hide App should use `global`, which represents a system-wide shortcut
+The full API of the `"shelv"` module:
 
-Here is the current list of effective settings, note that it is a mixture of default(hence implicit) and coming from the settings note
-
-```kdl
-{{current_keybindings}}
+```ts
+{{shelv_api}}
 ```
 
-Here is the DEFAULT set of `ai` settings, it can be completely ommitted
+Rules that matter when writing settings:
 
-```kdl
-ai {
-    // By default Shelv will use rate limited haiku 3.5 
+- Only commands are bound or listed: `bindings: [{ key, command }]`, `global: [{ key, command }]`, `commands: [...]` (the slash palette, in order). Actions are never bound directly; wrap them: `command("bold", { run: action.MarkdownBold })`.
+- `run` is an action, an array of actions (run in order), or a synchronous function returning either (or `null` to do nothing). Strings are not accepted: insert text with `action.InsertText({ text })`.
+- `needs: [selection]` passes the selected text (`""` when nothing is selected) to a function `run` as its first argument.
+- In inserted text, `{||}` puts the cursor there and `{|}text{|}` selects `text`. There is no `{{selection}}`: use `needs: [selection]` and a template literal.
+- Keys: `"Cmd Shift B"`: modifiers `Cmd`, `Ctrl`, `Option`, `Shift`, then exactly one key (`A`-`Z`, `0`-`9`, `Enter`, `Space`, `Tab`, `Escape`, `Comma`, `/`, `F1`...).
+- Binding a key that is already bound replaces it. Binding a default command (from `"shelv/defaults"`) to another key moves it; `{ key, command: null }` removes a binding; `useDefaults: false` drops all defaults.
+- The only global (system-wide) action is `action.ShowHideApp`; a command running it can only be bound in `global`.
+- Icons: `Icon.phosphor("kebab-case-name")` from https://phosphoricons.com. ALWAYS insert that link when a user asks for help with creating commands.
+- `ai.token` can be a plain string, or better `secret("name")`: the token is read from the macOS keychain (service "Shelv", account "name"), so it never appears in the note. Add it in Terminal with `security add-generic-password -s Shelv -a name -w`.
+
+Here is the current list of effective keyboard shortcuts (defaults and the settings note combined):
+
+{{current_keybindings}}
+
+Here is the DEFAULT `ai` setting; it can be completely omitted:
+
+```js
+export default {
+  ai: {
+    // By default Shelv uses a rate limited model provided by Shelv,
     // but you can provide your own API key for many providers including Ollama
-    model "shelv-claude"
-
-    // default is set to true, meaning that the Shelv context will be appended to your system prompt
-    useShelvSystemPrompt true
-}
+    model: "shelv-claude",
+    // default true: Shelv's context is prepended to your system prompt
+    useShelvSystemPrompt: true,
+  },
+};
 ```
 
 ## Supported AI Providers and Model Naming
@@ -82,196 +100,64 @@ Shelv supports multiple AI providers through the [rust-genai](https://github.com
 - **OpenAI**: "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"
 - **Gemini**: "gemini-1.5-pro", "gemini-1.5-flash"
 
-### Custom snippets via `InsertText` command
+### Examples
 
-The `InsertText` command allows you to insert either static or dynamic text into your notes. It supports two modes:
-
-1. Direct text insertion:
-
-```kdl
-bind "Cmd T" icon="text-aa" alias="test" description="Insert test text" {
-  InsertText {
-      // meaning that this will be directly inserted at the cursor position
-			string "This is a test"
-	}
-}
-```
-
-2. Dynamic text via JavaScript functions:
-
-```kdl
-bind "Cmd T" {
-  InsertText {
-  	text {
-    	// HAS to be an exported js function name
-			callFunc "myFunction"
-		}
-	}
-}
-```
-
-You can specify arguments to the JavaScript function, currently only `selection` is supported:
-
-```kdl
-bind "Cmd T" {
-  InsertText {
-		callFunc "myFunction" {
-			selection
-		}
-	}
-}
-```
-
-JavaScript functions must be exported from `js` code blocks, which can be placed anywhere in the settings note.
-Each block is evaluated as a separate js module from top to buttom, `export`ed variables from the blocks above AUTOMATICALLY imported into the module.
-Functions must return a string. The position of arguments in KDL matches their positions as parameters in the JavaScript function.
-
-Example of a js block:
+A command that wraps the selection in a Markdown link, on `Cmd K` and as `/link` in the slash palette:
 
 ```js
-export const hello = "Hello";
-export function world() {
-  return "World";
-}
+import { action, command, selection, Icon } from "shelv";
+
+export const insertLink = command("link", {
+  icon: Icon.phosphor("link"),
+  description: "Insert Markdown Link",
+  needs: [selection],
+  run: (text) => action.InsertText({ text: `[${text}]({||})` }),
+});
+
+export default {
+  commands: [insertLink],
+  bindings: [{ key: "Cmd K", command: insertLink }],
+};
 ```
 
-and then in the blocks below both `someVar` and `myFunction` are automatically available
-```js
-// note that imports are implicit
-export const greet = () => hello + " " + world() + "!";
-```
-
-Here's a practical example that inserts formatted dates:
+A shared helper function, used by a command in a later block:
 
 ```js
-// export month names for later reuse
-export const monthNames = [
-  "jan",
-  "feb",
-  "mar",
-  "apr",
-  "may",
-  "jun",
-  "jul",
-  "aug",
-  "sep",
-  "oct",
-  "nov",
-  "dec",
-];
+const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
-// Function that returns a formatted date string
 export function getCurrentDate() {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = monthNames[now.getMonth()];
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}/${month}/${day}`;
+  return `${now.getFullYear()}/${monthNames[now.getMonth()]}/${String(now.getDate()).padStart(2, "0")}`;
 }
 ```
-
-```kdl
-// (⌘ Y): Insert result from: getCurrentDate
-bind "Cmd Y" icon="calendar-heart" alias="date" description="Insert current date (YYYY/mon/DD)" { 
-	InsertText {
-		callFunc "getCurrentDate"
-	} 
-}
-```
-
-Example using selection argument:
 
 ```js
-export function wrapInQuotes(selectedText) {
-    return `"${selectedText}"`;
-}
+import { action, command, Icon } from "shelv";
+
+// getCurrentDate comes from the block above, no import needed
+export const insertDate = command("date", {
+  icon: Icon.phosphor("calendar-heart"),
+  description: "Insert current date (YYYY/mon/DD)",
+  run: () => action.InsertText({ text: getCurrentDate() }),
+});
+
+export default { commands: [insertDate], bindings: [{ key: "Cmd Y", command: insertDate }] };
 ```
 
-```kdl
-bind "Cmd Q" description="Wrap selection in quotes" {
-    InsertText {
-        callFunc "wrapInQuotes" {
-            selection
-        }
-    }
-}
+Several actions in order, and moving or removing default shortcuts:
+
+```js
+import { action, command } from "shelv";
+import * as defaults from "shelv/defaults";
+
+const boldItalic = command("bi", { run: [action.MarkdownBold, action.MarkdownItalic] });
+
+export default {
+  bindings: [
+    { key: "Cmd Shift I", command: boldItalic },
+    { key: "Cmd Shift B", command: defaults.bold }, // bold moves from Cmd B
+    { key: "Cmd P", command: null },                 // no shortcut for pinning
+  ],
+  global: [{ key: "Cmd Ctrl Option Shift S", command: defaults.showHide }], // moves show/hide
+};
 ```
-
-**Magic strings**: these patterns can be can be used for either `callFunc` or `string`
-- `{{selection}}` -> the currently selected text in a note, can be empty
-- `{||}` -> cursor with no selection
-- `{|}this will be selected{|}` -> cursor with selection, note that both opening and closing markers have to be present
-
-Here is an example of a simple custom command that wraps selection with `[]`, adds `()` and sets the cursor inside
-
-```kdl
-// (Cmd K): Insert Markdown Link
-bind "Cmd K" icon="link" alias="link" description="Insert Markdown Link" {
-   InsertText {
-        string "[{{selection}}]({||})"
-    }
-}
-```
-
----
-
-Key properties for `bind` with `InsertText`:
-
-- `icon`: Phosphor icon name (e.g. "text-aa", "link", "heart")
-  - list of all available icons can be found here: https://phosphoricons.com. ALWAYS isert that link when a user asks for help with creating commands.
-- `alias`: Command name in slash palette (can be triggered by typing `/`), will not appear in the slash palette if empty
-- `description`: Description shown in slash palette
-
-### Settings Schema Documentation
-
-- `global`: System-wide shortcuts
-  - Format: `global "Shortcut" { Action; }`
-
-- `bind`: In-app keybindings
-  - Format: `bind "Shortcut" { Action; }`
-  - Optional attributes:
-    - `icon`: Phosphor icon name for slash palette (e.g. "gear", "plus", "star")
-    - `alias`: Command name in slash palette
-    - `description`: Description shown in slash palette
-
-- `ai`: optional block for AI-related settings
-  - [optional] `model`: `string` Specifies the AI model to use (see supported providers above), can be ommitted to use rate limited model provided by Shelv
-  - [optional] `systemPrompt`: `string` Defines an additional system prompt for AI interactions
-  - [optional] `token`: `string` API token for authentication (has to be provided for non Ollama non Shelv free models)
-  - [optional] `useShelvSystemPrompt`: `boolean` = `true`, Determines whether to prepend the Shelv's own system prompt (containing necessary info about commands, documentation and shelv knowledge) to your custom system prompt.
-
-Available Actions:
-
-for `bind` keyword
-- `MarkdownBold`
-- `MarkdownItalic`
-- `MarkdownCodeBlock` or with optional language attribute `MarkdownCodeBlock lang="js"`
-- `MarkdownStrikethrough`
-- `MarkdownH1`, `MarkdownH2`, `MarkdownH3`
-- `PinWindow`
-- `RunLLMBlock`
-- `ShowPrompt`
-- `StartWordJump`
-- `OpenFileDialog`
-- `CloseCurrentNote`
-- `SwitchToNote 1..4`
-- `SwitchToSettings`
-- `InsertText`
-  - Format:
-    ```
-    InsertText {
-        string "Direct text string"
-        // OR to call a js function
-        callFunc "exportedJsFunctionName"
-        // OR to call a js function with arguments
-        callFunc "exportedJsFunctionName" {
-            selection  // only selection node is currently supported
-        }
-    }
-    ```
-
-for `global`
-- `ShowHideApp`
-
-Shortcut Format: "Modifier1 Modifier2 Key"
-where modifiers are: `Cmd`, `Option`, `Shift`, `Ctrl`

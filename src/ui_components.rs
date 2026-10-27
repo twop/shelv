@@ -2,7 +2,7 @@ use eframe::egui::{Color32, KeyboardShortcut, RichText, Stroke, TextWrapMode};
 use egui_taffy::{AsTuiBuilder, Tui, TuiBuilder, TuiBuilderLogic, TuiInnerResponse, TuiWidget};
 
 use crate::{
-    settings_parsing::format_mac_shortcut_with_symbols,
+    shortcuts::format_mac_shortcut_with_symbols,
     theme::{AppIcon, AppTheme},
 };
 

@@ -1,12 +1,9 @@
 # Embedding `system.ts` and bridging Rust into it (draft)
 
-Status: draft for discussion. Everything marked **verified** was run with the probe crates
-`tmp/boa-probe` (Boa 0.20, what Shelv uses today) and `tmp/boa-probe-022` (Boa 0.22, the latest
-release); both pass the same checks. Build with `cargo build --release` in either directory (SDKROOT
-workaround), then run the binary directly. Nothing here is implemented in Shelv yet. Upgrading Boa:
-section 7.
+Status: draft for discussion. Everything marked **verified** was run in throwaway probe crates against
+Boa 0.20 and Boa 0.22; both passed the same checks. Upgrading Boa: section 7.
 
-Related: `plan.md` (Phase 3), `spec.md`, `tmp/settings-js-07-needs-and-async.md` (promises).
+Related: `plan.md` (Phase 3), `spec.md`.
 
 ## 1. Embedding `system.ts` (Phase 3)
 
@@ -276,7 +273,7 @@ latest)**. Checked against the release notes and the 0.22 sources.
   launches would not be worth much anyway.
 
 **What is useful for us:**
-- **`Error.prototype.stack` (0.22).** Verified with `tmp/boa-probe-022`: an error thrown inside
+- **`Error.prototype.stack` (0.22).** Verified on 0.22: an error thrown inside
   `system.ts` for a user call carries the user's location, using the source path we set:
   ```
   TypeError: action.SwitchToNote: "index" must be one of 1, 2, 3, 4, got 0
@@ -290,7 +287,7 @@ latest)**. Checked against the release notes and the 0.22 sources.
   Subtract the lines of the imports we synthesize ahead of each block, or append those imports after
   the block instead. `shelv:system` frames carry `system.ts` line numbers (stripping keeps positions),
   which helps when debugging Shelv, but hide them from users.
-- **`#[boa_module]` / `#[boa_class]` (0.21+), verified** (`tmp/boa-probe-022/src/host.rs`). A Rust
+- **`#[boa_module]` / `#[boa_class]` (0.21+), verified.** A Rust
   `mod` becomes the ES module `"shelv:host"`:
   ```rust
   #[boa_module]

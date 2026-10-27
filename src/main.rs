@@ -59,13 +59,12 @@ mod dev_tools;
 mod effects;
 mod egui_hotkey;
 mod feedback;
-// mod knus_test;
 mod nord;
 mod os_inbox;
 mod persistent_state;
 mod picker;
 mod scripting;
-mod settings_parsing;
+mod shortcuts;
 mod taffy_styles;
 mod text_structure;
 mod theme;
@@ -310,7 +309,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                         command::KeyboardBinding::CommandInstance(editor_command) => {
                             println!(
                                 "---Found RawInputHook match for {:?}, focus = {app_focus:#?}",
-                                editor_command.instruction.human_description()
+                                editor_command.instruction
                             );
                             app_state.commands.run(
                                 &editor_command.instruction,
@@ -508,7 +507,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                                 command::KeyboardBinding::CommandInstance(editor_command) => {
                                     println!(
                                         "---Found a match for {:?}, focus = {app_focus:#?}, focused_id = {focused_id:?}",
-                                        editor_command.instruction.human_description()
+                                        editor_command.instruction
                                     );
                                     app_state.commands.run(
                                         &editor_command.instruction,
@@ -524,7 +523,7 @@ impl<IO: AppIO> eframe::App for MyApp<IO> {
                             if !res.is_empty() {
                                 // println!(
                                 //     "---command {:?} consumed input {:?}\nres_actions={res:#?}",
-                                //     editor_command.instruction.human_description(),
+                                //     editor_command.instruction,
                                 //     keyboard_shortcut
                                 // );
 

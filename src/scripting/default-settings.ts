@@ -9,8 +9,7 @@
 // It is also the module "shelv/defaults": every command below is exported, so the settings note can
 // reuse the same command (`import * as defaults from "shelv/defaults"`). Binding a default command in the
 // note moves it off its default key, `{ key, command: null }` frees a key, and `useDefaults: false`
-// drops this whole layer. Spec: docs/settings-js/spec.md (section 5 lists the same table, section 2 the
-// merge rules).
+// drops this whole layer. See docs/settings-js/codegen.md.
 
 import { action, command, Icon, type NoteIndex, type Settings } from "shelv";
 

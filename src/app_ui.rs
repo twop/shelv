@@ -46,7 +46,7 @@ use crate::{
     feedback::{Feedback, FeedbackResult},
     persistent_state::{ExternalFile, NoteId},
     picker::{Picker, PickerItem, PickerItemKind, PickerLayoutParams, PickerVisualStyle},
-    settings_parsing::format_mac_shortcut_with_symbols,
+    shortcuts::format_mac_shortcut_with_symbols,
     taffy_styles::{StyleBuilder, flex_column, flex_row},
     text_structure::{InteractiveTextPart, SpanIndex, TextStructure},
     theme::{AppIcon, AppTheme},
@@ -209,7 +209,9 @@ pub fn render_app(
                                 .into_iter()
                                 .filter_map(|builtin| command_list.find(builtin))
                                 .filter_map(|cmd| {
-                                    Some(cmd.instruction.human_description()).zip(cmd.shortcut)
+                                    // the description written in the JS settings
+                                    let label = cmd.label.as_ref()?;
+                                    Some((CowStr::from(label.description.clone()), cmd.shortcut?))
                                 })
                                 .collect()
                         });
@@ -1488,7 +1490,7 @@ fn render_footer_panel(
                                     NoteId::Note(index) => {
                                         let index = *index;
                                         let cmd = command_list
-                                            .find(CommandInstruction::SwitchToNote(index as u8));
+                                            .find(CommandInstruction::SwitchToNote { index: index as u8 });
                                         let tooltip = match cmd.and_then(|cmd| cmd.shortcut) {
                                             Some(shortcut) => {
                                                 format!("Shelf {}", ctx.format_shortcut(&shortcut))

@@ -19,12 +19,34 @@ pub enum JSBlockLang {
     Output(BlockId, SourceHash),
 }
 
+/// The language of a code block: ```js, or ```ts (types stripped before evaluating).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ScriptLang {
+    Js,
+    Ts,
+}
+
+impl ScriptLang {
+    /// The language of a block whose `lang` already parsed as a [`JSBlockLang`].
+    pub fn of(lang: &str) -> Self {
+        if lang.starts_with("ts") { Self::Ts } else { Self::Js }
+    }
+
+    fn prefix(self) -> &'static str {
+        match self {
+            Self::Js => "js",
+            Self::Ts => "ts",
+        }
+    }
+}
+
 impl JSBlockLang {
     /// Parses JavaScript block language parameters
     ///
     /// # Requirements
     /// - source can be either just "js" or "js <n>" where n is a BlockId
     /// - output has to be in the form of "js <n> > #<source_hash>"
+    /// - the same with "ts" for TypeScript blocks
     /// - None in all other cases
     ///
     /// # Examples
@@ -32,11 +54,11 @@ impl JSBlockLang {
     /// - "js 5" -> Some(Source(Some(BlockId(5))))
     /// - "js 5 > #bc" -> Some(Output(BlockId(5), SourceHash))
     pub fn parse(lang: &str) -> Option<JSBlockLang> {
-        if lang == "js" {
+        if lang == "js" || lang == "ts" {
             return Some(JSBlockLang::Source(None));
         }
 
-        if let Some(rest) = lang.strip_prefix("js ") {
+        if let Some(rest) = lang.strip_prefix("js ").or_else(|| lang.strip_prefix("ts ")) {
             if let Some((id_part, hash_part)) = rest.split_once(" > #") {
                 // Output format: "js <n> > #<hash>"
                 if let Ok(id) = id_part.parse::<u32>() {
@@ -54,12 +76,12 @@ impl JSBlockLang {
         None
     }
 
-    fn source_lang_with_id(id: BlockId) -> String {
-        format!("js {}", id.to_string())
+    fn source_lang_with_id(script: ScriptLang, id: BlockId) -> String {
+        format!("{} {}", script.prefix(), id.to_string())
     }
 
-    fn output_lang(id: BlockId, hash: SourceHash) -> String {
-        format!("js {} > #{}", id.to_string(), hash.to_string())
+    fn output_lang(script: ScriptLang, id: BlockId, hash: SourceHash) -> String {
+        format!("{} {} > #{}", script.prefix(), id.to_string(), hash.to_string())
     }
 }
 
@@ -83,11 +105,11 @@ impl JsEvaluator {
     pub fn new() -> Self {
         let console_logger = JsLogCollector::new();
         let mut context = Context::builder()
-            .host_hooks(&HostWithLocalTimezone)
+            .host_hooks(std::rc::Rc::new(HostWithLocalTimezone))
             .build()
             .unwrap();
 
-        let console = Console::init_with_logger(&mut context, console_logger.clone());
+        let console = Console::init_with_logger(console_logger.clone(), &mut context);
         context
             .register_global_property(
                 Console::NAME,
@@ -102,13 +124,36 @@ impl JsEvaluator {
         }
     }
 
-    pub fn eval_block(&mut self, body: &str, id: BlockId, hash: SourceHash) -> BlockEvalResult {
+    pub fn eval_block(
+        &mut self,
+        body: &str,
+        id: BlockId,
+        hash: SourceHash,
+        script: ScriptLang,
+    ) -> BlockEvalResult {
+        let output_lang = JSBlockLang::output_lang(script, id, hash);
+        let stripped;
+        let body = match script {
+            ScriptLang::Js => body,
+            ScriptLang::Ts => match super::typescript::strip_script_types(body) {
+                Ok(js) => {
+                    stripped = js;
+                    stripped.as_str()
+                }
+                Err(errors) => {
+                    return BlockEvalResult {
+                        body: errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n"),
+                        output_lang,
+                    };
+                }
+            },
+        };
         let result = self.context.eval(Source::from_bytes(body));
         let logged = self.console_logger.flush().ok();
 
         BlockEvalResult {
             body: match result {
-                Ok(boa_engine::JsValue::Undefined) if logged.is_some() => {
+                Ok(res) if res.is_undefined() && logged.is_some() => {
                     logged.unwrap_or_default()
                 }
 
@@ -118,10 +163,14 @@ impl JsEvaluator {
                     res.display().to_string()
                 ),
 
-                Err(err) => format!("{}{:#}", logged.unwrap_or_default(), err),
+                Err(err) => format!(
+                    "{}{}",
+                    logged.unwrap_or_default(),
+                    super::js_error_message(&err, &mut self.context)
+                ),
             },
 
-            output_lang: JSBlockLang::output_lang(id, hash),
+            output_lang,
         }
     }
 }
@@ -161,7 +210,7 @@ pub fn evaluate_js_block(
                 next_id,
                 Some(TextChange::Insert(
                     code_meta.lang_byte_span,
-                    JSBlockLang::source_lang_with_id(next_id),
+                    JSBlockLang::source_lang_with_id(ScriptLang::of(&code_meta.lang), next_id),
                 )),
             )
         }
@@ -173,7 +222,7 @@ pub fn evaluate_js_block(
     }
 
     let hash = SourceHash::from(code);
-    let eval_result = evaluator.eval_block(code, block_id, hash);
+    let eval_result = evaluator.eval_block(code, block_id, hash, ScriptLang::of(&code_meta.lang));
     let output_block = print_output_block(eval_result);
 
     let output_block_range = find_js_output_block_by_id(text_structure, block_id);
@@ -431,6 +480,30 @@ Error: yo!
         assert_eq!(JSBlockLang::parse("js 5 >"), None);
         assert_eq!(JSBlockLang::parse("js > #bc"), None);
         assert_eq!(JSBlockLang::parse("javascript"), None);
+        assert_eq!(JSBlockLang::parse("ts"), Some(JSBlockLang::Source(None)));
+        assert_eq!(
+            JSBlockLang::parse("ts 5"),
+            Some(JSBlockLang::Source(Some(BlockId(5))))
+        );
+        assert_eq!(JSBlockLang::parse("typescript"), None);
+    }
+
+    #[test]
+    fn test_evaluating_ts_blocks() {
+        use super::{JsEvaluator, ScriptLang};
+        use crate::scripting::note_eval_context::{BlockId, SourceHash};
+
+        let mut evaluator = JsEvaluator::new();
+        let run = |evaluator: &mut JsEvaluator, code: &str| {
+            evaluator.eval_block(code, BlockId(1), SourceHash::from(code), ScriptLang::Ts)
+        };
+
+        let typed = run(&mut evaluator, "const n: number = 2 + 3;\nn as number");
+        assert_eq!(typed.body, "5");
+        assert!(typed.output_lang.starts_with("ts 1 > #"), "{}", typed.output_lang);
+
+        let not_erasable = run(&mut evaluator, "const a = 1;\nenum E { A }");
+        assert!(not_erasable.body.starts_with("2:1:"), "{}", not_erasable.body);
     }
 }
 
@@ -447,9 +520,9 @@ pub fn evaluate_all_live_js_blocks(
             Some(JSBlockLang::Source(Some(source_block_id))) => Some(source_block_id),
             _ => None,
         })
-        .map(|(span_index, _, _, block_id)| (span_index, block_id));
+        .map(|(span_index, _, meta, block_id)| (span_index, block_id, ScriptLang::of(&meta.lang)));
 
-    for (span_index, block_id) in live_blocks {
+    for (span_index, block_id, script) in live_blocks {
         // Get the code for this block
         let (_, code_text_desc) = text_structure
             .iterate_immediate_children_of(span_index)
@@ -471,7 +544,7 @@ pub fn evaluate_all_live_js_blocks(
         };
 
         if needs_update {
-            let eval_result = evaluator.eval_block(code, block_id, source_hash);
+            let eval_result = evaluator.eval_block(code, block_id, source_hash, script);
             let output_block = print_output_block(eval_result);
 
             if let Some((range, _hash)) = output_block_range {

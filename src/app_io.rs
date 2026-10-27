@@ -28,6 +28,7 @@ use crate::{
     app_state::{InlineLLMResponseChunk, MsgToApp},
     command::create_ai_keybindings_documentation,
     persistent_state::{ExternalFile, ExternalFileId, NoteId, get_utc_timestamp},
+    scripting::settings_decode::AiToken,
 };
 
 use tokio_stream::StreamExt;
@@ -163,10 +164,12 @@ impl AppIO for RealAppIO {
             commands,
             llm_settings,
         } = cx;
-        let shelv_system_prompt = include_str!("./prompts/shelv-system-prompt.md").replace(
-            "{{current_keybindings}}",
-            &create_ai_keybindings_documentation(commands),
-        );
+        let shelv_system_prompt = include_str!("./prompts/shelv-system-prompt.md")
+            .replace("{{shelv_api}}", shelv_api_typings())
+            .replace(
+                "{{current_keybindings}}",
+                &create_ai_keybindings_documentation(commands),
+            );
 
         // cloned because it is goint to be used inside async block
         let llm_settings = llm_settings.cloned();
@@ -244,6 +247,14 @@ impl AppIO for RealAppIO {
                 msg.content.text_as_str().unwrap()
             ));
         }
+
+        let token = match resolve_ai_token(token) {
+            Ok(token) => token,
+            Err(message) => {
+                send(InlineLLMResponseChunk::ResponseError(message));
+                return;
+            }
+        };
 
         let (service_target_resolver, auth_resolver) = if model == SHELV_LLM_PROXY_MODEL {
             prepare_shelv_providers(&self.shelv_api_server, &self.shelv_magic_token)
@@ -466,6 +477,64 @@ fn prepare_shelv_providers(
     );
 
     (service_target_resolver, auth_resolver)
+}
+
+/// The public typings of "shelv" (system.d.ts) for the AI prompt, with the 1530-name icon union
+/// replaced by `string` (the prompt states the naming rule instead).
+fn shelv_api_typings() -> &'static str {
+    static TYPINGS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    TYPINGS.get_or_init(|| elide_icon_union(include_str!("./scripting/system.d.ts")))
+}
+
+fn elide_icon_union(typings: &str) -> String {
+    const START: &str = "export type PhosphorIconName =";
+    let typings = typings
+        .lines()
+        .filter(|line| !line.starts_with("/*!"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    match typings.find(START) {
+        Some(start) => {
+            let end = typings[start..]
+                .find(';')
+                .map(|i| start + i + 1)
+                .unwrap_or(typings.len());
+            format!(
+                "{}export type PhosphorIconName = string; // a phosphoricons.com name, kebab-case{}",
+                &typings[..start],
+                &typings[end..]
+            )
+        }
+        None => typings,
+    }
+}
+
+/// `ai.token`: or `secret("name")`, read from the macOS keychain (service "Shelv",
+/// account `name`) only when a request is made, so the value never passes through JS or the note.
+fn resolve_ai_token(token: Option<AiToken>) -> Result<Option<String>, String> {
+    match token {
+        None => Ok(None),
+        Some(AiToken::Secret { name }) => {
+            let output = std::process::Command::new("/usr/bin/security")
+                .args(["find-generic-password", "-s", "Shelv", "-a", &name, "-w"])
+                .output()
+                .map_err(|err| {
+                    format!("Could not read the keychain for secret(\"{name}\"): {err}")
+                })?;
+            if output.status.success() {
+                Ok(Some(
+                    String::from_utf8_lossy(&output.stdout)
+                        .trim_end_matches('\n')
+                        .to_string(),
+                ))
+            } else {
+                Err(format!(
+                    "secret(\"{name}\") is not in the keychain. Add it in Terminal with:\n\
+                     security add-generic-password -s Shelv -a {name} -w"
+                ))
+            }
+        }
+    }
 }
 
 fn prepare_general_providers(token: Option<&str>) -> (ServiceTargetResolver, AuthResolver) {
@@ -747,5 +816,25 @@ mod tests {
         for (a, b, expected) in test_cases {
             assert_eq!(compare_versions(&a, &b), expected);
         }
+    }
+}
+
+#[cfg(test)]
+mod shelv_api_tests {
+    #[test]
+    fn ai_prompt_typings_elide_icons_and_stay_small() {
+        let typings = super::shelv_api_typings();
+        assert!(typings.contains("export type PhosphorIconName = string;"));
+        assert!(!typings.contains("\"acorn\""));
+        assert!(
+            typings.contains("export declare const action: Actions;"),
+            "the API is there"
+        );
+        // keep the prompt budget visible: about 6 KB today
+        assert!(
+            typings.len() < 12_000,
+            "system.d.ts in the prompt grew to {} bytes",
+            typings.len()
+        );
     }
 }

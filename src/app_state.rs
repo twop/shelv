@@ -19,6 +19,7 @@ use smallvec::SmallVec;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
+    command::try_extract_text_command_context,
     actions::word_jump::{JumpCharSequence, JumpLabel},
     app_actions::{AppAction, AppNotification, FocusTarget, SelectionStep},
     app_ui::char_index_from_byte_index,
@@ -31,7 +32,6 @@ use crate::{
         enter_in_list::on_enter_inside_list_item,
         inline_llm_prompt::inline_llm_prompt_command_handler,
         insert_text::call_replace_text,
-        kdl_lang::on_enter_inside_kdl_block,
         move_lines::{MoveDirection, move_lines},
         slash_pallete::show_slash_pallete,
         space_after_task_markers::on_space_after_task_markers,
@@ -46,8 +46,10 @@ use crate::{
     persistent_state::{
         DataToSave, ExternalFile, ExternalFileId, FileAddress, LoadKind, NoteId, RestoredData,
     },
-    scripting::settings_eval::Scripts,
-    settings_parsing::LlmSettings,
+    scripting::{
+        settings_decode::{AiSettings, UserCommandId},
+        settings_eval::{Scripts, eval_base_settings, merge_settings, resolve_user_command},
+    },
     text_structure::{
         CodeBlockMeta, SpanIndex, SpanKind, SpanMeta, TextDiffPart, TextHash, TextStructure,
     },
@@ -283,7 +285,7 @@ pub struct AppState {
     pub hidden: bool,
     pub prev_focused: bool,
     pub commands: CommandList,
-    pub llm_settings: Option<LlmSettings>,
+    pub llm_settings: Option<AiSettings>,
 
     pub inline_llm_prompt: Option<InlineLLMPromptState>,
     pub slash_palette: Option<SlashPalette>,
@@ -482,8 +484,6 @@ impl AppState {
             settings,
         } = persistent_state;
 
-        let shelf_count = notes.len();
-
         let notes: BTreeMap<NoteId, Note> = notes
             .into_iter()
             .enumerate()
@@ -516,84 +516,13 @@ impl AppState {
         let mut selected_note = saved_state.selected;
         let is_window_pinned = saved_state.is_pinned;
 
-        let keybord_instructions: Vec<CommandInstruction> = Vec::from_iter(
-            [
-                CommandInstruction::ExpandTaskMarker,
-                CommandInstruction::IndentListItem,
-                CommandInstruction::UnindentListItem,
-                CommandInstruction::SplitListItem,
-                CommandInstruction::MarkdownCodeBlock(None),
-                CommandInstruction::MarkdownBold,
-                CommandInstruction::MarkdownItalic,
-                CommandInstruction::MarkdownStrikethrough,
-                CommandInstruction::MarkdownH1,
-                CommandInstruction::MarkdownH2,
-                CommandInstruction::MarkdownH3,
-                CommandInstruction::EnterInsideKDL,
-                // CommandInstruction::RunLLMBlock,
-                CommandInstruction::ShowPrompt,
-                CommandInstruction::StartWordJump,
-                CommandInstruction::ExpandSelection,
-                CommandInstruction::ShrinkSelection,
-                CommandInstruction::MoveLinesUp,
-                CommandInstruction::MoveLinesDown,
-                CommandInstruction::ToggleDebugTools,
-                CommandInstruction::ShowSlashPallete,
-                // CommandInstruction::HideSlashPallete,
-                // CommandInstruction::NextSlashPalleteCmd,
-                // CommandInstruction::PrevSlashPalleteCmd,
-                // CommandInstruction::ExecuteSlashPalleteCmd,
-                CommandInstruction::SwitchToSettings,
-                CommandInstruction::PinWindow,
-                CommandInstruction::HideApp,
-                CommandInstruction::OpenFileDialog,
-                CommandInstruction::CloseCurrentNote,
-            ]
-            .into_iter()
-            .chain(
-                (0..shelf_count)
-                    .map(|note_index| CommandInstruction::SwitchToNote(note_index as u8)),
-            ),
-        );
-
-        use egui_phosphor::light as P;
-        let slash_palette_commands = []
-            .into_iter()
-            .chain(
-                [
-                    ("ai", CommandInstruction::ShowPrompt, P::SPARKLE),
-                    (
-                        "code",
-                        CommandInstruction::MarkdownCodeBlock(None),
-                        P::CODE_BLOCK,
-                    ),
-                    ("h1", CommandInstruction::MarkdownH1, P::TEXT_H_ONE),
-                    ("h2", CommandInstruction::MarkdownH2, P::TEXT_H_TWO),
-                    ("h3", CommandInstruction::MarkdownH3, P::TEXT_H_THREE),
-                    ("bold", CommandInstruction::MarkdownBold, P::TEXT_BOLDER),
-                    ("italic", CommandInstruction::MarkdownItalic, P::TEXT_ITALIC),
-                    (
-                        "strike",
-                        CommandInstruction::MarkdownStrikethrough,
-                        P::TEXT_STRIKETHROUGH,
-                    ),
-                    ("jump", CommandInstruction::StartWordJump, P::CURSOR_CLICK),
-                ]
-                .into_iter()
-                .map(|(prefix, builtin, phosphor_icon)| {
-                    let shortcut = builtin.default_keybinding();
-                    SlashPaletteCmd::from_instruction(prefix, builtin)
-                        .icon(phosphor_icon.to_string())
-                        .shortcut(shortcut)
-                }),
-            )
-            .collect();
-
-        let editor_commands = CommandList::new(
-            execute_instruction,
-            keybord_instructions,
-            slash_palette_commands,
-        );
+        // Every command comes from the JS settings. Start with the base layer (default-settings.ts) so
+        // shortcuts work before the settings note is read; evaluating the note replaces it.
+        let mut editor_commands = CommandList::new(execute_instruction);
+        let base_settings = eval_base_settings();
+        let merged = merge_settings(&base_settings);
+        editor_commands.set_commands(merged.keyboard, merged.palette);
+        let settings_scripts = Some(base_settings.scripts);
 
         // schedule notes eval, most importantly settings, but that will also make code annotations appear
         let mut deferred_actions: Vec<_> = notes
@@ -632,7 +561,7 @@ impl AppState {
             slash_palette: None,
             word_jump_state: None,
             selection_expansion: None,
-            settings_scripts: None,
+            settings_scripts,
             render_actions: vec![],
             feedback: None,
             app_version_state: VersionState::UpToDate,
@@ -744,7 +673,7 @@ fn execute_instruction(
         CI::IndentListItem => call_with_text_ctx(ctx, on_tab_inside_list),
         CI::UnindentListItem => call_with_text_ctx(ctx, on_shift_tab_inside_list),
         CI::SplitListItem => call_with_text_ctx(ctx, on_enter_inside_list_item),
-        CI::MarkdownCodeBlock(lang) => call_with_text_ctx(ctx, |cx| {
+        CI::MarkdownCodeBlock { lang } => call_with_text_ctx(ctx, |cx| {
             toggle_code_block(cx, lang.as_ref().map(|s| s.as_str()))
         }),
         CI::MarkdownBold => call_with_text_ctx(ctx, |text_context| {
@@ -765,9 +694,8 @@ fn execute_instruction(
         CI::MarkdownH3 => call_with_text_ctx(ctx, |text_context| {
             toggle_md_heading(text_context, HeadingLevel::H3)
         }),
-        CI::EnterInsideKDL => call_with_text_ctx(ctx, on_enter_inside_kdl_block),
 
-        CI::SwitchToNote(note_index) => SmallVec::from([AppAction::SwitchToNote {
+        CI::SwitchToNote { index: note_index } => SmallVec::from([AppAction::SwitchToNote {
             note_file: NoteId::Note(*note_index as u32),
             via_shortcut: true,
         }]),
@@ -780,7 +708,7 @@ fn execute_instruction(
 
         CI::PinWindow => [AppAction::SetWindowPinned(!ctx.app_state.is_pinned)].into(),
 
-        CI::HideApp => [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into(),
+        CI::HideApp | CI::ShowHideApp => [AppAction::HandleMsgToApp(MsgToApp::ToggleVisibility)].into(),
 
         CI::OpenFileDialog => [AppAction::OpenFileDialog].into(),
 
@@ -804,7 +732,7 @@ fn execute_instruction(
 
         CI::ToggleDebugTools => [AppAction::ToggleDevTools].into(),
 
-        CI::ShowSlashPallete => show_slash_pallete(ctx).unwrap_or_default(),
+        CI::ShowSlashPalette => show_slash_pallete(ctx).unwrap_or_default(),
 
         // CI::HideSlashPallete => hide_slash_pallete(ctx).unwrap_or_default(),
 
@@ -813,10 +741,35 @@ fn execute_instruction(
         // CI::PrevSlashPalleteCmd => prev_slash_cmd(ctx).unwrap_or_default(),
 
         // CI::ExecuteSlashPalleteCmd => execute_slash_cmd(ctx).unwrap_or_default(),
-        CI::BracketAutoclosingInsideKDL => todo!(),
-        CI::InsertText(text_source) => call_replace_text(text_source, ctx),
+        CI::InsertText { text } => call_replace_text(text, ctx),
+        CI::RunUserCommand(id) => run_user_command(*id, ctx),
         // Disable for now
-        // CI::BracketAutoclosingInsideKDL => map_text_command_to_command_handler(autoclose_bracket_inside_kdl_block).call(ctx),
+    }
+}
+
+/// A settings command with a function `run` or several actions: resolve them now, run the first,
+/// queue the rest. Failures show a notification naming the command.
+fn run_user_command(id: UserCommandId, ctx: CommandContext) -> EditorCommandOutput {
+    let selection = try_extract_text_command_context(ctx.app_state)
+        .map(|text_ctx| text_ctx.text[text_ctx.byte_cursor.range()].to_string())
+        .unwrap_or_default();
+
+    match resolve_user_command(ctx.scripts, id, &selection) {
+        Err(message) => [AppAction::ShowNotification(AppNotification {
+            id: NotificationId::new(chrono::Utc::now().timestamp_millis() as u64),
+            title: None,
+            message,
+            action: None,
+        })]
+        .into(),
+        Ok(instructions) => match instructions.len() {
+            0 => SmallVec::new(),
+            1 => execute_instruction(&instructions[0], ctx),
+            // Hand back a single action: callers like the keyboard path in `ui()` run a returned
+            // list front to back, so splitting "first + rest" here would run the rest too early.
+            // `RunInstructions` sequences them on the per-action stack instead.
+            _ => [AppAction::RunInstructions(instructions)].into(),
+        },
     }
 }
 

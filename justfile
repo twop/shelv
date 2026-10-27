@@ -30,6 +30,11 @@ clippy *args:
 build-system:
     tsc src/scripting/system.ts --target es2022 --module esnext --noCheck --declaration --emitDeclarationOnly --stripInternal --outDir src/scripting
 
+# regenerate the Phosphor icon names in src/scripting/system.ts from egui-phosphor, then system.d.ts
+update-icons:
+    UPDATE_ICONS=1 cargo test system_ts_icons
+    just build-system
+
 # build-system, then type-check the files in src/scripting/tsconfig.json (needs tsc)
 typecheck-settings: build-system
     tsc -p src/scripting

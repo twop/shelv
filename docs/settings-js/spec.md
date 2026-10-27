@@ -471,7 +471,7 @@ Today such failures are silent; in v1 they are visible.
 
 ## 10. Not in v1 (names reserved)
 
-These are part of the design (`tmp/settings-js-07-needs-and-async.md`) and must stay possible.
+These are part of the design and must stay possible.
 Where a name is reserved, v1 rejects it with a load-time "not supported yet" error.
 
 | Feature | Shape | v1 |
